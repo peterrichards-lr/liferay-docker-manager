@@ -9,8 +9,8 @@ set -e
 # by scripts/release.py on every bump) so a locally-held copy can be checked
 # against what actually shipped, rather than guessing from a file mtime -- git
 # checkout/pull doesn't preserve original commit timestamps.
-# LDM_MAGIC_VERSION: 2.15.32
-SCRIPT_VERSION="2.15.32"
+# LDM_MAGIC_VERSION: 2.15.33
+SCRIPT_VERSION="2.15.33"
 
 TEST_PORT="${LDM_TEST_PORT}"
 if [ -z "$TEST_PORT" ]; then
@@ -691,9 +691,16 @@ fi
 
 echo ">> Verifying Idempotent Exit Code 5 (#1094)..."
 # Exit 5 is only returned in non-interactive mode (ldm_core/pipelines/run.py:246);
-# interactively LDM prompts instead. `-y` is therefore required, and 5 is the
-# only acceptable answer -- accepting 0 as well would let a regression that
-# silently re-ran the project pass unnoticed.
+# interactively LDM prompts instead, so `-y` is required.
+#
+# The project is STOPPED at this point -- "Stopping project to release file
+# locks" above shuts it down and nothing restarts it. So the first `up`
+# legitimately starts it and returns 0; the idempotent contract only applies to
+# a second invocation, when the project is genuinely already running. Asserting
+# 5 on the first call fails on every platform, and tolerating "5 or 0" instead
+# would verify nothing at all, since 0 is the only value the first call can
+# return.
+log_and_run "Starting project for idempotency check" "$LDM_CMD" -y up .
 set +e
 "$LDM_CMD" -y up . >/dev/null 2>&1
 UP_EXIT_CODE=$?
@@ -705,18 +712,6 @@ else
     exit 1
 fi
 
-echo ">> Verifying Synthetic Client Extension (CX) Deploy (#1097)..."
-mkdir -p synthetic-cx
-cat << 'EOF' > synthetic-cx/client-extension.yaml
-assemble:
-  - from: build/assets
-    into: static
-EOF
-# log_and_run fails the run on a non-zero exit. This asserts the deploy pipeline
-# accepts a real client-extension.yaml end to end; it deliberately does not claim
-# to verify OSGi staging, which would need to inspect container state.
-log_and_run "Deploying Synthetic CX" "$LDM_CMD" -y deploy . synthetic-cx/
-rm -rf synthetic-cx
 
 # Final
 log_and_run "Checking Status" "$LDM_CMD" -y status

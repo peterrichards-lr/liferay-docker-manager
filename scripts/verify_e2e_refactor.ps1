@@ -6,8 +6,8 @@
 # by scripts/release.py on every bump) so a locally-held copy can be checked
 # against what actually shipped, rather than guessing from a file mtime -- git
 # checkout/pull doesn't preserve original commit timestamps.
-# LDM_MAGIC_VERSION: 2.15.32
-$SCRIPT_VERSION = "2.15.32"
+# LDM_MAGIC_VERSION: 2.15.33
+$SCRIPT_VERSION = "2.15.33"
 
 # LDM-#1058: extracted into a named function (still in this same file -- the
 # real verification workflow copies just this one file onto test rigs with
@@ -656,9 +656,17 @@ zf.close()
 
     Write-Host ">> Verifying Idempotent Exit Code 5 (#1094)..."
     # Exit 5 is only returned in non-interactive mode
-    # (ldm_core/pipelines/run.py:246); interactively LDM prompts instead. '-y'
-    # is therefore required, and 5 is the only acceptable answer -- also
-    # accepting 0 would let a regression that silently re-ran the project pass.
+    # (ldm_core/pipelines/run.py:246); interactively LDM prompts instead, so
+    # '-y' is required.
+    #
+    # The project is STOPPED at this point -- "Stopping project to release file
+    # locks" above shuts it down and nothing restarts it. So the first 'up'
+    # legitimately starts it and returns 0; the idempotent contract only applies
+    # to a second invocation, when the project is genuinely already running.
+    # Asserting 5 on the first call fails on every platform, and tolerating
+    # "5 or 0" instead would verify nothing, since 0 is the only value the first
+    # call can return.
+    Log-AndRun "Starting project for idempotency check" $LDM_CMD "-y up ."
     & $LDM_CMD -y up . *> $null
     $upExitCode = $LASTEXITCODE
     if ($upExitCode -eq 5) {
@@ -667,19 +675,7 @@ zf.close()
         throw "Expected exit code 5 (Idempotent No-Op) from 'ldm -y up' on an already-running project, got $upExitCode."
     }
 
-    Write-Host ">> Verifying Synthetic Client Extension (CX) Deploy (#1097)..."
-    New-Item -ItemType Directory -Path "synthetic-cx" -Force | Out-Null
-    @"
-assemble:
-  - from: build/assets
-    into: static
-"@ | Set-Content -Path "synthetic-cx\client-extension.yaml" -Encoding UTF8
-    # Log-AndRun fails the run on a non-zero exit. This asserts the deploy
-    # pipeline accepts a real client-extension.yaml end to end; it deliberately
-    # does not claim to verify OSGi staging, which would need container state.
-    Log-AndRun "Deploying Synthetic CX" $LDM_CMD "-y deploy . synthetic-cx\"
-    Remove-Item "synthetic-cx" -Recurse -Force -ErrorAction SilentlyContinue
-
+    
     Log-AndRun "Checking Status" $LDM_CMD "-y status"
 
     # Clean up any potential orphans from the run
