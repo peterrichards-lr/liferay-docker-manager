@@ -2,8 +2,8 @@ import os
 from pathlib import Path
 
 # --- Constants & Configuration ---
-# LDM_MAGIC_VERSION: 2.15.33
-VERSION = "2.15.33"
+# LDM_MAGIC_VERSION: 2.16.0-pre.0
+VERSION = "2.16.0-pre.0"
 
 # Release commit v2.11.30
 
@@ -63,6 +63,22 @@ RELEASE_ANNOUNCEMENTS = {
         ),
         ("ldm link <path>", "Linked workspaces local integration (replaces init-from)"),
         ("ldm clone <url>", "Clone and setup a remote Git workspace repository"),
+    ],
+    "2.16": [
+        (
+            "myproject/portal-patches/",
+            "Overlay patched core JARs onto osgi/portal on every boot",
+        ),
+        (
+            "ldm run --force-portal-patches",
+            "Apply portal patches despite a Liferay release-line mismatch",
+        ),
+        ("ldm run --vanilla", "Start a completely fresh Liferay, bypassing all seeds"),
+        (
+            "ldm run --nightly",
+            "Target the latest Liferay DXP nightly build from Docker Hub",
+        ),
+        ("ldm prune", "Reclaim LDM's own named volumes via ownership labels"),
     ],
 }
 
