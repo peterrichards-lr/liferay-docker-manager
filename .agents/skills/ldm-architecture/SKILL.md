@@ -30,6 +30,23 @@ To resolve critical filesystem locking deadlocks (e.g., `Unable to create lock m
   - `/opt/liferay/osgi/log4j`
 - **macOS Hypervisor Sync**: LDM MUST implement a minimum 2-second "Sync Wait" after extracting backups to the host and before hydrating Docker volumes. This compensates for VirtioFS/gRPC-FUSE sync lag.
 - **Volume Naming Consistency**: LDM MUST explicitly set the `name:` property for all Named Volumes in the generated `docker-compose.yml`.
+- **Volume Ownership Labels**: Every Named Volume MUST carry ownership metadata, mirroring the labels services already receive via `_inject_ldm_labels`:
+
+  | Label | Value |
+  |---|---|
+  | `com.liferay.ldm.project` | the owning project |
+  | `com.liferay.ldm.managed` | `true` |
+  | `com.liferay.ldm.role` | `data`, `state`, or `unknown` |
+
+  Set in `_named_volume_definition()` (`ldm_core/handlers/composer.py`). **Do not build a volume definition anywhere else** -- a second construction site is how the labels get silently dropped, and an unlabelled volume is invisible to cleanup forever (see below).
+
+  `role` records how destructive removal would be, so `ldm prune` can reclaim disposable storage without ever sweeping a database:
+
+  - `state` -- OSGi bundle state. Regenerated on the next boot; LDM already wipes it itself when the Liferay tag changes.
+  - `data` -- database and project data. Destructive. Never removed by `--all`; always a separate, explicit confirmation.
+  - `unknown` -- anything unrecognised, and deliberately **not** treated as disposable. A future volume suffix must be classified on purpose, never become sweepable by omission. Note `data` is matched before any broader suffix, so `<project>-db-db-data` cannot be misread.
+
+  **Labels are applied only at volume creation.** Declaring labels in compose for a volume that already exists has no effect -- verified: `docker volume inspect` still reports `map[]`. Volumes predating LDM-#1267 therefore never acquire labels and are only reachable via the name-pattern fallback behind `ldm prune --legacy-volumes`. This is why dropping the labels at creation is unrecoverable rather than merely untidy.
 
 ## Infrastructure Enforcement
 
@@ -106,4 +123,4 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-21* | *Last Reviewed: 2026-08-21*
+*Last Updated: 2026-08-22* | *Last Reviewed: 2026-08-22*
