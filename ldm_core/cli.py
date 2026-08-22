@@ -2309,9 +2309,25 @@ def get_parser():  # noqa: PLR0915
         ),
     )
     prune.add_argument(
+        "--legacy-volumes",
+        action="store_true",
+        help=(
+            "Also offer LDM volumes created before ownership labelling existed "
+            "(LDM-#1267). These carry no labels -- Docker only labels a volume "
+            "at creation, so pre-existing volumes never acquire them -- and are "
+            "matched by name pattern instead. Always interactive, never covered "
+            "by --all, and every candidate is listed before anything is removed"
+        ),
+    )
+    prune.add_argument(
         "--all",
         action="store_true",
-        help="Run all pruning operations without asking (includes seeds, samples, images, and hosts)",
+        help=(
+            "Run all pruning operations without asking (includes seeds, samples, "
+            "images, and hosts). Deliberately excludes --legacy-volumes, which is "
+            "matched by name rather than by ownership label and so always requires "
+            "an interactive decision"
+        ),
     )
 
     doctor = system_subparsers.add_parser(
