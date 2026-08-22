@@ -675,7 +675,7 @@ zf.close()
         throw "Expected exit code 5 (Idempotent No-Op) from 'ldm -y up' on an already-running project, got $upExitCode."
     }
 
-    
+
     Write-Host ">> Verifying Client Extension deploy & staging (#1257 / #1262)..."
     # LDM-#1262: this check previously passed a *directory*
     # ('deploy . synthetic-cx/'). cmd_deploy only recognises trailing arguments
