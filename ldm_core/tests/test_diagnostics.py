@@ -1781,3 +1781,93 @@ class TestOrphanedLdmVolumes(unittest.TestCase):
         flat = " ".join(" ".join(a) for a in removed)
         self.assertIn("dead-state", flat)
         self.assertNotIn("dead-data", flat, "Regression: --all removed a DATA volume")
+
+
+class TestLegacyVolumeSweep(unittest.TestCase):
+    """LDM-#1267 Part 3: volumes created before ownership labelling existed.
+
+    Docker applies volume labels only at creation -- declaring labels in compose
+    for an existing volume leaves `.Labels` empty. Every installation predating
+    the labelling change therefore has permanently unlabelled volumes that the
+    label-driven sweep cannot see, which would otherwise make `ldm prune`
+    useless on exactly the long-lived machines it was built for.
+
+    Ownership here is inferred from the NAME, which is weaker evidence than a
+    label -- so every test below pins a guard against over-reach.
+    """
+
+    ALL_VOLUMES = (
+        "deadproj-data deadproj-state deadproj-db-db-data "
+        "liveproj-data liveproj-state "
+        "somebodyelse-cache postgres_data random-volume "
+        "labelled-data"
+    )
+
+    def _handler(self, registered=("liveproj",)):
+        h = MagicMock()
+        h.manager.find_dxp_roots.return_value = [
+            {"path": Path(f"/tmp/{n}")} for n in registered
+        ]
+        return h
+
+    def _run(self, mock_run, labelled_output=""):
+        from ldm_core.diagnostics.prune import _legacy_volume_candidates
+
+        # first call = labelled listing, second = all volumes
+        mock_run.side_effect = [labelled_output, self.ALL_VOLUMES]
+        return _legacy_volume_candidates(self._handler(), ["docker"])
+
+    @patch("ldm_core.diagnostics.prune.run_command")
+    def test_registered_project_volumes_are_never_offered(self, mock_run):
+        """The data-loss case: a live project's volumes must be untouchable."""
+        groups = self._run(mock_run)
+        flat = {n for vols in groups.values() for n, _ in vols}
+
+        self.assertNotIn("liveproj-data", flat)
+        self.assertNotIn("liveproj-state", flat)
+
+    @patch("ldm_core.diagnostics.prune.run_command")
+    def test_non_ldm_shaped_volumes_are_ignored(self, mock_run):
+        """Third-party volumes must not be swept up by name matching."""
+        groups = self._run(mock_run)
+        flat = {n for vols in groups.values() for n, _ in vols}
+
+        for name in ("somebodyelse-cache", "postgres_data", "random-volume"):
+            self.assertNotIn(name, flat, f"{name} is not LDM-shaped")
+
+    @patch("ldm_core.diagnostics.prune.run_command")
+    def test_already_labelled_volumes_are_left_to_the_label_sweep(self, mock_run):
+        """Part 2 owns labelled volumes; Part 3 must not double-handle them."""
+        groups = self._run(mock_run, labelled_output="labelled-data\tsomeproj\tdata\n")
+        flat = {n for vols in groups.values() for n, _ in vols}
+
+        self.assertNotIn("labelled-data", flat)
+
+    @patch("ldm_core.diagnostics.prune.run_command")
+    def test_candidates_are_grouped_by_derived_project(self, mock_run):
+        groups = self._run(mock_run)
+
+        self.assertIn("deadproj", groups)
+        self.assertEqual(
+            {"deadproj-data", "deadproj-state", "deadproj-db-db-data"},
+            {n for n, _ in groups["deadproj"]},
+        )
+
+    @patch("ldm_core.diagnostics.prune.run_command")
+    def test_never_removes_anything_non_interactively(self, mock_run):
+        """--all and CI must not be able to trigger a name-inferred deletion."""
+        from ldm_core.diagnostics.prune import _sweep_legacy_volumes
+
+        h = self._handler()
+        h.manager.non_interactive = True
+        mock_run.side_effect = ["", self.ALL_VOLUMES]
+
+        _sweep_legacy_volumes(h, ["docker"], is_dry_run=False)
+
+        argvs = [c[0][0] for c in mock_run.call_args_list]
+        removals = [a for a in argvs if "volume" in a and "rm" in a]
+        self.assertEqual(
+            [],
+            removals,
+            f"Regression: a name-inferred deletion ran without a human: {removals}",
+        )

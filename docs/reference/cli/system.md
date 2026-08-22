@@ -254,6 +254,7 @@ ldm prune --seeds --samples
 - **Sample Extensions**: (Optional) Cached sample client extensions.
 - **Docker Images & Build Cache**: (Optional, `--images`) Unused/dangling Docker images and unused build cache -- usually the single biggest reclaimable consumer on a long-lived dev machine, via `docker image prune -af` and `docker builder prune -af`.
 - **Temporary Files**: Residual `.*.tmp` files left behind by interrupted sync or build operations.
+- **Legacy LDM Volumes**: (Optional, `--legacy-volumes`) Named volumes created before LDM labelled volumes with their owning project. Docker only labels a volume at creation, so these never acquire labels and are matched by name pattern instead. Because a name is weaker evidence of ownership than a label, every candidate is listed and grouped by project, volumes belonging to a registered project are excluded, and confirmation is always interactive -- `--all` does not cover it.
 
 ## `clear-cache`
 
@@ -373,6 +374,7 @@ The following is a comprehensive index of all registered CLI option flags and th
 - **`--keep-last`**: Keep only the specified number of most recent snapshots.
 - **`--latest`**: Restore the most recent snapshot.
 - **`--leave-running`** ![Added in v2.11.34](https://img.shields.io/badge/Added%20in-v2.11.34-blue): Keep the running project active and abort the import if it is currently running.
+- **`--legacy-volumes`**: Also offer LDM volumes created before ownership labelling existed. Always interactive, never covered by `--all`.
 - **`--list-backups`**: List backups in project work-folders.
 - **`--list-envs`**: List all cloud environments.
 - **`--logs`**: Stream container logs.
@@ -496,4 +498,4 @@ ldm target migrate win-wsl aws-1
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-21* | *Last Reviewed: 2026-08-21*
+*Last Updated: 2026-08-22* | *Last Reviewed: 2026-08-22*

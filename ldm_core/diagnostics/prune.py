@@ -77,6 +77,119 @@ def _orphaned_ldm_volumes(handler, docker_prefix):
     ]
 
 
+def _legacy_volume_candidates(handler, docker_prefix):
+    """Finds UNLABELLED volumes matching LDM's naming, grouped by derived project.
+
+    LDM-#1267 Part 3. Docker applies volume labels only at creation, so volumes
+    that predate the labelling change never acquire them -- confirmed
+    empirically: declaring labels in compose for an existing volume leaves
+    `.Labels` as `map[]`. Every installation predating that change therefore has
+    permanently unlabelled volumes, which the label-driven sweep cannot see.
+
+    Name matching is weaker evidence of ownership than a label, so this is
+    deliberately conservative:
+
+    - Only the three suffixes LDM actually generates are considered.
+    - Anything already carrying a label is skipped (Part 2 owns those).
+    - Anything whose derived project is still registered is excluded.
+    - Results are grouped by project so a human can judge ownership before
+      confirming, rather than being shown a flat list of 600 names.
+    """
+    from ldm_core.utils import sanitize_id
+
+    suffixes = ("-db-db-data", "-data", "-state")  # longest first
+
+    try:
+        registered = {
+            sanitize_id(root["path"].name) for root in handler.manager.find_dxp_roots()
+        }
+    except Exception as e:
+        UI.debug(f"Could not enumerate projects for legacy volume scan: {e}")
+        return {}
+
+    labelled = {name for name, _p, _r in _list_ldm_volumes(docker_prefix)}
+
+    res = run_command(
+        [*docker_prefix, "volume", "ls", "--format", "{{.Name}}"],
+        check=False,
+        capture_output=True,
+    )
+
+    groups: dict = {}
+    for name in (res or "").split():
+        if name in labelled:
+            continue  # already handled by the label-driven sweep
+        for suffix in suffixes:
+            if not name.endswith(suffix):
+                continue
+            project = name[: -len(suffix)]
+            if not project or project in registered:
+                break  # belongs to a live project -- never a candidate
+            role = "state" if suffix == "-state" else "data"
+            groups.setdefault(project, []).append((name, role))
+            break
+    return groups
+
+
+def _sweep_legacy_volumes(handler, docker_prefix, is_dry_run):
+    """Offers unlabelled LDM-shaped volumes for removal, grouped and confirmed.
+
+    Never runs under --all or non-interactively: ownership here is inferred from
+    a name, not proven by a label, so the decision belongs to a human every time.
+    """
+    groups = _legacy_volume_candidates(handler, docker_prefix)
+    if not groups:
+        UI.detail("No unlabelled LDM-style volumes found.")
+        return
+
+    total = sum(len(v) for v in groups.values())
+    UI.warning(
+        f"Found {total} unlabelled volume(s) across {len(groups)} former project(s) "
+        "matching LDM's naming. These predate ownership labelling, so LDM cannot "
+        "prove it created them -- review the list before confirming."
+    )
+    for project, vols in sorted(groups.items()):
+        roles = ", ".join(sorted({r for _n, r in vols}))
+        UI.detail(f"  {project}: {len(vols)} volume(s) [{roles}]")
+        for name, role in sorted(vols):
+            UI.detail(f"      {name}  ({role})")
+
+    if is_dry_run:
+        UI.detail(
+            f"{UI.BYELLOW}[Dry Run] Would offer {total} legacy volume(s) "
+            f"for removal.{UI.COLOR_OFF}"
+        )
+        return
+
+    if handler.manager.non_interactive:
+        UI.detail(
+            "Skipped: --legacy-volumes requires an interactive confirmation "
+            "because ownership is inferred from the volume name, not a label."
+        )
+        return
+
+    if not UI.confirm(
+        f"Permanently delete all {total} listed volume(s)? This cannot be undone.",
+        "N",
+    ):
+        UI.detail("No legacy volumes were removed.")
+        return
+
+    removed = 0
+    for vols in groups.values():
+        for name, _role in vols:
+            if (
+                run_command(
+                    [*docker_prefix, "volume", "rm", name],
+                    check=False,
+                    capture_output=True,
+                )
+                is not None
+            ):
+                removed += 1
+    UI.success(f"Removed {removed} legacy LDM volume(s).")
+
+
 def _remove_orphaned_volumes(
     handler, docker_prefix, disposable, destructive, prune_all
 ):
@@ -551,6 +664,13 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
             )
     elif is_dry_run:
         UI.detail(f"{UI.BYELLOW}[Dry Run] No orphaned LDM volumes found.{UI.COLOR_OFF}")
+
+    # 7a-ii. LDM-#1267 Part 3: volumes predating ownership labelling. Docker
+    # only labels a volume at creation, so pre-existing volumes never acquire
+    # labels and are invisible to the label-driven sweep above. Opt-in only --
+    # ownership here is inferred from the name, not proven by a label.
+    if getattr(handler.manager.args, "legacy_volumes", False):
+        _sweep_legacy_volumes(handler, docker_prefix, is_dry_run)
 
     # 7b. Dangling/unused Docker images and unused build cache (LDM-#1086).
     # Volume/container/cert/cache pruning above only ever reclaims a few MB --
