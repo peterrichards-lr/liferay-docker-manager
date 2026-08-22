@@ -2443,7 +2443,7 @@ def get_parser():  # noqa: PLR0915
     version_cmd = system_subparsers.add_parser("version", parents=[base_sub_parent])
     version_cmd.add_argument(
         "--bump",
-        choices=["major", "minor", "patch", "beta"],
+        choices=["major", "minor", "patch", "beta", "preminor", "premajor"],
         help="Increment the version logically",
     )
     version_cmd.add_argument(

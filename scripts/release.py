@@ -298,9 +298,13 @@ def main():  # noqa: C901, PLR0912, PLR0915
     parser = argparse.ArgumentParser(description="Automated Release Script")
     parser.add_argument(
         "--bump",
-        choices=["major", "minor", "patch", "beta"],
+        choices=["major", "minor", "patch", "beta", "preminor", "premajor"],
         default="patch",
-        help="SemVer increment type (default: patch)",
+        help=(
+            "SemVer increment type (default: patch). 'beta' opens or continues a "
+            "pre-release cycle for the next PATCH; 'preminor'/'premajor' open one "
+            "for the next MINOR/MAJOR (LDM-#1291), after which 'beta' continues it."
+        ),
     )
     parser.add_argument(
         "--promote",

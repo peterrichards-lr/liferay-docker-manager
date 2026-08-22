@@ -191,6 +191,20 @@ class DevService:
             else:
                 # Start new pre-release cycle for next patch
                 new_version = f"{major}.{minor}.{patch + 1}-pre.1"
+        # LDM-#1291: `beta` only ever opens the *next patch* cycle, so a minor
+        # or major release had no pre-release path at all -- it could only be
+        # cut straight to stable. That conflicts with the mandate that every
+        # release is exercised as a pre-release before the wider user community
+        # sees it, so features warranting a minor bump were forced to choose
+        # between the correct version number and being tested first.
+        #
+        # These open the cycle; subsequent increments use `beta` as usual,
+        # which matches on the `-pre.N` suffix and bumps N regardless of which
+        # component started the cycle.
+        elif bump_type == "preminor":
+            new_version = f"{major}.{minor + 1}.0-pre.1"
+        elif bump_type == "premajor":
+            new_version = f"{major + 1}.0.0-pre.1"
         else:
             UI.die(f"Invalid bump type: {bump_type}")
 

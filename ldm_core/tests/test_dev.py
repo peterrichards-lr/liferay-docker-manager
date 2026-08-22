@@ -81,6 +81,57 @@ class TestDevService(unittest.TestCase):
                 mock_apply.assert_called_with("2.5.0", None)
 
     @patch("ldm_core.handlers.dev.Path.cwd")
+    def test_bump_preminor_opens_a_minor_pre_release_cycle(self, mock_cwd):
+        """LDM-#1291: minor releases had no pre-release path at all.
+
+        `beta` only ever opens the *next patch* cycle, and `minor` produces a
+        stable version directly -- so a minor could not be exercised as a
+        pre-release before reaching the wider user community.
+        """
+        mock_cwd.return_value = self.base
+        with patch("ldm_core.ui.UI.confirm", return_value=True):
+            with patch.object(self.handler, "_apply_version_update") as mock_apply:
+                self.handler.cmd_version(bump_type="preminor")
+                mock_apply.assert_called_with("2.5.0-pre.1", None)
+
+    @patch("ldm_core.handlers.dev.Path.cwd")
+    def test_bump_premajor_opens_a_major_pre_release_cycle(self, mock_cwd):
+        mock_cwd.return_value = self.base
+        with patch("ldm_core.ui.UI.confirm", return_value=True):
+            with patch.object(self.handler, "_apply_version_update") as mock_apply:
+                self.handler.cmd_version(bump_type="premajor")
+                mock_apply.assert_called_with("3.0.0-pre.1", None)
+
+    def test_beta_continues_a_preminor_cycle(self):
+        """The cycle must be continued by `beta`, not by `preminor` again.
+
+        `beta` matches on the `-pre.N` suffix and increments N regardless of
+        which component opened the cycle, so the existing continuing-cycle
+        machinery -- tracking PR reuse, `--promote` -- works unchanged. If this
+        regressed, a second increment would re-open the cycle at `-pre.1` and
+        collide with an already-published tag, which the Burn Rule makes
+        unrecoverable.
+        """
+        with patch("ldm_core.handlers.dev.VERSION", "2.16.0-pre.1"):
+            with patch("ldm_core.ui.UI.confirm", return_value=True):
+                with patch.object(self.handler, "_ensure_dev_env"):
+                    with patch.object(
+                        self.handler, "_apply_version_update"
+                    ) as mock_apply:
+                        self.handler.cmd_version(bump_type="beta")
+                        mock_apply.assert_called_with("2.16.0-pre.2", None)
+
+    def test_promote_from_a_preminor_cycle_yields_the_stable_minor(self):
+        with patch("ldm_core.handlers.dev.VERSION", "2.16.0-pre.3"):
+            with patch("ldm_core.ui.UI.confirm", return_value=True):
+                with patch.object(self.handler, "_ensure_dev_env"):
+                    with patch.object(
+                        self.handler, "_apply_version_update"
+                    ) as mock_apply:
+                        self.handler.cmd_version(promote=True)
+                        mock_apply.assert_called_with("2.16.0", None)
+
+    @patch("ldm_core.handlers.dev.Path.cwd")
     def test_apply_version_update_writes_files(self, mock_cwd):
         mock_cwd.return_value = self.base
 

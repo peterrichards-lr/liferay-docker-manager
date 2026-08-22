@@ -18,7 +18,18 @@ description: Activate this skill whenever preparing a release, bumping versions,
     Passing `--issue <number>` automatically appends `Closes #<number>` to the PR description so GitHub links and auto-closes the tracked issue or epic upon promotion.
 
     Continuing a cycle bumps the `-pre.N` counter, commits and pushes to the *same* branch, and reuses its *same* open tracking PR -- it never creates a new branch or PR for a second/third/etc. beta increment, and it never merges that PR into `master`. A CI gate (`block-prerelease-on-master` in `.github/workflows/ci.yml`, part of the required checks on the `master` branch ruleset) independently rejects any attempt to merge a pre-release-versioned ref into `master`, so this can't be circumvented by manually running `gh pr merge` on the tracking PR either.
-  - **Minor and major versions have no pre-release path — do not invent one.** `--bump beta` only ever opens the *next patch* cycle (`X.Y.{Z+1}-pre.1`, `ldm_core/handlers/dev.py:182-193`), and across 300 releases no `X.Y.0-pre.*` has ever existed: every minor (v2.8.0 through v2.15.0) was cut straight to stable with `--bump minor`. If features are documented as arriving in an unreleased `X.Y.0` and you need a pre-release to test them, **stop and ask the maintainer** which they want — shipping in the next patch, cutting the minor straight to stable, or extending `release.py` first. Hand-setting a version to reach `X.Y.0-pre.N` is prohibited by the rule above no matter which branch you do it on.
+  - To open a pre-release cycle for a **minor or major** version (LDM-#1291), rather than the next patch:
+
+    ```bash
+    python3 scripts/release.py --bump preminor --issue 1264   # 2.15.33 -> 2.16.0-pre.1
+    python3 scripts/release.py --bump premajor --issue 1264   # 2.15.33 -> 3.0.0-pre.1
+    ```
+
+    `--bump beta` only ever opens the *next patch* cycle (`X.Y.{Z+1}-pre.1`, `ldm_core/handlers/dev.py:182-193`) and `--bump minor` produces a **stable** version directly, so before #1291 a minor could not be exercised as a pre-release at all — across 300 releases no `X.Y.0-pre.*` existed, and every minor from v2.8.0 to v2.15.0 was cut straight to stable. Since every release must reach the wider user community only after a pre-release, use these to open the cycle.
+
+    `preminor`/`premajor` only **open** a cycle. Continue it with `--bump beta` as usual — it matches on the `-pre.N` suffix and increments N whichever component started the cycle, so the tracking PR and `--promote` behave identically. Running `preminor` from an existing `release/*` branch is rejected, exactly as the other non-beta bumps are.
+
+    **Never hand-set a version to reach `X.Y.0-pre.N`.** That is prohibited by the rule above on any branch; if the orchestrator lacks a path you need, add it to the orchestrator (as #1291 did) or ask the maintainer.
 
   - To promote pre-releases to stable releases (must be run from the active release branch):
 
