@@ -51,6 +51,25 @@ Cheap observation is usually available if you look for it. To confirm exit `5` w
 - Any claim about an exit code, a JSON schema, or CLI output shape. Verify against **real output** (`ldm list --json | ...`), not against the code that produces it -- `status --json` and `list --json` have different shapes, and an assertion written from the source asserted keys that only ever existed in the other command.
 - Any assertion whose outcome depends on ordering or prior state. State is invisible in the function you are reading.
 
+### Corollary: ruling something OUT by reading is the same error as ruling it in
+
+The rule above is usually applied to assertions. It applies just as much to **exclusions** — deciding a file, test or component *cannot* be the cause and skipping it.
+
+Worked example, LDM-#1271. A leak of Docker volumes was traced by first excluding `ldm_core/tests/test_e2e_interactive.py`, on the strength of a comment in it:
+
+> `# This prevents it from proceeding to verify_runtime_environment which triggers Docker.`
+
+That comment describes **one test's input handling**, not the module's behaviour. Two other tests in the same file were creating real containers and volumes on every run. Because the file had been excluded up front, the recommended bisect-by-module search then ran across eight candidate modules and reproduced **nothing** — the guilty one had already been removed from the search space by an act of reading.
+
+What worked was measuring: polling `docker volume ls` during a verbose run and recording which test was executing whenever a volume appeared. That named both culprits in a single pass.
+
+Two habits follow:
+
+- **Do not narrow a search space using source comments.** A comment records an intention at the time of writing; it is not evidence about present behaviour, and it is never evidence about the other code around it.
+- **When a search over a "complete" candidate list finds nothing, suspect the list, not the phenomenon.** A reproducible effect that no candidate produces means a candidate was wrongly excluded.
+
+A related trap in the same issue: the first fix targeted exactly the right volume names and silently did nothing, because a container in `Created` state still referenced them (`volume is in use`). Verify a fix by observing the effect disappear, not by confirming the code looks right.
+
 ### Corollary: read every failing run, not the first one
 
 A release tag fires three to four workflows. Reporting "the" failure after reading one is how a transient infrastructure error gets mistaken for a code defect, and vice versa. On `v2.15.33-pre.2`, two workflows failed on a genuine defect while `LDM CI & Release` failed independently on `HttpError: other side closed` from `softprops/action-gh-release` -- rerunnable via `gh run rerun --failed`, needing no new tag. Enumerate every non-passing run before diagnosing.
@@ -72,4 +91,4 @@ A release tag fires three to four workflows. Reporting "the" failure after readi
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-21* | *Last Reviewed: 2026-08-21*
+*Last Updated: 2026-08-22* | *Last Reviewed: 2026-08-22*
