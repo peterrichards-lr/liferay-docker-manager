@@ -8,6 +8,51 @@ from ldm_core.ui import UI
 from ldm_core.utils import dict_to_yaml, resolve_dependency_version, sanitize_id
 
 
+def _volume_role(volume_name):
+    """Classifies a named volume by how destructive removing it would be (LDM-#1267).
+
+    Consumed by `ldm prune` so that reclaiming disposable storage can never
+    silently take a database with it:
+
+    - ``state``   OSGi bundle state. Regenerated on the next boot; removing it
+                  only costs a slower startup. LDM already wipes this itself
+                  when the Liferay tag changes (`pipelines/run.py`).
+    - ``data``    Database and project data. Removing it is destructive.
+    - ``unknown`` Anything unrecognised. Deliberately NOT treated as disposable
+                  -- an unclassified volume must default to the safe side, so a
+                  future volume suffix cannot become sweepable by omission.
+
+    Order matters: `<project>-db-db-data` ends in `-data`, so `data` is tested
+    before any broader match.
+    """
+    name = str(volume_name)
+    if name.endswith("-data"):
+        return "data"
+    if name.endswith("-state"):
+        return "state"
+    return "unknown"
+
+
+def _named_volume_definition(safe_vol_key, project_name):
+    """Builds the compose definition for one named volume (LDM-#1267).
+
+    LDM-424: `name` is set explicitly so Docker does not prefix the volume with
+    the compose project name (which breaks hydration).
+
+    The labels mirror what services already receive via `_inject_ldm_labels`,
+    so a volume's owner is recoverable from `docker volume inspect` rather than
+    guessed from its name.
+    """
+    return {
+        "name": safe_vol_key,
+        "labels": {
+            "com.liferay.ldm.project": project_name,
+            "com.liferay.ldm.managed": "true",
+            "com.liferay.ldm.role": _volume_role(safe_vol_key),
+        },
+    }
+
+
 class ComposerService:
     """Service for Stack Composition and Metadata translation."""
 
@@ -380,7 +425,15 @@ class ComposerService:
                         safe_vol_key = sanitize_id(host_side)
                         # LDM-424: Force explicit volume naming to prevent Docker from prefixing
                         # with the project name (which causes hydration mismatches).
-                        named_volumes[safe_vol_key] = {"name": safe_vol_key}
+                        #
+                        # LDM-#1267: carry the same ownership labels the services
+                        # get (see _inject_ldm_labels). Without them a volume is
+                        # anonymous as to origin, so nothing can distinguish an
+                        # abandoned LDM volume from a third-party one -- which is
+                        # why `ldm prune` has no safe way to reclaim them (#1266).
+                        named_volumes[safe_vol_key] = _named_volume_definition(
+                            safe_vol_key, project_name
+                        )
 
         if named_volumes:
             compose["volumes"] = named_volumes
