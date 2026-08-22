@@ -573,6 +573,11 @@ def get_parser():  # noqa: PLR0915
         action="store_true",
         help="Recreate containers even if their configuration and image haven't changed.",
     )
+    run.add_argument(
+        "--force-portal-patches",
+        action="store_true",
+        help="Apply portal-patches/ JARs even when their recorded Liferay version does not match this project's release line, or the target JAR is absent from the image.",
+    )
     run.add_argument("--port", type=int)
     run.add_argument("--db", choices=["postgresql", "mysql", "hypersonic"])
     run.add_argument(
@@ -1198,6 +1203,11 @@ def get_parser():  # noqa: PLR0915
                 help="Recreate containers (internally aliases to run --force-recreate).",
             )
             p.add_argument(
+                "--force-portal-patches",
+                action="store_true",
+                help="Apply portal-patches/ JARs even when their recorded Liferay version does not match this project's release line, or the target JAR is absent from the image.",
+            )
+            p.add_argument(
                 "--clean-state",
                 action="store_true",
                 help="Wipe the OSGi state volume contents before starting Liferay.",
@@ -1212,6 +1222,11 @@ def get_parser():  # noqa: PLR0915
                 "--force-recreate",
                 action="store_true",
                 help="Recreate containers during restart (internally aliases to run --force-recreate).",
+            )
+            p.add_argument(
+                "--force-portal-patches",
+                action="store_true",
+                help="Apply portal-patches/ JARs even when their recorded Liferay version does not match this project's release line, or the target JAR is absent from the image.",
             )
         if cmd == "logs":
             p.add_argument("-f", "--follow", action="store_true")
