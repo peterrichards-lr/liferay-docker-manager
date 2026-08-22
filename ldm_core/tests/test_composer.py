@@ -1448,3 +1448,57 @@ class TestComposerService(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestVolumeOwnershipLabels(unittest.TestCase):
+    """LDM-#1267: named volumes must carry ownership labels.
+
+    Without them a volume is anonymous as to origin, so nothing can tell an
+    abandoned LDM volume from a third-party one -- which is why `ldm prune`
+    had no safe way to reclaim them and fell back to a no-op (#1266).
+    """
+
+    def test_role_classifies_by_destructiveness(self):
+        from ldm_core.handlers.composer import _volume_role
+
+        self.assertEqual("data", _volume_role("proj-data"))
+        self.assertEqual("state", _volume_role("proj-state"))
+        # `<project>-db-db-data` ends in -data and must classify as the
+        # destructive role, not fall through to something sweepable.
+        self.assertEqual("data", _volume_role("proj-db-db-data"))
+
+    def test_unrecognised_volume_is_not_treated_as_disposable(self):
+        """A new suffix must default to the safe side, never to 'state'."""
+        from ldm_core.handlers.composer import _volume_role
+
+        for name in ("proj-logs", "proj-cache", "something-else", ""):
+            self.assertEqual(
+                "unknown",
+                _volume_role(name),
+                f"{name!r} must not be classified as disposable by omission",
+            )
+
+    def test_volume_definition_carries_ownership_labels(self):
+        from ldm_core.handlers.composer import _named_volume_definition
+
+        spec = _named_volume_definition("proj-data", "proj")
+
+        # LDM-424: explicit name must survive alongside the new labels.
+        self.assertEqual("proj-data", spec["name"])
+        self.assertEqual(
+            {
+                "com.liferay.ldm.project": "proj",
+                "com.liferay.ldm.managed": "true",
+                "com.liferay.ldm.role": "data",
+            },
+            spec["labels"],
+        )
+
+    def test_volume_definition_matches_service_label_convention(self):
+        """Volume labels must use the same keys services already get."""
+        from ldm_core.handlers.composer import _named_volume_definition
+
+        labels = _named_volume_definition("proj-state", "proj")["labels"]
+        self.assertEqual("proj", labels["com.liferay.ldm.project"])
+        self.assertEqual("true", labels["com.liferay.ldm.managed"])
+        self.assertEqual("state", labels["com.liferay.ldm.role"])
