@@ -2,6 +2,52 @@ import subprocess
 import unittest
 from pathlib import Path
 
+# LDM-#1271: these tests invoke the real `ldm run` in a temp directory, which
+# creates real Docker volumes named after the project -- and the project name is
+# the temp directory's basename. `shutil.rmtree` removes the directory, but
+# Docker volumes are independent of it and survive, so each full suite run
+# leaked 6 volumes (2 tests x 3 volumes). On one machine that had accumulated to
+# 650 volumes holding 21.69 GB.
+#
+# Note this happens even with `LDM_IGNORE_DOCKER=true` and `--no-up`: LDM
+# pre-creates its named volumes rather than leaving it to `compose up`, so
+# avoiding container startup is not sufficient to avoid volume creation.
+_LDM_VOLUME_SUFFIXES = ("-data", "-state", "-db-db-data")
+
+
+def _remove_ldm_volumes_for(tmp_dir):
+    """Removes the containers AND volumes `ldm run` created for a temp-dir project.
+
+    Containers must go first: `ldm run` leaves them in `Created` state, and a
+    volume still referenced by one cannot be removed --
+
+        Error response from daemon: remove tmp1fcnk1wu-data: volume is in use
+
+    `compose down -v` handles both together and is what LDM itself uses, so it
+    is tried first; the explicit removals below are a fallback for the case
+    where the compose file was never written.
+    """
+    from ldm_core.utils import sanitize_id
+
+    subprocess.run(
+        ["docker", "compose", "down", "-v", "--remove-orphans"],
+        cwd=str(tmp_dir),
+        capture_output=True,
+        check=False,
+    )
+
+    project = sanitize_id(Path(tmp_dir).name)
+    for container in (project, f"{project}-db"):
+        subprocess.run(
+            ["docker", "rm", "-f", container], capture_output=True, check=False
+        )
+    for suffix in _LDM_VOLUME_SUFFIXES:
+        subprocess.run(
+            ["docker", "volume", "rm", f"{project}{suffix}"],
+            capture_output=True,
+            check=False,
+        )
+
 
 class TestE2EInteractive(unittest.TestCase):
     def test_interactive_fallback_with_piped_input(self):
@@ -49,6 +95,7 @@ class TestE2EInteractive(unittest.TestCase):
             output = process.stdout + process.stderr
             self.assertIn("Enter a new project name to initialize", output)
         finally:
+            _remove_ldm_volumes_for(tmp_dir)  # LDM-#1271
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
         # Because we sent 'q' to abort at the next prompt (Release type),
@@ -89,6 +136,7 @@ class TestE2EInteractive(unittest.TestCase):
                 output,
             )
         finally:
+            _remove_ldm_volumes_for(tmp_dir)  # LDM-#1271
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
     def test_ldm_run_warns_on_existing_project(self):
@@ -127,6 +175,7 @@ class TestE2EInteractive(unittest.TestCase):
                 output,
             )
         finally:
+            _remove_ldm_volumes_for(tmp_dir)  # LDM-#1271
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
     def test_ldm_run_warns_on_existing_project_without_info_flag(self):
@@ -169,6 +218,7 @@ class TestE2EInteractive(unittest.TestCase):
                 output,
             )
         finally:
+            _remove_ldm_volumes_for(tmp_dir)  # LDM-#1271
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
