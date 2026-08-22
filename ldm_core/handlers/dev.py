@@ -109,6 +109,38 @@ class DevService:
                 if not UI.confirm("Continue in Developer Mode?", "N"):
                     sys.exit(0)
 
+    def _version_from_disk(self):
+        """Reads VERSION from constants.py on disk, falling back to the import.
+
+        LDM-#1290: reading the imported `VERSION` is not safe here. Python
+        validates cached bytecode on *(source mtime in whole seconds, source
+        size)*, and a bump such as `2.16.0-pre.1` -> `2.16.0-pre.2` changes
+        neither -- so a second bump within the same second reuses stale
+        bytecode and the imported constant lags what is actually on disk. The
+        bump then computes a replacement the file already contains, rewrites
+        nothing, and reports success.
+
+        `scripts/release.py` reads this same value to decide what to **tag**,
+        and tags are immutable (the Burn Rule), so a stale read there burns a
+        version number permanently. The writer in `_apply_version_update`
+        already works against the file, so parsing it here makes reader and
+        writer agree by construction -- the same approach
+        `scripts/check_version_sync.py` takes.
+
+        Falls back to the imported constant when the source is unavailable,
+        e.g. in a PyInstaller build where there is no `constants.py` on disk.
+        """
+        path = Path.cwd() / "ldm_core" / "constants.py"
+        try:
+            match = re.search(
+                r'^VERSION = "([^"]+)"', path.read_text(encoding="utf-8"), re.MULTILINE
+            )
+            if match:
+                return match.group(1)
+        except OSError:
+            pass
+        return VERSION
+
     def cmd_version(  # noqa: C901, PLR0912
         self,
         bump_type=None,
@@ -122,12 +154,12 @@ class DevService:
         if print_only or (
             not any([bump_type, set_version, build_info, promote, check])
         ):
-            print(VERSION)
+            print(self._version_from_disk())
             return
 
         self._ensure_dev_env()
 
-        current_version = VERSION
+        current_version = self._version_from_disk()
 
         if check:
             UI.detail("Checking version synchronization...")
@@ -307,6 +339,18 @@ class DevService:
                 shutil.move(str(temp_file), str(p))
                 updated_paths.append(rel_path)
                 UI.success(f"Updated {rel_path}")
+
+            if not updated_paths:
+                # Every target file was already at this value, so nothing
+                # happened. Previously this only emitted per-file warnings and
+                # still exited 0, which is how a stale read (LDM-#1290) could
+                # pass for a completed bump.
+                UI.die(
+                    f"Version update to v{new_version} changed no files. "
+                    "Every target already contained this value -- the version "
+                    "was most likely read stale. Refusing to report success.",
+                    exit_code=1,
+                )
 
             UI.detail(
                 f"\n✅ Successfully updated to {UI.BOLD}v{new_version}{UI.COLOR_OFF}"
