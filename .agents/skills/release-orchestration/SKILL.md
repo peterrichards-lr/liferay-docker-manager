@@ -7,6 +7,7 @@ description: Activate this skill whenever preparing a release, bumping versions,
 
 ## Release & Version Automation
 
+- **Read this skill before touching a release. Reading `scripts/release.py` is not a substitute.** On 2026-08-22 an agent reverse-engineered the script instead — tracing the bump arithmetic in `ldm_core/handlers/dev.py`, checking the clean-workspace allowlist, even running the bump and observing the result — and concluded it had verified the approach. It had verified what the script *would do*, and nothing about what it was *permitted* to do. The very first rule below prohibited the approach outright; the CI gate that caught it is named two paragraphs later. `master` went red (LDM-#1288). Empirical verification of a mechanism is not authorisation to use it.
 - **Automated Orchestrator**: AI agents MUST never manually bump version strings, modify metadata config files (e.g. `pyproject.toml`, `constants.py`), or create/push git tags. You MUST always use the automated orchestrator script:
   - To start a new pre-release cycle (run from `master`) or continue an already-open one (run from its existing `release/vX.Y.Z-pre.N` branch -- the script detects which by your current branch):
 
@@ -17,6 +18,8 @@ description: Activate this skill whenever preparing a release, bumping versions,
     Passing `--issue <number>` automatically appends `Closes #<number>` to the PR description so GitHub links and auto-closes the tracked issue or epic upon promotion.
 
     Continuing a cycle bumps the `-pre.N` counter, commits and pushes to the *same* branch, and reuses its *same* open tracking PR -- it never creates a new branch or PR for a second/third/etc. beta increment, and it never merges that PR into `master`. A CI gate (`block-prerelease-on-master` in `.github/workflows/ci.yml`, part of the required checks on the `master` branch ruleset) independently rejects any attempt to merge a pre-release-versioned ref into `master`, so this can't be circumvented by manually running `gh pr merge` on the tracking PR either.
+  - **Minor and major versions have no pre-release path — do not invent one.** `--bump beta` only ever opens the *next patch* cycle (`X.Y.{Z+1}-pre.1`, `ldm_core/handlers/dev.py:182-193`), and across 300 releases no `X.Y.0-pre.*` has ever existed: every minor (v2.8.0 through v2.15.0) was cut straight to stable with `--bump minor`. If features are documented as arriving in an unreleased `X.Y.0` and you need a pre-release to test them, **stop and ask the maintainer** which they want — shipping in the next patch, cutting the minor straight to stable, or extending `release.py` first. Hand-setting a version to reach `X.Y.0-pre.N` is prohibited by the rule above no matter which branch you do it on.
+
   - To promote pre-releases to stable releases (must be run from the active release branch):
 
     ```bash
