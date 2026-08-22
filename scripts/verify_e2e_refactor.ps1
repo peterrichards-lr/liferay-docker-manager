@@ -675,6 +675,64 @@ zf.close()
         throw "Expected exit code 5 (Idempotent No-Op) from 'ldm -y up' on an already-running project, got $upExitCode."
     }
 
+
+    Write-Host ">> Verifying Client Extension deploy & staging (#1257 / #1262)..."
+    # LDM-#1262: this check previously passed a *directory*
+    # ('deploy . synthetic-cx/'). cmd_deploy only recognises trailing arguments
+    # that are existing *files* with a known extension (.jar/.war ->
+    # osgi/modules, .zip -> the CX sync); anything else falls through to the
+    # service-name branch and becomes 'docker compose up -d synthetic-cx/',
+    # which fails because no such service exists. A client extension is
+    # deployed as a ZIP, not a directory.
+    #
+    # Verified against the real command before landing (LDM-#1262): the ZIP form
+    # performs the documented 3-step sync in
+    # ldm_core/workspace/hydration.py:_sync_cx_artifact --
+    #   1. copy   ZIP -> client-extensions/<name>.zip
+    #   2. expand     -> client-extensions/<stem>/
+    #   3. MOVE   ZIP -> osgi/client-extensions/<name>.zip
+    # Step 3 is a move, so the intermediate copy must be gone afterwards.
+    # Asserting that is what distinguishes a completed sync from one that only
+    # got through step 1 -- the removed block asserted neither, while claiming
+    # "Staging" in its heading.
+    $cxName = "synthetic-cx"
+    Remove-Item -Recurse -Force "cx-build", "$cxName.zip" -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path "cx-build/$cxName" | Out-Null
+    @(
+        "${cxName}:",
+        "    name: Synthetic CX",
+        "    type: customElement",
+        "    url: $cxName.js"
+    ) | Set-Content -Path "cx-build/$cxName/client-extension.yaml" -Encoding ascii
+    'console.log("synthetic");' | Set-Content -Path "cx-build/$cxName/$cxName.js" -Encoding ascii
+    Compress-Archive -Path "cx-build/$cxName/*" -DestinationPath "$cxName.zip" -Force
+
+    Log-AndRun "Deploying Synthetic CX" $LDM_CMD "-y deploy . $cxName.zip"
+
+    $cxStaged = $true
+    if (-not (Test-Path "osgi/client-extensions/$cxName.zip")) {
+        Write-Host "[ERROR] CX was not staged to osgi/client-extensions/$cxName.zip." -ForegroundColor Red
+        $cxStaged = $false
+    }
+    if (-not (Test-Path "client-extensions/$cxName/client-extension.yaml")) {
+        Write-Host "[ERROR] CX was not expanded to client-extensions/$cxName/." -ForegroundColor Red
+        $cxStaged = $false
+    }
+    if (Test-Path "client-extensions/$cxName.zip") {
+        Write-Host "[ERROR] intermediate client-extensions/$cxName.zip still present -- step 3 (move to osgi/client-extensions) did not complete." -ForegroundColor Red
+        $cxStaged = $false
+    }
+
+    if ($cxStaged) {
+        Write-Host "[SUCCESS] Client Extension deploy & staging verified."
+    } else {
+        Get-ChildItem "client-extensions" -ErrorAction SilentlyContinue | Out-String | Write-Host
+        Get-ChildItem "osgi/client-extensions" -ErrorAction SilentlyContinue | Out-String | Write-Host
+        throw "Client Extension deploy & staging verification failed."
+    }
+
+    Remove-Item -Recurse -Force "cx-build" -ErrorAction SilentlyContinue
+
     
     Log-AndRun "Checking Status" $LDM_CMD "-y status"
 

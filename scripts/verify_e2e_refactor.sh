@@ -713,6 +713,66 @@ else
 fi
 
 
+echo ">> Verifying Client Extension deploy & staging (#1257 / #1262)..."
+# LDM-#1262: this check previously passed a *directory* (`deploy . synthetic-cx/`).
+# `cmd_deploy` only recognises trailing arguments that are existing *files* with a
+# known extension (.jar/.war -> osgi/modules, .zip -> the CX sync); anything else
+# falls through to the service-name branch and becomes `docker compose up -d
+# synthetic-cx/`, which fails because no such service exists. A client extension
+# is deployed as a ZIP, not a directory.
+#
+# Verified against the real command before landing (LDM-#1262): the ZIP form
+# performs the documented 3-step sync in
+# ldm_core/workspace/hydration.py:_sync_cx_artifact --
+#   1. copy   ZIP -> client-extensions/<name>.zip
+#   2. expand     -> client-extensions/<stem>/
+#   3. MOVE   ZIP -> osgi/client-extensions/<name>.zip
+# Step 3 is a move, so the intermediate copy must be gone afterwards. Asserting
+# that is what distinguishes a completed sync from one that only got through
+# step 1 -- the removed block asserted neither, while claiming "Staging" in its
+# heading.
+CX_NAME="synthetic-cx"
+rm -rf "cx-build" "${CX_NAME}.zip"
+mkdir -p "cx-build/${CX_NAME}"
+cat > "cx-build/${CX_NAME}/client-extension.yaml" <<CXEOF
+${CX_NAME}:
+    name: Synthetic CX
+    type: customElement
+    url: ${CX_NAME}.js
+CXEOF
+echo 'console.log("synthetic");' > "cx-build/${CX_NAME}/${CX_NAME}.js"
+"$VENV_PYTHON" -c "
+import shutil, sys
+shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])
+" "${CX_NAME}" "cx-build/${CX_NAME}"
+
+log_and_run "Deploying Synthetic CX" "$LDM_CMD" -y deploy . "${CX_NAME}.zip"
+
+CX_STAGED=true
+if [ ! -f "osgi/client-extensions/${CX_NAME}.zip" ]; then
+    echo "❌ ERROR: CX was not staged to osgi/client-extensions/${CX_NAME}.zip." | tee -a "$RESULTS_FILE_TMP"
+    CX_STAGED=false
+fi
+if [ ! -f "client-extensions/${CX_NAME}/client-extension.yaml" ]; then
+    echo "❌ ERROR: CX was not expanded to client-extensions/${CX_NAME}/." | tee -a "$RESULTS_FILE_TMP"
+    CX_STAGED=false
+fi
+if [ -f "client-extensions/${CX_NAME}.zip" ]; then
+    echo "❌ ERROR: intermediate client-extensions/${CX_NAME}.zip still present -- step 3 (move to osgi/client-extensions) did not complete." | tee -a "$RESULTS_FILE_TMP"
+    CX_STAGED=false
+fi
+
+if [ "$CX_STAGED" = true ]; then
+    echo "✅ Client Extension deploy & staging verified."
+else
+    echo "-- client-extensions/ --"; ls -la "client-extensions" 2>&1 || true
+    echo "-- osgi/client-extensions/ --"; ls -la "osgi/client-extensions" 2>&1 || true
+    exit 1
+fi
+
+rm -rf "cx-build"
+
+
 # Final
 log_and_run "Checking Status" "$LDM_CMD" -y status
 
