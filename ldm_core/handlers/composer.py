@@ -1277,40 +1277,6 @@ class ComposerService:
                 if label not in svc_data["labels"]:
                     svc_data["labels"].append(label)
 
-    def _extract_named_volumes(self, services, compose):
-        from ldm_core.utils import sanitize_id
-
-        named_volumes: dict[str, dict] = {}
-        for svc in services.values():
-            for vol in svc.get("volumes", []):
-                if ":" in vol:
-                    parts = vol.split(":")
-                    if len(parts) >= 2:
-                        if (
-                            len(parts[0]) == 1
-                            and parts[0].isalpha()
-                            and (
-                                parts[1].startswith("/") or parts[1].startswith("\\\\")
-                            )
-                        ):
-                            host_side = parts[0] + ":" + parts[1]
-                        else:
-                            host_side = parts[0]
-                    else:
-                        host_side = vol
-
-                    if not (
-                        host_side.startswith(".")
-                        or host_side.startswith("/")
-                        or "/" in host_side
-                        or "\\\\" in host_side
-                    ):
-                        safe_vol_key = sanitize_id(host_side)
-                        named_volumes[safe_vol_key] = {"name": safe_vol_key}
-
-        if named_volumes:
-            compose["volumes"] = named_volumes
-
     def _merge_archetype_overlay(self, meta, compose):
         archetype_name = meta.get("archetype")
         if archetype_name:
