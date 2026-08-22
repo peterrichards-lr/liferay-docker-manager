@@ -8,6 +8,132 @@ from ldm_core.utils import (
     run_command,
 )
 
+LDM_MANAGED_LABEL = "com.liferay.ldm.managed=true"
+LDM_PROJECT_LABEL = "com.liferay.ldm.project"
+LDM_ROLE_LABEL = "com.liferay.ldm.role"
+
+
+def _list_ldm_volumes(docker_prefix):
+    """Returns [(name, project, role)] for every volume LDM labelled as its own.
+
+    LDM-#1267 attaches ownership labels at creation, which is what makes safe
+    cleanup possible at all: without them there is no way to tell an abandoned
+    LDM volume from a third-party one, so the only available tool would be a
+    blanket `docker volume prune -a` -- which would also destroy the database
+    volumes of stopped-but-wanted projects.
+    """
+    fmt = (
+        '{{.Name}}\t{{.Label "'
+        + LDM_PROJECT_LABEL
+        + '"}}\t{{.Label "'
+        + LDM_ROLE_LABEL
+        + '"}}'
+    )
+    res = run_command(
+        [
+            *docker_prefix,
+            "volume",
+            "ls",
+            "--filter",
+            f"label={LDM_MANAGED_LABEL}",
+            "--format",
+            fmt,
+        ],
+        check=False,
+        capture_output=True,
+    )
+    volumes = []
+    for line in (res or "").strip().splitlines():
+        if not line.strip():
+            continue
+        parts = [*line.split("\t"), "", ""][:3]
+        volumes.append((parts[0], parts[1], parts[2] or "unknown"))
+    return volumes
+
+
+def _orphaned_ldm_volumes(handler, docker_prefix):
+    """Splits LDM-owned volumes into those whose project still exists and those without.
+
+    A volume is only ever offered for removal when its owning project is no
+    longer registered. Anything belonging to a live project -- running or
+    stopped -- is never a candidate.
+    """
+    from ldm_core.utils import sanitize_id
+
+    try:
+        registered = {
+            sanitize_id(root["path"].name) for root in handler.manager.find_dxp_roots()
+        }
+    except Exception as e:
+        # Fail closed: if the project list can't be established, treat every
+        # volume as owned rather than risk offering a live project's database.
+        UI.debug(f"Could not enumerate projects for volume ownership check: {e}")
+        return []
+
+    return [
+        (name, project, role)
+        for name, project, role in _list_ldm_volumes(docker_prefix)
+        if project and project not in registered
+    ]
+
+
+def _remove_orphaned_volumes(
+    handler, docker_prefix, disposable, destructive, prune_all
+):
+    """Removes orphaned LDM volumes, confirming DATA separately from state.
+
+    LDM-#1267: `state` and `data` are not equally disposable. OSGi state is
+    regenerated on the next boot (LDM already wipes it itself on a tag change),
+    whereas a `data` volume is the project's database. A single combined
+    "remove orphaned volumes?" prompt would be a data-loss trap, so the two are
+    always confirmed separately and `--all` never implies the destructive half.
+    """
+    interactive = not handler.manager.non_interactive
+    removed = 0
+
+    if disposable and (
+        prune_all
+        or (
+            interactive
+            and UI.confirm(
+                f"Remove {len(disposable)} regenerable OSGi state volume(s)?", "N"
+            )
+        )
+    ):
+        for name, _project, _role in disposable:
+            res = run_command(
+                [*docker_prefix, "volume", "rm", name], check=False, capture_output=True
+            )
+            if res is not None:
+                removed += 1
+
+    # Deliberately NOT covered by --all: destroying a database must be an
+    # explicit, interactive decision every time.
+    if destructive and interactive:
+        UI.warning(
+            f"{len(destructive)} orphaned volume(s) contain project DATA. "
+            "This cannot be undone."
+        )
+        if UI.confirm(f"Permanently delete {len(destructive)} DATA volume(s)?", "N"):
+            for name, _project, _role in destructive:
+                res = run_command(
+                    [*docker_prefix, "volume", "rm", name],
+                    check=False,
+                    capture_output=True,
+                )
+                if res is not None:
+                    removed += 1
+    elif destructive:
+        UI.detail(
+            f"Skipped {len(destructive)} DATA volume(s) -- these require an "
+            "interactive confirmation and are never removed by --all."
+        )
+
+    if removed:
+        UI.success(f"Removed {removed} orphaned LDM volume(s).")
+    else:
+        UI.detail("No orphaned LDM volumes were removed.")
+
 
 def run_clear_cache(handler):
     """Deprecated: Use ldm cache instead."""
@@ -368,8 +494,63 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
     ):
         UI.detail("Pruning dangling Docker volumes...")
         UI.detail("Command: docker volume prune -f")
-        run_command([*docker_prefix, "volume", "prune", "-f"], check=False)
-        UI.success("Volume pruning complete.")
+        vol_res = run_command(
+            [*docker_prefix, "volume", "prune", "-f"], check=False, capture_output=True
+        )
+        # LDM-#1266: report what was actually reclaimed. `docker volume prune`
+        # removes ANONYMOUS volumes only unless `-a` is passed, and LDM creates
+        # exclusively *named* volumes -- so this step reclaims nothing LDM made
+        # and used to print an unconditional "complete" regardless. `-a` is not
+        # the fix: it would also delete the database volumes of stopped
+        # projects. LDM-owned volumes are handled by the labelled sweep below.
+        reclaimed_vol = _sum_reclaimed_space(vol_res)
+        if reclaimed_vol:
+            UI.success(
+                f"Volume pruning complete ({UI.format_size(reclaimed_vol)} reclaimed)."
+            )
+        else:
+            UI.detail(
+                "No anonymous volumes to reclaim. "
+                "LDM's own volumes are named and are handled separately below."
+            )
+
+    # 7a. LDM-owned volumes whose project no longer exists (LDM-#1266/#1267).
+    # Selected by ownership label, never by a blanket `-a`, and split by role
+    # so disposable OSGi state can be reclaimed without ever sweeping a
+    # database along with it.
+    orphans = _orphaned_ldm_volumes(handler, docker_prefix)
+    if orphans:
+        disposable = [v for v in orphans if v[2] == "state"]
+        destructive = [v for v in orphans if v[2] != "state"]
+
+        UI.detail(f"Found {len(orphans)} LDM volume(s) whose project no longer exists.")
+
+        if disposable:
+            UI.detail(
+                f"  {len(disposable)} regenerable (OSGi state): "
+                + ", ".join(n for n, _, _ in disposable[:3])
+                + (" ..." if len(disposable) > 3 else "")
+            )
+        if destructive:
+            UI.warning(
+                f"  {len(destructive)} contain project DATA (databases) -- "
+                "removing these is irreversible: "
+                + ", ".join(n for n, _, _ in destructive[:3])
+                + (" ..." if len(destructive) > 3 else "")
+            )
+
+        if is_dry_run:
+            for name, project, role in orphans:
+                UI.detail(
+                    f"{UI.BYELLOW}[Dry Run] Would remove volume {name} "
+                    f"(project '{project}', role {role}).{UI.COLOR_OFF}"
+                )
+        else:
+            _remove_orphaned_volumes(
+                handler, docker_prefix, disposable, destructive, prune_all
+            )
+    elif is_dry_run:
+        UI.detail(f"{UI.BYELLOW}[Dry Run] No orphaned LDM volumes found.{UI.COLOR_OFF}")
 
     # 7b. Dangling/unused Docker images and unused build cache (LDM-#1086).
     # Volume/container/cert/cache pruning above only ever reclaims a few MB --

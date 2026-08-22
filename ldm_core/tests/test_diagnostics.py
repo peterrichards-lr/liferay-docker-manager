@@ -736,6 +736,8 @@ class TestDiagnostics(unittest.TestCase):
         mock_run.side_effect = [
             "",  # orphaned containers query -> none found
             "",  # fallback all containers query -> none found
+            "",  # LDM-#1266: docker volume prune (now captured to report honestly)
+            "",  # LDM-#1266: docker volume ls --filter label= -> no LDM volumes
             "Total reclaimed space: 1.5GB",  # docker image prune
             "Total reclaimed space: 500MB",  # docker builder prune
         ]
@@ -784,6 +786,8 @@ class TestDiagnostics(unittest.TestCase):
         mock_run.side_effect = [
             "",  # orphaned containers query -> none found
             "",  # fallback all containers query -> none found
+            "",  # LDM-#1266: docker volume prune (now captured to report honestly)
+            "",  # LDM-#1266: docker volume ls --filter label= -> no LDM volumes
             "Total reclaimed space: 1.5GB",  # docker image prune
             "Total reclaimed space: 500MB",  # docker builder prune
         ]
@@ -1697,3 +1701,83 @@ class TestRunInfoCredentialsMasking(unittest.TestCase):
             )
             self.assertNotIn("credentials", output)
             self.assertNotIn("supersecretpassword", output)
+
+
+class TestOrphanedLdmVolumes(unittest.TestCase):
+    """LDM-#1266/#1267: `ldm prune` must reclaim LDM's own named volumes safely.
+
+    `docker volume prune -f` only ever removes ANONYMOUS volumes, and LDM
+    creates exclusively named ones -- so the old call matched nothing LDM made
+    while reporting success. `-a` is not the fix: it would also destroy the
+    database volumes of stopped-but-wanted projects. Selection is therefore by
+    ownership label, cross-referenced against the live project list.
+    """
+
+    LS_OUTPUT = (
+        "dead-data\tdeadproj\tdata\n"
+        "dead-state\tdeadproj\tstate\n"
+        "live-data\tliveproj\tdata\n"
+    )
+
+    def _handler(self, registered):
+        h = MagicMock()
+        h.manager.find_dxp_roots.return_value = [
+            {"path": Path(f"/tmp/{n}")} for n in registered
+        ]
+        return h
+
+    @patch("ldm_core.diagnostics.prune.run_command")
+    def test_selects_by_label_not_by_blanket_prune(self, mock_run):
+        from ldm_core.diagnostics.prune import _list_ldm_volumes
+
+        mock_run.return_value = self.LS_OUTPUT
+        _list_ldm_volumes(["docker"])
+
+        argv = mock_run.call_args[0][0]
+        self.assertIn("--filter", argv)
+        self.assertIn("label=com.liferay.ldm.managed=true", argv)
+        # The dangerous form must never be issued from this path.
+        self.assertNotIn("-a", argv)
+
+    @patch("ldm_core.diagnostics.prune.run_command")
+    def test_volume_of_a_registered_project_is_never_orphaned(self, mock_run):
+        """The false-positive case: flagging a live project's DATA loses a database."""
+        from ldm_core.diagnostics.prune import _orphaned_ldm_volumes
+
+        mock_run.return_value = self.LS_OUTPUT
+        orphans = _orphaned_ldm_volumes(self._handler(["liveproj"]), ["docker"])
+
+        names = {n for n, _, _ in orphans}
+        self.assertNotIn("live-data", names)
+        self.assertEqual({"dead-data", "dead-state"}, names)
+
+    @patch("ldm_core.diagnostics.prune.run_command")
+    def test_fails_closed_when_the_project_list_is_unavailable(self, mock_run):
+        """If ownership can't be established, offer nothing rather than guess."""
+        from ldm_core.diagnostics.prune import _orphaned_ldm_volumes
+
+        mock_run.return_value = self.LS_OUTPUT
+        h = MagicMock()
+        h.manager.find_dxp_roots.side_effect = OSError("registry unreadable")
+
+        self.assertEqual([], _orphaned_ldm_volumes(h, ["docker"]))
+
+    @patch("ldm_core.diagnostics.prune.run_command")
+    def test_prune_all_never_removes_data_volumes(self, mock_run):
+        """--all may sweep regenerable state, but never a database."""
+        from ldm_core.diagnostics.prune import _remove_orphaned_volumes
+
+        h = MagicMock()
+        h.manager.non_interactive = True  # automation: no prompts available
+        _remove_orphaned_volumes(
+            h,
+            ["docker"],
+            disposable=[("dead-state", "deadproj", "state")],
+            destructive=[("dead-data", "deadproj", "data")],
+            prune_all=True,
+        )
+
+        removed = [c[0][0] for c in mock_run.call_args_list if "rm" in c[0][0]]
+        flat = " ".join(" ".join(a) for a in removed)
+        self.assertIn("dead-state", flat)
+        self.assertNotIn("dead-data", flat, "Regression: --all removed a DATA volume")
