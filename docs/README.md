@@ -30,6 +30,7 @@ Check out our **[Video Showcase](showcase/README.md)** to see short demonstratio
 - **[Liferay Workspace Local Dev](tutorials/workspace_development.md)** — Linking workspaces with LDM for active source code development.
 - **[Liferay Version Upgrades](how-to/version_upgrades.md)** — Safely upgrading Liferay Docker image tags, database backup snapshots, and schema auto-upgrades.
 - **[Runtime Overrides & Fragments](how-to/runtime_overrides.md)** — Dynamic substitution and environment-aware client extension patching.
+- **[Patching Core Portal JARs](how-to/portal_patches.md)** — Applying patched core JARs from `portal-patches/`, with version-drift protection.
 - **[Properties Hierarchy & Precedence](explanation/properties.md)** — Merging cascading properties and using `# !important` rules.
 
 ### 3. Environment & Remote Infrastructure Operations

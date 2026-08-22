@@ -1312,6 +1312,21 @@ class ComposerStage(PipelineStage):
         manager.write_meta(paths["root"], project_meta)
 
 
+def _patch_docker_prefix(manager, target_context):
+    """Returns the `docker` argv prefix to use for `docker cp` (LDM-#1264).
+
+    `compose_base` cannot be reused: it is a *compose* prefix, and `cp` is a
+    plain docker subcommand. A remote target carries its own prefix; otherwise
+    resolve from the manager's target the same way the compose prefix is.
+    """
+    if target_context is not None and target_context.is_remote:
+        return target_context.docker_prefix
+
+    from ldm_core.docker_service import DockerService
+
+    return DockerService.get_docker_cmd_prefix(getattr(manager, "target", None))
+
+
 class ExecutionStage(PipelineStage):
     """Boots dependencies, checks readiness, and starts Liferay."""
 
@@ -1384,7 +1399,31 @@ class ExecutionStage(PipelineStage):
         if getattr(manager.args, "command", "") != "quickstart":
             UI.phase(2, 3, "Starting Container Stack")
 
-        cmd = [*compose_base, "up", "-d", "--remove-orphans"]
+        # LDM-#1264: portal patches must be copied in *after* the container
+        # exists but *before* it boots -- OSGi resolves bundles at startup, so
+        # patching a running container needs a second restart and briefly runs
+        # the unpatched JAR. `up -d` gives no such seam, so when patches are
+        # present the single `up` becomes create -> cp -> start.
+        from ldm_core.runtime import portal_patches as _portal_patches
+
+        # Gated on `no_up`: with nothing being started there is nothing to
+        # patch, and the version policy must not abort a run that was only ever
+        # going to write configuration.
+        portal_patch_plan = (
+            []
+            if no_up
+            else _portal_patches.plan_patches(
+                manager,
+                paths["root"],
+                project_meta.get("tag") if isinstance(project_meta, dict) else None,
+                force=getattr(manager.args, "force_portal_patches", False),
+            )
+        )
+
+        if portal_patch_plan:
+            cmd = [*compose_base, "create", "--remove-orphans"]
+        else:
+            cmd = [*compose_base, "up", "-d", "--remove-orphans"]
         rebuild = context.get("rebuild") or getattr(manager.args, "rebuild", False)
         if rebuild:
             cmd.append("--build")
@@ -1551,6 +1590,22 @@ class ExecutionStage(PipelineStage):
 
             follow = context.get("follow") or getattr(manager.args, "follow", False)
             manager.run_command(cmd, cwd=str(paths["root"]), capture_output=not follow)
+
+            if portal_patch_plan:
+                # `cmd` was a `create`, so the containers exist but are not
+                # running. Patch, then start.
+                _portal_patches.copy_patches_into(
+                    manager,
+                    portal_patch_plan,
+                    project_meta.get("container_name") or project_id,
+                    _patch_docker_prefix(manager, target_context),
+                    force=getattr(manager.args, "force_portal_patches", False),
+                )
+                manager.run_command(
+                    [*compose_base, "start"],
+                    cwd=str(paths["root"]),
+                    capture_output=not follow,
+                )
 
             if follow:
                 context.set("logs_attached", True)

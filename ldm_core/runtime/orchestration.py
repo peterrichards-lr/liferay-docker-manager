@@ -45,7 +45,7 @@ class OrchestrationService(BaseHandler):
         )
         return pipeline.run(context)
 
-    def cmd_start(
+    def cmd_start(  # noqa: PLR0912
         self,
         project_id=None,
         service=None,
@@ -115,6 +115,18 @@ class OrchestrationService(BaseHandler):
                         DockerService.rm(vol_name, force=True, target_name=target_name)
 
                 if force_recreate:
+                    from ldm_core.runtime import portal_patches
+
+                    if portal_patches.recreate_with_patches(
+                        self.manager,
+                        root,
+                        meta,
+                        compose_base,
+                        DockerService.get_docker_cmd_prefix(target_name),
+                        service=service,
+                        capture=capture,
+                    ):
+                        continue
                     cmd = [
                         *compose_base,
                         "up",
@@ -190,6 +202,18 @@ class OrchestrationService(BaseHandler):
             target_name = getattr(self.manager, "target", None) or meta.get("target")
             compose_base = DockerService.get_compose_cmd_prefix(target_name)
             if force_recreate:
+                from ldm_core.runtime import portal_patches
+
+                if portal_patches.recreate_with_patches(
+                    self.manager,
+                    root,
+                    meta,
+                    compose_base,
+                    DockerService.get_docker_cmd_prefix(target_name),
+                    service=service,
+                    capture=capture,
+                ):
+                    continue
                 cmd = [
                     *compose_base,
                     "up",
