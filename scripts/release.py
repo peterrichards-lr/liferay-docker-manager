@@ -294,6 +294,109 @@ def create_and_push_tag(version):
     )
 
 
+def next_preview_number(issue):
+    """Returns the next unused sequence number for this issue's previews."""
+    run_cmd(["git", "fetch", "--tags", "origin"], check=False)
+    res = run_cmd(["git", "tag", "-l", f"preview-{issue}.*"], capture=True)
+    highest = 0
+    for line in res.stdout.splitlines():
+        suffix = line.strip().rsplit(".", 1)[-1]
+        if suffix.isdigit():
+            highest = max(highest, int(suffix))
+    return highest + 1
+
+
+def run_preview(issue, project_root):
+    """Publishes a disposable, issue-linked preview build (LDM-#1265).
+
+    Deliberately does NOT bump the project's version, create a release branch,
+    open a tracking PR, or advance the pre-release chain. It exists so an idea
+    that may be abandoned can be validated on real binaries without consuming a
+    `-pre.N` number that can never be reclaimed under the Burn Rule.
+
+    The tag is `preview-<issue>.<n>` rather than `v...` on purpose: the
+    `Protect Release Tags` ruleset targets `refs/tags/v[0-9]*.[0-9]*.[0-9]*`, so
+    a `v`-prefixed preview would be permanently undeletable, defeating the point.
+
+    The version marking commit is created on a detached HEAD and never pushed to
+    any branch -- only the tag is pushed. Deleting the tag therefore removes the
+    build, the release and the commit's reachability in one step.
+    """
+    status_res = run_cmd(["git", "status", "--porcelain"], capture=True)
+    if status_res.stdout.strip():
+        print("❌ Error: working tree is not clean. Commit or stash first.")
+        sys.exit(1)
+
+    base_res = run_cmd(
+        [
+            sys.executable,
+            str(project_root / "liferay_docker.py"),
+            "system",
+            "version",
+            "--print",
+            "-y",
+        ],
+        capture=True,
+    )
+    base_version = base_res.stdout.strip().split("-", 1)[0]
+
+    seq = next_preview_number(issue)
+    tag_name = f"preview-{issue}.{seq}"
+    # A dash, never a plus. `2.15.33+preview.1265.1` parses to (2,15,33,1265),
+    # and 1265 > the 999 assigned to a stable release -- so a `+` form would
+    # rank ABOVE the very release it is previewing. The dash form is
+    # (2,15,33,2,1265), safely below stable, so a preview user is still
+    # correctly offered the upgrade back to a real release.
+    preview_version = f"{base_version}-preview.{issue}.{seq}"
+
+    source_branch = run_cmd(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"], capture=True
+    ).stdout.strip()
+    print(f"Building preview {tag_name} from '{source_branch}' (base v{base_version})")
+
+    run_pre_commit_checks(source_branch, delete_branch_on_failure=False)
+
+    # Detach so the version marking never lands on the source branch.
+    run_cmd(["git", "checkout", "--detach"])
+    try:
+        run_cmd(
+            [
+                sys.executable,
+                str(project_root / "liferay_docker.py"),
+                "system",
+                "version",
+                "--set",
+                preview_version,
+                "-y",
+            ]
+        )
+        run_cmd(
+            [
+                "git",
+                "add",
+                "CHANGELOG.md",
+                "ldm_core/constants.py",
+                "pyproject.toml",
+                "scripts/verify_e2e_refactor.sh",
+                "scripts/verify_e2e_refactor.ps1",
+            ]
+        )
+        run_cmd(
+            ["git", "commit", "-m", f"chore(preview): {tag_name} for issue #{issue}"]
+        )
+        run_cmd(["git", "tag", "-a", tag_name, "-m", f"Preview build for #{issue}"])
+        run_cmd(["git", "push", "origin", tag_name])
+    finally:
+        # Return the developer to exactly where they started, whatever happened.
+        run_cmd(["git", "checkout", source_branch], check=False)
+
+    print(f"\n🧪 Preview {tag_name} pushed (reports as v{preview_version}).")
+    print("   It is a pre-release, is never offered by 'ldm upgrade', and does")
+    print("   not appear in the pre-release chain.")
+    print(f"   When finished:  git push --delete origin {tag_name}")
+    print(f"                   gh release delete {tag_name} --yes")
+
+
 def main():  # noqa: C901, PLR0912, PLR0915
     parser = argparse.ArgumentParser(description="Automated Release Script")
     parser.add_argument(
@@ -315,7 +418,31 @@ def main():  # noqa: C901, PLR0912, PLR0915
         "--issue",
         help="Associated GitHub Issue or Epic number (e.g. 1204)",
     )
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        help=(
+            "Publish a disposable, issue-linked preview build (LDM-#1265). "
+            "Requires --issue. Does not bump the version, create a branch or "
+            "PR, or advance the pre-release chain; the tag is deletable and is "
+            "never offered by 'ldm upgrade'."
+        ),
+    )
     args = parser.parse_args()
+
+    if args.preview:
+        if not args.issue:
+            print("❌ Error: --preview requires --issue <number>.")
+            print("   A preview build is tied to the idea it is validating; an")
+            print("   untethered disposable tag is not traceable to anything.")
+            sys.exit(1)
+        if args.promote:
+            print("❌ Error: --preview cannot be combined with --promote.")
+            print("   Previews are deliberately outside the release chain and")
+            print("   are never promoted -- cut a real pre-release instead.")
+            sys.exit(1)
+        run_preview(args.issue, project_root)
+        return
 
     # 1. Fetch latest changes from master
     print("Fetching latest from master...")

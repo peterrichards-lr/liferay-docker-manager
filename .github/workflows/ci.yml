@@ -293,7 +293,7 @@ jobs:
     # for merge_group events (merge-queue entries) -- otherwise the queue
     # hangs waiting on a check that never fires for that event.
     if: |
-      (github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'merge_group' || startsWith(github.ref, 'refs/tags/v')) &&
+      (github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'merge_group' || startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/preview-')) &&
       (github.event_name != 'push' || github.ref_name != 'master' || !contains(github.event.head_commit.message, '[release]')) &&
       needs.lint-and-test.outputs.code_changed != 'false'
 
@@ -389,8 +389,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    # LDM-#1265: `preview-*` tags build too. They are deliberately NOT
+    # `v`-prefixed so the `Protect Release Tags` ruleset does not match them and
+    # they stay deletable -- but the gates here used to accept only `v*`, so a
+    # deletable tag produced no artifacts and there was nothing to test with.
     if: |
-      (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'pull_request') &&
+      (startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/preview-') || github.event_name == 'pull_request') &&
       needs.lint-and-test.outputs.code_changed != 'false'
 
     steps:
@@ -477,7 +481,10 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    # LDM-#1265: `preview-*` publishes too. The "no dash => stable" check below
+    # already classifies `preview-<issue>.<n>` as a pre-release, so `make_latest`
+    # stays false without further change.
+    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/preview-')
     permissions:
       contents: write
 

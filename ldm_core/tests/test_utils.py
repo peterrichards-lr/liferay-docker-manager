@@ -425,6 +425,59 @@ class TestUpdateChecks(unittest.TestCase):
 
     @patch("requests.get")
     @patch("pathlib.Path.home")
+    def test_check_for_updates_never_serves_a_preview_build(self, mock_home, mock_get):
+        """LDM-#1265: preview builds must never reach anyone as an upgrade.
+
+        A preview is a disposable artifact for validating an idea that may be
+        abandoned. It is published as a real GitHub pre-release with real
+        binaries, so without an explicit skip it is a candidate like any other.
+
+        `version_to_tuple("preview-1265.1")` is (0,0,0,0,1265), which already
+        sorts below every release -- but that is an artefact of how unrecognised
+        labels rank, not a stated rule. This asserts the deliberate skip, so the
+        guarantee survives someone changing that ranking. The preview is listed
+        first here precisely so a naive "take the first with assets" would fail.
+        """
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mock_home.return_value = Path(tmp_dir)
+
+            mock_res = MagicMock()
+            mock_res.status_code = 200
+            # The preview must be the ONLY candidate. Listing it beside a higher
+            # real release proves nothing: preview-1265.1 ranks (0,0,0,0,1265)
+            # and loses on ordering alone, so the guard is never exercised. That
+            # version of this test passed with the guard deleted -- confirmed by
+            # deleting it and watching it stay green.
+            mock_res.json.return_value = [
+                {
+                    "tag_name": "preview-1265.1",
+                    "html_url": "http://preview",
+                    "assets": [
+                        {
+                            "name": "ldm-macos-arm64",
+                            "browser_download_url": "http://dl-preview",
+                        }
+                    ],
+                },
+            ]
+            mock_get.return_value = mock_res
+
+            from ldm_core.utils import check_for_updates
+
+            with (
+                patch("sys.platform", "darwin", create=True),
+                patch("platform.machine", return_value="arm64"),
+            ):
+                version, url = check_for_updates("0.0.1", force=True, pre_release=True)
+
+            # Nothing to offer, because the only release available is a preview.
+            self.assertIsNone(version)
+            self.assertIsNone(url)
+
+    @patch("requests.get")
+    @patch("pathlib.Path.home")
     def test_check_for_updates_ignores_releases_without_platform_assets(
         self, mock_home, mock_get
     ):
