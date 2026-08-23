@@ -31,6 +31,21 @@ description: Activate this skill whenever preparing a release, bumping versions,
 
     **Never hand-set a version to reach `X.Y.0-pre.N`.** That is prohibited by the rule above on any branch; if the orchestrator lacks a path you need, add it to the orchestrator (as #1291 did) or ask the maintainer.
 
+  - To publish a **disposable preview build** for validating an idea that may be abandoned (LDM-#1265), without consuming a `-pre.N` number:
+
+    ```bash
+    python3 scripts/release.py --preview --issue 1265
+    ```
+
+    Tags `preview-<issue>.<n>`, builds real binaries for every platform and publishes a GitHub pre-release. It does **not** bump the version, create a release branch, open a tracking PR, or advance the pre-release chain, and the version-marking commit is made on a detached HEAD so no branch is touched.
+
+    Use this for a proof of concept or an experiment that may be dropped. Use `--bump beta`/`preminor` for anything intended to ship: a preview is never promoted, and `--preview --promote` is rejected.
+
+    Two properties are load-bearing and were both measured, not assumed:
+
+    - **The tag is deletable.** The `Protect Release Tags` ruleset targets `refs/tags/v[0-9]*.[0-9]*.[0-9]*`, so a `v`-prefixed preview would be permanently undeletable under the Burn Rule — defeating the entire point. `preview-*` is outside that glob. Clean up with `git push --delete origin preview-<issue>.<n>` and `gh release delete`.
+    - **It can never be served as an upgrade.** `check_for_updates` skips the `preview-` prefix explicitly. Do not rely on version ordering for this: the marked version must use a **dash**, never a plus. `2.15.33+preview.1265.1` ranks `(2,15,33,1265)`, and 1265 beats the 999 assigned to a stable release, so a `+` form sorts *above* the release it previews. The dash form ranks `(2,15,33,2,1265)`, safely below.
+
   - To promote pre-releases to stable releases (must be run from the active release branch):
 
     ```bash

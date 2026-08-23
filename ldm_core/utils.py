@@ -2070,7 +2070,19 @@ def check_for_updates(current_version, force=False, pre_release=False, tag=None)
                 highest_asset_url = None
 
                 for release in res_data:
-                    v_str = release.get("tag_name", "").lstrip("v")
+                    tag_name = release.get("tag_name", "")
+                    # LDM-#1265: preview builds are disposable artifacts for
+                    # validating an idea that may be abandoned. They must never
+                    # be served as an upgrade, to anyone, including --beta users.
+                    #
+                    # `version_to_tuple("preview-1265.1")` is (0,0,0,0,1265),
+                    # which already sorts below every real release -- but that
+                    # safety is an artefact of how unrecognised labels rank, not
+                    # a stated rule. Skipping the pattern outright makes the
+                    # intent explicit and survives someone changing that ranking.
+                    if tag_name.startswith("preview-"):
+                        continue
+                    v_str = tag_name.lstrip("v")
                     v_tuple = version_to_tuple(v_str)
                     asset_url = _find_asset_url(release)
                     if asset_url and v_tuple > highest_version_tuple:
