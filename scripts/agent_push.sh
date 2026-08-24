@@ -1,9 +1,50 @@
 #!/usr/bin/env bash
 set -e
 
-if [ -z "$1" ]; then
-  echo "Error: Commit message required."
+usage() {
   echo "Usage: ./scripts/agent_push.sh \"commit message\""
+  echo "       ./scripts/agent_push.sh -m \"commit message\""
+}
+
+# LDM-#1316: the commit message is positional, so a git-style `-m` was
+# previously consumed *as* the message. The script then ran the full ~16-minute
+# gate suite, committed, and pushed a branch whose commit subject was the
+# literal string "-m" -- reporting success at every step, because from its
+# point of view nothing had gone wrong. Caught only by eye, on the summary
+# line printed after the push.
+#
+# `-m` is accepted as a synonym because it is what muscle memory produces;
+# every other flag-shaped first argument is refused up front, before the gates
+# run, rather than being committed verbatim.
+case "${1:-}" in
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  -m | --message)
+    shift
+    ;;
+  -*)
+    echo "Error: the commit message is positional; got the flag '$1' instead." >&2
+    usage >&2
+    exit 1
+    ;;
+esac
+
+if [ -z "${1:-}" ]; then
+  echo "Error: Commit message required." >&2
+  usage >&2
+  exit 1
+fi
+
+# Extra arguments are the same mistake seen from the other side: an unquoted
+# message arrives as many arguments and everything past the first would be
+# silently dropped.
+if [ "$#" -gt 1 ]; then
+  echo "Error: expected a single quoted commit message, got $# arguments." >&2
+  echo "       Unexpected argument: '$2'" >&2
+  echo "       Quote the whole message, including any newlines." >&2
+  usage >&2
   exit 1
 fi
 
