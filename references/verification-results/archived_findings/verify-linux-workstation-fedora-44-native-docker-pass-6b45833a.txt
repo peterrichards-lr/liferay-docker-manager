@@ -1,0 +1,115 @@
+=== LDM BINARY VERIFICATION REPORT ===
+Timestamp:    Fri Aug 21 20:25:50 UTC 2026
+Hostname:  [ANONYMIZED]
+Platform:     Fedora Linux 44 (Container Image)
+Binary:    [ANONYMIZED]
+Version:      ldm 2.15.33
+Script Ver:   2.15.33
+Docker:    28.0.4
+Compose:   5.4.0
+
+>> Initializing Infrastructure
+✅  Infrastructure setup complete.
+>> Custom SSL Port Setup
+✅  Infrastructure setup complete.
+>> Target List
+=== Registered Target Compute Nodes ===
+╭─────────────┬─────────────────┬──────────┬────────────────╮
+│ TARGET NAME │ HOST / ENDPOINT │ SSH USER │ ACTIVE DEFAULT │
+├─────────────┼─────────────────┼──────────┼────────────────┤
+│ local       │ localhost       │ -        │ YES [DEFAULT]  │
+╰─────────────┴─────────────────┴──────────┴────────────────╯
+>> Target Status (Local)
+=== Target Compute Nodes Status & Connectivity Probe ===
+╭────────┬─────────────────┬────────┬────────────────┬──────────────────┬────────────────────╮
+│ TARGET │ HOST / ENDPOINT │ STATUS │ ENGINE VERSION │ CPUs / MEMORY    │ RUNNING CONTAINERS │
+├────────┼─────────────────┼────────┼────────────────┼──────────────────┼────────────────────┤
+│ local  │ localhost       │ ONLINE │ v28.0.4        │ 4 CPUs / 15.6 GB │ 4                  │
+╰────────┴─────────────────┴────────┴────────────────┴──────────────────┴────────────────────╯
+>> Target Add (Mock Node)
+✅  Target node 'e2e-target-34183' (127.0.0.1) registered successfully.
+>> Target Remove (Mock Node)
+✅  Target node 'e2e-target-34183' removed.
+>> Target Add (127.0.0.2 Loopback)
+✅  Target node 'loopback-node-34183' (127.0.0.2) registered successfully.
+>> Target Status (Loopback Node)
+=== Target Compute Nodes Status & Connectivity Probe ===
+╭─────────────────────┬─────────────────┬────────┬────────────────┬──────────────────┬────────────────────╮
+│ TARGET              │ HOST / ENDPOINT │ STATUS │ ENGINE VERSION │ CPUs / MEMORY    │ RUNNING CONTAINERS │
+├─────────────────────┼─────────────────┼────────┼────────────────┼──────────────────┼────────────────────┤
+│ loopback-node-34183 │ 127.0.0.2       │ ONLINE │ v28.0.4        │ 4 CPUs / 15.6 GB │ 4                  │
+╰─────────────────────┴─────────────────┴────────┴────────────────┴──────────────────┴────────────────────╯
+>> Target Remove (Loopback Node)
+✅  Target node 'loopback-node-34183' removed.
+>> Running LDM Project
+ℹ  The LDM project 'ldm-smoke-test-34183' already exists and this command will reconfigure it.
+▶  Synchronizing Assets
+⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
+▶  Starting Container Stack
+✅  Project 'ldm-smoke-test-34183' started in background.
+💡  Next step: Run 'ldm link <path-to-cx>' to attach client extensions, or 'ldm logs -f' to tail logs.
+>> Deploying artifact
+✅  Artifact deployment complete.
+✅ Hot Deploy verified.
+>> Creating Snapshot
+✅  Database dump completed.
+✅  Snapshot saved: [HOME]/work/liferay-docker-manager/liferay-docker-manager/e2e-work-dir-34183/ldm-smoke-test-34183/snapshots/20260821_203135
+>> Bypassing Integrity
+=== Snapshots for ldm-smoke-test-34183 ===
+[1] 20260821_203135 - Binary-Verify (1.0 GB) [DB,VOL,MOD]
+⚠️  Resetting ldm-smoke-test-34183 (all)...
+⚠️  Tearing down stack: ldm-smoke-test-34183
+✅  Project ldm-smoke-test-34183 reset successful.
+⚠️  Integrity verification disabled via --no-verify.
+▶  Restoring Workspace Data
+▶  Finalizing Metadata
+▶  Synchronizing Assets
+⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
+▶  Starting Container Stack
+▶  Restoring Database Components
+💡  Next step: Run 'ldm run' to restart the container, or 'ldm status' to view environment status.
+✅  + Database restored successfully.
+✅  Restore complete.
+>> Scaling Liferay
+✅  Updated scale factors for project ldm-smoke-test-34183
+>> Scaling Liferay back to 1 for logs export check
+✅  Updated scale factors for project ldm-smoke-test-34183
+>> Starting project for logs export check
+ℹ  The LDM project 'ldm-smoke-test-34183' already exists and this command will reconfigure it.
+▶  Synchronizing Assets
+⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
+▶  Starting Container Stack
+✅  Project 'ldm-smoke-test-34183' started in background.
+💡  Next step: Run 'ldm link <path-to-cx>' to attach client extensions, or 'ldm logs -f' to tail logs.
+>> Exporting project logs
+>> Stopping project to release file locks
+💡  Next step: Run 'ldm run' to restart the container, or 'ldm status' to view environment status.
+>> Rebuilding properties
+=== Rebuilding Properties for project: ldm-smoke-test-34183 ===
+✅  Properties successfully rebuilt.
+>> Resetting properties
+=== Resetting Properties for project: ldm-smoke-test-34183 ===
+✅  Properties successfully reset.
+>> Starting project for idempotency check
+ℹ  The LDM project 'ldm-smoke-test-34183' already exists and this command will reconfigure it.
+▶  Synchronizing Assets
+⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
+▶  Starting Container Stack
+▶  Awaiting Liferay Readiness
+⚠️  LDM detected 5 new error(s) in the logs.
+✅  Liferay ready: http://localhost:34183  (55s)
+>> Checking Status
+=== LDM Service Status ===
+Global Infrastructure:
+╭───────────────────────┬─────────┬───────────────────────────────╮
+│ ● SSL Proxy (Traefik) │ Running │ traefik:v3.6.1                │
+│ ● Search (ES)         │ Running │ elasticsearch:8.19.1          │
+│ ● macOS Socket Bridge │ Running │ tecnativa/docker-socket-proxy │
+╰───────────────────────┴─────────┴───────────────────────────────╯
+
+Active Projects:
+╭────────────────────────┬───────────────┬────────────────────────┬───────╮
+│ ● ldm-smoke-test-34183 │ 2026.q1.7-lts │ http://localhost:34183 │ local │
+╰────────────────────────┴───────────────┴────────────────────────┴───────╯
+
+🎯 ALL E2E VERIFICATIONS PASSED!
