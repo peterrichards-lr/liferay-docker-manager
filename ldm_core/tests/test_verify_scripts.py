@@ -71,6 +71,175 @@ def _run_powershell_banner(script_version, ldm_ver):
     return res.stdout
 
 
+def _powershell_binaries():
+    """Every PowerShell on this machine, not just the preferred one.
+
+    LDM-#1301: `_pwsh_binary()` returns `pwsh` first, so on a Windows runner the
+    banner tests exercise PowerShell 7 and never 5.1. The JSON defect in #1300
+    existed *only* under 5.1 -- 7 enumerates a deserialized JSON array while 5.1
+    hands it back unenumerated -- so a pwsh-only test could not have caught it.
+    These tests therefore run under each shell present.
+    """
+    found = []
+    for name in ("pwsh", "powershell"):
+        path = shutil.which(name)
+        if path:
+            found.append((name, path))
+    return found
+
+
+def _run_json_helpers(binary, scenario):
+    """Runs the .ps1's JSON helpers against a canned payload, in real PowerShell.
+
+    Extracts only the two helper functions, so this costs a subprocess rather
+    than a full E2E run with Docker, Liferay and a 10-minute hot-deploy wait.
+    """
+    parser = _extract_function(
+        PS1_SCRIPT,
+        re.compile(r"^function ConvertFrom-LdmJson\s*\{.*?^\}", re.M | re.S),
+    )
+    flattener = _extract_function(
+        PS1_SCRIPT,
+        re.compile(r"^function ConvertTo-LdmArray\s*\{.*?^\}", re.M | re.S),
+    )
+    script = f"{parser}\n{flattener}\n{scenario}\n"
+    return subprocess.run(
+        [binary, "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@unittest.skipUnless(_powershell_binaries(), "no PowerShell available")
+class TestPowerShellJsonHelpers(unittest.TestCase):
+    """LDM-#1301: the .ps1's JSON schema checks could only be tested by running
+    the whole suite -- a Liferay boot and a 10-minute hot-deploy wait -- so two
+    Windows verification runs were spent finding a script bug (#1300).
+
+    Worse, the defect was invisible to CI. Every temporary project is deleted
+    before the schema check, so a clean runner has exactly ONE project;
+    PowerShell unwraps a single-element array automatically, so the array path
+    was never taken. It only failed on a developer machine with a second
+    project registered.
+
+    These tests exercise the multi-entry path directly, in seconds.
+    """
+
+    MULTI = (
+        '$json = \'[{"project":"a","http_ready":false},'
+        '{"project":"b","http_ready":true}]\'\n'
+        "$parsed = ConvertFrom-LdmJson -Raw $json -Label 'list --json'\n"
+        "$flat = ConvertTo-LdmArray -Value $parsed\n"
+        "Write-Output ('count=' + $flat.Count)\n"
+        "foreach ($i in $flat) { Write-Output ('project=' + $i.project) }\n"
+    )
+
+    def test_multi_entry_array_is_enumerated(self):
+        """The exact shape that failed on Windows PowerShell 5.1 (#1300).
+
+        Without ConvertTo-LdmArray, 5.1 yields a one-element array *containing*
+        the array, so the loop inspects the .NET array itself -- reporting
+        'http_ready missing' with properties Count/Length/Rank/SyncRoot.
+        """
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                res = _run_json_helpers(binary, self.MULTI)
+                self.assertEqual(res.returncode, 0, res.stderr)
+                self.assertIn("count=2", res.stdout)
+                self.assertIn("project=a", res.stdout)
+                self.assertIn("project=b", res.stdout)
+
+    def test_nested_array_is_unwrapped(self):
+        """Feeds ConvertTo-LdmArray the 5.1 shape DIRECTLY, not via the parser.
+
+        Honest limitation, measured rather than assumed: this test cannot fail on
+        PowerShell 7 even with the unwrap deleted, because 7 both enumerates
+        deserialized JSON arrays and unrolls arrays on function return, so the
+        nested shape collapses either way. Verified by removing the unwrap and
+        watching it stay green.
+
+        It is therefore a *Windows-effective* guard: `_powershell_binaries()`
+        includes `powershell` (5.1) when present, which is where the shape is
+        real and where #1300 actually failed. On a pwsh-only machine it asserts
+        the contract without being able to disprove it -- which is worth stating,
+        since a test that cannot fail on the machine you are running it on
+        proves nothing there.
+        """
+        scenario = (
+            "$inner = @([pscustomobject]@{project='a'}, "
+            "[pscustomobject]@{project='b'})\n"
+            "$nested = ,$inner\n"
+            "$flat = ConvertTo-LdmArray -Value $nested\n"
+            "Write-Output ('count=' + $flat.Count)\n"
+            "Write-Output ('first=' + $flat[0].GetType().Name)\n"
+        )
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                res = _run_json_helpers(binary, scenario)
+                self.assertEqual(res.returncode, 0, res.stderr)
+                self.assertIn("count=2", res.stdout)
+                self.assertIn("first=PSCustomObject", res.stdout)
+
+    def test_single_entry_is_not_flattened_away(self):
+        """A one-entry array must stay one entry, not become zero.
+
+        This is the case CI has always had, and it must keep working -- the
+        defensive unwrap in ConvertTo-LdmArray must not swallow it.
+        """
+        scenario = (
+            '$json = \'[{"project":"solo","http_ready":true}]\'\n'
+            "$flat = ConvertTo-LdmArray -Value "
+            "(ConvertFrom-LdmJson -Raw $json -Label 'list --json')\n"
+            "Write-Output ('count=' + $flat.Count)\n"
+            "Write-Output ('project=' + $flat[0].project)\n"
+        )
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                res = _run_json_helpers(binary, scenario)
+                self.assertEqual(res.returncode, 0, res.stderr)
+                self.assertIn("count=1", res.stdout)
+                self.assertIn("project=solo", res.stdout)
+
+    def test_schema_keys_are_visible_on_each_entry(self):
+        """The assertion the suite actually makes, against a multi-entry payload.
+
+        Guards the regression directly: `http_ready` must be reachable on every
+        entry, which is precisely what #1300 broke.
+        """
+        scenario = (
+            '$json = \'[{"project":"a","http_ready":false,"http_status":"x",'
+            '"db_unhealthy":false},{"project":"b","http_ready":true,'
+            '"http_status":"y","db_unhealthy":false}]\'\n'
+            "$flat = ConvertTo-LdmArray -Value "
+            "(ConvertFrom-LdmJson -Raw $json -Label 'list --json')\n"
+            "foreach ($i in $flat) {\n"
+            "  foreach ($k in @('http_ready','http_status','db_unhealthy')) {\n"
+            "    if ($i.PSObject.Properties.Name -notcontains $k) {\n"
+            "      Write-Output ('MISSING ' + $k + ' on ' + $i.project)\n"
+            "    }\n"
+            "  }\n"
+            "}\n"
+            "Write-Output 'checked'\n"
+        )
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                res = _run_json_helpers(binary, scenario)
+                self.assertEqual(res.returncode, 0, res.stderr)
+                self.assertNotIn("MISSING", res.stdout)
+                self.assertIn("checked", res.stdout)
+
+    def test_empty_output_fails_with_a_clear_message(self):
+        scenario = (
+            "try { ConvertFrom-LdmJson -Raw @() -Label 'list --json' } "
+            "catch { Write-Output ('caught: ' + $_.Exception.Message) }\n"
+        )
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                res = _run_json_helpers(binary, scenario)
+                self.assertIn("produced no output to parse", res.stdout)
+
+
 class TestBashVersionBanner(unittest.TestCase):
     """LDM-#1058: scripts/verify_e2e_refactor.sh's print_version_banner()."""
 

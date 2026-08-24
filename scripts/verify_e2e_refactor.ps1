@@ -474,6 +474,27 @@ try {
     Remove-Item -Recurse -Force $masterProj -ErrorAction SilentlyContinue
 
     # 3. Project Run
+    # LDM-#1302: a leftover project from a previous run sends 'ldm run' down the
+    # 'already exists -> reconfigure' path instead of a fresh provision. That
+    # path reaches verify_runtime_environment()'s 'docker run ... alpine' mount
+    # probe, which has no timeout, so a stalled pull or wedged mount hangs
+    # indefinitely with nothing printed. A fresh CI runner never hits this, so
+    # the reconfigure path is effectively untested. The suite already deletes
+    # this project on exit, so removing it on entry is consistent.
+    $existing = & $LDM_CMD list 2>$null | Select-String -SimpleMatch "ldm-smoke-test"
+    if ($existing) {
+        Write-Host "[WARNING] Test project 'ldm-smoke-test' already exists (leftover from a failed run)."
+        Write-Host "          Removing it so this run provisions cleanly rather than reconfiguring."
+        Invoke-Cleanup $LDM_CMD "-y rm ldm-smoke-test --delete"
+        $stillThere = & $LDM_CMD list 2>$null | Select-String -SimpleMatch "ldm-smoke-test"
+        if ($stillThere) {
+            throw ("Could not remove pre-existing project 'ldm-smoke-test'. " +
+                   "Refusing to continue: reconfiguring a stale project is the path that hangs. " +
+                   "Remove it manually with: ldm -y rm ldm-smoke-test --delete")
+        }
+        Write-Host "[SUCCESS] Pre-existing test project removed."
+    }
+
     Write-Host "[INFO]  Provisioning standalone test project..."
     $projectDir = Join-Path $LDM_WORKSPACE "ldm-smoke-test"
     if (-not (Test-Path $projectDir)) { New-Item -ItemType Directory -Path $projectDir -Force | Out-Null }

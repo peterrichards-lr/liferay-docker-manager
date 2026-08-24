@@ -416,6 +416,17 @@ jobs:
           python3 scripts/sync_baseline.py
           python3 scripts/sync_colors.py
 
+      # LDM-#1301: exercises verify_e2e_refactor.ps1's helpers under every
+      # PowerShell present, including Windows PowerShell 5.1. `lint-and-test`
+      # runs pytest on ubuntu-latest only, where the sole PowerShell is pwsh 7
+      # -- and 7 both enumerates deserialized JSON arrays and unrolls arrays on
+      # function return, so the 5.1 defect from #1300 collapses there and the
+      # tests cannot fail. This is the only place in CI where 5.1 is actually
+      # exercised. Seconds, no Docker.
+      - name: Verify-script helper tests (Windows PowerShell 5.1)
+        if: matrix.os == 'windows-latest'
+        run: python -m pytest ldm_core/tests/test_verify_scripts.py -q --no-cov
+
       - name: Build Standalone (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: |
