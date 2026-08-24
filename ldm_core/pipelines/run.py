@@ -1063,7 +1063,7 @@ class ComposerStage(PipelineStage):
                         UI.detail(
                             "Starting database container temporarily to take a snapshot backup..."
                         )
-                        db_svc = f"{paths['root'].name}-db"
+                        db_svc = f"{sanitize_id(paths['root'].name)}-db"
                         db_args = (
                             ["up", "-d", db_svc] if not use_shared_db else ["up", "-d"]
                         )
@@ -1376,6 +1376,14 @@ class ExecutionStage(PipelineStage):
         project_meta = context.get("project_meta")
         project_id = context.get("project_id")
 
+        # LDM-#1307: every Docker-facing identifier built here must go through
+        # sanitize_id. The compose file defines services and containers under
+        # the sanitized name, so a raw project id -- which may contain any
+        # Unicode the user typed -- never resolves against it.
+        from ldm_core.utils import sanitize_id
+
+        safe_project_id = sanitize_id(project_id) if project_id else project_id
+
         is_samples = context.get("is_samples")
         external_snapshot = context.get("external_snapshot")
         no_up = context.get("no_up")
@@ -1425,7 +1433,7 @@ class ExecutionStage(PipelineStage):
         use_shared_db = context.get("use_shared_db")
 
         if is_samples or external_snapshot:
-            db_svc = f"{paths['root'].name}-db"
+            db_svc = f"{sanitize_id(paths['root'].name)}-db"
             db_args = ["up", "-d", db_svc] if not use_shared_db else ["up", "-d"]
             manager.run_command([*compose_base, *db_args], cwd=str(paths["root"]))
             time.sleep(5)
@@ -1544,7 +1552,7 @@ class ExecutionStage(PipelineStage):
 
             deps = []
             if db_type != "hypersonic" and not use_shared_db:
-                deps.append(f"{project_id}-db")
+                deps.append(f"{safe_project_id}-db")
 
             if deps:
                 UI.detail(

@@ -207,7 +207,12 @@ class DatabaseSnapshotService:
                 else:
                     compose_base = DockerService.get_compose_cmd_prefix(target_name)
                     if compose_base:
-                        db_svc = f"{paths['root'].name}-db"
+                        from ldm_core.utils import sanitize_id
+
+                        # LDM-#1307: the compose file defines this service under
+                        # the sanitized name; the raw directory name will not
+                        # resolve for a non-ASCII project.
+                        db_svc = f"{sanitize_id(paths['root'].name)}-db"
                         self.manager.run_command(
                             [*compose_base, "up", "-d", db_svc], cwd=str(paths["root"])
                         )
