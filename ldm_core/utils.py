@@ -354,8 +354,22 @@ def sanitize_id(identifier):
 
     s = str(identifier)
 
-    # Transcode German umlauts & Eszett
+    # Transcode characters NFKD cannot handle.
+    #
+    # Two distinct groups, for two distinct reasons:
+    #
+    # 1. German umlauts and Eszett DO decompose under NFKD, but to the wrong
+    #    thing for German: NFKD would give "u" for "ü" where German convention
+    #    is "ue". These are explicit to preserve that convention.
+    #
+    # 2. Stroked and barred letters do NOT decompose at all (LDM-#1308). "ł"
+    #    (U+0142) is an atomic codepoint, not "l" plus a combining stroke, so
+    #    NFKD leaves it intact and the ASCII-ignore step below discards it
+    #    outright -- "Żółć" silently became "Zoc", losing a letter and
+    #    colliding with any real project named "Zoc". Same for "Đ" (U+0110):
+    #    "Được" became "uoc", losing the leading consonant entirely.
     replacements = {
+        # German convention (NFKD would strip rather than expand these)
         "ä": "ae",
         "Ä": "AE",
         "ö": "oe",
@@ -363,6 +377,22 @@ def sanitize_id(identifier):
         "ü": "ue",
         "Ü": "UE",
         "ß": "ss",
+        # Atomic stroked/barred letters -- NFKD cannot decompose these, so
+        # without an explicit mapping they vanish.
+        "ł": "l",
+        "Ł": "L",
+        "đ": "d",
+        "Đ": "D",
+        "ø": "o",
+        "Ø": "O",
+        "ð": "d",
+        "Ð": "D",
+        "þ": "th",
+        "Þ": "TH",
+        "ħ": "h",
+        "Ħ": "H",
+        "ŧ": "t",
+        "Ŧ": "T",
     }
     for char, repl in replacements.items():
         s = s.replace(char, repl)
