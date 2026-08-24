@@ -1726,3 +1726,86 @@ class TestMetadataParsing(unittest.TestCase):
 
         # Standard ASCII remains intact
         self.assertEqual(sanitize_id("vanilla-7.4-app"), "vanilla-7.4-app")
+
+    def test_sanitize_id_stroked_letters_are_not_dropped(self):
+        """LDM-#1308: stroked letters are atomic, so NFKD cannot decompose them.
+
+        "l" with stroke (U+0142) is a single codepoint, not "l" plus a combining
+        mark, so NFKD leaves it intact and the ASCII-ignore step discards it
+        outright. Before the explicit mapping, a Polish project name silently
+        lost a letter and collided with any real project already using the
+        shortened form; a Vietnamese one lost its leading consonant entirely.
+        """
+        from ldm_core.utils import sanitize_id
+
+        self.assertEqual(sanitize_id("Żółć"), "Zolc")
+        self.assertEqual(sanitize_id("Được"), "Duoc")
+        self.assertEqual(sanitize_id("Łódź"), "Lodz")
+        self.assertEqual(sanitize_id("Smørrebrød"), "Smorrebrod")
+        self.assertEqual(sanitize_id("Þór"), "THor")
+
+    def test_sanitize_id_real_world_project_names(self):
+        """Names chosen for distinct diacritic conventions.
+
+        Each exercises a different path: German two-for-one expansion, plain
+        accent stripping, stroked letters, and a long Finnish compound that
+        stresses length once umlauts expand.
+        """
+        from ldm_core.utils import sanitize_id
+
+        cases = {
+            "Żółć": "Zolc",
+            "Hétérogénéité": "Heterogeneite",
+            "Được": "Duoc",
+            "Jäääär": "Jaeaeaeaer",
+            "Märchenerzähler": "Maerchenerzaehler",
+            "Käsespätzle": "Kaesespaetzle",
+            "Epäjärjestelmällistyttämättömyydellänsäkäänköhän": (
+                "Epaejaerjestelmaellistyttaemaettoemyydellaensaekaeaenkoehaen"
+            ),
+        }
+        for raw, expected in cases.items():
+            with self.subTest(name=raw):
+                self.assertEqual(sanitize_id(raw), expected)
+
+    def test_sanitize_id_output_is_always_a_valid_container_name(self):
+        """The property that actually matters, whatever the user types.
+
+        Docker requires [a-zA-Z0-9][a-zA-Z0-9_.-]* for a container name, and the
+        result is also used as a volume prefix. Scripts with no Latin equivalent
+        must fall back rather than produce an empty string.
+        """
+        import re
+
+        from ldm_core.utils import sanitize_id
+
+        docker_name = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$")
+        for raw in [
+            "Żółć",
+            "Được",
+            "Epäjärjestelmällistyttämättömyydellänsäkäänköhän",
+            "日本語プロジェクト",
+            "Проект",
+            "مشروع",
+            "Ελληνικά",
+            "🚀rocket",
+            "ł",
+            "Đ",
+        ]:
+            with self.subTest(name=raw):
+                result = sanitize_id(raw)
+                self.assertTrue(result, f"{raw!r} sanitized to an empty string")
+                self.assertRegex(result, docker_name)
+
+    def test_sanitize_id_non_latin_fallback_is_deterministic(self):
+        """Re-running `ldm run` must resolve to the same container and volumes.
+
+        The hash fallback for non-Latin scripts therefore cannot be random.
+        """
+        from ldm_core.utils import sanitize_id
+
+        for raw in ["日本語プロジェクト", "Проект", "Ελληνικά"]:
+            with self.subTest(name=raw):
+                first = sanitize_id(raw)
+                self.assertEqual(first, sanitize_id(raw))
+                self.assertTrue(first.startswith("project-"))
