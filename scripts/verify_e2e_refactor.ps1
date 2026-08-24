@@ -6,8 +6,8 @@
 # by scripts/release.py on every bump) so a locally-held copy can be checked
 # against what actually shipped, rather than guessing from a file mtime -- git
 # checkout/pull doesn't preserve original commit timestamps.
-# LDM_MAGIC_VERSION: 2.15.33
-$SCRIPT_VERSION = "2.15.33"
+# LDM_MAGIC_VERSION: 2.16.0
+$SCRIPT_VERSION = "2.16.0"
 
 # LDM-#1058: extracted into a named function (still in this same file -- the
 # real verification workflow copies just this one file onto test rigs with
@@ -196,6 +196,83 @@ function Finalize-Verification {
     if (-not (Test-Path "pyproject.toml")) {
         if (Test-Path $LDM_WORKSPACE) { Remove-Item -Recurse -Force $LDM_WORKSPACE -ErrorAction SilentlyContinue }
     }
+}
+
+function ConvertFrom-LdmJson {
+    <#
+    .SYNOPSIS
+    Parses JSON emitted by a native command, safely on Windows PowerShell 5.1.
+
+    .DESCRIPTION
+    LDM-#1300. `& native.exe` returns a string ARRAY -- one element per line.
+    PowerShell 7 accumulates piped input before parsing, but Windows PowerShell
+    5.1 does not treat multi-line pipeline input the same way, which is why the
+    documented idiom is `Get-Content -Raw` or an explicit join. Piping the array
+    straight into ConvertFrom-Json produced an object on 5.1 that carried some
+    properties and silently lacked others, reporting a schema break in `ldm`
+    that did not exist.
+
+    Joining first, and passing -InputObject rather than using the pipeline,
+    removes both the per-item semantics and the array entirely. On failure it
+    dumps what it actually received, so a recurrence is diagnosable from the
+    run log instead of needing another round trip to the machine.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][AllowNull()]$Raw,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+
+    $joined = (@($Raw) -join "`n").Trim()
+    if ([string]::IsNullOrWhiteSpace($joined)) {
+        throw "$Label produced no output to parse"
+    }
+
+    try {
+        return ConvertFrom-Json -InputObject $joined
+    } catch {
+        Write-Host "[ERROR] Could not parse $Label output as JSON." -ForegroundColor Red
+        Write-Host "        PowerShell: $($PSVersionTable.PSVersion)"
+        Write-Host "        Raw length: $($joined.Length) chars"
+        Write-Host "--- begin raw ---"
+        Write-Host $joined
+        Write-Host "--- end raw ---"
+        throw
+    }
+}
+
+function ConvertTo-LdmArray {
+    <#
+    .SYNOPSIS
+    Returns a parsed JSON value as a flat array of entries.
+
+    .DESCRIPTION
+    LDM-#1300. Windows PowerShell 5.1 emits a deserialized JSON array as a
+    SINGLE object rather than enumerating it, so the usual `@(...)` idiom yields
+    a one-element array *containing* the array. Iterating that gives the .NET
+    array itself, whose properties are Count/Length/Rank/SyncRoot -- which is
+    exactly what the failing Windows run reported when it looked for
+    'http_ready'. PowerShell 7 enumerates, so the bug is invisible there.
+
+    Assigning an existing array through unchanged, and wrapping only a scalar,
+    is correct on both: it never double-wraps and never flattens a single entry
+    into nothing.
+    #>
+    param([Parameter(Mandatory = $true)][AllowNull()]$Value)
+
+    if ($null -eq $Value) { return @() }
+
+    if ($Value -is [System.Array]) {
+        # Defensive unwrap: if 5.1's PSObject wrapping produced a single-element
+        # array whose only element is itself an array, that inner array is the
+        # entry list. A legitimate single entry is a PSCustomObject, never an
+        # array, so this cannot swallow real data.
+        if ($Value.Count -eq 1 -and $Value[0] -is [System.Array]) {
+            return $Value[0]
+        }
+        return $Value
+    }
+
+    return @($Value)
 }
 
 function Log-AndRun {
@@ -608,7 +685,7 @@ zf.close()
     # schema break that never happened.
     $listJsonRaw = & $LDM_CMD list --json 2>$null
     try {
-        $listData = @($listJsonRaw | ConvertFrom-Json)
+        $listData = ConvertTo-LdmArray -Value (ConvertFrom-LdmJson -Raw $listJsonRaw -Label "list --json")
         # Must not be vacuous: a project exists by this point in the run, so an
         # empty array means the contract is broken, not that there is nothing
         # to check.
@@ -618,7 +695,8 @@ zf.close()
         foreach ($item in $listData) {
             foreach ($key in @("http_ready", "http_status", "db_unhealthy")) {
                 if ($item.PSObject.Properties.Name -notcontains $key) {
-                    throw "$key missing from list --json entry '$($item.project)'"
+                    $seen = ($item.PSObject.Properties.Name -join ", ")
+                    throw "$key missing from list --json entry '$($item.project)' (properties present: $seen)"
                 }
             }
         }
@@ -634,18 +712,19 @@ zf.close()
     # 'db_unhealthy', which is a list-only field.
     $statusJsonRaw = & $LDM_CMD status . --json 2>$null
     try {
-        $statusData = $statusJsonRaw | ConvertFrom-Json
+        $statusData = ConvertFrom-LdmJson -Raw $statusJsonRaw -Label "status --json"
         if ($statusData.PSObject.Properties.Name -notcontains "projects") {
             throw "projects missing from status --json"
         }
-        $statusProjects = @($statusData.projects)
+        $statusProjects = ConvertTo-LdmArray -Value $statusData.projects
         if (-not $statusProjects -or $statusProjects.Count -eq 0) {
             throw "status --json returned no projects; expected the test project"
         }
         foreach ($item in $statusProjects) {
             foreach ($key in @("http_ready", "http_status")) {
                 if ($item.PSObject.Properties.Name -notcontains $key) {
-                    throw "$key missing from status --json project '$($item.project)'"
+                    $seen = ($item.PSObject.Properties.Name -join ", ")
+                    throw "$key missing from status --json project '$($item.project)' (properties present: $seen)"
                 }
             }
         }
