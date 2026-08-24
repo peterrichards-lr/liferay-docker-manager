@@ -899,6 +899,14 @@ class TestBaseCompletion(unittest.TestCase):
 
             mock_result = MagicMock()
             mock_result.stdout = "OK"
+            # LDM-#1306: returncode must be set explicitly. This mock models a
+            # *successful* docker run, but a bare MagicMock's `returncode` is
+            # itself a MagicMock, so `returncode != 0` is True. That went
+            # unnoticed while the probe used check=True, because
+            # CommandRunner.run only consults returncode when `not check`
+            # (utils.py). Once the probe became check=False for #1306 the
+            # runner correctly read this mock as a failure and returned None.
+            mock_result.returncode = 0
             mock_run.return_value = mock_result
 
             try:
@@ -937,6 +945,111 @@ class TestBaseCompletion(unittest.TestCase):
             with patch.object(handler, "run_command") as mock_run_command:
                 handler.verify_runtime_environment(paths)
                 mock_run_command.assert_not_called()
+
+
+class TestMountProbeIsBounded(unittest.TestCase):
+    """The Docker mount probe must be bounded and must fail loudly (LDM-#1306).
+
+    The probe shells out to `docker run --rm -v <root>:/workspace alpine ...`
+    to confirm the project directory is actually writable from inside a
+    container. It had no timeout, so a stalled image pull, an unreachable
+    registry or a wedged mount hung indefinitely with nothing printed -- and
+    because it runs during `ldm run`, a hang there looks exactly like slow
+    startup. Observed twice: a WSL2 run sitting silently at "Synchronizing
+    Assets", and Docker Hub returning HTTP 500 during v2.16.0 verification.
+    """
+
+    def _handler(self):
+        from ldm_core.handlers.base import BaseHandler
+
+        handler = BaseHandler(MagicMock())
+        handler.verbose = False
+        return handler
+
+    def test_run_command_wrapper_forwards_timeout(self):
+        """The enabling defect: the wrapper accepted no timeout at all.
+
+        `utils.run_command` has supported `timeout` throughout, but
+        `BaseHandler.run_command` did not accept or forward it, so *every*
+        Docker and registry call made through the wrapper was unbounded no
+        matter what the call site asked for. Bounding the probe is only
+        possible because of this.
+        """
+        handler = self._handler()
+
+        with patch("ldm_core.utils.run_command") as mock_run_command:
+            handler.run_command(["docker", "info"], timeout=42)
+
+        self.assertEqual(
+            mock_run_command.call_args.kwargs.get("timeout"),
+            42,
+            "BaseHandler.run_command dropped `timeout` instead of forwarding it",
+        )
+
+    @patch("platform.system", return_value="Darwin")
+    @patch("ldm_core.config.get_active_target")
+    @patch("ldm_core.handlers.base.shutil.which", return_value="/usr/local/bin/docker")
+    def test_probe_passes_a_timeout(self, mock_which, mock_target, mock_system):
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(name="local", host="localhost")
+        handler = self._handler()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            paths = {"root": root, "files": root / "files"}
+
+            with patch.object(handler, "run_command", return_value="OK") as mock_run:
+                handler.verify_runtime_environment(paths)
+
+        probe = next(
+            c for c in mock_run.call_args_list if "alpine" in (c.args[0] or [])
+        )
+        self.assertIsNotNone(
+            probe.kwargs.get("timeout"), "the mount probe ran unbounded"
+        )
+        self.assertFalse(
+            probe.kwargs.get("check", True),
+            "the probe must use check=False so a timeout reaches our diagnosis "
+            "rather than exiting 124 with a generic message",
+        )
+
+    @patch("platform.system", return_value="Darwin")
+    @patch("ldm_core.config.get_active_target")
+    @patch("ldm_core.handlers.base.shutil.which", return_value="/usr/local/bin/docker")
+    def test_probe_failure_exits_with_a_diagnosis(
+        self, mock_which, mock_target, mock_system
+    ):
+        """A timed-out or failed probe must name the likely causes.
+
+        With check=False, `CommandRunner.run` collapses timeout, non-zero exit
+        and missing-binary all to None, so None is the single failure signal
+        the handler has to act on.
+        """
+        from ldm_core.config import TargetNode
+
+        mock_target.return_value = TargetNode(name="local", host="localhost")
+        handler = self._handler()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            paths = {"root": root, "files": root / "files"}
+
+            with (
+                patch.object(handler, "run_command", return_value=None),
+                patch("ldm_core.ui.UI.info") as mock_info,
+                self.assertRaises(SystemExit) as ctx,
+            ):
+                handler.verify_runtime_environment(paths)
+
+        self.assertEqual(ctx.exception.code, 3)
+
+        # UI.info, not UI.detail: detail is gated behind --info/--verbose
+        # (LDM-#1036), so a diagnosis written with it would be invisible in
+        # exactly the run where someone needs it.
+        printed = " ".join(str(c.args[0]) for c in mock_info.call_args_list if c.args)
+        for cause in ("registry", "daemon", "pull alpine"):
+            self.assertIn(cause, printed)
 
 
 class TestBasePortChecking(unittest.TestCase):

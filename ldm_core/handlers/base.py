@@ -785,7 +785,15 @@ class BaseHandler:
         env=None,
         capture_output=True,
         stdout_file=None,
+        timeout=None,
     ):
+        """Thin wrapper over utils.run_command.
+
+        LDM-#1306: `timeout` is forwarded so callers can bound Docker and
+        registry operations. Without it, every call through this wrapper was
+        unbounded regardless of what utils.run_command supported, so a stalled
+        pull or wedged mount hung indefinitely with no output.
+        """
         from ldm_core.utils import run_command
 
         # Safety: If cwd is a dictionary (common error in refactored handlers), extract root
@@ -802,6 +810,7 @@ class BaseHandler:
             capture_output=capture_output,
             verbose=self.verbose,
             stdout_file=stdout_file,
+            timeout=timeout,
         )
 
     def require_compose(self, root_path, silent=False):
@@ -1566,6 +1575,28 @@ class BaseHandler:
                 else:
                     docker_cmd += " echo 'OK'"
 
+                # LDM-#1306: bounded, and announced before it blocks.
+                #
+                # This probe had no timeout, so a stalled image pull, an
+                # unreachable registry or a wedged mount hung indefinitely with
+                # nothing printed -- "working" and "wedged" looked identical and
+                # the only recourse was to kill it and guess. Seen twice: a WSL2
+                # run sitting silently at "Synchronizing Assets", and Docker Hub
+                # returning HTTP 500 during v2.16.0 verification.
+                #
+                # 120s is deliberately generous: the probe itself takes seconds,
+                # but the first run on a machine may pull the alpine image.
+                #
+                # check=False so a timeout returns None instead of exiting 124
+                # with a generic message -- the diagnosis below is the point.
+                # UI.info, not UI.detail: detail is gated behind --info/--verbose
+                # (LDM-#1036), so the announcement would be invisible by default
+                # -- exactly when someone is staring at a silent stall trying to
+                # work out whether anything is happening.
+                UI.info(
+                    "Verifying Docker can mount the project directory "
+                    "(pulls alpine on first use)..."
+                )
                 verify_res = self.run_command(
                     [
                         "docker",
@@ -1577,8 +1608,33 @@ class BaseHandler:
                         "sh",
                         "-c",
                         docker_cmd,
-                    ]
+                    ],
+                    check=False,
+                    timeout=120,
                 )
+
+                if verify_res is None:
+                    # UI.info throughout, for the same reason as the
+                    # announcement above: UI.detail is gated behind
+                    # --info/--verbose (LDM-#1036), so a diagnosis written with
+                    # it would be invisible in exactly the situation it exists
+                    # to explain -- the user would see a bare refusal.
+                    UI.error("Docker mount verification did not complete.")
+                    UI.info(
+                        "The probe was bounded at 120s and timed out or failed. "
+                        "Likely causes:"
+                    )
+                    UI.info(
+                        "  - the 'alpine' image pull stalled, or the registry "
+                        "is unreachable"
+                    )
+                    UI.info("  - the Docker daemon is not responding")
+                    UI.info(f"  - the mount of {root} is wedged")
+                    UI.info("Check with:  docker info    and    docker pull alpine")
+                    UI.die(
+                        "Cannot verify Docker mounting; refusing to continue.",
+                        exit_code=3,
+                    )
 
                 if "OK" not in (verify_res or ""):
                     # ... (rest of error handling) ...
