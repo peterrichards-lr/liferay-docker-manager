@@ -23,7 +23,7 @@ A **Vanilla Start** bypasses the pre-warmed seeds entirely:
 
 ## 2. Starting a Vanilla Instance
 
-To start a vanilla instance, use the `--vanilla` flag ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue) (which acts as a developer alias to `--no-seed`) during project initialization or run:
+To start a vanilla instance, use the `--vanilla` flag ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue) (which implies `--no-seed`, and additionally refuses `--samples`/`--snapshot` and wipes persisted OSGi state) during project initialization or run:
 
 ```bash
 # Start a fresh vanilla Liferay using the default PostgreSQL database
@@ -122,7 +122,7 @@ If you decline (`n`), or if you explicitly bypass seeding, LDM starts a fresh va
 LDM provides two flags to skip pre-warmed database seeding:
 
 1. **`--no-seed`** (Technical Mechanism): Bypasses downloading or restoring any pre-warmed database schema.
-2. **`--vanilla`** (Expected Outcome): A user-friendly alias for `--no-seed` that explicitly signifies you want to boot a completely pristine, empty Liferay instance.
+2. **`--vanilla`** (Expected Outcome): The intent flag for a completely pristine, empty Liferay instance. It implies `--no-seed`, refuses to run alongside `--samples` or `--snapshot`, and wipes any host-persisted OSGi state, so nothing arrives pre-populated.
 
 Both flags have identical behavior and can be used interchangeably.
 

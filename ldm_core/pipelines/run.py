@@ -615,6 +615,33 @@ class ConfigResolutionStage(PipelineStage):
 
         is_samples = getattr(manager.args, "samples", False)
 
+        # LDM-#1285: `--vanilla` is an intent flag -- "give me a Liferay with
+        # nothing pre-populated" -- not merely a second name for `--no-seed`,
+        # which is a mechanism flag meaning "skip the pre-warmed seed archive".
+        #
+        # Before this, `--vanilla` was consulted only at the seeding gate
+        # (handlers/assets.py), so `ldm run --vanilla --samples` skipped the
+        # seed and then restored a sample snapshot -- a combination that
+        # silently contradicted itself and produced a decidedly non-vanilla
+        # instance. Refusing is better than silently dropping whichever flag
+        # loses: quietly ignoring one the user explicitly typed is its own
+        # surprise, and LDM prefers loud refusal for contradictory input.
+        if getattr(manager.args, "vanilla", False):
+            conflicting = []
+            if is_samples:
+                conflicting.append("--samples")
+            if getattr(manager.args, "snapshot", None):
+                conflicting.append("--snapshot")
+            if conflicting:
+                UI.die(
+                    f"--vanilla cannot be combined with {' or '.join(conflicting)}: "
+                    "--vanilla means nothing pre-populated, while "
+                    f"{conflicting[0]} restores content into the project. "
+                    "Drop one of them -- use --no-seed instead of --vanilla if "
+                    "you only meant to skip the pre-warmed seed.",
+                    exit_code=1,
+                )
+
         is_portal = (
             getattr(manager.args, "portal", False)
             or str(project_meta.get("portal", manager.defaults.get("portal"))).lower()
@@ -898,12 +925,24 @@ class EnvironmentSetupStage(PipelineStage):
         if str(project_meta.get("persist_osgi", "false")).lower() == "true":
             osgi_state_dir = paths["state"]
             tag_marker = osgi_state_dir / ".ldm_tag"
+            # LDM-#1285: `--vanilla` promises nothing pre-populated, and a
+            # host-persisted OSGi state directory from a previous run is
+            # pre-populated bundle state. Wiping it unconditionally here is what
+            # makes the promise hold even when the tag has not changed --
+            # otherwise `--persist-osgi` would quietly carry resolved bundles
+            # into an instance the user asked to be pristine.
+            is_vanilla = getattr(manager.args, "vanilla", False)
             if osgi_state_dir.exists():
                 with contextlib.suppress(Exception):
                     saved_tag = (
                         tag_marker.read_text().strip() if tag_marker.exists() else None
                     )
-                    if saved_tag != tag:
+                    if is_vanilla:
+                        UI.warning(
+                            "--vanilla: wiping persisted OSGi state so the "
+                            "instance starts with no pre-resolved bundles."
+                        )
+                    if is_vanilla or saved_tag != tag:
                         UI.warning(
                             f"OSGi state invalidation: Liferay tag changed from '{saved_tag}' to '{tag}'. Wiping state to prevent bundle conflicts."
                         )
