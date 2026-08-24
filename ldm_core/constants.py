@@ -80,6 +80,23 @@ RELEASE_ANNOUNCEMENTS = {
         ),
         ("ldm prune", "Reclaim LDM's own named volumes via ownership labels"),
     ],
+    "2.17": [
+        (
+            "ldm run --vanilla",
+            "Now an intent flag: rejects --samples/--snapshot instead of "
+            "silently contradicting them",
+        ),
+        (
+            "Non-ASCII project names",
+            "Name a project in any script; metadata keeps it verbatim while "
+            "Docker gets a transcoded ASCII name",
+        ),
+        (
+            "Bounded Docker probes",
+            "A stalled pull or wedged mount now fails with a diagnosis "
+            "instead of hanging silently",
+        ),
+    ],
 }
 
 # --- Global Infrastructure ---
