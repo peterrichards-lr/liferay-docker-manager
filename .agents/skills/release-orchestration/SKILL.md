@@ -54,6 +54,21 @@ description: Activate this skill whenever preparing a release, bumping versions,
 
     This is the **only** path that ever merges a release branch into `master` -- it bumps to a stable version first, then merges.
 
+- **Fix on `master` first, then backport into the release branch -- never the reverse.** A release branch is short-lived and dies at promotion; `master` is the trunk and outlives everything. Cherry-picking *master -> release* means the duplicate disappears when the branch does. Cherry-picking *release -> master* leaves the same change arriving by two routes, and it collides when `--promote` merges.
+
+  Hit on 2026-08-24 with LDM-#1300. The fix was urgent for in-flight Windows verification, so it landed on `release/v2.16.0` first -- correct for unblocking. But `master`'s copy of the script was then still broken, and new work (#1301) needed those helpers, so the commit was cherry-picked *release -> master-based branch*. After promotion that branch carried a duplicate commit and a stale `SCRIPT_VERSION`, conflicting against the very change it already contained.
+
+  The sequence that serves the same urgency without the collision:
+
+  1. fix on a branch off `master` -> PR -> merge
+  2. cherry-pick that commit **into** the open `release/*` branch, unblocking verification
+  3. build follow-up work on `master`, which now has it natively
+  4. at promotion the merge is a no-op for that file
+
+  Only genuinely release-only changes -- the version bump, its CHANGELOG entry, the compatibility-matrix sync -- should originate on the release branch.
+
+- **Do not base new work on a cherry-pick from an open release branch.** If `master` lacks something you need, that is a signal to land it on `master` properly, not to borrow it sideways. Borrowing produces a branch that looks fine until the release lands and then conflicts with itself.
+
 ## Pre-Release Strategy
 
 To prevent "version fatigue" and ensure the stability of the main release channel:

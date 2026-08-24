@@ -456,6 +456,31 @@ if [ -n "$REMOTE_HOST" ]; then
 fi
 
 # 3. Project Run
+# LDM-#1302: a leftover project from a previous run sends `ldm run` down the
+# `already exists -> reconfigure` path instead of a fresh provision. That path
+# then reaches verify_runtime_environment()'s `docker run ... alpine` mount
+# probe, which has no timeout -- so a stalled pull or wedged mount hangs
+# indefinitely with nothing printed. Observed on WSL2 during v2.16.0-pre.3.
+#
+# The name is stable whenever LDM_TEST_PORT is exported, so this recurs on any
+# machine where an earlier run died -- which happened repeatedly this cycle. A
+# fresh CI runner never hits it, so the reconfigure path is effectively
+# untested. Removing here makes re-runs idempotent; the suite already deletes
+# this project on exit, so doing it on entry is consistent, not destructive.
+if "$LDM_CMD" list 2>/dev/null | grep -q "${PROJECT_NAME}"; then
+    echo "⚠  Test project '${PROJECT_NAME}' already exists (leftover from a failed run)."
+    echo "   Removing it so this run provisions cleanly rather than reconfiguring."
+    "$LDM_CMD" -y rm "${PROJECT_NAME}" --delete >/dev/null 2>&1 || true
+    rm -rf "${LDM_WORKSPACE:?}/${PROJECT_NAME}"
+    if "$LDM_CMD" list 2>/dev/null | grep -q "${PROJECT_NAME}"; then
+        echo "❌ ERROR: could not remove pre-existing project '${PROJECT_NAME}'." | tee -a "$RESULTS_FILE_TMP"
+        echo "   Refusing to continue: reconfiguring a stale project is the path that hangs." | tee -a "$RESULTS_FILE_TMP"
+        echo "   Remove it manually with: ${LDM_CMD} -y rm ${PROJECT_NAME} --delete" | tee -a "$RESULTS_FILE_TMP"
+        exit 1
+    fi
+    echo "✅ Pre-existing test project removed."
+fi
+
 echo "ℹ  Provisioning standalone test project..."
 mkdir -p "$LDM_WORKSPACE/${PROJECT_NAME}/files"
 cd "$LDM_WORKSPACE/${PROJECT_NAME}"
