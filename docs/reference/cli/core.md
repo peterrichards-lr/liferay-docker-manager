@@ -77,7 +77,7 @@ ldm run demo --scale liferay=2 --scale my-ext=3
 
 Bypasses downloading the pre-warmed database seed from GitHub releases. Spawns the Liferay project stack with a pristine, empty database.
 
-`--vanilla` is an alias for `--no-seed` — identical behaviour, named for the intent rather than the mechanism. It does not suppress `--samples` or `--snapshot`; see [#1285](https://github.com/peterrichards-lr/liferay-docker-manager/issues/1285).
+`--vanilla` is an *intent* flag: nothing pre-populated. It implies `--no-seed`, refuses to combine with `--samples` or `--snapshot`, and wipes persisted OSGi state. `--no-seed` remains the narrower *mechanism* flag — skip the pre-warmed seed only — and still combines freely with `--samples`/`--snapshot`.
 
 ## `init`
 
