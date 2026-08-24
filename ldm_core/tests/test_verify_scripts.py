@@ -20,7 +20,11 @@ PS1_SCRIPT = SCRIPTS_DIR / "verify_e2e_refactor.ps1"
 
 
 def _extract_function(script_path, pattern):
-    text = script_path.read_text()
+    # LDM-#1309: encoding must be explicit. Without it, read_text() uses the
+    # locale codec, which on Windows is cp1252 and cannot decode the UTF-8 in
+    # verify_e2e_refactor.sh -- "'charmap' codec can't decode byte 0x9d". The
+    # scripts are UTF-8 regardless of the host's locale.
+    text = script_path.read_text(encoding="utf-8")
     match = pattern.search(text)
     if not match:
         raise AssertionError(
@@ -131,7 +135,7 @@ class TestPowerShellJsonHelpers(unittest.TestCase):
         '{"project":"b","http_ready":true}]\'\n'
         "$parsed = ConvertFrom-LdmJson -Raw $json -Label 'list --json'\n"
         "$flat = ConvertTo-LdmArray -Value $parsed\n"
-        "Write-Output ('count=' + $flat.Count)\n"
+        "Write-Output ('count=' + @($flat).Count)\n"
         "foreach ($i in $flat) { Write-Output ('project=' + $i.project) }\n"
     )
 
@@ -171,7 +175,7 @@ class TestPowerShellJsonHelpers(unittest.TestCase):
             "[pscustomobject]@{project='b'})\n"
             "$nested = ,$inner\n"
             "$flat = ConvertTo-LdmArray -Value $nested\n"
-            "Write-Output ('count=' + $flat.Count)\n"
+            "Write-Output ('count=' + @($flat).Count)\n"
             "Write-Output ('first=' + $flat[0].GetType().Name)\n"
         )
         for name, binary in _powershell_binaries():
@@ -191,7 +195,7 @@ class TestPowerShellJsonHelpers(unittest.TestCase):
             '$json = \'[{"project":"solo","http_ready":true}]\'\n'
             "$flat = ConvertTo-LdmArray -Value "
             "(ConvertFrom-LdmJson -Raw $json -Label 'list --json')\n"
-            "Write-Output ('count=' + $flat.Count)\n"
+            "Write-Output ('count=' + @($flat).Count)\n"
             "Write-Output ('project=' + $flat[0].project)\n"
         )
         for name, binary in _powershell_binaries():
