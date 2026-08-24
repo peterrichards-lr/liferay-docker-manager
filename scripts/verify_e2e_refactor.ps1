@@ -240,6 +240,41 @@ function ConvertFrom-LdmJson {
     }
 }
 
+function ConvertTo-LdmArray {
+    <#
+    .SYNOPSIS
+    Returns a parsed JSON value as a flat array of entries.
+
+    .DESCRIPTION
+    LDM-#1300. Windows PowerShell 5.1 emits a deserialized JSON array as a
+    SINGLE object rather than enumerating it, so the usual `@(...)` idiom yields
+    a one-element array *containing* the array. Iterating that gives the .NET
+    array itself, whose properties are Count/Length/Rank/SyncRoot -- which is
+    exactly what the failing Windows run reported when it looked for
+    'http_ready'. PowerShell 7 enumerates, so the bug is invisible there.
+
+    Assigning an existing array through unchanged, and wrapping only a scalar,
+    is correct on both: it never double-wraps and never flattens a single entry
+    into nothing.
+    #>
+    param([Parameter(Mandatory = $true)][AllowNull()]$Value)
+
+    if ($null -eq $Value) { return @() }
+
+    if ($Value -is [System.Array]) {
+        # Defensive unwrap: if 5.1's PSObject wrapping produced a single-element
+        # array whose only element is itself an array, that inner array is the
+        # entry list. A legitimate single entry is a PSCustomObject, never an
+        # array, so this cannot swallow real data.
+        if ($Value.Count -eq 1 -and $Value[0] -is [System.Array]) {
+            return $Value[0]
+        }
+        return $Value
+    }
+
+    return @($Value)
+}
+
 function Log-AndRun {
     param($msg, $cmd, $args_list)
     Write-Host ">> $msg"
@@ -650,7 +685,7 @@ zf.close()
     # schema break that never happened.
     $listJsonRaw = & $LDM_CMD list --json 2>$null
     try {
-        $listData = @(ConvertFrom-LdmJson -Raw $listJsonRaw -Label "list --json")
+        $listData = ConvertTo-LdmArray -Value (ConvertFrom-LdmJson -Raw $listJsonRaw -Label "list --json")
         # Must not be vacuous: a project exists by this point in the run, so an
         # empty array means the contract is broken, not that there is nothing
         # to check.
@@ -681,7 +716,7 @@ zf.close()
         if ($statusData.PSObject.Properties.Name -notcontains "projects") {
             throw "projects missing from status --json"
         }
-        $statusProjects = @($statusData.projects)
+        $statusProjects = ConvertTo-LdmArray -Value $statusData.projects
         if (-not $statusProjects -or $statusProjects.Count -eq 0) {
             throw "status --json returned no projects; expected the test project"
         }
