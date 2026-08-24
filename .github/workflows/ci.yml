@@ -425,7 +425,12 @@ jobs:
       # exercised. Seconds, no Docker.
       - name: Verify-script helper tests (Windows PowerShell 5.1)
         if: matrix.os == 'windows-latest'
-        run: python -m pytest ldm_core/tests/test_verify_scripts.py -q --no-cov
+        # Only the PowerShell classes. The bash classes in this file exercise
+        # verify_e2e_refactor.sh, a Linux/macOS artifact -- Windows runners do
+        # ship Git Bash, so they execute and fail there, but that failure says
+        # nothing about the .sh script as actually used. This job exists to
+        # cover Windows PowerShell 5.1, which no other job does.
+        run: python -m pytest ldm_core/tests/test_verify_scripts.py -q --no-cov -k PowerShell
 
       - name: Build Standalone (Linux)
         if: matrix.os == 'ubuntu-latest'

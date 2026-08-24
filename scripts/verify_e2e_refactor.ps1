@@ -710,7 +710,11 @@ zf.close()
         # Must not be vacuous: a project exists by this point in the run, so an
         # empty array means the contract is broken, not that there is nothing
         # to check.
-        if (-not $listData -or $listData.Count -eq 0) {
+        # LDM-#1309: @() is required. Windows PowerShell 5.1 gives a scalar no
+        # .Count property (7 added it), so on a single-project machine -- the
+        # normal CI case -- this vacuity guard evaluated .Count to empty,
+        # compared empty -eq 0 as false, and passed without ever guarding.
+        if (-not $listData -or @($listData).Count -eq 0) {
             throw "list --json returned an empty array; expected the test project"
         }
         foreach ($item in $listData) {
@@ -738,7 +742,7 @@ zf.close()
             throw "projects missing from status --json"
         }
         $statusProjects = ConvertTo-LdmArray -Value $statusData.projects
-        if (-not $statusProjects -or $statusProjects.Count -eq 0) {
+        if (-not $statusProjects -or @($statusProjects).Count -eq 0) {
             throw "status --json returned no projects; expected the test project"
         }
         foreach ($item in $statusProjects) {
