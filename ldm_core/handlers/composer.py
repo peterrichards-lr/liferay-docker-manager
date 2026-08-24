@@ -389,6 +389,23 @@ class ComposerService:
             services["lfr-tunnel"] = lfr_tunnel_service
 
         compose = {
+            # LDM-#1307: set the Compose project name explicitly.
+            #
+            # Without this, Compose derives it from the working directory,
+            # lowercasing and discarding anything outside [a-z0-9_-]. For a
+            # directory with no ASCII alphanumerics at all -- "Żółć", "日本語",
+            # any Cyrillic, Greek or Arabic name -- that derivation yields an
+            # empty string and Compose refuses to run:
+            #
+            #     Error Details: project name must not be empty
+            #
+            # so the project could not start at all. `project_name` is the
+            # sanitize_id() form already used for container names and volume
+            # prefixes, so naming the project after it keeps every Docker-facing
+            # identifier consistent, while the human-readable name stays in the
+            # project metadata and directory. Docker never has to understand
+            # the original; LDM does the translating.
+            "name": project_name,
             "services": services,
             "networks": {"liferay-net": {"external": True}},
         }
