@@ -1,0 +1,125 @@
+name: Share Tunnel Verification
+
+# LDM-#1337: verifies that `ldm share` reaches the project's compute node.
+#
+# Manually triggered, deliberately. Tiers 2 and 3 start a real tunnel, which
+# means a publicly reachable URL for the duration of the run -- not something
+# the routine E2E suite should do on every push. Tier 3 additionally targets a
+# real EC2 node.
+#
+# Tier 1 also runs in ci.yml on every PR, because `pytest ldm_core/tests/`
+# picks it up. It is invoked explicitly here so the whole share story is
+# visible in one place, and so a manual run is meaningful even when the tunnel
+# tiers are skipped.
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      node:
+        description: 'Compute target to verify against'
+        required: true
+        default: 'local'
+        type: choice
+        options:
+          - local
+          - aws-1
+          - aws-2
+      wake_node:
+        description: 'Wake the node first (remote targets only)'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  share-verification:
+    name: Share Tunnel Verification (${{ inputs.node }})
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]" || pip install -r requirements.txt
+
+      # ---------------------------------------------------------------------
+      # Tier 1 -- routing logic. No token, no node, no tunnel.
+      # ---------------------------------------------------------------------
+      - name: 'Tier 1: share routes to the project''s compute target'
+        run: |
+          python -m pytest ldm_core/tests/test_share_target_routing.py \
+                           ldm_core/tests/test_share_provider_guard.py \
+                           -v --no-cov
+
+      # ---------------------------------------------------------------------
+      # Tier 2/3 preconditions. A missing token SKIPS the tunnel tiers, and
+      # says so -- a silent skip here would be #1282 all over again, where
+      # PSScriptAnalyzer reported success while never running.
+      # ---------------------------------------------------------------------
+      - name: Check tunnel preconditions
+        id: preflight
+        env:
+          LFT_CLIENT_TOKEN: ${{ secrets.LFT_CLIENT_TOKEN }}
+        run: |
+          if [ -z "$LFT_CLIENT_TOKEN" ]; then
+            echo "tunnel=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Tunnel tiers skipped::LFT_CLIENT_TOKEN is not set as a repository secret, so tiers 2 and 3 cannot run. Tier 1 still ran."
+          else
+            echo "tunnel=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ "${{ inputs.node }}" = "local" ]; then
+            echo "tier=2" >> "$GITHUB_OUTPUT"
+          else
+            echo "tier=3" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ---------------------------------------------------------------------
+      # Tier 3 -- a real node. Blocked until CI has a data-plane route to the
+      # instance: node-power-manager reaches AWS through the EC2 API only
+      # (control plane), and no workflow creates a docker context to a node.
+      # Opening inbound SSH to GitHub-hosted runners is not an acceptable
+      # answer -- their IP ranges are enormous and dynamic. SSM Session
+      # Manager is the candidate, reusing the AWS credentials CI already has
+      # and needing no inbound ports, but it requires the SSM agent and an
+      # instance profile that have not been confirmed. Tracked separately.
+      # ---------------------------------------------------------------------
+      - name: 'Tier 3: refuse to pretend a remote run happened'
+        if: steps.preflight.outputs.tier == '3'
+        run: |
+          echo "::error title=Tier 3 not yet supported::Verifying against '${{ inputs.node }}' needs a docker context to that node, which CI cannot currently create. Re-run with node=local for tier 2, or run the share checks locally against a configured target."
+          exit 1
+
+      - name: Wake the target node
+        if: steps.preflight.outputs.tier == '3' && inputs.wake_node
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+        run: python3 scripts/manage_target_nodes.py wake "${{ inputs.node }}" --ttl 1h
+
+      # ---------------------------------------------------------------------
+      # Tier 2 -- the share plumbing, end to end, against a local target.
+      # Asserts the tunnel container is created and then removed again.
+      # ---------------------------------------------------------------------
+      - name: 'Tier 2: share plumbing against a local target'
+        if: steps.preflight.outputs.tunnel == 'true' && steps.preflight.outputs.tier == '2'
+        env:
+          LFT_CLIENT_TOKEN: ${{ secrets.LFT_CLIENT_TOKEN }}
+        run: bash scripts/verify_share_tunnel.sh
+
+      - name: Report skipped tiers
+        if: always()
+        run: |
+          if [ "${{ steps.preflight.outputs.tunnel }}" != "true" ]; then
+            echo "Tier 2 skipped: no LFT_CLIENT_TOKEN secret."
+          fi
