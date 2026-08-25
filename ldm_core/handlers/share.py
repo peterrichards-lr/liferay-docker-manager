@@ -11,7 +11,13 @@ from typing import ClassVar
 
 from ldm_core.docker_service import DockerService
 from ldm_core.ui import UI
-from ldm_core.utils import download_file, get_actual_home, run_command, version_to_tuple
+from ldm_core.utils import (
+    download_file,
+    get_actual_home,
+    is_local_host,
+    run_command,
+    version_to_tuple,
+)
 
 
 class ShareService:
@@ -387,6 +393,73 @@ class ShareService:
         )
         return None
 
+    def _assert_provider_can_reach_target(self, provider, project_meta, project_id):
+        """Refuses a provider that cannot reach the project's compute node (LDM-#1338).
+
+        The two providers differ in where the tunnel runs:
+
+        - `lfr-tunnel-docker` creates the tunnel container ON the target node
+          (via `docker --context`) and reaches Liferay over the compose
+          network. Correct for a remote node.
+        - `lfr-tunnel` runs a binary on the invoking machine and forwards to
+          `meta["host_name"]`, defaulting to localhost. `meta["target"]` is
+          never consulted, so for a project on a remote node it tunnels to the
+          developer's own localhost.
+
+        That failure is silent and misattributed: the tunnel starts, a public
+        URL is printed, and `share status` reports it running. Requests then
+        fail -- or worse, reach whatever unrelated container the developer
+        happens to have on that port, served under the project's public URL.
+        Nothing in the output points at the provider, so the time goes on
+        debugging the tunnel or the gateway.
+
+        Refused rather than warned: a warning would print alongside the success
+        message and the URL, which is close to what already happens.
+
+        The escape hatch is real -- an explicitly set `host_name` the developer
+        can reach makes the native provider work, because the tunnel forwards
+        there instead of to localhost. So this fires only on the unambiguous
+        case: remote target AND `host_name` still defaulting to localhost.
+        """
+        if provider != "lfr-tunnel":
+            return
+
+        target_name = (project_meta or {}).get("target")
+        from ldm_core.config import get_active_target
+
+        target = get_active_target(target_name)
+
+        # Same predicate DockerService.get_docker_cmd_prefix() uses to decide
+        # whether a target is genuinely remote -- including that all of
+        # 127.0.0.0/8 counts as local. Two definitions of "is this remote"
+        # disagreeing is what #1324 had to unpick for project discovery.
+        if target.name == "local" or is_local_host(target.host):
+            return
+
+        host_name = (project_meta or {}).get("host_name") or "localhost"
+        if host_name != "localhost":
+            # Explicitly pointed somewhere reachable; the native provider
+            # forwards there and can legitimately work.
+            return
+
+        UI.error(
+            f"Project '{project_id}' runs on compute node "
+            f"'{target.name}' ({target.host}), but the native lfr-tunnel "
+            "provider runs the tunnel on this machine and forwards to "
+            "localhost -- it cannot reach a project on another host."
+        )
+        UI.info("Use the containerised provider instead:")
+        UI.info("    ldm share start --provider lfr-tunnel-docker")
+        UI.info("  (or set share_provider=lfr-tunnel-docker in the project's meta)")
+        UI.info(
+            "  If this machine can reach the node directly, setting the "
+            "project's host_name to its address also works."
+        )
+        UI.die(
+            "Refusing to start a tunnel that cannot reach the project.",
+            exit_code=3,
+        )
+
     def resolve_share_config(self, project_meta=None, provider=None, domain=None):  # noqa: C901, PLR0912
         """Resolves share provider and share domain, prompting the user if not configured."""
         # 1. Resolve provider
@@ -601,6 +674,11 @@ class ShareService:
         provider, share_domain = self.resolve_share_config(
             project_meta, provider=provider
         )
+        # LDM-#1338: checked here, as soon as the provider is known and before
+        # any binary download, version check or tunnel start -- so the refusal
+        # arrives instead of a working-looking tunnel, not after one.
+        self._assert_provider_can_reach_target(provider, project_meta, project_id)
+
         if root and share_domain:
             project_meta["share_domain"] = share_domain
             if provider == "lfr-tunnel":
