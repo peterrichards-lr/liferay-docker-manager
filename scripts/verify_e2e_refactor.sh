@@ -9,8 +9,8 @@ set -e
 # by scripts/release.py on every bump) so a locally-held copy can be checked
 # against what actually shipped, rather than guessing from a file mtime -- git
 # checkout/pull doesn't preserve original commit timestamps.
-# LDM_MAGIC_VERSION: 2.16.0
-SCRIPT_VERSION="2.16.0"
+# LDM_MAGIC_VERSION: 2.17.0
+SCRIPT_VERSION="2.17.0"
 
 TEST_PORT="${LDM_TEST_PORT}"
 if [ -z "$TEST_PORT" ]; then
@@ -244,6 +244,21 @@ log_and_run() {
         exit 1
     fi
 }
+# LDM-#1327: a verification verdict must reach the REPORT, not just the console.
+#
+# Until now no check's success line did. `log_and_run` tee'd the step header and
+# the command's own output into $RESULTS_FILE_TMP, but every "verified" line in
+# this suite was a bare `echo` -- so the durable record showed which steps ran
+# and what ldm printed, never which assertions actually passed. The entire
+# verdict lived in the `-pass` suffix of the filename, derived from the script's
+# exit code, which meant a reader had to know that this script aborts on failure
+# to interpret its own report.
+#
+# Failure paths already tee; it was only success that was invisible.
+report_ok() {
+    echo "$1" | tee -a "$RESULTS_FILE_TMP"
+}
+
 # --- Execution ---
 
 # 0. Dependencies & Virtual Environment
@@ -286,7 +301,7 @@ log_and_run "Initializing Infrastructure" "$LDM_CMD" -y infra setup --search
 echo ">> Verifying Custom SSL Port & Recreate..."
 log_and_run "Custom SSL Port Setup" "$LDM_CMD" -y infra setup --ssl-port 8443 --force-recreate
 if docker inspect liferay-proxy-global | grep -q '"HostPort": "8443"'; then
-    echo "✅ Custom SSL Port & Recreate verified."
+    report_ok "✅ Custom SSL Port & Recreate verified."
 else
     echo "❌ ERROR: Traefik proxy was not recreated on custom port 8443!" && exit 1
 fi
@@ -296,7 +311,7 @@ fi
 echo ">> Verifying Dev Guardrails..."
 DEV_GUARD_OUT=$(env CI=true "$LDM_CMD" system version --bump patch 2>&1 || true)
 if echo "$DEV_GUARD_OUT" | grep -qE "Error: Developer utility requires LDM_DEV_MODE=true|Action restricted"; then
-    echo "✅ Dev Guardrails verified."
+    report_ok "✅ Dev Guardrails verified."
 else
     echo "❌ ERROR: Dev Guardrails failed. Output was: $DEV_GUARD_OUT" && exit 1
 fi
@@ -308,11 +323,11 @@ elif [[ "$OSTYPE" == "linux"* ]] && command -v unshare &>/dev/null; then
     # unshare -r runs the command as simulated root (UID 0) in a new namespace
     SUDO_BLOCK_OUT=$(unshare -r "$LDM_CMD" system version 2>&1 || true)
     if echo "$SUDO_BLOCK_OUT" | grep -q "Do not run LDM with 'sudo'"; then
-        echo "✅ Sudo Guard verified (Blocked 'version')."
+        report_ok "✅ Sudo Guard verified (Blocked 'version')."
         
         # Verify that exempted commands are NOT blocked
         if unshare -r "$LDM_CMD" system fix-hosts --help >/dev/null 2>&1; then
-            echo "✅ Sudo Guard verified (Allowed 'fix-hosts')."
+            report_ok "✅ Sudo Guard verified (Allowed 'fix-hosts')."
         else
             echo "❌ ERROR: Sudo Guard incorrectly blocked 'fix-hosts'!" && exit 1
         fi
@@ -339,7 +354,7 @@ else
     # Wait to see if it crashes
     sleep 5
     if kill -0 $TRAY_PID 2>/dev/null; then
-        echo "✅ System Tray application started successfully and remained alive."
+        report_ok "✅ System Tray application started successfully and remained alive."
         disown $TRAY_PID 2>/dev/null || true
         kill $TRAY_PID 2>/dev/null || true
     else
@@ -357,7 +372,7 @@ if echo "$DOCTOR_OUT" | grep -q "Dependency Integrity"; then
         echo "$DOCTOR_OUT" | grep -i "Dependency Integrity" | tee -a "$RESULTS_FILE_TMP"
         exit 1
     else
-        echo "✅ ldm doctor Dependency Integrity verified." | tee -a "$RESULTS_FILE_TMP"
+        report_ok "✅ ldm doctor Dependency Integrity verified." | tee -a "$RESULTS_FILE_TMP"
     fi
 else
     echo "⚠️  Skipping Dependency Integrity check (binary install — no requirements.txt found)."
@@ -373,7 +388,7 @@ fi
 
 mkdir -p "${COLLISION_PROJECT}/nested"
 if (cd "${COLLISION_PROJECT}/nested" && echo "n" | env -u GITHUB_ACTIONS -u CI -u GITLAB_CI LDM_ALLOW_ROOT=true "$LDM_CMD" run "./${COLLISION_PROJECT}" --port 8099 --no-wait --no-up --no-seed 2>&1 | grep -qE "Project collision|already registered"); then
-    echo "✅ Project Collision verified."
+    report_ok "✅ Project Collision verified."
 else
     echo "❌ ERROR: Collision detection failed." | tee -a "$RESULTS_FILE_TMP"
     # Print the log of the failed second run for debugging
@@ -385,7 +400,7 @@ fi
 echo ">> Verifying Tag Validation Guardrail..."
 TAG_WARN_OUT=$("$LDM_CMD" -y run "${TAG_VAL_PROJECT}" --tag invalid-tag --port 8099 --no-wait --no-up --no-seed 2>&1 || true)
 if echo "$TAG_WARN_OUT" | grep -q "not listed in official Liferay releases"; then
-    echo "✅ Tag Validation Guardrail verified."
+    report_ok "✅ Tag Validation Guardrail verified."
 else
     echo "❌ ERROR: Tag Validation Guardrail failed. Output was: $TAG_WARN_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
@@ -398,7 +413,7 @@ MASTER_TEST_PROJ="master-test-${TEST_PORT}"
 
 "$LDM_CMD" -y run "${NIGHTLY_TEST_PROJ}" --nightly --port 8098 --no-wait --no-up >/dev/null 2>&1
 if grep -q "nightly" "${NIGHTLY_TEST_PROJ}/meta"; then
-    echo "✅ --nightly flag resolution verified."
+    report_ok "✅ --nightly flag resolution verified."
 else
     echo "❌ ERROR: --nightly flag resolution failed." | tee -a "$RESULTS_FILE_TMP"
     exit 1
@@ -407,7 +422,7 @@ fi
 
 "$LDM_CMD" -y run "${MASTER_TEST_PROJ}" --master --port 8097 --no-wait --no-up >/dev/null 2>&1
 if grep -q "nightly" "${MASTER_TEST_PROJ}/meta"; then
-    echo "✅ --master flag alias verified."
+    report_ok "✅ --master flag alias verified."
 else
     echo "❌ ERROR: --master flag alias failed." | tee -a "$RESULTS_FILE_TMP"
     exit 1
@@ -421,7 +436,7 @@ log_and_run "Target Status (Local)" "$LDM_CMD" target status local
 echo ">> Testing Target CRUD Cycle..."
 log_and_run "Target Add (Mock Node)" "$LDM_CMD" target add "$TARGET_TEST_NODE" --host 127.0.0.1
 if "$LDM_CMD" target ls | grep -q "$TARGET_TEST_NODE"; then
-    echo "✅ Target registration verified."
+    report_ok "✅ Target registration verified."
 else
     echo "❌ ERROR: Target $TARGET_TEST_NODE not found in registry." | tee -a "$RESULTS_FILE_TMP"
     exit 1
@@ -432,7 +447,7 @@ echo ">> Testing Loopback Subnet Target Registration & Local Context Resolution.
 LOOPBACK_TEST_NODE="loopback-node-${TEST_PORT}"
 log_and_run "Target Add (127.0.0.2 Loopback)" "$LDM_CMD" target add "$LOOPBACK_TEST_NODE" --host 127.0.0.2
 if "$LDM_CMD" target ls | grep -q "$LOOPBACK_TEST_NODE"; then
-    echo "✅ Loopback target registration verified."
+    report_ok "✅ Loopback target registration verified."
 else
     echo "❌ ERROR: Target $LOOPBACK_TEST_NODE not found in registry." | tee -a "$RESULTS_FILE_TMP"
     exit 1
@@ -448,7 +463,7 @@ if [ -n "$REMOTE_HOST" ]; then
     REMOTE_STATUS_OUT=$("$LDM_CMD" target status "$REMOTE_NODE_NAME" 2>&1 || true)
     echo "$REMOTE_STATUS_OUT" | tee -a "$RESULTS_FILE_TMP"
     if echo "$REMOTE_STATUS_OUT" | grep -q "ONLINE"; then
-        echo "✅ Remote Target Probe verified (ONLINE)."
+        report_ok "✅ Remote Target Probe verified (ONLINE)."
     else
         echo "⚠️  Remote Target Probe returned OFFLINE or unreachable for $REMOTE_HOST."
     fi
@@ -478,7 +493,7 @@ if "$LDM_CMD" list 2>/dev/null | grep -q "${PROJECT_NAME}"; then
         echo "   Remove it manually with: ${LDM_CMD} -y rm ${PROJECT_NAME} --delete" | tee -a "$RESULTS_FILE_TMP"
         exit 1
     fi
-    echo "✅ Pre-existing test project removed."
+    report_ok "✅ Pre-existing test project removed."
 fi
 
 echo "ℹ  Provisioning standalone test project..."
@@ -519,7 +534,7 @@ echo ">> Waiting for auto-deploy processing (up to 10m; WSL2 filesystem sync may
 HOT_DEPLOY_SUCCESS=false
 for _ in {1..60}; do
     if docker logs "${PROJECT_NAME}" --tail 200 2>&1 | grep -q "STARTED com.liferay.test.bundle"; then
-        echo "✅ Hot Deploy verified." | tee -a "$RESULTS_FILE_TMP"
+        report_ok "✅ Hot Deploy verified." | tee -a "$RESULTS_FILE_TMP"
         HOT_DEPLOY_SUCCESS=true
         break
     fi
@@ -539,7 +554,7 @@ LATEST_DIR=$(find snapshots -maxdepth 1 -mindepth 1 -type d -print0 | xargs -0 l
 SHA_FILE="${LATEST_DIR}/files.tar.gz.sha256"
 echo "CORRUPTED" > "$SHA_FILE"
 if "$LDM_CMD" -y restore --latest 2>&1 | grep -q "Integrity check failed"; then
-    echo "✅ Integrity check verified."
+    report_ok "✅ Integrity check verified."
 else
     echo "❌ ERROR: Integrity check failed to block corruption." && exit 1
 fi
@@ -547,7 +562,7 @@ log_and_run "Bypassing Integrity" "$LDM_CMD" -y restore --latest --no-verify
 
 echo ">> Verifying Legacy Command Translation..."
 if "$LDM_CMD" doctor --help >/dev/null && "$LDM_CMD" infra-setup --help >/dev/null; then
-    echo "✅ Legacy command translation verified."
+    report_ok "✅ Legacy command translation verified."
 else
     echo "❌ ERROR: Legacy command translation failed." && exit 1
 fi
@@ -557,7 +572,7 @@ if "$LDM_CMD" share --help >/dev/null && \
    "$LDM_CMD" share start --help >/dev/null && \
    "$LDM_CMD" share status --help >/dev/null && \
    "$LDM_CMD" share stop --help >/dev/null; then
-    echo "✅ Share command layout verified."
+    report_ok "✅ Share command layout verified."
 else
     echo "❌ ERROR: Share command layout verification failed." && exit 1
 fi
@@ -566,14 +581,14 @@ fi
 echo ">> Verifying Cascading Defaults..."
 "$LDM_CMD" config defaults test_key test_value >/dev/null
 if "$LDM_CMD" config defaults | grep -q "test_key.*test_value.*User"; then
-    echo "✅ Set User Default verified."
+    report_ok "✅ Set User Default verified."
 else
     echo "❌ ERROR: Set User Default failed." | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
 "$LDM_CMD" config defaults --remove test_key >/dev/null
 if ! "$LDM_CMD" config defaults | grep -q "test_key.*test_value.*User"; then
-    echo "✅ Remove User Default verified."
+    report_ok "✅ Remove User Default verified."
 else
     echo "❌ ERROR: Remove User Default failed." | tee -a "$RESULTS_FILE_TMP"
     exit 1
@@ -593,14 +608,14 @@ if grep -Eq "scale_liferay.*3" meta; then echo "✅ Scaling verified."; else ech
 # Scale is 3, so --instance 4 should be invalid, and --instance 2 should look for the container
 if "$LDM_CMD" logs . --instance 4 2>&1 | grep -q "Invalid instance index 4" && \
    "$LDM_CMD" logs . --instance 2 2>&1 | grep -q "Container '${PROJECT_NAME}-liferay-2' not found"; then
-    echo "✅ logs --instance routing verified."
+    report_ok "✅ logs --instance routing verified."
 else
     echo "❌ ERROR: logs --instance routing validation failed." && exit 1
 fi
 
 echo ">> Verifying Trace Log and Logs Export..."
 if [ -f "$HOME/.ldm/last-command.log" ]; then
-    echo "✅ Trace Log (last-command.log) verified."
+    report_ok "✅ Trace Log (last-command.log) verified."
 else
     echo "❌ ERROR: Trace Log file missing." && exit 1
 fi
@@ -616,7 +631,7 @@ for f in *.log; do
     fi
 done
 if [ -n "$EXPORT_FILE" ]; then
-    echo "✅ Logs Export verified ($EXPORT_FILE)."
+    report_ok "✅ Logs Export verified ($EXPORT_FILE)."
     rm "$EXPORT_FILE"
 else
     echo "❌ ERROR: Logs Export file not generated." && exit 1
@@ -625,7 +640,7 @@ fi
 echo ">> Verifying ldm start UX fast-fail..."
 START_FAIL_OUT=$("$LDM_CMD" start fake-non-existent-project 2>&1 || true)
 if echo "$START_FAIL_OUT" | grep -q "Project not found or not initialized"; then
-    echo "✅ ldm start fast-fail verified."
+    report_ok "✅ ldm start fast-fail verified."
 else
     echo "❌ ERROR: ldm start fast-fail message not found. Output was: $START_FAIL_OUT" && exit 1
 fi
@@ -633,7 +648,7 @@ fi
 echo ">> Verifying ldm run reconfigure UX message..."
 RUN_RECONFIG_OUT=$("$LDM_CMD" -y run . --no-wait --info 2>&1 || true)
 if echo "$RUN_RECONFIG_OUT" | grep -q "already exists and this command will reconfigure it"; then
-    echo "✅ ldm run reconfigure UX message verified."
+    report_ok "✅ ldm run reconfigure UX message verified."
 else
     echo "❌ ERROR: ldm run reconfigure message not found. Output was: $RUN_RECONFIG_OUT" && exit 1
 fi
@@ -641,7 +656,7 @@ fi
 echo ">> Verifying Safe SELECT SQL Query..."
 DB_QUERY_OUT=$("$LDM_CMD" db query . -s "SELECT 1 as test_val;" --allow-db-query 2>&1 || true)
 if echo "$DB_QUERY_OUT" | grep -q "test_val"; then
-    echo "✅ Safe SELECT SQL Query verified."
+    report_ok "✅ Safe SELECT SQL Query verified."
 else
     echo "❌ ERROR: Safe SELECT SQL Query failed. Output was: $DB_QUERY_OUT" && exit 1
 fi
@@ -653,14 +668,14 @@ echo "test.override.prop=456" > "$LDM_WORKSPACE/common/portal-ext.properties"
 echo "test.override.prop=123 # !important" >> files/portal-ext.properties
 log_and_run "Rebuilding properties" "$LDM_CMD" config rebuild-properties .
 if grep -q "test.override.prop=123" files/portal-ext.properties; then
-    echo "✅ Properties Override Cascade verified (rebuild)."
+    report_ok "✅ Properties Override Cascade verified (rebuild)."
 else
     echo "❌ ERROR: Properties Override Cascade rebuild failed." && exit 1
 fi
 
 log_and_run "Resetting properties" "$LDM_CMD" config reset-properties .
 if grep -q "test.override.prop=456" files/portal-ext.properties && ! grep -q "123" files/portal-ext.properties; then
-    echo "✅ Properties Override Reset verified."
+    report_ok "✅ Properties Override Reset verified."
 else
     echo "❌ ERROR: Properties Override Reset failed." && exit 1
 fi
@@ -684,7 +699,7 @@ for item in data:
     for key in ('http_ready', 'http_status', 'db_unhealthy'):
         assert key in item, f'{key} missing from list --json entry {item.get(\"project\")!r}'
 " <<< "$LIST_JSON_OUT"; then
-    echo "✅ ldm list --json schema verified."
+    report_ok "✅ ldm list --json schema verified."
 else
     echo "❌ ERROR: ldm list --json schema verification failed. Output: $LIST_JSON_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
@@ -708,7 +723,7 @@ for item in projects:
     for key in ('http_ready', 'http_status'):
         assert key in item, f'{key} missing from status --json project {item.get(\"project\")!r}'
 " <<< "$STATUS_JSON_OUT"; then
-    echo "✅ ldm status --json schema verified."
+    report_ok "✅ ldm status --json schema verified."
 else
     echo "❌ ERROR: ldm status --json schema verification failed. Output: $STATUS_JSON_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
@@ -731,7 +746,7 @@ set +e
 UP_EXIT_CODE=$?
 set -e
 if [ "$UP_EXIT_CODE" -eq 5 ]; then
-    echo "✅ Idempotent Exit Code 5 verified."
+    report_ok "✅ Idempotent Exit Code 5 verified."
 else
     echo "❌ ERROR: expected exit code 5 (Idempotent No-Op) from 'ldm -y up' on an already-running project, got $UP_EXIT_CODE." | tee -a "$RESULTS_FILE_TMP"
     exit 1
@@ -788,7 +803,7 @@ if [ -f "client-extensions/${CX_NAME}.zip" ]; then
 fi
 
 if [ "$CX_STAGED" = true ]; then
-    echo "✅ Client Extension deploy & staging verified."
+    report_ok "✅ Client Extension deploy & staging verified."
 else
     echo "-- client-extensions/ --"; ls -la "client-extensions" 2>&1 || true
     echo "-- osgi/client-extensions/ --"; ls -la "osgi/client-extensions" 2>&1 || true
@@ -923,7 +938,7 @@ fi
 rm -rf "$PATCH_DIR"
 
 if [ "$PATCH_OK" = true ]; then
-    echo "✅ Portal patch overlay verified (refused without --force, applied and readable with it, survives --force-recreate)."
+    report_ok "✅ Portal patch overlay verified (refused without --force, applied and readable with it, survives --force-recreate)."
 else
     echo "❌ ERROR: portal patch overlay verification failed." | tee -a "$RESULTS_FILE_TMP"
     exit 1
@@ -1043,7 +1058,7 @@ assert name == expected, f'Compose project name is {name!r}, expected {expected!
         return 1
     fi
 
-    echo "   ✅ ${raw} -> ${expected_docker}"
+    report_ok "   ✅ ${raw} -> ${expected_docker}"
     "$LDM_CMD" -y rm "${raw}" --delete >/dev/null 2>&1 || true
     return 0
 }
@@ -1056,7 +1071,7 @@ naming_check "Được" "Duoc" || NAMING_OK=false
 rm -rf "$NAMING_WORKDIR"
 
 if [ "$NAMING_OK" = true ]; then
-    echo "✅ Non-ASCII project naming verified (metadata verbatim, Docker transcoded)."
+    report_ok "✅ Non-ASCII project naming verified (metadata verbatim, Docker transcoded)."
 else
     echo "❌ ERROR: non-ASCII project naming verification failed." | tee -a "$RESULTS_FILE_TMP"
     exit 1

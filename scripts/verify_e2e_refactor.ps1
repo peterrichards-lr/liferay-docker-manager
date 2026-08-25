@@ -6,8 +6,8 @@
 # by scripts/release.py on every bump) so a locally-held copy can be checked
 # against what actually shipped, rather than guessing from a file mtime -- git
 # checkout/pull doesn't preserve original commit timestamps.
-# LDM_MAGIC_VERSION: 2.16.0
-$SCRIPT_VERSION = "2.16.0"
+# LDM_MAGIC_VERSION: 2.17.0
+$SCRIPT_VERSION = "2.17.0"
 
 # LDM-#1058: extracted into a named function (still in this same file -- the
 # real verification workflow copies just this one file onto test rigs with
@@ -275,6 +275,20 @@ function ConvertTo-LdmArray {
     return @($Value)
 }
 
+function Write-Verdict {
+    # LDM-#1327: a verification verdict must reach the REPORT, not just the
+    # console. Write-Host bypasses the pipeline entirely, so every "[SUCCESS]"
+    # line in this suite was console-only and the durable record showed which
+    # steps ran but never which assertions passed -- the whole verdict lived in
+    # the "-pass" suffix of the filename, derived from the exit code.
+    #
+    # Mirrors the Get-VersionBannerLines pattern already used for the version
+    # banner: print for the operator, append for the record.
+    param([string]$Message)
+    Write-Host $Message
+    $Message | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+}
+
 function Log-AndRun {
     param($msg, $cmd, $args_list)
     Write-Host ">> $msg"
@@ -301,7 +315,7 @@ try {
     Log-AndRun "Custom SSL Port Setup" $LDM_CMD "-y infra setup --ssl-port 8443 --force-recreate"
     $dockerInspect = & docker inspect liferay-proxy-global
     if ($dockerInspect -match '"HostPort": "8443"') {
-        Write-Host "[SUCCESS] Custom SSL Port & Recreate verified."
+        Write-Verdict "[SUCCESS] Custom SSL Port & Recreate verified."
     } else {
         Write-Host "[ERROR] ERROR: Traefik proxy was not recreated on custom port 8443!" -ForegroundColor Red
         exit 1
@@ -314,7 +328,7 @@ try {
     $res = & $LDM_CMD system version --bump patch 2>&1
     $env:CI = "false"
     if ($res -match "Developer utility requires LDM_DEV_MODE=true" -or $res -match "Action restricted") { 
-        Write-Host "[SUCCESS] Dev Guardrails verified." 
+        Write-Verdict "[SUCCESS] Dev Guardrails verified."
     } else { 
         Write-Host "[ERROR] ERROR: Dev Guardrails failed! Output was: $res" -ForegroundColor Red
         exit 1
@@ -327,7 +341,7 @@ try {
     $trayProcess = Start-Process -FilePath $LDM_CMD -ArgumentList "tray" -NoNewWindow -PassThru -RedirectStandardOutput "tray.log" -RedirectStandardError "tray_err.log"
     Start-Sleep -Seconds 5
     if (-not $trayProcess.HasExited) {
-        Write-Host "[SUCCESS] System Tray application started successfully and remained alive."
+        Write-Verdict "[SUCCESS] System Tray application started successfully and remained alive."
         Stop-Process -Id $trayProcess.Id -Force -ErrorAction SilentlyContinue
     } else {
         Write-Host "[ERROR] ERROR: System Tray application crashed or failed to start!" -ForegroundColor Red
@@ -348,7 +362,7 @@ try {
             Add-Content -Path $RESULTS_FILE_TMP -Value "ERROR: ldm doctor Dependency Integrity failed"
             exit 1
         } else {
-            Write-Host "[SUCCESS] ldm doctor Dependency Integrity verified."
+            Write-Verdict "[SUCCESS] ldm doctor Dependency Integrity verified."
             Add-Content -Path $RESULTS_FILE_TMP -Value "ldm doctor Dependency Integrity: PASSED"
         }
     } else {
@@ -383,7 +397,7 @@ try {
         $out
     }
     if ($nestedRes -match "Project collision" -or $nestedRes -match "already registered") {
-        Write-Host "[SUCCESS] Project Collision verified."
+        Write-Verdict "[SUCCESS] Project Collision verified."
     } else {
         Write-Host "[ERROR] ERROR: Project Collision detection failed! Output was: $nestedRes" -ForegroundColor Red
         Invoke-Cleanup $LDM_CMD "-y rm collision-test --delete"
@@ -395,7 +409,7 @@ try {
     Write-Host ">> Verifying Tag Validation Guardrail..."
     $tagRes = & $LDM_CMD -y run "tag-val-test" --tag "invalid-tag" --port 8099 --no-wait --no-up --no-seed 2>&1
     if ($tagRes -match "not listed in official Liferay releases") {
-        Write-Host "[SUCCESS] Tag Validation Guardrail verified."
+        Write-Verdict "[SUCCESS] Tag Validation Guardrail verified."
     } else {
         Write-Host "[ERROR] ERROR: Tag Validation Guardrail failed! Output was: $tagRes" -ForegroundColor Red
         Invoke-Cleanup $LDM_CMD "-y rm tag-val-test --delete"
@@ -412,7 +426,7 @@ try {
     Log-AndRun "Target Add (Mock Node)" $LDM_CMD "target add $TARGET_TEST_NODE --host 127.0.0.1"
     $targetLsRes = & $LDM_CMD target ls 2>&1
     if ($targetLsRes -match $TARGET_TEST_NODE) {
-        Write-Host "[SUCCESS] Target registration verified."
+        Write-Verdict "[SUCCESS] Target registration verified."
     } else {
         Write-Host "[ERROR] ERROR: Target $TARGET_TEST_NODE not found in registry." -ForegroundColor Red
         exit 1
@@ -424,7 +438,7 @@ try {
     Log-AndRun "Target Add (127.0.0.2 Loopback)" $LDM_CMD "target add $loopbackNode --host 127.0.0.2"
     $loopbackLsRes = & $LDM_CMD target ls 2>&1
     if ($loopbackLsRes -match $loopbackNode) {
-        Write-Host "[SUCCESS] Loopback target registration verified."
+        Write-Verdict "[SUCCESS] Loopback target registration verified."
     } else {
         Write-Host "[ERROR] ERROR: Target $loopbackNode not found in registry." -ForegroundColor Red
         exit 1
@@ -441,7 +455,7 @@ try {
         $remoteStatusOut = & $LDM_CMD target status $remoteNodeName 2>&1
         Write-Host ($remoteStatusOut -join "`n")
         if ($remoteStatusOut -match "ONLINE") {
-            Write-Host "[SUCCESS] Remote Target Probe verified (ONLINE)."
+            Write-Verdict "[SUCCESS] Remote Target Probe verified (ONLINE)."
         } else {
             Write-Host "[WARNING] Remote Target Probe returned OFFLINE or unreachable for $remoteHost."
         }
@@ -453,7 +467,7 @@ try {
     & $LDM_CMD -y run $nightlyProj --nightly --port 8098 --no-wait --no-up > $null 2>&1
     $metaContent = Get-Content (Join-Path $nightlyProj "meta") -Raw 2>$null
     if ($metaContent -match "nightly") {
-        Write-Host "[SUCCESS] --nightly flag resolution verified."
+        Write-Verdict "[SUCCESS] --nightly flag resolution verified."
     } else {
         Write-Host "[ERROR] --nightly flag resolution failed." -ForegroundColor Red
         exit 1
@@ -465,7 +479,7 @@ try {
     & $LDM_CMD -y run $masterProj --master --port 8097 --no-wait --no-up > $null 2>&1
     $masterMetaContent = Get-Content (Join-Path $masterProj "meta") -Raw 2>$null
     if ($masterMetaContent -match "nightly") {
-        Write-Host "[SUCCESS] --master flag alias verified."
+        Write-Verdict "[SUCCESS] --master flag alias verified."
     } else {
         Write-Host "[ERROR] --master flag alias failed." -ForegroundColor Red
         exit 1
@@ -492,7 +506,7 @@ try {
                    "Refusing to continue: reconfiguring a stale project is the path that hangs. " +
                    "Remove it manually with: ldm -y rm ldm-smoke-test --delete")
         }
-        Write-Host "[SUCCESS] Pre-existing test project removed."
+        Write-Verdict "[SUCCESS] Pre-existing test project removed."
     }
 
     Write-Host "[INFO]  Provisioning standalone test project..."
@@ -528,7 +542,7 @@ zf.close()
     $hotDeploySuccess = $false
     for ($i=0; $i -lt 60; $i++) {
         if ((docker logs ldm-smoke-test --tail 200 2>&1) -match "STARTED com.liferay.test.bundle") {
-            Write-Host "[SUCCESS] Hot Deploy verified."
+            Write-Verdict "[SUCCESS] Hot Deploy verified."
             $hotDeploySuccess = $true
             break
         }
@@ -548,7 +562,7 @@ zf.close()
     $shaFile = Join-Path $latestSnapshotDir "files.tar.gz.sha256"
     "CORRUPTED" | Out-File $shaFile -Encoding utf8
     if ((& $LDM_CMD -y restore --latest 2>&1) -match "Integrity check failed") { 
-        Write-Host "[SUCCESS] Integrity check verified." 
+        Write-Verdict "[SUCCESS] Integrity check verified."
     } else { 
         throw "Integrity block failed" 
     }
@@ -558,7 +572,7 @@ zf.close()
     $legacyDoc = & $LDM_CMD doctor --help 2>&1
     $legacySetup = & $LDM_CMD infra-setup --help 2>&1
     if ($legacyDoc -match "Usage" -and $legacySetup -match "Usage") {
-        Write-Host "[SUCCESS] Legacy command translation verified."
+        Write-Verdict "[SUCCESS] Legacy command translation verified."
     } else {
         throw "Legacy command translation failed."
     }
@@ -568,14 +582,14 @@ zf.close()
     & $LDM_CMD config defaults test_key test_value > $null 2>&1
     $defaultsOut = & $LDM_CMD config defaults 2>&1
     if ($defaultsOut -match "test_key" -and $defaultsOut -match "test_value" -and $defaultsOut -match "User") {
-        Write-Host "[SUCCESS] Set User Default verified."
+        Write-Verdict "[SUCCESS] Set User Default verified."
     } else {
         throw "Set User Default failed. Output: $defaultsOut"
     }
     & $LDM_CMD config defaults --remove test_key > $null 2>&1
     $defaultsOut2 = & $LDM_CMD config defaults 2>&1
     if ($defaultsOut2 -notmatch "test_key") {
-        Write-Host "[SUCCESS] Remove User Default verified."
+        Write-Verdict "[SUCCESS] Remove User Default verified."
     } else {
         throw "Remove User Default failed. Output: $defaultsOut2"
     }
@@ -583,7 +597,7 @@ zf.close()
     Write-Host ">> Verifying Env Sync..."
     & $LDM_CMD config env . TEST_SECRET=supersecret123 > $null 2>&1
     if ((Get-Content "docker-compose.yml" -Raw) -match "TEST_SECRET=supersecret123") { 
-        Write-Host "[SUCCESS] Env Sync verified." 
+        Write-Verdict "[SUCCESS] Env Sync verified."
     } else {
         throw "Env Sync verification failed."
     }
@@ -591,7 +605,7 @@ zf.close()
     Write-Host ">> Verifying Redaction..."
     $redactOut = & $LDM_CMD status REDACT_SECRET=hidden 2>&1
     if ($redactOut -match "REDACT_SECRET=\[REDACTED\]") { 
-        Write-Host "[SUCCESS] Redaction verified." 
+        Write-Verdict "[SUCCESS] Redaction verified."
     } else {
         throw "Redaction verification failed. Output: $redactOut"
     }
@@ -599,7 +613,7 @@ zf.close()
     Write-Host ">> Verifying Scaling..."
     Log-AndRun "Scaling Liferay" $LDM_CMD "-y scale . liferay=3 --no-run"
     if ((Get-Content "meta" -Raw) -match "scale_liferay.*3") { 
-        Write-Host "[SUCCESS] Scaling verified." 
+        Write-Verdict "[SUCCESS] Scaling verified."
     } else {
         throw "Scaling verification failed."
     }
@@ -608,7 +622,7 @@ zf.close()
     $logErr4 = & $LDM_CMD logs . --instance 4 2>&1
     $logErr2 = & $LDM_CMD logs . --instance 2 2>&1
     if ($logErr4 -match "Invalid instance index 4" -and $logErr2 -match "Container 'ldm-smoke-test-liferay-2' not found") {
-        Write-Host "[SUCCESS] logs --instance routing verified."
+        Write-Verdict "[SUCCESS] logs --instance routing verified."
     } else {
         throw "logs --instance routing validation failed."
     }
@@ -616,7 +630,7 @@ zf.close()
     Write-Host ">> Verifying Trace Log and Logs Export..."
     $traceLogPath = Join-Path $HOME ".ldm/last-command.log"
     if (Test-Path $traceLogPath) {
-        Write-Host "[SUCCESS] Trace Log (last-command.log) verified."
+        Write-Verdict "[SUCCESS] Trace Log (last-command.log) verified."
     } else {
         throw "Trace Log file missing."
     }
@@ -627,7 +641,7 @@ zf.close()
     $exportFiles = Resolve-Path *.log -ErrorAction SilentlyContinue
     if ($exportFiles) {
         $exportFile = $exportFiles[0].Path
-        Write-Host "[SUCCESS] Logs Export verified ($exportFile)."
+        Write-Verdict "[SUCCESS] Logs Export verified ($exportFile)."
         Remove-Item $exportFile -Force
     } else {
         throw "Logs Export file not generated."
@@ -635,7 +649,7 @@ zf.close()
     Write-Host ">> Verifying ldm start UX fast-fail..."
     $startFailOut = & $LDM_CMD start fake-non-existent-project 2>&1
     if ($startFailOut -match "Project not found or not initialized") {
-        Write-Host "[SUCCESS] ldm start fast-fail verified."
+        Write-Verdict "[SUCCESS] ldm start fast-fail verified."
     } else {
         throw "ldm start fast-fail message not found. Output: $startFailOut"
     }
@@ -643,7 +657,7 @@ zf.close()
     Write-Host ">> Verifying ldm run reconfigure UX message..."
     $runReconfigOut = & $LDM_CMD -y run . --no-wait --info 2>&1
     if ($runReconfigOut -match "already exists and this command will reconfigure it") {
-        Write-Host "[SUCCESS] ldm run reconfigure UX message verified."
+        Write-Verdict "[SUCCESS] ldm run reconfigure UX message verified."
     } else {
         throw "ldm run reconfigure message not found. Output: $runReconfigOut"
     }
@@ -651,7 +665,7 @@ zf.close()
     Write-Host ">> Verifying Safe SELECT SQL Query..."
     $dbQueryOut = & $LDM_CMD db query . -s "SELECT 1 as test_val;" --allow-db-query 2>&1
     if ($dbQueryOut -match "test_val") {
-        Write-Host "[SUCCESS] Safe SELECT SQL Query verified."
+        Write-Verdict "[SUCCESS] Safe SELECT SQL Query verified."
     } else {
         throw "Safe SELECT SQL Query failed. Output: $dbQueryOut"
     }
@@ -680,7 +694,7 @@ zf.close()
     }
 
     if ($peContent -match "test.override.prop=123") {
-        Write-Host "[SUCCESS] Properties Override Cascade verified (rebuild)."
+        Write-Verdict "[SUCCESS] Properties Override Cascade verified (rebuild)."
     } else {
         throw "Properties Override Cascade rebuild failed."
     }
@@ -692,7 +706,7 @@ zf.close()
         throw "Failed to read portal-ext.properties after reset: $_"
     }
     if ($resetPE -match "test.override.prop=456" -and $resetPE -notmatch "123") {
-        Write-Host "[SUCCESS] Properties Override Reset verified."
+        Write-Verdict "[SUCCESS] Properties Override Reset verified."
     } else {
         throw "Properties Override Reset failed."
     }
@@ -725,7 +739,7 @@ zf.close()
                 }
             }
         }
-        Write-Host "[SUCCESS] ldm list --json schema verified."
+        Write-Verdict "[SUCCESS] ldm list --json schema verified."
     } catch {
         throw "ldm list --json schema verification failed: $_"
     }
@@ -753,7 +767,7 @@ zf.close()
                 }
             }
         }
-        Write-Host "[SUCCESS] ldm status --json schema verified."
+        Write-Verdict "[SUCCESS] ldm status --json schema verified."
     } catch {
         throw "ldm status --json schema verification failed: $_"
     }
@@ -774,7 +788,7 @@ zf.close()
     & $LDM_CMD -y up . *> $null
     $upExitCode = $LASTEXITCODE
     if ($upExitCode -eq 5) {
-        Write-Host "[SUCCESS] Idempotent Exit Code 5 verified."
+        Write-Verdict "[SUCCESS] Idempotent Exit Code 5 verified."
     } else {
         throw "Expected exit code 5 (Idempotent No-Op) from 'ldm -y up' on an already-running project, got $upExitCode."
     }
@@ -828,7 +842,7 @@ zf.close()
     }
 
     if ($cxStaged) {
-        Write-Host "[SUCCESS] Client Extension deploy & staging verified."
+        Write-Verdict "[SUCCESS] Client Extension deploy & staging verified."
     } else {
         Get-ChildItem "client-extensions" -ErrorAction SilentlyContinue | Out-String | Write-Host
         Get-ChildItem "osgi/client-extensions" -ErrorAction SilentlyContinue | Out-String | Write-Host
@@ -956,7 +970,7 @@ json.dump({'jira': 'LDM-1264', 'introduced_in': sys.argv[1],
     Remove-Item -Recurse -Force $patchDir -ErrorAction SilentlyContinue
 
     if ($patchOk) {
-        Write-Host "[SUCCESS] Portal patch overlay verified (refused without --force, applied and readable with it, survives --force-recreate)."
+        Write-Verdict "[SUCCESS] Portal patch overlay verified (refused without --force, applied and readable with it, survives --force-recreate)."
     } else {
         throw "Portal patch overlay verification failed."
     }
@@ -1144,14 +1158,14 @@ json.dump({'jira': 'LDM-1264', 'introduced_in': sys.argv[1],
             continue
         }
 
-        Write-Host "   [OK] $raw -> $expected"
+        Write-Verdict "   [OK] $raw -> $expected"
         Invoke-Cleanup $LDM_CMD "-y rm $raw --delete"
     }
 
     Remove-Item -Recurse -Force $namingWorkdir -ErrorAction SilentlyContinue
 
     if ($namingOk) {
-        Write-Host "[SUCCESS] Non-ASCII project naming verified (metadata verbatim, Docker transcoded)."
+        Write-Verdict "[SUCCESS] Non-ASCII project naming verified (metadata verbatim, Docker transcoded)."
     } else {
         throw "Non-ASCII project naming verification failed."
     }

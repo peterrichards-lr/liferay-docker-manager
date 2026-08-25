@@ -1,23 +1,17 @@
 === LDM BINARY VERIFICATION REPORT ===
-Timestamp:    Tue Aug 25 15:05:04 UTC 2026
+Timestamp:    Mon Aug 24 09:58:47 UTC 2026
 Hostname:  [ANONYMIZED]
-Platform:     Ubuntu 24.04.4 LTS
+Platform:     Fedora Linux 44 (Container Image)
 Binary:    [ANONYMIZED]
-Version:      ldm 2.17.0-pre.3
-Script Ver:   2.17.0-pre.3
+Version:      ldm 2.16.0
+Script Ver:   2.16.0
 Docker:    28.0.4
-Compose:   2.38.2
+Compose:   5.4.0
 
 >> Initializing Infrastructure
 ✅  Infrastructure setup complete.
 >> Custom SSL Port Setup
 ✅  Infrastructure setup complete.
-✅ Custom SSL Port & Recreate verified.
-✅ Dev Guardrails verified.
-✅ Project Collision verified.
-✅ Tag Validation Guardrail verified.
-✅ --nightly flag resolution verified.
-✅ --master flag alias verified.
 >> Target List
 === Registered Target Compute Nodes ===
 ╭─────────────┬─────────────────┬──────────┬────────────────╮
@@ -30,49 +24,42 @@ Compose:   2.38.2
 ╭────────┬─────────────────┬────────┬────────────────┬──────────────────┬────────────────────╮
 │ TARGET │ HOST / ENDPOINT │ STATUS │ ENGINE VERSION │ CPUs / MEMORY    │ RUNNING CONTAINERS │
 ├────────┼─────────────────┼────────┼────────────────┼──────────────────┼────────────────────┤
-│ local  │ localhost       │ ONLINE │ v28.0.4        │ 4 CPUs / 15.6 GB │ 3                  │
+│ local  │ localhost       │ ONLINE │ v28.0.4        │ 4 CPUs / 15.6 GB │ 4                  │
 ╰────────┴─────────────────┴────────┴────────────────┴──────────────────┴────────────────────╯
 >> Target Add (Mock Node)
-✅  Target node 'e2e-target-46467' (127.0.0.1) registered successfully.
-✅ Target registration verified.
+✅  Target node 'e2e-target-60459' (127.0.0.1) registered successfully.
 >> Target Remove (Mock Node)
-✅  Target node 'e2e-target-46467' removed.
+✅  Target node 'e2e-target-60459' removed.
 >> Target Add (127.0.0.2 Loopback)
-✅  Target node 'loopback-node-46467' (127.0.0.2) registered successfully.
-✅ Loopback target registration verified.
+✅  Target node 'loopback-node-60459' (127.0.0.2) registered successfully.
 >> Target Status (Loopback Node)
 === Target Compute Nodes Status & Connectivity Probe ===
 ╭─────────────────────┬─────────────────┬────────┬────────────────┬──────────────────┬────────────────────╮
 │ TARGET              │ HOST / ENDPOINT │ STATUS │ ENGINE VERSION │ CPUs / MEMORY    │ RUNNING CONTAINERS │
 ├─────────────────────┼─────────────────┼────────┼────────────────┼──────────────────┼────────────────────┤
-│ loopback-node-46467 │ 127.0.0.2       │ ONLINE │ v28.0.4        │ 4 CPUs / 15.6 GB │ 3                  │
+│ loopback-node-60459 │ 127.0.0.2       │ ONLINE │ v28.0.4        │ 4 CPUs / 15.6 GB │ 4                  │
 ╰─────────────────────┴─────────────────┴────────┴────────────────┴──────────────────┴────────────────────╯
 >> Target Remove (Loopback Node)
-✅  Target node 'loopback-node-46467' removed.
+✅  Target node 'loopback-node-60459' removed.
 >> Running LDM Project
-ℹ  The LDM project 'ldm-smoke-test-46467' already exists and this command will reconfigure it.
+ℹ  The LDM project 'ldm-smoke-test-60459' already exists and this command will reconfigure it.
 ▶  Synchronizing Assets
-ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
 ⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
 ▶  Starting Container Stack
-✅  Project 'ldm-smoke-test-46467' started in background.
+✅  Project 'ldm-smoke-test-60459' started in background.
 💡  Next step: Run 'ldm link <path-to-cx>' to attach client extensions, or 'ldm logs -f' to tail logs.
 >> Deploying artifact
 ✅  Artifact deployment complete.
 ✅ Hot Deploy verified.
-✅ Hot Deploy verified.
 >> Creating Snapshot
-ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
 ✅  Database dump completed.
-ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
-✅  Snapshot saved: /home/runner/work/liferay-docker-manager/liferay-docker-manager/e2e-work-dir-46467/ldm-smoke-test-46467/snapshots/20260825_151105
-✅ Integrity check verified.
+✅  Snapshot saved: [HOME]/work/liferay-docker-manager/liferay-docker-manager/e2e-work-dir-60459/ldm-smoke-test-60459/snapshots/20260824_100438
 >> Bypassing Integrity
-=== Snapshots for ldm-smoke-test-46467 ===
-[1] 20260825_151105 - Binary-Verify (1.0 GB) [DB,VOL,MOD]
-⚠️  Resetting ldm-smoke-test-46467 (all)...
-⚠️  Tearing down stack: ldm-smoke-test-46467
-✅  Project ldm-smoke-test-46467 reset successful.
+=== Snapshots for ldm-smoke-test-60459 ===
+[1] 20260824_100438 - Binary-Verify (1.0 GB) [DB,VOL,MOD]
+⚠️  Resetting ldm-smoke-test-60459 (all)...
+⚠️  Tearing down stack: ldm-smoke-test-60459
+✅  Project ldm-smoke-test-60459 reset successful.
 ⚠️  Integrity verification disabled via --no-verify.
 ▶  Restoring Workspace Data
 ▶  Finalizing Metadata
@@ -83,67 +70,35 @@ Compose:   2.38.2
 💡  Next step: Run 'ldm run' to restart the container, or 'ldm status' to view environment status.
 ✅  + Database restored successfully.
 ✅  Restore complete.
-✅ Legacy command translation verified.
-✅ Share command layout verified.
-✅ Set User Default verified.
-✅ Remove User Default verified.
 >> Scaling Liferay
-✅  Updated scale factors for project ldm-smoke-test-46467
-✅ logs --instance routing verified.
-✅ Trace Log (last-command.log) verified.
+✅  Updated scale factors for project ldm-smoke-test-60459
 >> Scaling Liferay back to 1 for logs export check
-✅  Updated scale factors for project ldm-smoke-test-46467
+✅  Updated scale factors for project ldm-smoke-test-60459
 >> Starting project for logs export check
-ℹ  The LDM project 'ldm-smoke-test-46467' already exists and this command will reconfigure it.
+ℹ  The LDM project 'ldm-smoke-test-60459' already exists and this command will reconfigure it.
 ▶  Synchronizing Assets
-ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
 ⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
 ▶  Starting Container Stack
-✅  Project 'ldm-smoke-test-46467' started in background.
+✅  Project 'ldm-smoke-test-60459' started in background.
 💡  Next step: Run 'ldm link <path-to-cx>' to attach client extensions, or 'ldm logs -f' to tail logs.
 >> Exporting project logs
-✅ Logs Export verified (ldm-smoke-test-46467-ldm-smoke-test-46467_20260825_151245.log).
-✅ ldm start fast-fail verified.
-✅ ldm run reconfigure UX message verified.
-✅ Safe SELECT SQL Query verified.
 >> Stopping project to release file locks
 💡  Next step: Run 'ldm run' to restart the container, or 'ldm status' to view environment status.
 >> Rebuilding properties
-ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
-=== Rebuilding Properties for project: ldm-smoke-test-46467 ===
+=== Rebuilding Properties for project: ldm-smoke-test-60459 ===
 ✅  Properties successfully rebuilt.
-✅ Properties Override Cascade verified (rebuild).
 >> Resetting properties
-ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
-=== Resetting Properties for project: ldm-smoke-test-46467 ===
+=== Resetting Properties for project: ldm-smoke-test-60459 ===
 ✅  Properties successfully reset.
-✅ Properties Override Reset verified.
-✅ ldm list --json schema verified.
-✅ ldm status --json schema verified.
 >> Starting project for idempotency check
-ℹ  The LDM project 'ldm-smoke-test-46467' already exists and this command will reconfigure it.
+ℹ  The LDM project 'ldm-smoke-test-60459' already exists and this command will reconfigure it.
 ▶  Synchronizing Assets
-ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
 ⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
 ▶  Starting Container Stack
 ▶  Awaiting Liferay Readiness
-⚠️  LDM detected 5 new error(s) in the logs.
-✅  Liferay ready: http://localhost:46467  (55s)
-✅ Idempotent Exit Code 5 verified.
+✅  Liferay ready: http://localhost:60459  (50s)
 >> Deploying Synthetic CX
 ✅  Artifact deployment complete.
-✅ Client Extension deploy & staging verified.
->> Applying portal patch
-⚠️  ldm-verify-noop-patch.jar does not exist in /opt/liferay/osgi/portal for this image -- it may have been renamed or removed upstream; copying anyway (--force-portal-patches).
-✅  Applied 1 portal patch(es) to /opt/liferay/osgi/portal.
->> Re-creating with patches
-⚠️  ldm-verify-noop-patch.jar does not exist in /opt/liferay/osgi/portal for this image -- it may have been renamed or removed upstream; copying anyway (--force-portal-patches).
-✅  Applied 1 portal patch(es) to /opt/liferay/osgi/portal.
-✅ Portal patch overlay verified (refused without --force, applied and readable with it, survives --force-recreate).
-   ✅ test-naming-Żółć -> test-naming-Zolc
-   ✅ test-naming-Käsespätzle -> test-naming-Kaesespaetzle
-   ✅ test-naming-Được -> test-naming-Duoc
-✅ Non-ASCII project naming verified (metadata verbatim, Docker transcoded).
 >> Checking Status
 === LDM Service Status ===
 Global Infrastructure:
@@ -155,7 +110,7 @@ Global Infrastructure:
 
 Active Projects:
 ╭────────────────────────┬───────────────┬────────────────────────┬───────╮
-│ ● ldm-smoke-test-46467 │ 2026.q1.7-lts │ http://localhost:46467 │ local │
+│ ● ldm-smoke-test-60459 │ 2026.q1.7-lts │ http://localhost:60459 │ local │
 ╰────────────────────────┴───────────────┴────────────────────────┴───────╯
 
 🎯 ALL E2E VERIFICATIONS PASSED!
