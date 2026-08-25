@@ -1721,11 +1721,15 @@ def find_dxp_roots(search_dir=None):  # noqa: C901, PLR0912, PLR0915
                 with contextlib.suppress(Exception):
                     registry = json.loads(registry_path.read_text())
 
-            known = {
-                str(Path(d.get("path") if isinstance(d, dict) else d).resolve())
-                for d in registry.values()
-                if (d.get("path") if isinstance(d, dict) else d)
-            }
+            # Built as an explicit loop rather than a comprehension: the
+            # registry stores entries as either {"path": ...} or a bare path
+            # string, and narrowing that inline leaves the value typed
+            # `Any | None`, which mypy rejects at the Path() call.
+            known: set[str] = set()
+            for entry in registry.values():
+                entry_path = entry.get("path") if isinstance(entry, dict) else entry
+                if entry_path:
+                    known.add(str(Path(entry_path).resolve()))
 
             added = False
             for item, meta in discovered_by_scan:
