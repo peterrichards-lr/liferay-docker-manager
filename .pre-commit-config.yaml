@@ -22,12 +22,33 @@ repos:
           - types-PyYAML
         args: [--config-file=mypy.ini]
 
-  - repo: https://github.com/koalaman/shellcheck-precommit
-    rev: v0.10.0
+  - repo: local
     hooks:
       - id: shellcheck
+        name: ShellCheck (system binary, pinned 0.11.0)
+        # LDM-#1325: a local hook, routed through a wrapper that asserts the
+        # version, and named for what actually runs.
+        #
+        # This was the upstream koalaman/shellcheck-precommit repo at
+        # `rev: v0.10.0`, overridden with `language: system` + `entry:
+        # shellcheck`. Two problems followed. The rev never controlled the
+        # binary -- it only supplied the display name, so the hook reported
+        # "ShellCheck v0.10.0" while running whatever was on PATH. And nothing
+        # checked which version that was, so local and CI silently disagreed:
+        # an SC2002 finding passed the local gate on 0.11.0 (which demoted that
+        # check) and failed all four CI legs on 0.10.
+        #
+        # `language: system` is retained on purpose. The upstream hook is
+        # `language: docker_image`, a Docker pull per commit that was removed
+        # in 19227f6c for CI resilience; and a pinned shellcheck-py would drop
+        # a 61MB executable into a Python env's bin/, which is the shape
+        # endpoint protection has quarantined on developer machines here
+        # (LDM-#1240). The wrapper installs nothing.
+        #
+        # The pinned version is asserted in scripts/run_shellcheck.sh and
+        # installed in .github/workflows/ci.yml. Change them together.
         language: system
-        entry: shellcheck
+        entry: scripts/run_shellcheck.sh
         files: \.sh$
 
   - repo: local
