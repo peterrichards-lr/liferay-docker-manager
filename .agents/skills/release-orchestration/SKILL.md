@@ -83,6 +83,19 @@ description: Activate this skill whenever preparing a release, bumping versions,
 
 - **Do not base new work on a cherry-pick from an open release branch.** If `master` lacks something you need, that is a signal to land it on `master` properly, not to borrow it sideways. Borrowing produces a branch that looks fine until the release lands and then conflicts with itself.
 
+- **Branch from `master`, and prove it before raising the PR.** The commonest way to hit the squash collision above is not a deliberate cherry-pick -- it is creating a branch while still standing on `release/*`. The new branch inherits every release commit: the `-pre.N` bumps, the compatibility-matrix syncs, the promotion. `master` already has all of that content via the promotion squash, so the PR conflicts on files the change never touched.
+
+  Hit on 2026-08-25, immediately after this rule was written. `fix/1325-1329-...` was branched off `release/v2.17.0` by accident and arrived as **33 files across 10 commits** instead of 6 files in 1, conflicting on `docs/TESTING.md`, `docs/reference/compatibility.md` and the verification reports -- none of which the fix touched. Rebuilt with `git branch -f <branch> origin/master` and a cherry-pick of the one real commit.
+
+  Two checks, both cheap, before raising any PR:
+
+  ```bash
+  git log --oneline origin/master..HEAD    # only your own commits?
+  git diff --name-only origin/master...HEAD # only the files you meant?
+  ```
+
+  A file list containing `CHANGELOG.md`, `pyproject.toml`, `ldm_core/constants.py`, or anything under `references/verification-results/` in a change that is not a release commit means the branch is sitting on release history. Rebuild it off `master` rather than resolving the conflicts -- resolving them merges release commits a second time.
+
 ## Pre-Release Strategy
 
 To prevent "version fatigue" and ensure the stability of the main release channel:
