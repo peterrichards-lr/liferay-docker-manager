@@ -277,6 +277,32 @@ def poll_pr_merge(pr_num):
         time.sleep(15)
 
 
+def classify_stable_promotion(tag_exists, master_has_version):
+    """Decides what an already-stable version means during --promote (LDM-#1329).
+
+    An already-stable version is not automatically an error. It is also what an
+    INTERRUPTED promotion looks like: --promote bumps to stable, pushes, merges
+    the tracking PR, waits for the merge, then tags. If the process dies during
+    that wait, the bump and merge have already happened -- GitHub completes the
+    merge on its own -- leaving master carrying a stable VERSION with no tag, so
+    no release is built while constants.py claims the version shipped.
+
+    Returns one of:
+      "already_released" -- the tag exists; nothing to do
+      "resume_tag"       -- merged but untagged; finish by tagging only
+      "not_promotable"   -- master does not carry this version; a real error
+
+    Kept pure so all three cases are testable without a live promotion, which
+    is the reason this bug survived: the interrupted path could not be
+    exercised.
+    """
+    if tag_exists:
+        return "already_released"
+    if master_has_version:
+        return "resume_tag"
+    return "not_promotable"
+
+
 def create_and_push_tag(version):
     print("\nChecking out master locally and pulling latest changes...")
     run_cmd(["git", "checkout", "master"])
@@ -473,8 +499,61 @@ def main():  # noqa: C901, PLR0912, PLR0915
         )
         current_version = ver_res.stdout.strip()
         if "-" not in current_version:
+            # LDM-#1329: an already-stable version is not automatically an
+            # error -- it is also what an INTERRUPTED promotion looks like.
+            #
+            # --promote does its work in order: bump to stable, push, merge the
+            # tracking PR, wait for the merge, then tag. If the process dies
+            # during that wait, the bump and the merge have already happened
+            # and GitHub completes the merge on its own. `master` is then
+            # carrying a stable VERSION with no tag, so no release is built and
+            # no assets are published -- while constants.py claims the version
+            # shipped. Hit on 2026-08-25 promoting v2.17.0; recovery required
+            # tagging by hand, which this script exists to avoid.
+            #
+            # Refusing outright left no supported way to finish. Distinguish
+            # the three cases instead, keeping the burn-protection that matters:
+            # this never bumps a second time, it only completes the tagging.
+            tag_name = f"v{current_version}"
+            run_cmd(["git", "fetch", "--tags", "origin"], check=False)
+            tag_exists = bool(
+                run_cmd(
+                    ["git", "ls-remote", "--tags", "origin", tag_name],
+                    capture=True,
+                    check=False,
+                ).stdout.strip()
+            )
+
+            master_version = run_cmd(
+                ["git", "show", "origin/master:ldm_core/constants.py"],
+                capture=True,
+                check=False,
+            ).stdout
+
+            master_has_version = f'VERSION = "{current_version}"' in master_version
+
+            outcome = classify_stable_promotion(tag_exists, master_has_version)
+
+            if outcome == "already_released":
+                print(f"✅ {tag_name} is already tagged and released; nothing to do.")
+                sys.exit(0)
+
+            if outcome == "resume_tag":
+                print(
+                    f"ℹ  Version '{current_version}' is already stable and merged to "
+                    "master, but no tag exists -- a previous --promote was "
+                    "interrupted after the merge and before tagging (LDM-#1329)."
+                )
+                print("Resuming: creating and pushing the release tag only.")
+                create_and_push_tag(current_version)
+                return
+
             print(
                 f"❌ Error: Current version '{current_version}' is already stable. Cannot promote."
+            )
+            print(
+                "   master does not carry this version, so this is not an "
+                "interrupted promotion. Cut a new pre-release cycle instead."
             )
             sys.exit(1)
 

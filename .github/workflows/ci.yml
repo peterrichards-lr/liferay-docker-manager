@@ -240,6 +240,26 @@ jobs:
           python3 scripts/sync_baseline.py
           python3 scripts/sync_colors.py
 
+      # LDM-#1325: pin shellcheck rather than using the runner's default.
+      # The pre-commit hook runs the system binary (see .pre-commit-config.yaml
+      # for why it is not Dockerised or pip-pinned), so CI and developer
+      # machines must agree on the version or the gate silently differs between
+      # them. It did: an SC2002 finding passed locally on 0.11.0, which demoted
+      # that check, and failed all four legs here on the runner's 0.10.
+      # scripts/run_shellcheck.sh asserts the same version; change both together.
+      - name: Install pinned ShellCheck
+        run: |
+          SHELLCHECK_VERSION="0.11.0"
+          if shellcheck --version 2>/dev/null | grep -q "^version: ${SHELLCHECK_VERSION}$"; then
+            echo "shellcheck ${SHELLCHECK_VERSION} already present."
+            exit 0
+          fi
+          curl -fsSL --retry 3 \
+            "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" \
+            | tar -xJf - -C /tmp
+          sudo install -m 0755 "/tmp/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
+          shellcheck --version
+
       - name: Run Quality Gate (pre-commit lints)
         env:
           # actionlint is a Go binary and does not belong in a Python-version matrix.
