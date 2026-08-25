@@ -5,6 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from ldm_core.constants import PIP_INSTALL_TIMEOUT
 from ldm_core.ui import UI
 from ldm_core.utils import (
     get_actual_home,
@@ -232,10 +233,13 @@ def run_setup_completion(handler, target_shell=None):  # noqa: C901, PLR0912, PL
     except ImportError:
         UI.detail("Module 'argcomplete' not found. Attempting to install via pip...")
         try:
+            # LDM-#1332: bounded -- an unreachable package index would
+            # otherwise hang this with output captured and nothing shown.
             subprocess.run(
                 [sys.executable, "-m", "pip", "install", "argcomplete"],
                 check=True,
                 capture_output=True,
+                timeout=PIP_INSTALL_TIMEOUT,
             )
             UI.success("Successfully installed 'argcomplete'!")
         except Exception as e:

@@ -45,6 +45,20 @@ ELASTICSEARCH7_VERSION = "7.17.24"
 TRAEFIK_VERSION = "v3.6.1"
 SOCAT_IMAGE = "alpine/socat"
 
+# --- Network Operation Timeouts (LDM-#1332) ---
+# Bounds for operations that reach the network or the Docker daemon and can
+# otherwise hang indefinitely. #1306 made BaseHandler.run_command forward a
+# timeout, but several call sites bypass it and go straight to subprocess, so
+# they must be bounded explicitly.
+#
+# Generous rather than tight: the point is to distinguish "slow" from "wedged",
+# not to cap legitimate work. A ~1GB image pull is slow; an unreachable
+# registry is unbounded.
+IMAGE_INSPECT_TIMEOUT = 60  # local daemon query; should be near-instant
+IMAGE_PULL_TIMEOUT = 1800  # 30 min -- a large image over a slow link
+GIT_CLONE_TIMEOUT = 900  # 15 min -- a large workspace repository
+PIP_INSTALL_TIMEOUT = 600  # 10 min -- plugin/completion dependency installs
+
 # --- Release Announcements Mapping ---
 # Maps major.minor or exact version keys to lists of (cmd, description) tuples.
 RELEASE_ANNOUNCEMENTS = {

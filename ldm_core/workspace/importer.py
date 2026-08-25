@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     pass
-from ldm_core.constants import VERSION
+from ldm_core.constants import GIT_CLONE_TIMEOUT, VERSION
 from ldm_core.utils import (
     calculate_sha256,
     is_within_root,
@@ -466,11 +466,16 @@ def _execute_git_clone(self, source_path, temp_git_dir):
             )
 
     try:
+        # LDM-#1332: bounded. This bypasses BaseHandler.run_command, so the
+        # timeout forwarding added in #1306 cannot reach it. A clone against an
+        # unreachable host, or one waiting on a credential prompt that will
+        # never be answered, otherwise hangs with no output.
         res = subprocess.run(
             ["git", "clone", "--", source_path, str(temp_git_dir)],
             capture_output=True,
             text=True,
             check=False,
+            timeout=GIT_CLONE_TIMEOUT,
         )
         if res.returncode != 0:
             stderr = res.stderr or ""

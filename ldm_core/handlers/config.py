@@ -2096,26 +2096,69 @@ class ConfigService:
         target_name = getattr(self.manager, "target", None) or project_meta.get(
             "target"
         )
+        from ldm_core.constants import (
+            IMAGE_INSPECT_TIMEOUT,
+            IMAGE_PULL_TIMEOUT,
+        )
         from ldm_core.docker_service import DockerService
 
         docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
 
         UI.detail(f"Inspecting image '{image_name}'...")
+        # LDM-#1332: these bypass BaseHandler.run_command, so the timeout
+        # forwarding added in #1306 cannot reach them -- they must be bounded
+        # here. `inspect` is a local daemon query and should be near-instant;
+        # `pull` is network-bound and is the sharpest case in the audit,
+        # because it runs precisely when the image is absent, which is when an
+        # unreachable or throttled registry is most likely to stall it. It
+        # previously hung with no output and no bound: the exact failure #1306
+        # set out to remove.
         try:
             output = subprocess.check_output(
                 [*docker_prefix, "image", "inspect", image_name],
                 text=True,
                 stderr=subprocess.STDOUT,
+                timeout=IMAGE_INSPECT_TIMEOUT,
             )
+        except subprocess.TimeoutExpired:
+            UI.error(f"Timed out inspecting image '{image_name}'.")
+            UI.info(
+                f"  The query was bounded at {IMAGE_INSPECT_TIMEOUT}s. This is a "
+                "local daemon call, so a timeout points at the Docker daemon "
+                "rather than the network."
+            )
+            UI.info("  Check with:  docker info")
+            UI.die("Cannot inspect the image; refusing to continue.", exit_code=3)
         except subprocess.CalledProcessError:
             UI.detail(
                 f"Image '{image_name}' not found on the target. Attempting to pull..."
             )
+            # Announced before it blocks: a large pull is slow, and silence
+            # here is indistinguishable from a stall.
+            UI.info(f"Pulling '{image_name}' (this may take several minutes)...")
             try:
-                subprocess.check_call([*docker_prefix, "pull", image_name])
-                output = subprocess.check_output(
-                    [*docker_prefix, "image", "inspect", image_name], text=True
+                subprocess.check_call(
+                    [*docker_prefix, "pull", image_name],
+                    timeout=IMAGE_PULL_TIMEOUT,
                 )
+                output = subprocess.check_output(
+                    [*docker_prefix, "image", "inspect", image_name],
+                    text=True,
+                    timeout=IMAGE_INSPECT_TIMEOUT,
+                )
+            except subprocess.TimeoutExpired:
+                UI.error(f"Timed out pulling image '{image_name}'.")
+                UI.info(
+                    f"  The pull was bounded at {IMAGE_PULL_TIMEOUT}s "
+                    f"({IMAGE_PULL_TIMEOUT // 60} minutes), which is generous "
+                    "for a large image. Likely causes:"
+                )
+                UI.info("  - the registry is unreachable, throttling, or rate-limiting")
+                UI.info("  - the Docker daemon is not responding")
+                UI.info(
+                    f"  Check with:  docker info    and    docker pull {image_name}"
+                )
+                UI.die("Cannot pull the image; refusing to continue.", exit_code=3)
             except Exception as e2:
                 UI.die(f"Failed to inspect or pull image '{image_name}': {e2}")
 

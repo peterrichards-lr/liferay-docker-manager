@@ -2,6 +2,7 @@ import subprocess
 import sys
 from unittest.mock import MagicMock, patch
 
+from ldm_core.constants import PIP_INSTALL_TIMEOUT
 from ldm_core.plugin_manager import ensure_mcp_installed
 
 
@@ -54,6 +55,9 @@ def test_ensure_mcp_installed_not_present(mock_run, mock_get_home, mock_find_spe
         check=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        # LDM-#1332: bounded. Both streams go to DEVNULL here, so an install
+        # against an unreachable index hung with no output at all.
+        timeout=PIP_INSTALL_TIMEOUT,
     )
     assert str(plugins_dir) in sys.path
 
