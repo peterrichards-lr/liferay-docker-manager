@@ -837,7 +837,259 @@ zf.close()
 
     Remove-Item -Recurse -Force "cx-build" -ErrorAction SilentlyContinue
 
-    
+    Write-Host ">> Verifying Portal Patch Overlay (#1264)..."
+    # The patch JAR is SYNTHETIC and deliberately inert: a valid OSGi bundle
+    # with a unique Bundle-SymbolicName, no Import-Package, no Export-Package
+    # and no activator, so OSGi resolves it and it then does nothing. Its name
+    # matches no real core JAR, so it REPLACES nothing and cannot alter
+    # Liferay's behaviour -- it is purely additive and carries a marker file
+    # that makes its presence unambiguous.
+    #
+    # That also buys a free assertion: copy_patches_into() probes each patch for
+    # upstream existence and refuses a JAR that is not already in the image,
+    # because a patch whose target was removed upstream is a sharper problem
+    # than a merely stale one. So the synthetic JAR must be REFUSED without
+    # --force-portal-patches and applied with it. Both directions are checked.
+    #
+    # The sidecar manifest is written explicitly rather than letting LDM create
+    # it: load_or_create_sidecar() stamps 'introduced_in' with the CURRENT tag
+    # on first sight, which would mask a regression in classify_version_change().
+    #
+    # NOTE: the mode-600 case from #1264 -- where docker cp preserved a host
+    # file's POSIX mode and Liferay (uid 1000) could not read the result -- is
+    # asserted in the .sh script only. Windows has no POSIX file modes, so
+    # _world_readable()'s trigger condition cannot be reproduced from here. The
+    # readability check inside the container is still made, since that runs in
+    # Linux regardless of the host.
+    $patchJarName = "ldm-verify-noop-patch.jar"
+    $patchDir = "portal-patches"
+    $containerPortal = "/opt/liferay/osgi/portal"
+    $patchTarget = "$containerPortal/$patchJarName"
+
+    $patchTag = & $VENV_PYTHON -c "import json;print(json.load(open('meta',encoding='utf-8')).get('tag',''))"
+    Remove-Item -Recurse -Force $patchDir -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $patchDir | Out-Null
+
+    & $VENV_PYTHON -c @"
+import sys, zipfile
+path = sys.argv[1]
+manifest = (
+    'Manifest-Version: 1.0\r\n'
+    'Bundle-ManifestVersion: 2\r\n'
+    'Bundle-SymbolicName: com.liferay.ldm.verify.noop\r\n'
+    'Bundle-Name: LDM Verification No-Op Patch\r\n'
+    'Bundle-Version: 1.0.0\r\n'
+    '\r\n'
+)
+with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as z:
+    z.writestr('META-INF/MANIFEST.MF', manifest)
+    z.writestr('ldm-verify-marker.txt', 'LDM_PORTAL_PATCH_MARKER\n')
+"@ "$patchDir/$patchJarName"
+
+    & $VENV_PYTHON -c @"
+import json, sys
+json.dump({'jira': 'LDM-1264', 'introduced_in': sys.argv[1],
+           'max_version': None, 'fail_on_mismatch': False},
+          open(sys.argv[2], 'w', encoding='utf-8'), indent=2)
+"@ "$patchTag" "$patchDir/$patchJarName.json"
+
+    $patchHostSha = (Get-FileHash -Algorithm SHA256 -Path "$patchDir/$patchJarName").Hash.ToLower()
+    $patchOk = $true
+
+    # 1. Absent upstream => must be refused without --force-portal-patches.
+    & $LDM_CMD -y restart . --force-recreate *> $null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "[ERROR] a patch absent from $containerPortal was applied without --force-portal-patches." -ForegroundColor Red
+        $patchOk = $false
+    }
+
+    # 2. With the flag it applies.
+    Log-AndRun "Applying portal patch" $LDM_CMD "-y restart . --force-recreate --force-portal-patches"
+
+    & docker exec $PROJECT_NAME test -f $patchTarget *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] patch JAR not present at $patchTarget inside the container." -ForegroundColor Red
+        & docker exec $PROJECT_NAME ls -la $containerPortal 2>&1 | Select-Object -First 5 | Write-Host
+        $patchOk = $false
+    } else {
+        # Content must match exactly -- a truncated or empty copy would still
+        # satisfy a bare existence check.
+        $patchInSha = (& docker exec $PROJECT_NAME sha256sum $patchTarget 2>$null) -split '\s+' | Select-Object -First 1
+        if ($patchInSha -ne $patchHostSha) {
+            Write-Host "[ERROR] patch JAR content differs inside the container." -ForegroundColor Red
+            Write-Host "   host:      $patchHostSha"
+            Write-Host "   container: $patchInSha"
+            $patchOk = $false
+        }
+
+        # The #1264 silent failure: readable by Liferay's uid, not merely present.
+        & docker exec -u 1000 $PROJECT_NAME test -r $patchTarget *> $null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[ERROR] patch JAR is not readable by uid 1000 -- OSGi would fail to resolve it while the container still booted healthy (#1264)." -ForegroundColor Red
+            & docker exec $PROJECT_NAME ls -l $patchTarget 2>&1 | Select-Object -First 2 | Write-Host
+            $patchOk = $false
+        }
+    }
+
+    # 3. --force-recreate replaces the container; the patch must survive it.
+    if ($patchOk) {
+        Log-AndRun "Re-creating with patches" $LDM_CMD "-y restart . --force-recreate --force-portal-patches"
+        & docker exec $PROJECT_NAME test -f $patchTarget *> $null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[ERROR] patch JAR was dropped by 'restart --force-recreate' (#1264)." -ForegroundColor Red
+            $patchOk = $false
+        }
+    }
+
+    Remove-Item -Recurse -Force $patchDir -ErrorAction SilentlyContinue
+
+    if ($patchOk) {
+        Write-Host "[SUCCESS] Portal patch overlay verified (refused without --force, applied and readable with it, survives --force-recreate)."
+    } else {
+        throw "Portal patch overlay verification failed."
+    }
+
+    Write-Host ">> Verifying non-ASCII project naming (#1307 / #1308 / #1321)..."
+    # Design intent: the project metadata records the name the user chose,
+    # VERBATIM, while Docker receives a transcoded ASCII name. Both halves are
+    # asserted. Checking only the Docker name would pass even if the real name
+    # were being destroyed on the way in; checking only the metadata would pass
+    # even if Compose were handed a name it cannot use.
+    #
+    # This file must remain PURE ASCII -- enforced by the 'Check PowerShell
+    # ASCII Encoding' pre-commit hook -- so every test name is built from
+    # explicit codepoints rather than written literally. That is also
+    # self-documenting: the codepoint is the thing under test.
+    #
+    #   Zolc          U+017B U+00F3 U+0142 U+0107. Every character is
+    #                 non-ASCII: the #1307 case, where the sanitized name came
+    #                 out EMPTY and Compose refused to start. U+0142 (stroked
+    #                 l) is #1308 -- NFKD cannot decompose it, so before the
+    #                 explicit mapping it vanished and "Zolc" became "Zoc".
+    #   Kaesespaetzle German umlauts EXPAND to "ae" rather than being stripped.
+    #   Duoc          Vietnamese stacked diacritics.
+    #
+    # Windows matters disproportionately here: this is where the console is not
+    # reliably UTF-8 (see #1309), so a name that survives on Linux can still be
+    # mangled on the way through PowerShell.
+    $namingCases = @(
+        @{ Raw = [string]::Join('', [char]0x017B, [char]0x00F3, [char]0x0142, [char]0x0107)
+           Docker = "Zolc" },
+        @{ Raw = [string]::Join('', [char]0x004B, [char]0x00E4, [char]0x0073, [char]0x0065,
+                                    [char]0x0073, [char]0x0070, [char]0x00E4, [char]0x0074,
+                                    [char]0x007A, [char]0x006C, [char]0x0065)
+           Docker = "Kaesespaetzle" },
+        @{ Raw = [string]::Join('', [char]0x0110, [char]0x01B0, [char]0x1EE3, [char]0x0063)
+           Docker = "Duoc" }
+    )
+
+    $namingWorkdir = Join-Path $LDM_WORKSPACE "naming-$TEST_PORT"
+    Remove-Item -Recurse -Force $namingWorkdir -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $namingWorkdir | Out-Null
+
+    $namingOk = $true
+    $namingPrevious = Get-Location
+
+    foreach ($case in $namingCases) {
+        $raw = $case.Raw
+        $expected = $case.Docker
+        $projDir = Join-Path $namingWorkdir $raw
+
+        # Pre-clean per the #1302 pattern: a leftover project makes LDM
+        # reconfigure rather than provision, which is the path that hangs
+        # rather than failing.
+        # Invoke-Cleanup splits on spaces, so the name must NOT be quoted here
+        # -- quotes would be passed through as literal characters. Safe
+        # because every test name above is a single word.
+        Invoke-Cleanup $LDM_CMD "-y rm $raw --delete"
+
+        # --no-up so nothing boots, --no-seed so no ~1GB archive is fetched;
+        # the name is resolved long before either matters.
+        Set-Location $namingWorkdir
+        & $LDM_CMD -y init "$raw" --no-up --no-seed *> $null
+        $initExit = $LASTEXITCODE
+        Set-Location $namingPrevious
+
+        if ($initExit -ne 0) {
+            Write-Host "[ERROR] 'ldm init $raw' failed with exit $initExit." -ForegroundColor Red
+            $namingOk = $false
+            continue
+        }
+
+        $metaPath = Join-Path $projDir "meta"
+        if (-not (Test-Path $metaPath)) {
+            Write-Host "[ERROR] no meta written for '$raw'; expected $metaPath." -ForegroundColor Red
+            $namingOk = $false
+            continue
+        }
+
+        # The metadata half. 'meta' is JSON, so the name is stored escaped
+        # ("\u017b..." escapes) -- it must be PARSED, not string-matched, or the
+        # assertion silently compares against the escape sequence rather than
+        # the character it denotes.
+        $meta = Get-Content -Raw -Path $metaPath -Encoding UTF8 | ConvertFrom-Json
+        $metaOk = $true
+        foreach ($key in @("project_name", "container_name", "liferay_container_name")) {
+            if ($meta.$key -cne $raw) {
+                Write-Host "[ERROR] meta['$key'] is '$($meta.$key)', expected the verbatim name." -ForegroundColor Red
+                $metaOk = $false
+            }
+        }
+        if (-not $metaOk) { $namingOk = $false; continue }
+
+        # The Docker half. #1307 added the explicit top-level 'name:'; without
+        # it Compose derives the project name from the directory and refuses to
+        # start on a non-ASCII one.
+        $composePath = Join-Path $projDir "docker-compose.yml"
+        $nameLine = Select-String -Path $composePath -Pattern '^name:' | Select-Object -First 1
+        if ($null -eq $nameLine) {
+            Write-Host "[ERROR] docker-compose.yml has no top-level 'name:' key (#1307)." -ForegroundColor Red
+            $namingOk = $false
+            continue
+        }
+        $composeName = ($nameLine.Line -split ':', 2)[1].Trim()
+        if ([string]::IsNullOrWhiteSpace($composeName)) {
+            Write-Host "[ERROR] Compose project name is empty -- the #1307 failure exactly." -ForegroundColor Red
+            $namingOk = $false
+            continue
+        }
+        # -cne: case-sensitive. PowerShell's default comparisons are
+        # case-INSENSITIVE, so -ne would accept 'zolc' for 'Zolc' and quietly
+        # stop testing the transcoding's casing.
+        if ($composeName -cne $expected) {
+            Write-Host "[ERROR] Compose project name is '$composeName', expected '$expected'." -ForegroundColor Red
+            $namingOk = $false
+            continue
+        }
+        $asciiOnly = -not ($composeName.ToCharArray() | Where-Object { [int]$_ -gt 127 })
+        if (-not $asciiOnly) {
+            Write-Host "[ERROR] Compose project name '$composeName' is not ASCII; Docker will reject it." -ForegroundColor Red
+            $namingOk = $false
+            continue
+        }
+
+        # The registry must show the real name back to the user, not the
+        # transcoded one -- keeping both is the entire point.
+        $listOut = & $LDM_CMD list 2>$null | Out-String
+        if ($listOut -cnotmatch [regex]::Escape($raw)) {
+            Write-Host "[ERROR] 'ldm list' does not show '$raw'." -ForegroundColor Red
+            $namingOk = $false
+            continue
+        }
+
+        Write-Host "   [OK] $raw -> $expected"
+        Invoke-Cleanup $LDM_CMD "-y rm $raw --delete"
+    }
+
+    Remove-Item -Recurse -Force $namingWorkdir -ErrorAction SilentlyContinue
+
+    if ($namingOk) {
+        Write-Host "[SUCCESS] Non-ASCII project naming verified (metadata verbatim, Docker transcoded)."
+    } else {
+        throw "Non-ASCII project naming verification failed."
+    }
+
+
     Log-AndRun "Checking Status" $LDM_CMD "-y status"
 
     # Clean up any potential orphans from the run

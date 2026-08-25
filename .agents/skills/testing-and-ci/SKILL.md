@@ -98,6 +98,13 @@ A release tag fires three to four workflows. Reporting "the" failure after readi
 - **Mandatory Alignment**: All development, testing, linting, and Git operations MUST be conducted within the project's Python virtual environment (`.venv`).
 - **Hook Isolation**: Git hooks and pre-commit checks rely on packages installed in the virtual environment. Running operations outside the virtual environment (e.g. using global system Python) will trigger hook failures.
 
+## No Un-tracked Deferrals of Verification Tests
+
+**Hard rule: Any promised or deferred test addition (such as E2E verification script assertions in `scripts/verify_e2e_refactor.{sh,ps1}`) MUST be written to the test script or filed as a tracked GitHub issue BEFORE any release or pre-release is tagged.**
+
+- **The "I'll do it after X lands" Trap**: Deferring test additions verbally without a failing test or a tracked issue guarantees context evaporation when X lands. A feature is NOT complete—and a release MUST NOT be cut—until the corresponding E2E verification assertions are merged into `scripts/verify_e2e_refactor.{sh,ps1}`.
+- **Pre-Release Gate Check**: BEFORE running `python3 scripts/release.py --bump beta`, the agent MUST check `scripts/verify_e2e_refactor.{sh,ps1}` to confirm that all feature verification assertions for the tracked issue are present and passing.
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-22* | *Last Reviewed: 2026-08-22*
+*Last Updated: 2026-08-25* | *Last Reviewed: 2026-08-25*

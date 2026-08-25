@@ -797,6 +797,255 @@ fi
 
 rm -rf "cx-build"
 
+echo ">> Verifying Portal Patch Overlay (#1264)..."
+# The patch JAR is SYNTHETIC and deliberately inert. It is a valid OSGi bundle
+# -- unique Bundle-SymbolicName, no Import-Package, no Export-Package, no
+# activator -- so OSGi resolves it and it then does nothing. Its name does not
+# match any real core JAR, so it REPLACES nothing and cannot alter Liferay's
+# behaviour; it is purely additive, and carries a marker file that makes its
+# presence unambiguous.
+#
+# That choice also buys a free assertion. copy_patches_into() probes each patch
+# for upstream existence (`docker cp <container>:<target> -`, which fails for a
+# missing path) and refuses to copy a JAR that is not already in the image,
+# because a patch whose target was removed upstream is sharper than a merely
+# stale one. So the synthetic JAR MUST be refused without
+# --force-portal-patches, and applied with it. Both directions are checked.
+#
+# The two assertions after that are the two defects live testing found in #1264
+# and that reading the code did not catch:
+#
+#   1. `docker cp` preserves the host file's mode and stamps the host UID. A
+#      mode-600 patch landed as `-rw------- 501 root` beside its
+#      `-rw-r--r-- liferay liferay` neighbours; Liferay runs as uid 1000 and
+#      could not read it, so OSGi failed to resolve that one bundle WHILE THE
+#      CONTAINER STILL BOOTED AND REPORTED HEALTHY -- exactly the silent
+#      failure this feature exists to remove. _world_readable() stages a 644
+#      copy to fix it, so a 600 JAR on the host must still land readable.
+#
+#   2. `ldm start`/`ldm restart` bypass the run pipeline and build their own
+#      compose commands. Their plain forms are safe, but --force-recreate
+#      replaces the container and would silently drop every patch, leaving a
+#      developer debugging against a JAR they believe they replaced.
+#
+# A sidecar manifest is written explicitly rather than letting LDM create one:
+# load_or_create_sidecar() stamps `introduced_in` with the CURRENT tag on first
+# sight, which would make a version-mismatch abort untestable and mask a real
+# regression in classify_version_change().
+PATCH_JAR_NAME="ldm-verify-noop-patch.jar"
+PATCH_DIR="portal-patches"
+PATCH_TAG=$("$VENV_PYTHON" -c "
+import json,sys
+print(json.load(open('meta', encoding='utf-8')).get('tag',''))
+")
+rm -rf "$PATCH_DIR"
+mkdir -p "$PATCH_DIR"
+
+"$VENV_PYTHON" -c "
+import sys, zipfile
+path = sys.argv[1]
+manifest = (
+    'Manifest-Version: 1.0\r\n'
+    'Bundle-ManifestVersion: 2\r\n'
+    'Bundle-SymbolicName: com.liferay.ldm.verify.noop\r\n'
+    'Bundle-Name: LDM Verification No-Op Patch\r\n'
+    'Bundle-Version: 1.0.0\r\n'
+    '\r\n'
+)
+with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as z:
+    z.writestr('META-INF/MANIFEST.MF', manifest)
+    z.writestr('ldm-verify-marker.txt', 'LDM_PORTAL_PATCH_MARKER\n')
+" "${PATCH_DIR}/${PATCH_JAR_NAME}"
+
+"$VENV_PYTHON" -c "
+import json, sys
+json.dump({'jira': 'LDM-1264', 'introduced_in': sys.argv[1],
+           'max_version': None, 'fail_on_mismatch': False},
+          open(sys.argv[2], 'w', encoding='utf-8'), indent=2)
+" "$PATCH_TAG" "${PATCH_DIR}/${PATCH_JAR_NAME}.json"
+
+PATCH_HOST_SHA=$("$VENV_PYTHON" -c "
+import hashlib,sys
+print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())
+" "${PATCH_DIR}/${PATCH_JAR_NAME}")
+
+PATCH_OK=true
+CONTAINER_PORTAL="/opt/liferay/osgi/portal"
+PATCH_TARGET="${CONTAINER_PORTAL}/${PATCH_JAR_NAME}"
+
+# 1. A patch absent upstream must be REFUSED without --force-portal-patches.
+set +e
+"$LDM_CMD" -y restart . --force-recreate >/dev/null 2>&1
+PATCH_REFUSE_RC=$?
+set -e
+if [ "$PATCH_REFUSE_RC" -eq 0 ]; then
+    echo "❌ ERROR: a patch absent from ${CONTAINER_PORTAL} was applied without --force-portal-patches." | tee -a "$RESULTS_FILE_TMP"
+    PATCH_OK=false
+fi
+
+# 2. With the flag it applies. Mode 600 on the host deliberately exercises
+#    _world_readable(): the container must still be able to read it.
+chmod 600 "${PATCH_DIR}/${PATCH_JAR_NAME}"
+log_and_run "Applying portal patch" "$LDM_CMD" -y restart . --force-recreate --force-portal-patches
+
+if ! docker exec "${PROJECT_NAME}" test -f "${PATCH_TARGET}" 2>/dev/null; then
+    echo "❌ ERROR: patch JAR not present at ${PATCH_TARGET} inside the container." | tee -a "$RESULTS_FILE_TMP"
+    docker exec "${PROJECT_NAME}" ls -la "${CONTAINER_PORTAL}" 2>&1 | head -5
+    PATCH_OK=false
+else
+    # Content must match the host file exactly -- a truncated or empty copy
+    # would still satisfy a mere existence check.
+    PATCH_IN_SHA=$(docker exec "${PROJECT_NAME}" sha256sum "${PATCH_TARGET}" 2>/dev/null | awk '{print $1}')
+    if [ "$PATCH_IN_SHA" != "$PATCH_HOST_SHA" ]; then
+        echo "❌ ERROR: patch JAR content differs inside the container." | tee -a "$RESULTS_FILE_TMP"
+        echo "   host: ${PATCH_HOST_SHA}" | tee -a "$RESULTS_FILE_TMP"
+        echo "   container: ${PATCH_IN_SHA}" | tee -a "$RESULTS_FILE_TMP"
+        PATCH_OK=false
+    fi
+
+    # The #1264 silent failure: readable by Liferay (uid 1000), not just present.
+    if ! docker exec -u 1000 "${PROJECT_NAME}" test -r "${PATCH_TARGET}" 2>/dev/null; then
+        echo "❌ ERROR: patch JAR is not readable by uid 1000 -- OSGi would fail to resolve it while the container still booted healthy (#1264)." | tee -a "$RESULTS_FILE_TMP"
+        docker exec "${PROJECT_NAME}" ls -l "${PATCH_TARGET}" 2>&1 | head -2
+        PATCH_OK=false
+    fi
+fi
+
+# 3. --force-recreate replaces the container; the patch must survive it.
+if [ "$PATCH_OK" = true ]; then
+    log_and_run "Re-creating with patches" "$LDM_CMD" -y restart . --force-recreate --force-portal-patches
+    if ! docker exec "${PROJECT_NAME}" test -f "${PATCH_TARGET}" 2>/dev/null; then
+        echo "❌ ERROR: patch JAR was dropped by 'restart --force-recreate' (#1264)." | tee -a "$RESULTS_FILE_TMP"
+        PATCH_OK=false
+    fi
+fi
+
+rm -rf "$PATCH_DIR"
+
+if [ "$PATCH_OK" = true ]; then
+    echo "✅ Portal patch overlay verified (refused without --force, applied and readable with it, survives --force-recreate)."
+else
+    echo "❌ ERROR: portal patch overlay verification failed." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying non-ASCII project naming (#1307 / #1308 / #1321)..."
+# Design intent: the project metadata records the name the user chose,
+# VERBATIM, while Docker receives a transcoded ASCII name. Both halves are
+# asserted. Checking only the Docker name would pass even if the real name were
+# being destroyed on the way in; checking only the metadata would pass even if
+# Compose were handed a name it cannot use.
+#
+# Why these three names specifically:
+#   Zolc          every character is non-ASCII. This is the #1307 case -- the
+#                 sanitized name came out EMPTY and Compose refused to start
+#                 with "project name must not be empty". Its stroked l (U+0142)
+#                 is #1308: NFKD cannot decompose it, so before the explicit
+#                 mapping it vanished silently instead of transcoding to "l".
+#   Kaesespaetzle German umlauts EXPAND (ae) rather than being stripped, so a
+#                 naive "drop anything non-ASCII" regression would still pass a
+#                 length check but fail here.
+#   Duoc          Vietnamese stacked diacritics -- multiple combining marks on
+#                 one base character.
+#
+# --no-up so nothing boots, --no-seed so no ~1GB archive is fetched; the name is
+# resolved long before either matters, which keeps this block to a few seconds.
+#
+# Assertions read the meta JSON and the Compose file rather than the directory
+# name: macOS normalises filenames to NFD, so comparing the on-disk name is not
+# portable across the platforms this script must pass on.
+NAMING_WORKDIR="${LDM_WORKSPACE}/naming-${TEST_PORT}"
+rm -rf "$NAMING_WORKDIR"
+mkdir -p "$NAMING_WORKDIR"
+
+naming_check() {
+    local raw="$1"
+    local expected_docker="$2"
+    local dir="${NAMING_WORKDIR}/${raw}"
+    local rc
+
+    # Pre-clean, following the #1302 pattern: a leftover project from a failed
+    # run makes LDM reconfigure rather than provision, which is the path that
+    # hangs rather than failing.
+    "$LDM_CMD" -y rm "${raw}" --delete >/dev/null 2>&1 || true
+
+    set +e
+    ( cd "$NAMING_WORKDIR" && "$LDM_CMD" -y init "${raw}" --no-up --no-seed ) >/dev/null 2>&1
+    rc=$?
+    set -e
+    if [ "$rc" -ne 0 ]; then
+        echo "❌ ERROR: 'ldm init ${raw}' failed with exit ${rc}." | tee -a "$RESULTS_FILE_TMP"
+        return 1
+    fi
+
+    if [ ! -f "${dir}/meta" ]; then
+        echo "❌ ERROR: no meta written for '${raw}'; expected ${dir}/meta." | tee -a "$RESULTS_FILE_TMP"
+        return 1
+    fi
+
+    # The metadata half. `meta` is JSON, so the name is stored escaped
+    # (Ż...) -- it must be parsed, not grepped, or the assertion silently
+    # compares against the escape sequence instead of the character.
+    if ! "$VENV_PYTHON" -c "
+import json, sys
+raw = sys.argv[1]
+meta = json.load(open(sys.argv[2], encoding='utf-8'))
+for key in ('project_name', 'container_name', 'liferay_container_name'):
+    got = meta.get(key)
+    assert got == raw, f'meta[{key!r}] is {got!r}, expected the verbatim {raw!r}'
+" "$raw" "${dir}/meta"; then
+        echo "❌ ERROR: metadata did not record '${raw}' verbatim." | tee -a "$RESULTS_FILE_TMP"
+        echo "-- meta --"; cat "${dir}/meta" 2>&1 | head -40
+        return 1
+    fi
+
+    # The Docker half. #1307 added the explicit top-level `name:`; without it
+    # Compose derives the project name from the directory and refuses to start.
+    if ! "$VENV_PYTHON" -c "
+import sys
+expected = sys.argv[1]
+name = None
+for line in open(sys.argv[2], encoding='utf-8'):
+    if line.startswith('name:'):
+        name = line.split(':', 1)[1].strip()
+        break
+assert name is not None, 'docker-compose.yml has no top-level name: key (#1307)'
+assert name, 'Compose project name is empty -- the #1307 failure exactly'
+assert name.isascii(), f'Compose project name {name!r} is not ASCII; Docker will reject it'
+assert name == expected, f'Compose project name is {name!r}, expected {expected!r}'
+" "$expected_docker" "${dir}/docker-compose.yml"; then
+        echo "❌ ERROR: Compose project name wrong for '${raw}' (expected '${expected_docker}')." | tee -a "$RESULTS_FILE_TMP"
+        echo "-- docker-compose.yml (head) --"; head -5 "${dir}/docker-compose.yml" 2>&1
+        return 1
+    fi
+
+    # The registry must show the real name back to the user, not the transcoded
+    # one -- that is the whole point of keeping both.
+    if ! "$LDM_CMD" list 2>/dev/null | grep -q -- "${raw}"; then
+        echo "❌ ERROR: 'ldm list' does not show '${raw}'." | tee -a "$RESULTS_FILE_TMP"
+        "$LDM_CMD" list 2>&1 | head -20
+        return 1
+    fi
+
+    echo "   ✅ ${raw} -> ${expected_docker}"
+    "$LDM_CMD" -y rm "${raw}" --delete >/dev/null 2>&1 || true
+    return 0
+}
+
+NAMING_OK=true
+naming_check "Żółć" "Zolc" || NAMING_OK=false
+naming_check "Käsespätzle" "Kaesespaetzle" || NAMING_OK=false
+naming_check "Được" "Duoc" || NAMING_OK=false
+
+rm -rf "$NAMING_WORKDIR"
+
+if [ "$NAMING_OK" = true ]; then
+    echo "✅ Non-ASCII project naming verified (metadata verbatim, Docker transcoded)."
+else
+    echo "❌ ERROR: non-ASCII project naming verification failed." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
 
 # Final
 log_and_run "Checking Status" "$LDM_CMD" -y status
