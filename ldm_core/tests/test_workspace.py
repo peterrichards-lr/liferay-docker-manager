@@ -8,6 +8,7 @@ import zipfile
 from pathlib import Path
 from unittest.mock import ANY, MagicMock, patch
 
+from ldm_core.constants import GIT_CLONE_TIMEOUT
 from ldm_core.handlers.assets import AssetService
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.composer import ComposerService
@@ -955,6 +956,11 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            # LDM-#1332: the clone is bounded. It bypasses run_command, so the
+            # timeout forwarding added in #1306 cannot reach it, and an
+            # unreachable host or an unanswerable credential prompt would
+            # otherwise hang it indefinitely.
+            timeout=GIT_CLONE_TIMEOUT,
         )
 
     @patch("subprocess.run")
@@ -1033,6 +1039,11 @@ class TestWorkspaceRemoteImport(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            # LDM-#1332: the clone is bounded. It bypasses run_command, so the
+            # timeout forwarding added in #1306 cannot reach it, and an
+            # unreachable host or an unanswerable credential prompt would
+            # otherwise hang it indefinitely.
+            timeout=GIT_CLONE_TIMEOUT,
         )
 
     @patch("subprocess.run")

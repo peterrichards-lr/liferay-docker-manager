@@ -2,6 +2,7 @@ import importlib.util
 import subprocess
 import sys
 
+from ldm_core.constants import PIP_INSTALL_TIMEOUT
 from ldm_core.utils import get_actual_home
 
 
@@ -33,10 +34,25 @@ def ensure_mcp_installed():
             "--break-system-packages",
         ]
         try:
+            # LDM-#1332: bounded. A pip install against an unreachable or
+            # throttled index otherwise hangs indefinitely, and stdout/stderr
+            # are sent to DEVNULL here, so there is no progress output to
+            # suggest anything is wrong.
             subprocess.run(
-                cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                cmd,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=PIP_INSTALL_TIMEOUT,
             )
             print("✅ AI Plugin dependencies successfully installed.")
+        except subprocess.TimeoutExpired:
+            print(
+                f"❌ Timed out installing AI dependencies after "
+                f"{PIP_INSTALL_TIMEOUT}s. The package index may be unreachable "
+                "or throttling; check your network and retry."
+            )
+            sys.exit(1)
         except subprocess.CalledProcessError as e:
             print(
                 f"❌ Failed to install AI dependencies. Please check your network and python environment: {e}"
@@ -85,10 +101,25 @@ def ensure_gui_installed():
             "--break-system-packages",
         ]
         try:
+            # LDM-#1332: bounded. A pip install against an unreachable or
+            # throttled index otherwise hangs indefinitely, and stdout/stderr
+            # are sent to DEVNULL here, so there is no progress output to
+            # suggest anything is wrong.
             subprocess.run(
-                cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                cmd,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=PIP_INSTALL_TIMEOUT,
             )
             print("✅ GUI Plugin dependencies successfully installed.")
+        except subprocess.TimeoutExpired:
+            print(
+                f"❌ Timed out installing GUI dependencies after "
+                f"{PIP_INSTALL_TIMEOUT}s. The package index may be unreachable "
+                "or throttling; check your network and retry."
+            )
+            sys.exit(1)
         except subprocess.CalledProcessError as e:
             print(
                 f"❌ Failed to install GUI dependencies. Please check your network and python environment: {e}"
