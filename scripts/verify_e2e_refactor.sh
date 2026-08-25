@@ -954,13 +954,29 @@ echo ">> Verifying non-ASCII project naming (#1307 / #1308 / #1321)..."
 # Assertions read the meta JSON and the Compose file rather than the directory
 # name: macOS normalises filenames to NFD, so comparing the on-disk name is not
 # portable across the platforms this script must pass on.
+# Projects are created in a NESTED sub-directory, deliberately.
+#
+# find_dxp_roots() scans with iterdir(), i.e. exactly one level deep, so a
+# project at <workspace>/naming-<port>/<name> cannot be found by the directory
+# scan -- it is reachable only through the global registry. That makes this
+# block assert two things at once: that the name survives round-trip, and that
+# the project was actually REGISTERED (LDM-#1324).
+#
+# Flattening these into $LDM_WORKSPACE would make the assertion pass off the
+# one-level scan alone and silently stop testing registration, which is the
+# defect this suite found on Windows in the first place.
+#
+# Names are prefixed so they cannot collide with a real project. The prefix is
+# ASCII and passes through sanitize_id() unchanged, so the expected Docker name
+# is derived rather than guessed.
+NAMING_PREFIX="test-naming-"
 NAMING_WORKDIR="${LDM_WORKSPACE}/naming-${TEST_PORT}"
 rm -rf "$NAMING_WORKDIR"
 mkdir -p "$NAMING_WORKDIR"
 
 naming_check() {
-    local raw="$1"
-    local expected_docker="$2"
+    local raw="${NAMING_PREFIX}$1"
+    local expected_docker="${NAMING_PREFIX}$2"
     local dir="${NAMING_WORKDIR}/${raw}"
     local rc
 
@@ -995,7 +1011,7 @@ for key in ('project_name', 'container_name', 'liferay_container_name'):
     assert got == raw, f'meta[{key!r}] is {got!r}, expected the verbatim {raw!r}'
 " "$raw" "${dir}/meta"; then
         echo "❌ ERROR: metadata did not record '${raw}' verbatim." | tee -a "$RESULTS_FILE_TMP"
-        echo "-- meta --"; cat "${dir}/meta" 2>&1 | head -40
+        echo "-- meta --"; head -40 "${dir}/meta" 2>&1
         return 1
     fi
 

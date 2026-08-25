@@ -867,6 +867,18 @@ zf.close()
     $patchTarget = "$containerPortal/$patchJarName"
 
     $patchTag = & $VENV_PYTHON -c "import json;print(json.load(open('meta',encoding='utf-8')).get('tag',''))"
+
+    # Read the container name from meta rather than reusing a variable from
+    # elsewhere in this script. PowerShell resolves an undefined variable to
+    # $null WITHOUT erroring, so a wrong name here does not fail loudly -- it
+    # silently produces `docker exec  ls -la ...`, where docker takes the next
+    # token as the container and reports "No such container: ls". Every
+    # assertion below then fails for a reason unrelated to the feature. That is
+    # exactly what happened on the first Windows run of this block.
+    $patchContainer = & $VENV_PYTHON -c "import json;print(json.load(open('meta',encoding='utf-8')).get('container_name',''))"
+    if ([string]::IsNullOrWhiteSpace($patchContainer)) {
+        throw "Portal patch check could not determine the container name from meta."
+    }
     Remove-Item -Recurse -Force $patchDir -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $patchDir | Out-Null
 
@@ -906,15 +918,15 @@ json.dump({'jira': 'LDM-1264', 'introduced_in': sys.argv[1],
     # 2. With the flag it applies.
     Log-AndRun "Applying portal patch" $LDM_CMD "-y restart . --force-recreate --force-portal-patches"
 
-    & docker exec $PROJECT_NAME test -f $patchTarget *> $null
+    & docker exec $patchContainer test -f $patchTarget *> $null
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[ERROR] patch JAR not present at $patchTarget inside the container." -ForegroundColor Red
-        & docker exec $PROJECT_NAME ls -la $containerPortal 2>&1 | Select-Object -First 5 | Write-Host
+        & docker exec $patchContainer ls -la $containerPortal 2>&1 | Select-Object -First 5 | Write-Host
         $patchOk = $false
     } else {
         # Content must match exactly -- a truncated or empty copy would still
         # satisfy a bare existence check.
-        $patchInSha = (& docker exec $PROJECT_NAME sha256sum $patchTarget 2>$null) -split '\s+' | Select-Object -First 1
+        $patchInSha = (& docker exec $patchContainer sha256sum $patchTarget 2>$null) -split '\s+' | Select-Object -First 1
         if ($patchInSha -ne $patchHostSha) {
             Write-Host "[ERROR] patch JAR content differs inside the container." -ForegroundColor Red
             Write-Host "   host:      $patchHostSha"
@@ -923,10 +935,10 @@ json.dump({'jira': 'LDM-1264', 'introduced_in': sys.argv[1],
         }
 
         # The #1264 silent failure: readable by Liferay's uid, not merely present.
-        & docker exec -u 1000 $PROJECT_NAME test -r $patchTarget *> $null
+        & docker exec -u 1000 $patchContainer test -r $patchTarget *> $null
         if ($LASTEXITCODE -ne 0) {
             Write-Host "[ERROR] patch JAR is not readable by uid 1000 -- OSGi would fail to resolve it while the container still booted healthy (#1264)." -ForegroundColor Red
-            & docker exec $PROJECT_NAME ls -l $patchTarget 2>&1 | Select-Object -First 2 | Write-Host
+            & docker exec $patchContainer ls -l $patchTarget 2>&1 | Select-Object -First 2 | Write-Host
             $patchOk = $false
         }
     }
@@ -934,7 +946,7 @@ json.dump({'jira': 'LDM-1264', 'introduced_in': sys.argv[1],
     # 3. --force-recreate replaces the container; the patch must survive it.
     if ($patchOk) {
         Log-AndRun "Re-creating with patches" $LDM_CMD "-y restart . --force-recreate --force-portal-patches"
-        & docker exec $PROJECT_NAME test -f $patchTarget *> $null
+        & docker exec $patchContainer test -f $patchTarget *> $null
         if ($LASTEXITCODE -ne 0) {
             Write-Host "[ERROR] patch JAR was dropped by 'restart --force-recreate' (#1264)." -ForegroundColor Red
             $patchOk = $false
@@ -983,6 +995,22 @@ json.dump({'jira': 'LDM-1264', 'introduced_in': sys.argv[1],
            Docker = "Duoc" }
     )
 
+    # Projects are created in a NESTED sub-directory, deliberately.
+    #
+    # find_dxp_roots() scans with iterdir(), i.e. exactly one level deep, so a
+    # project at <workspace>\naming-<port>\<name> cannot be found by the
+    # directory scan -- it is reachable only through the global registry. That
+    # makes this block assert two things at once: that the name survives
+    # round-trip, and that the project was actually REGISTERED (LDM-#1324).
+    #
+    # Flattening these into $LDM_WORKSPACE would make the assertion pass off
+    # the one-level scan alone and silently stop testing registration, which is
+    # the defect this suite found on Windows in the first place.
+    #
+    # Names are prefixed so they cannot collide with a real project. The prefix
+    # is ASCII and passes through sanitize_id() unchanged, so the expected
+    # Docker name is derived rather than guessed.
+    $namingPrefix = "test-naming-"
     $namingWorkdir = Join-Path $LDM_WORKSPACE "naming-$TEST_PORT"
     Remove-Item -Recurse -Force $namingWorkdir -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $namingWorkdir | Out-Null
@@ -991,8 +1019,9 @@ json.dump({'jira': 'LDM-1264', 'introduced_in': sys.argv[1],
     $namingPrevious = Get-Location
 
     foreach ($case in $namingCases) {
-        $raw = $case.Raw
-        $expected = $case.Docker
+        # $raw is the name under test; $projName is what is actually created.
+        $raw = $namingPrefix + $case.Raw
+        $expected = $namingPrefix + $case.Docker
         $projDir = Join-Path $namingWorkdir $raw
 
         # Pre-clean per the #1302 pattern: a leftover project makes LDM
@@ -1013,6 +1042,7 @@ json.dump({'jira': 'LDM-1264', 'introduced_in': sys.argv[1],
         if ($initExit -ne 0) {
             Write-Host "[ERROR] 'ldm init $raw' failed with exit $initExit." -ForegroundColor Red
             $namingOk = $false
+            Invoke-Cleanup $LDM_CMD "-y rm $raw --delete"
             continue
         }
 
@@ -1020,6 +1050,7 @@ json.dump({'jira': 'LDM-1264', 'introduced_in': sys.argv[1],
         if (-not (Test-Path $metaPath)) {
             Write-Host "[ERROR] no meta written for '$raw'; expected $metaPath." -ForegroundColor Red
             $namingOk = $false
+            Invoke-Cleanup $LDM_CMD "-y rm $raw --delete"
             continue
         }
 
@@ -1035,7 +1066,11 @@ json.dump({'jira': 'LDM-1264', 'introduced_in': sys.argv[1],
                 $metaOk = $false
             }
         }
-        if (-not $metaOk) { $namingOk = $false; continue }
+        if (-not $metaOk) {
+            $namingOk = $false
+            Invoke-Cleanup $LDM_CMD "-y rm $raw --delete"
+            continue
+        }
 
         # The Docker half. #1307 added the explicit top-level 'name:'; without
         # it Compose derives the project name from the directory and refuses to
@@ -1045,12 +1080,14 @@ json.dump({'jira': 'LDM-1264', 'introduced_in': sys.argv[1],
         if ($null -eq $nameLine) {
             Write-Host "[ERROR] docker-compose.yml has no top-level 'name:' key (#1307)." -ForegroundColor Red
             $namingOk = $false
+            Invoke-Cleanup $LDM_CMD "-y rm $raw --delete"
             continue
         }
         $composeName = ($nameLine.Line -split ':', 2)[1].Trim()
         if ([string]::IsNullOrWhiteSpace($composeName)) {
             Write-Host "[ERROR] Compose project name is empty -- the #1307 failure exactly." -ForegroundColor Red
             $namingOk = $false
+            Invoke-Cleanup $LDM_CMD "-y rm $raw --delete"
             continue
         }
         # -cne: case-sensitive. PowerShell's default comparisons are
@@ -1059,21 +1096,51 @@ json.dump({'jira': 'LDM-1264', 'introduced_in': sys.argv[1],
         if ($composeName -cne $expected) {
             Write-Host "[ERROR] Compose project name is '$composeName', expected '$expected'." -ForegroundColor Red
             $namingOk = $false
+            Invoke-Cleanup $LDM_CMD "-y rm $raw --delete"
             continue
         }
         $asciiOnly = -not ($composeName.ToCharArray() | Where-Object { [int]$_ -gt 127 })
         if (-not $asciiOnly) {
             Write-Host "[ERROR] Compose project name '$composeName' is not ASCII; Docker will reject it." -ForegroundColor Red
             $namingOk = $false
+            Invoke-Cleanup $LDM_CMD "-y rm $raw --delete"
             continue
         }
 
-        # The registry must show the real name back to the user, not the
-        # transcoded one -- keeping both is the entire point.
-        $listOut = & $LDM_CMD list 2>$null | Out-String
-        if ($listOut -cnotmatch [regex]::Escape($raw)) {
-            Write-Host "[ERROR] 'ldm list' does not show '$raw'." -ForegroundColor Red
+        # LDM must report the REAL name back to the user, not the transcoded
+        # one -- keeping both is the entire point.
+        #
+        # Asserted against `list --json`, never the rendered table. --json
+        # bypasses the table and colour formatting entirely (#1093) and emits
+        # UTF-8 JSON, whereas the table is a presentation layer: box-drawing
+        # characters, ANSI colour, and column widths that truncate. Regex-
+        # matching that output means the assertion depends on the console code
+        # page, which on Windows PowerShell 5.1 is not reliably UTF-8. Same
+        # principle already applied to `meta` above: parse the data, do not
+        # string-match a rendering of it.
+        $listJson = (& $LDM_CMD list --json 2>$null | Out-String)
+        $listed = $null
+        try {
+            $listed = $listJson | ConvertFrom-Json
+        } catch {
+            Write-Host "[ERROR] 'ldm list --json' did not return parseable JSON for '$raw'." -ForegroundColor Red
+            Write-Host $listJson
             $namingOk = $false
+            Invoke-Cleanup $LDM_CMD "-y rm $raw --delete"
+            continue
+        }
+
+        # The entry key has varied between 'project' and 'name'; accept either
+        # rather than pinning the assertion to one and failing for the wrong
+        # reason if it changes.
+        $listedNames = @($listed | ForEach-Object {
+            if ($null -ne $_.project) { $_.project } elseif ($null -ne $_.name) { $_.name }
+        })
+        if ($listedNames -cnotcontains $raw) {
+            Write-Host "[ERROR] 'ldm list --json' does not report '$raw'." -ForegroundColor Red
+            Write-Host ("         reported: " + ($listedNames -join ", "))
+            $namingOk = $false
+            Invoke-Cleanup $LDM_CMD "-y rm $raw --delete"
             continue
         }
 

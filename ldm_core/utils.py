@@ -1558,9 +1558,47 @@ def write_meta(path, meta):
         UI.warning(f"Could not write metadata at {path}: {e}")
 
 
+def project_meta_file(path):
+    """Returns the metadata file inside `path`, or None if there is none.
+
+    LDM-#1324: a single definition of "this directory carries project
+    metadata", used by *both* the directory scan and registry validation in
+    `find_dxp_roots`. Those two previously disagreed -- the scan accepted
+    `meta`, `.liferay-docker.meta` and `.ldm.meta`, while the registry path
+    accepted only the first two -- so a project written with `.ldm.meta` was
+    discoverable by one route and silently invisible to the other.
+    """
+    from ldm_core.constants import PROJECT_META_FILE
+
+    for candidate in (PROJECT_META_FILE, ".liferay-docker.meta", ".ldm.meta"):
+        found = Path(path) / candidate
+        if found.exists():
+            return found
+    return None
+
+
+def is_valid_project_dir(path, allow_structural=True):
+    """True when `path` looks like an LDM project (LDM-#1324).
+
+    `allow_structural` covers the pre-metadata layout -- a directory holding
+    both `files/` and `deploy/`. It is disabled when scanning the user's home
+    directory, where those names are far too generic to be evidence of
+    anything, which is the one place the two original definitions were
+    deliberately different rather than accidentally so.
+    """
+    path = Path(path)
+    if not path.is_dir():
+        return False
+    if project_meta_file(path) is not None:
+        return True
+    if allow_structural:
+        return (path / "files").exists() and (path / "deploy").exists()
+    return False
+
+
 def find_dxp_roots(search_dir=None):  # noqa: C901, PLR0912, PLR0915
     """Discovers LDM projects in the target directory by looking for metadata or specific structure."""
-    from ldm_core.constants import PROJECT_META_FILE, REGISTRY_FILE
+    from ldm_core.constants import REGISTRY_FILE
 
     actual_home = get_actual_home()
     search_dirs = []
@@ -1589,6 +1627,8 @@ def find_dxp_roots(search_dir=None):  # noqa: C901, PLR0912, PLR0915
 
     roots = []
     seen_paths = set()
+    # LDM-#1324: projects the directory scan finds, for reconciliation below.
+    discovered_by_scan: list[tuple[Path, dict]] = []
 
     # Priority 4: Global Registry (Pruning & Inclusion)
     registry_path = actual_home / ".ldm" / REGISTRY_FILE
@@ -1603,12 +1643,19 @@ def find_dxp_roots(search_dir=None):  # noqa: C901, PLR0912, PLR0915
                     if item.exists() and item.is_dir():
                         abs_path = item.resolve()
                         if abs_path not in seen_paths:
-                            # Verify it's still a valid project before adding
-                            meta_file = item / PROJECT_META_FILE
-                            if not meta_file.exists():
-                                meta_file = item / ".liferay-docker.meta"
+                            # LDM-#1324: validated through the shared helper so
+                            # the registry and the scan cannot disagree about
+                            # what counts as a project.
+                            meta_file = project_meta_file(item)
 
-                            if meta_file.exists():
+                            if meta_file is None:
+                                # Registered, still on disk, but no longer a
+                                # project. Previously this was skipped in
+                                # silence and the stale entry kept forever;
+                                # only a vanished path was ever pruned.
+                                del registry[name]
+                                dirty = True
+                            else:
                                 meta = read_meta(meta_file)
                                 last_seen = (
                                     data.get("last_seen")
@@ -1646,25 +1693,59 @@ def find_dxp_roots(search_dir=None):  # noqa: C901, PLR0912, PLR0915
                     if abs_path in seen_paths:
                         continue
 
-                    # Support multiple metadata filenames
-                    found_meta: Any = None
-                    for f in [PROJECT_META_FILE, ".liferay-docker.meta", ".ldm.meta"]:
-                        if (item / f).exists():
-                            found_meta = item / f
-                            break
+                    # LDM-#1324: one shared definition, see is_valid_project_dir.
+                    found_meta: Any = project_meta_file(item)
 
-                    has_meta = found_meta is not None
-                    has_structure = (item / "files").exists() and (
-                        item / "deploy"
-                    ).exists()
-
-                    if has_meta or (not is_home and has_structure):
-                        meta = read_meta(found_meta) if has_meta else {}
+                    if is_valid_project_dir(item, allow_structural=not is_home):
+                        meta = read_meta(found_meta) if found_meta else {}
                         version = meta.get("tag") or "unknown"
                         roots.append({"path": item, "version": version})
                         seen_paths.add(abs_path)
+                        discovered_by_scan.append((item, meta))
         except Exception:  # nosec B112
             continue
+
+    # LDM-#1324: reconcile. A project the scan can see but the registry does
+    # not know about is only findable while the caller happens to be standing
+    # in the right place -- the registry exists precisely so that location
+    # stops mattering. Recording it here means discovery is self-healing
+    # rather than depending on the project having been created through the one
+    # code path that registers.
+    #
+    # Best-effort throughout: `list` is a read command from the user's point of
+    # view, so failing to write the registry must never fail the command.
+    if discovered_by_scan:
+        with contextlib.suppress(Exception):
+            registry = {}
+            if registry_path.exists():
+                with contextlib.suppress(Exception):
+                    registry = json.loads(registry_path.read_text())
+
+            known = {
+                str(Path(d.get("path") if isinstance(d, dict) else d).resolve())
+                for d in registry.values()
+                if (d.get("path") if isinstance(d, dict) else d)
+            }
+
+            added = False
+            for item, meta in discovered_by_scan:
+                if str(item.resolve()) in known:
+                    continue
+                name = (
+                    meta.get("liferay_container_name")
+                    or meta.get("container_name")
+                    or item.name
+                )
+                registry[name] = {
+                    "path": str(item.resolve()),
+                    "host": meta.get("host_name"),
+                    "last_seen": time.time(),
+                }
+                added = True
+
+            if added:
+                registry_path.parent.mkdir(parents=True, exist_ok=True)
+                safe_write_text(registry_path, json.dumps(registry, indent=4))
 
     return sorted(roots, key=lambda x: x["path"])
 

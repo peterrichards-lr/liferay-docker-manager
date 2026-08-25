@@ -915,6 +915,21 @@ class EnvironmentSetupStage(PipelineStage):
             manager.register_project(
                 project_id, paths["root"], host_name=project_meta.get("host_name")
             )
+        else:
+            # LDM-#1324: register on EVERY run, not only when the project is
+            # new. An existing project that was never registered -- created by
+            # hand, cloned, or predating registration -- stayed unregistered
+            # forever, discoverable only while it happened to sit one level
+            # under the search directory, because find_dxp_roots() scans with
+            # iterdir(). The E2E verification project is exactly that shape:
+            # its directory and `meta` are written directly and then run, so
+            # `is_new_project` is False and it was never recorded.
+            #
+            # This also refreshes `last_seen`, which was otherwise frozen at
+            # creation time and useless for ordering by recency.
+            manager.register_project(
+                project_id, paths["root"], host_name=project_meta.get("host_name")
+            )
 
         no_up = context.get("no_up")
         if no_up is None:
