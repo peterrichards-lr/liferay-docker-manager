@@ -67,6 +67,20 @@ description: Activate this skill whenever preparing a release, bumping versions,
 
   Only genuinely release-only changes -- the version bump, its CHANGELOG entry, the compatibility-matrix sync -- should originate on the release branch.
 
+  **Step 4 is not actually a no-op, because this repository squash-merges.** A squash merge puts one new commit on `master` with no ancestry link to the branch it came from, so the cherry-pick on `release/*` and the squashed commit on `master` are unrelated commits containing the same content. Git cannot reconcile them, and the tracking PR goes `CONFLICTING` at promotion -- following the rule correctly does not avoid this, because the cause is the squash, not the direction.
+
+  Hit on 2026-08-25 promoting v2.17.0: PR #1320 turned `DIRTY` with both verification scripts conflicting, master having taken #1323 as squash `f2654d07` while the release branch carried cherry-pick `64796652`.
+
+  Resolve it **before** running `--promote`, not during:
+
+  1. `git merge origin/master` on the release branch
+  2. confirm the release branch is a superset of `master` for the conflicting files -- diff them and check that master's only unique lines are ones the branch deliberately replaced
+  3. resolve with `git checkout --ours <file>` for those files
+  4. commit the merge. `scripts/agent_push.sh` cannot express a merge commit, so this needs `git commit`; run `pre-commit run --all-files`, `mypy ldm_core --config-file=mypy.ini` and the full `pytest` by hand before pushing, since the wrapper's gates are being bypassed
+  5. verify `git merge-base --is-ancestor origin/master HEAD` before promoting
+
+  Never resolve by taking `master`'s side without checking step 2 -- the release branch usually carries changes master has not seen, and `--theirs` would silently discard them.
+
 - **Do not base new work on a cherry-pick from an open release branch.** If `master` lacks something you need, that is a signal to land it on `master` properly, not to borrow it sideways. Borrowing produces a branch that looks fine until the release lands and then conflicts with itself.
 
 ## Pre-Release Strategy
@@ -101,4 +115,4 @@ To ensure clarity and prevent title drift across multi-commit pre-release iterat
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-21* | *Last Reviewed: 2026-08-21*
+*Last Updated: 2026-08-25* | *Last Reviewed: 2026-08-25*
