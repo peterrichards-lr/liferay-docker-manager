@@ -1,3 +1,4 @@
+import contextlib
 import json
 import shutil
 import subprocess
@@ -73,6 +74,18 @@ class OrchestrationService(BaseHandler):
         for root in targets:
             UI.detail(f"Starting project: {root.name}...")
             meta = self.manager.read_meta(root)
+            # LDM-#1324: `start` bypasses the run pipeline entirely, so a
+            # project started but never `run` here stayed absent from the
+            # registry and was findable only from the right directory.
+            # Best-effort: failing to record it must not block the start.
+            with contextlib.suppress(Exception):
+                self.manager.register_project(
+                    meta.get("liferay_container_name")
+                    or meta.get("container_name")
+                    or root.name,
+                    root,
+                    host_name=meta.get("host_name"),
+                )
             target_name = getattr(self.manager, "target", None) or meta.get("target")
             if target_name:
                 from ldm_core.config import sync_project_to_target

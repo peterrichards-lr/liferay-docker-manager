@@ -146,18 +146,45 @@ class AssetService:
                 UI.debug("User opted out of OSGi state seeding.")
 
             UI.detail("Bootstrapping project from seed...")
-            handler._extract_snapshot_archive(tmp_path, paths)
+            # LDM-#1322: SnapshotService COMPOSES its sub-services
+            # (self.archive = ArchiveSnapshotService(self)) rather than
+            # inheriting them, and _extract_snapshot_archive is defined only on
+            # ArchiveSnapshotService. Calling it on the parent raised
+            # AttributeError unconditionally -- there is no __getattr__
+            # fallback -- so seeding could never succeed. Every `ldm init`
+            # downloaded the ~1GB seed, failed to extract it, fell back to a
+            # vanilla initialization, and still reported that seeding had saved
+            # the user 14 minutes.
+            handler.archive._extract_snapshot_archive(tmp_path, paths)
 
             success_msg = "Project bootstrapped from seed."
             if not getattr(self.manager.args, "no_osgi_seed", False):
                 success_msg = "Project bootstrapped from seed (including OSGi state)."
             UI.success(success_msg)
             return True
+        except (AttributeError, TypeError):
+            # LDM-#1322: a programming error is not a runtime condition. The
+            # handler below exists to tolerate a corrupt, truncated or
+            # unreadable archive; absorbing a wrong method name into the same
+            # warning is what let this survive undetected. Re-raise so it fails
+            # loudly and a test can catch it.
+            raise
         except Exception as e:
             UI.warning(f"Failed to extract bootstrap seed: {e}")
             UI.detail("Continuing with fresh/vanilla initialization...")
             UI.interruptible_pause(5, "Press CTRL+C to cancel ")
-            return True
+            # LDM-#1322: False, not True. The caller in pipelines/run.py reads
+            # this return value as "the project WAS seeded":
+            #
+            #     if is_new_project and manager.assets._ensure_seeded(...):
+            #         project_meta["seeded"] = "true"
+            #         manager.config.track_roi(840, "first-boot seeding")
+            #
+            # Returning True from the failure path marked an unseeded project
+            # as seeded and claimed the 14-minute saving anyway. The run still
+            # continues -- the caller simply skips the seeded bookkeeping, and
+            # the warning above already told the user what happened.
+            return False
 
     def _ensure_seeded(self, tag, db_type, paths):
         """Helper to ensure a project is bootstrapped from a seed if available and appropriate."""
