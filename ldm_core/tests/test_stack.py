@@ -370,6 +370,15 @@ class TestStackOrchestration(unittest.TestCase):
                 ),
                 patch.object(self.manager, "check_port", return_value=True),
                 patch.object(self.manager, "run_command"),
+                # LDM-#1363 made shared-search provisioning actually run for a
+                # shared-search project, which this meta declares. Without this
+                # patch the test reaches the real Docker daemon and tries to
+                # start Elasticsearch: it passed on a developer machine that
+                # already had the image and container, and died with exit 3 in
+                # CI, which has neither. The test is about the readiness gate,
+                # not about provisioning.
+                patch.object(self.manager.infra, "setup_global_search"),
+                patch.object(self.manager.infra, "setup_global_database"),
             ):
                 self.manager.runtime.cmd_run(
                     project_id="timeout-test",
