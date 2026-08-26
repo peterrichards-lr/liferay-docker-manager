@@ -1,6 +1,7 @@
 import json
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from ldm_core.constants import VERSION
@@ -1911,7 +1912,7 @@ class TestInfoReportsEffectiveNames(unittest.TestCase):
         handler.manager.read_meta.return_value = meta
         handler.manager.defaults.get.side_effect = lambda _k, default=None: default
 
-        captured = {}
+        captured: dict[str, Any] = {}
         with (
             patch("ldm_core.ui.UI.raw") as mock_raw,
             patch(
