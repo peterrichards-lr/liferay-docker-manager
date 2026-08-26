@@ -736,6 +736,22 @@ class ComposerService:
                 f"{mount_paths.get('routes', mount_paths['root'] / 'routes').as_posix()}:/workspace/routes{z_label}",
                 f"{project_name}-data:/opt/liferay/data",
                 f"{mount_paths['modules'].as_posix()}:/opt/liferay/osgi/modules{z_label}",
+                # LDM-#1364: restored. `df59dea6` ("isolate configuration
+                # volumes", v2.7.2) removed BOTH this and the osgi/modules
+                # mount above; `57fd4b9f` brought modules back and this was
+                # overlooked, so from v2.7.2 onwards nothing a user put in
+                # <project>/osgi/configs ever reached Liferay.
+                #
+                # That was invisible because seven code paths still READ the
+                # directory and change LDM's behaviour on what they find --
+                # run.py even prints "Custom Elasticsearch OSGi configs
+                # detected" and offers a choice, about a file the container
+                # could not see. Confirmed by experiment: an
+                # ElasticsearchConfiguration.config here had no effect and
+                # Liferay started its embedded sidecar, while the identical
+                # file placed where the container could read it connected to
+                # the global cluster and indexed immediately.
+                f"{mount_paths.get('configs', mount_paths['root'] / 'osgi' / 'configs').as_posix()}:/opt/liferay/osgi/configs{z_label}",
                 f"{mount_paths['cx'].as_posix()}:/opt/liferay/osgi/client-extensions{z_label}",
                 f"{mount_paths['portal_log4j'].as_posix()}:/opt/liferay/osgi/log4j{z_label}",
             ],
