@@ -82,6 +82,28 @@ export LDM_COMMON_DIR="/path/to/shared/organization/common"
 ldm run my-project
 ```
 
+## State Directory (`LDM_HOME`)
+
+LDM keeps its global state -- the project registry, the pre-warmed seed cache, sample packs, plugins and shared `common/` files -- under `.ldm` in the current user's home directory.
+
+Set `LDM_HOME` to put that state somewhere else:
+
+```bash
+export LDM_HOME="/Volumes/External/ldm-state"
+ldm list          # reads and writes /Volumes/External/ldm-state/.ldm/registry.json
+```
+
+`LDM_HOME` takes precedence over everything else, and it is the **only** way to redirect the state directory from outside the process. Setting `HOME` does not work: on macOS LDM reconstructs `/Users/<username>` from `SUDO_USER`/`USER` so that it still finds the real user's home when invoked under `sudo`, which means `HOME` is ignored entirely.
+
+Notes:
+
+- A leading `~` is expanded.
+- The directory does not need to exist; LDM creates it on first use.
+- An unset or whitespace-only value falls back to the normal home-directory resolution.
+
+> [!TIP]
+> This is also the supported way to isolate automated tests and CI jobs from a developer's real state. Any test that runs LDM as a subprocess **must** set it -- see `.agents/skills/testing-and-ci/SKILL.md`.
+
 ## Environment Variable Forwarding
 
 LDM automatically forwards specific host environment variables into your project containers using a prefix-based logic.
@@ -119,4 +141,4 @@ You can target a specific service (including Client Extensions) by prefixing the
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*
