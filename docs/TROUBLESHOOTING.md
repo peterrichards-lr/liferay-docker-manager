@@ -181,6 +181,37 @@ If LDM cannot connect to infrastructure services:
 2. Check if a VPN or Firewall is blocking traffic on port 9200 (Search) or 443 (Proxy).
 3. Run `ldm infra-restart` to reset the bridge.
 
+### **Port conflict detected (Exit Code 4)**
+
+```text
+❌  Port conflict detected: Port 8080 is already in use on the host and is
+    required by service 'liferay' in your compose configuration.
+💡 Tip:  Re-run 'ldm run' -- the pre-flight check will select port 8081
+         instead. Or free up port 8080 and re-run to keep it.
+```
+
+LDM checks host ports twice, and they behave differently on purpose:
+
+| Check | On conflict |
+|---|---|
+| Pre-flight, before any work | Moves to the next free port and says so |
+| Compose validation, just before start | Fatal, exit 4 |
+
+The late check is fatal because by that point the port is written into the
+generated `docker-compose.yml`; moving it means regenerating the compose file,
+not just picking a different number.
+
+Seeing the fatal one usually means the pre-flight passed silently -- the port
+really was free when it ran -- and something took the port during the work
+in between, which includes a seed download that can take minutes.
+
+**Re-running is what resolves it**: the pre-flight runs again and picks the free
+port named in the tip. You do not need to hunt down and kill the other process
+unless you specifically want to keep the original port.
+
+If the tip names no alternative, every port in the 20 above the conflicting one
+was also busy; free one up, or set a different port for the service.
+
 ## 📂 Permission & Mount Issues
 
 ### **macOS / ExFAT: "Unable to create lock manager" or "access_denied_exception"**
