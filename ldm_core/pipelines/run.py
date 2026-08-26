@@ -1444,12 +1444,53 @@ class ComposerStage(PipelineStage):
 
                     if not DockerService.is_running(container_name):
                         if not manager.check_port("127.0.0.1", mapped_port):
-                            # LDM-#996: a genuine deployment/orchestration error --
-                            # the host environment can't accommodate this deployment.
+                            # LDM-#996: staying fatal here is deliberate. By this
+                            # point the port is written into the generated
+                            # docker-compose.yml, so moving it means regenerating
+                            # the compose file, not just picking a new number.
+                            #
+                            # LDM-#1350: the *advice* was wrong, though. Telling
+                            # the user to stop a process contradicts LDM's own
+                            # documented behaviour of moving to the next free
+                            # port, which the pre-flight check really does
+                            # (handlers/base.py). The pre-flight printed nothing
+                            # because the port was genuinely free when it ran;
+                            # what sits between the two checks is a seed download
+                            # that can take minutes. Re-running is what actually
+                            # resolves it, so name the port a re-run would pick.
+                            #
+                            # Bounded scan, not find_available_port(): that walks
+                            # to 65535 and would issue ~57k probes on a busy host,
+                            # inside an error path. A short window gives the same
+                            # answer whenever one exists nearby, since the
+                            # pre-flight also takes the first free port above this
+                            # one.
+                            alternative = next(
+                                (
+                                    candidate
+                                    for candidate in range(
+                                        mapped_port + 1,
+                                        min(mapped_port + 21, 65536),
+                                    )
+                                    if manager.check_port("127.0.0.1", candidate)
+                                ),
+                                None,
+                            )
+                            if alternative:
+                                tip = (
+                                    f"Re-run 'ldm run' -- the pre-flight check will "
+                                    f"select port {alternative} instead. Or free up "
+                                    f"port {mapped_port} and re-run to keep it."
+                                )
+                            else:
+                                tip = (
+                                    f"Free up port {mapped_port} and re-run, or set a "
+                                    f"different port for '{svc_name}'."
+                                )
                             UI.die(
                                 f"Port conflict detected: Port {mapped_port} is already in use on the host "
-                                f"and is required by service '{svc_name}' in your compose configuration.\n"
-                                f"Please stop the service currently using port {mapped_port} before starting LDM.",
+                                f"and is required by service '{svc_name}' in your compose configuration.",
+                                tip=tip,
                                 exit_code=4,
                             )
             except SystemExit:

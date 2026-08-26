@@ -690,6 +690,92 @@ services:
                 mock_check_port.assert_any_call("127.0.0.1", 8080)
                 mock_die.assert_not_called()
 
+    def test_late_port_conflict_names_the_port_a_rerun_would_pick(self):
+        """LDM-#1350: the fatal late check must not tell you to go kill a process.
+
+        LDM's documented behaviour is to move to the next free port, and the
+        pre-flight check really does that. The pre-flight passes silently when
+        the port is genuinely free at that moment; what sits between it and the
+        compose validation is a seed download that can take minutes, which is
+        long enough for something else to take the port. Staying fatal is
+        correct (the port is already written into docker-compose.yml by then),
+        but the advice has to say what actually resolves it.
+        """
+        with tempfile.TemporaryDirectory() as tmp_root:
+            root = Path(tmp_root)
+            compose_file = root / "docker-compose.yml"
+            compose_file.write_text("""
+services:
+  liferay:
+    container_name: test-project-liferay-1
+    ports:
+      - "8080:8080"
+            """)
+            paths = self.handler.setup_paths(root)
+            paths["compose"] = compose_file
+
+            # Models the real timeline: free during pre-flight, taken by the
+            # time compose validation runs. 8081 stays free throughout.
+            state = {"taken": False}
+
+            def check_port(_ip, port):
+                if not state["taken"]:
+                    return True
+                return port != 8080
+
+            def take_the_port(*_a, **_k):
+                state["taken"] = True
+
+            captured = {}
+
+            def capture_die(msg, details=None, tip=None, exit_code=1):
+                captured["msg"] = msg
+                captured["tip"] = tip
+                captured["exit_code"] = exit_code
+                raise SystemExit(exit_code)
+
+            self.handler.args.no_wait = True
+            self.handler.args.no_up = False
+
+            with (
+                patch.object(DockerService, "is_running", return_value=False),
+                patch.object(self.handler, "check_port", side_effect=check_port),
+                patch.object(BaseHandler, "run_command"),
+                patch.object(
+                    self.handler, "get_container_status", return_value="healthy"
+                ),
+                patch.object(self.handler.infra, "setup_global_search"),
+                patch.object(self.handler.infra, "setup_global_database"),
+                patch.object(
+                    self.handler.composer,
+                    "write_docker_compose",
+                    side_effect=take_the_port,
+                ),
+                patch("ldm_core.ui.UI.die", side_effect=capture_die),
+            ):
+                with self.assertRaises(SystemExit):
+                    self.handler.handler.orchestration.cmd_run(
+                        project_id="test-project-liferay-1",
+                        no_up=False,
+                        no_wait=True,
+                        is_restart=True,
+                        paths=paths,
+                        project_meta={
+                            "container_name": "test-project-liferay-1",
+                            "tag": "7.4.3.132",
+                        },
+                    )
+
+            self.assertEqual(4, captured.get("exit_code"), "still a fatal exit 4")
+            self.assertIn("Port conflict detected", captured["msg"])
+
+            tip = captured["tip"] or ""
+            self.assertIn("8081", tip, "must name the port a re-run would pick")
+            self.assertIn("Re-run", tip)
+            # The old advice sent the user hunting for a process to kill.
+            self.assertNotIn("stop the service currently using", captured["msg"])
+            self.assertNotIn("stop the service currently using", tip)
+
     def test_preflight_custom_container_port_collision_check(self):
         with tempfile.TemporaryDirectory() as tmp_root:
             root = Path(tmp_root)
