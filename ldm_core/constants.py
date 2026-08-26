@@ -111,6 +111,32 @@ RELEASE_ANNOUNCEMENTS = {
             "instead of hanging silently",
         ),
     ],
+    "2.18": [
+        (
+            "ldm run --search-mode shared",
+            "Shared Elasticsearch now works end to end: the flag is honoured, "
+            "the global service is provisioned, and index names match",
+        ),
+        (
+            "Remote node awareness",
+            "Commands say which projects target a remote node before waiting "
+            "on one, instead of appearing to hang",
+        ),
+        (
+            "Unreachable node diagnosis",
+            "An SSH failure names the node, user and cause instead of printing "
+            "a raw HTTP/SSH blob",
+        ),
+        (
+            "ldm info",
+            "Reports the container and database names actually in effect, "
+            "sanitised exactly as Docker sees them",
+        ),
+        (
+            "ldm stop/start/restart/down --all",
+            "One unreachable project no longer abandons every project after it",
+        ),
+    ],
 }
 
 # --- Global Infrastructure ---
