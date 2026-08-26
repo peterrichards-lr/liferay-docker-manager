@@ -1449,7 +1449,19 @@ class ExecutionStage(PipelineStage):
 
         is_samples = context.get("is_samples")
         external_snapshot = context.get("external_snapshot")
+        # LDM-#1374: the args fallback is required. Three sibling stages
+        # (:233, :612, :977) resolve this as context-then-args; this one read
+        # only the context, and the CLI never puts `no_up` there -- `cli.py`
+        # dispatches `("run", None)` as `cmd_run(project)` with no kwarg, so
+        # `context.set("no_up", None)` at :52 leaves it None.
+        #
+        # `if not None` is true, so the guarded block below always ran:
+        # `ldm run --no-up` started the stack and waited for readiness. The
+        # sibling flag `--no-seed` worked throughout because it is read from
+        # `args` directly, which is what made this look like a parser problem.
         no_up = context.get("no_up")
+        if no_up is None:
+            no_up = getattr(manager.args, "no_up", False)
 
         # Reads the TargetContext ProjectInitializationStage already
         # resolved (and possibly pinned) for this command. Falling back to
