@@ -111,7 +111,20 @@ Controls whether LDM provisions a dedicated Elasticsearch container or connects 
 
 ### `--database-mode`
 
-Controls whether LDM provisions an isolated PostgreSQL database or connects to the Global Shared Database cluster. Available modes: `isolated` or `shared`.
+Controls whether LDM provisions a dedicated database container for the project or connects it to the Global Shared Database cluster. Available modes: `isolated` or `shared`.
+
+`isolated` supports every engine `--db` accepts -- `postgresql`, `mysql`, `hypersonic` and `external`.
+
+**`shared` is PostgreSQL only.** The global cluster (`liferay-db-global`) is provisioned as PostgreSQL, and the per-project database is created with `psql`; there is no MySQL/MariaDB equivalent of either. Combining `--database-mode shared` with `--db mysql` is refused rather than silently downgraded:
+
+```console
+$ ldm run my-project --database-mode shared --db mysql
+❌  --database-mode shared is not supported with mysql: the global shared database
+   is PostgreSQL only. Use --database-mode isolated for a dedicated mysql
+   container, or --db postgresql to join the shared cluster.
+```
+
+MySQL is fully supported in `isolated` mode -- it simply cannot share the global cluster.
 
 In `shared` mode every project gets its own database on the one cluster, named from the project:
 
