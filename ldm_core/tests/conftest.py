@@ -32,3 +32,27 @@ def reset_singletons():
     yield
     UI.reset()
     Benchmarker.reset()
+
+
+@pytest.fixture(autouse=True)
+def isolate_ldm_home(tmp_path_factory, monkeypatch):
+    """Points LDM_HOME at a temp directory for every test (#1342).
+
+    Without this the suite wrote to the developer's real ``~/.ldm``:
+
+    - project reconciliation registered pytest tempdirs as real projects, so
+      ``ldm list`` grew entries like ``tmpb8i0z_zm`` after every run;
+    - ``last-command.log`` was overwritten, destroying the trace of whatever
+      the developer last ran -- the exact artefact needed to diagnose it.
+
+    ``LDM_HOME`` is the only lever available: ``get_actual_home()`` rebuilds
+    ``/Users/<user>`` from ``SUDO_USER``/``USER`` on macOS and ignores ``HOME``
+    entirely (see #1349).
+
+    Tests that patch ``get_actual_home`` themselves are unaffected, since a
+    patch replaces the function and it never consults the environment.
+
+    This does NOT isolate Docker: ``DockerService`` reaches the real daemon
+    regardless of the filesystem, which has to be patched at the call site.
+    """
+    monkeypatch.setenv("LDM_HOME", str(tmp_path_factory.mktemp("ldm-home")))
