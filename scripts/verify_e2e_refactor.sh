@@ -1179,9 +1179,10 @@ for name, conf in services.items():
         )
 
 meta = json.load(open(meta_path, encoding='utf-8'))
-assert meta.get('database_mode') == 'shared', (
-    f'meta database_mode is {meta.get(\'database_mode\')!r}, expected \'shared\' -- '
-    'later commands will resolve the mode from defaults instead (#1359)'
+mode = meta.get('database_mode')
+assert mode == 'shared', (
+    'meta database_mode is %r, expected shared -- later commands will resolve '
+    'the mode from defaults instead (#1359)' % (mode,)
 )
 
 url = ''
