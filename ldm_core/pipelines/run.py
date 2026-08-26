@@ -791,6 +791,46 @@ class ConfigResolutionStage(PipelineStage):
         if getattr(manager.args, "sidecar", False):
             use_shared_search = False
 
+        # LDM-#1359: resolved here, before the metadata below is assembled, so
+        # the mode can be PERSISTED. It used to be resolved only at compose
+        # time, which left `database_mode` absent from meta -- so every later
+        # command (snapshot, restore, db query, orchestration) resolved it from
+        # defaults instead and silently assumed "isolated" for a project that
+        # was provisioned "shared".
+        db_mode_resolved = resolve_infrastructure_mode(
+            "database_mode",
+            project_meta,
+            manager.defaults,
+            getattr(manager.args, "database_mode", None),
+        )
+
+        # LDM-#1357: shared mode is PostgreSQL-only. `liferay-db-global` is
+        # provisioned as `postgres:<ver>` (handlers/infra.py), and the
+        # per-project database is created with `psql` (below) -- there is no
+        # MySQL/MariaDB equivalent of either. The MariaDB branch of
+        # `_inject_liferay_db_env` nevertheless pointed at
+        # `jdbc:mariadb://liferay-db-global:3306/...`, i.e. the MySQL port of a
+        # PostgreSQL container, so the combination could never connect.
+        #
+        # Refused rather than silently downgraded to isolated, following the
+        # #1285 precedent: quietly ignoring a flag the user typed is its own
+        # surprise.
+        effective_db_type = (
+            db_type or project_meta.get("db_type") or "postgresql"
+        ).lower()
+        if db_mode_resolved == "shared" and effective_db_type in (
+            "mysql",
+            "mariadb",
+        ):
+            UI.die(
+                f"--database-mode shared is not supported with {effective_db_type}: "
+                "the global shared database is PostgreSQL only. Use "
+                "--database-mode isolated for a dedicated "
+                f"{effective_db_type} container, or --db postgresql to "
+                "join the shared cluster.",
+                exit_code=1,
+            )
+
         persist_osgi_arg = getattr(manager.args, "persist_osgi", None)
         if persist_osgi_arg is not None:
             persist_osgi = persist_osgi_arg
@@ -827,6 +867,9 @@ class ConfigResolutionStage(PipelineStage):
                 "port": port,
                 "jvm_args": jvm_args,
                 "use_shared_search": str(use_shared_search).lower(),
+                # LDM-#1359: persisted so later commands agree with the run
+                # that provisioned the project.
+                "database_mode": db_mode_resolved,
                 "no_vol_cache": str(no_vol_cache).lower(),
                 "internal_state": str(internal_state).lower(),
                 "no_jvm_verify": str(no_jvm_verify).lower(),
@@ -1180,6 +1223,11 @@ class ComposerStage(PipelineStage):
 
         from ldm_core.utils import resolve_infrastructure_mode
 
+        # LDM-#1359: this resolution was already correct -- it passes the CLI
+        # override. The defect was `_inject_liferay_db_env` in composer.py
+        # omitting it, so the compose file and this disagreed. Kept explicit
+        # (rather than reusing the earlier local, which is in another stage's
+        # scope) and now backed by the persisted meta value.
         db_mode = resolve_infrastructure_mode(
             "database_mode",
             project_meta,

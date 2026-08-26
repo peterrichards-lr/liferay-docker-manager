@@ -951,8 +951,21 @@ class ComposerService:
 
         from ldm_core.utils import resolve_infrastructure_mode
 
+        # LDM-#1359: the CLI override MUST be passed here. `_build_db_service`
+        # passes it and this did not, so within one run the two functions
+        # disagreed about the mode: `_build_db_service` saw "shared" and
+        # correctly omitted the per-project database service, while this fell
+        # through to "isolated" and both wrote the isolated JDBC URL and left
+        # `depends_on: <project>-db` in place (see the depends_on guard below,
+        # which keys off this same `db_mode`). The result was a compose file
+        # referencing an undefined service -- `ldm run --database-mode shared`
+        # failed at `docker compose config` for every project, capitalised or
+        # not, which is why #1354 and #1357 were never reached.
         db_mode = resolve_infrastructure_mode(
-            "database_mode", meta, self.manager.defaults
+            "database_mode",
+            meta,
+            self.manager.defaults,
+            getattr(getattr(self.manager, "args", None), "database_mode", None),
         )
 
         if db_mode == "shared":
