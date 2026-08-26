@@ -64,6 +64,15 @@ on actual, referenceable code or documentation in this repository. Do not
 make blind assumptions about how systems behave without verifying via
 search, reading the code, or consulting this file and the skill modules.
 
+### Pragmatism & Velocity Principles
+
+To maintain high developer velocity while preserving software quality:
+
+- **Surgical Fixes & Minimal Diffs**: Focus strictly on the requested bug or feature. Do not refactor surrounding working code or re-architect functional logic unless explicitly asked.
+- **Preserve CLI & Flag Semantics**: Never alter or break existing CLI flags, combinations, or user habits under the guise of "intent vs mechanism" or "semantic purity."
+- **Verify Claims Historically**: Before asserting that a feature "never worked" or "is broken," inspect past commit history (`git log -S`) to avoid misdiagnosing a recent regression as an initial design flaw.
+- **No Unsolicited Audit Cascades**: Do not create cascades of secondary micro-debt issues during routine bug fixes unless a full audit was explicitly requested.
+
 ## Current Work State
 
 Status updates, active release cycles, open-issue tracking, and any other
@@ -75,4 +84,4 @@ should not need to change as work progresses.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-25* | *Last Reviewed: 2026-08-25*
+*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*
