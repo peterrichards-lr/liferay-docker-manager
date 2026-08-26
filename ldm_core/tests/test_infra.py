@@ -300,10 +300,34 @@ class TestInfraService(unittest.TestCase):
         self.assertFalse(res)
 
         # Should proceed
+        #
+        # LDM-#1365: `DockerService.stop`/`rm` must be patched too, not just the
+        # manager's run_command. They are static methods calling `run_command`
+        # imported at module scope in docker_service.py, so a
+        # `patch.object(self.manager, ...)` never reaches them -- this test
+        # issued a real `docker rm` and destroyed the developer's
+        # `liferay-search-global` container on every suite run. Reproduced
+        # standalone: plant a container with that name, run this test alone,
+        # and it is gone.
         mock_ui.confirm.return_value = True
-        with patch.object(self.manager, "run_command") as mock_run:
+        with (
+            patch.object(self.manager, "run_command") as mock_run,
+            patch("ldm_core.docker_service.DockerService.stop") as mock_stop,
+            patch("ldm_core.docker_service.DockerService.rm") as mock_rm,
+        ):
             self.infra.cmd_infra_down()
             mock_run.assert_called()
+
+            # Assert WHICH containers were targeted, rather than only that
+            # something ran. INFRA_SERVICES minus liferay-proxy-global, which
+            # the compose `down -v` above handles and the loop skips.
+            from ldm_core.constants import INFRA_SERVICES
+
+            expected = [
+                name for name, _ in INFRA_SERVICES if name != "liferay-proxy-global"
+            ]
+            self.assertEqual(expected, [c.args[0] for c in mock_rm.call_args_list])
+            self.assertEqual(expected, [c.args[0] for c in mock_stop.call_args_list])
 
     @patch("ldm_core.docker_service.DockerService.exists", return_value=False)
     @patch("ldm_core.handlers.infra.get_actual_home", return_value=Path("/tmp"))
