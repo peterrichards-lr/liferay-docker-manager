@@ -2135,7 +2135,7 @@ class TestAnnounceRemoteTargets(unittest.TestCase):
             target.name = name or "local"
             return target
 
-        said = []
+        said: list[str] = []
         with (
             patch("ldm_core.config.get_active_target", side_effect=make_target),
             patch(
@@ -2191,7 +2191,8 @@ class TestRemoteFailureIsReportedNotDumped(unittest.TestCase):
 
         from ldm_core.utils import run_command
 
-        errors, details = [], []
+        errors: list[tuple] = []
+        details: list[str] = []
         boom = subprocess.CalledProcessError(1, cmd, stderr=stderr)
 
         with (
