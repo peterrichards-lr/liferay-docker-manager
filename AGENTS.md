@@ -23,8 +23,8 @@ skill before starting work:
 | Testing & CI quality gates | `.agents/skills/testing-and-ci/SKILL.md` |
 | Release orchestration | `.agents/skills/release-orchestration/SKILL.md` |
 | GitHub workflows & PR scope | `.agents/skills/github-workflows/SKILL.md` |
-| Developer runbook | `.agents/skills/ldm_developer/SKILL.md` |
-| Upstream JIRA tracker | `.agents/skills/jira_tracker/SKILL.md` |
+| Developer runbook | `.agents/skills/ldm-developer/SKILL.md` |
+| Upstream JIRA tracker | `.agents/skills/jira-tracker/SKILL.md` |
 
 `.claude/skills` is a symlink to `.agents/skills` (LDM-#1378). Claude Code only
 discovers project skills under `.claude/skills/`, so without it none of the
@@ -32,6 +32,17 @@ above are auto-activated -- an agent loads a skill only if it remembers to
 consult this table, which is how LDM-#1288 happened. Keep `.agents/` as the
 canonical location so the arrangement stays provider-agnostic; the symlink is a
 pointer, not a second copy.
+
+**Windows caveat.** `.claude/skills` is the first symlink tracked in this
+repository. On Windows without Developer Mode or `git config core.symlinks true`,
+git materialises it as a plain text file containing `../.agents/skills` rather
+than a link. Nothing breaks -- no build or CI job reads that path -- but skills
+go undiscovered again, silently. Windows contributors should confirm
+`git config core.symlinks` reports `true` before relying on skill activation.
+
+Each skill directory name MUST match its frontmatter `name:`. Discovery keys on
+the directory, so a mismatch registers the skill under the directory name and
+silently ignores the declared one.
 
 Reference the skills from this table as markdown links, **not** `@` imports.
 `@` eagerly loads a file into every session, and these seven total ~56 KB

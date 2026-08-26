@@ -14,9 +14,9 @@ Before any other work, the agent MUST:
 ## Steps
 
 1. **Verify Environment**: Check `pyproject.toml` and `.venv` existence to confirm this is the Liferay Docker Manager Python project.
-2. **Generate AGENTS.md**: Create `AGENTS.md` with instructions for AI coding agents to always use `.venv/bin/` for commands like `ruff` or `pytest`, and reference the `ldm_developer` skill.
+2. **Generate AGENTS.md**: Create `AGENTS.md` with instructions for AI coding agents to always use `.venv/bin/` for commands like `ruff` or `pytest`, and reference the `ldm-developer` skill.
 3. **Inform User**: Tell the user that the bootstrap is complete, and proceed with their request.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-06* | *Last Reviewed: 2026-08-06*
+*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*

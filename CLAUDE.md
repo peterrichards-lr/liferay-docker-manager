@@ -2,9 +2,9 @@
 
 > [!IMPORTANT]
 > **This file exists solely for Claude auto-discovery.**
-> The canonical AI agent context for this repository is
-> [`AGENTS.md`](./AGENTS.md). All rules, conventions, and active work
-> state are maintained there as the single source of truth.
+> The canonical AI agent context for this repository is @./AGENTS.md --
+> all rules, conventions, and active work state are maintained there as the
+> single source of truth.
 >
 > **Do not duplicate context here.** Read and follow `AGENTS.md` instead.
 > This keeps the project AI-provider agnostic and avoids maintaining

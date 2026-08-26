@@ -148,4 +148,4 @@ Do not manually bump versions or tag releases. Instead, use the automated releas
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-21* | *Last Reviewed: 2026-08-21*
+*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*
