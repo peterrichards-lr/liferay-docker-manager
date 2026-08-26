@@ -1703,3 +1703,78 @@ class TestSharedDbModeFromCliFlag(unittest.TestCase):
         )
         self.assertIsNotNone(self.composer._build_db_service(self._meta(), "MixedCase"))
         self.assertIn("MixedCase-db", service.get("depends_on") or [])
+
+
+class TestOsgiConfigsMount(unittest.TestCase):
+    """LDM-#1364: <project>/osgi/configs must reach /opt/liferay/osgi/configs.
+
+    `df59dea6` ("isolate configuration volumes", v2.7.2) removed both this and
+    the osgi/modules mount; `57fd4b9f` restored modules and this was
+    overlooked. Nothing a user placed in `osgi/configs` reached Liferay from
+    v2.7.2 onwards -- invisible because seven code paths still read the
+    directory and branch on it, including `run.py`'s "Custom Elasticsearch OSGi
+    configs detected" message.
+    """
+
+    PATHS_KEYS = (
+        "deploy",
+        "files",
+        "data",
+        "configs",
+        "modules",
+        "cx",
+        "scripts",
+        "state",
+        "logs",
+        "portal_log4j",
+        "ce_dir",
+        "routes",
+    )
+
+    def setUp(self):
+        self.manager = MockComposerManager()
+        from ldm_core.handlers.composer import ComposerService
+
+        self.composer = ComposerService(self.manager)
+        self.manager.defaults.get.side_effect = lambda _key, default=None: default
+
+    def _volumes(self):
+        root = Path("/tmp/proj")
+        paths = {"root": root}
+        paths.update({k: root / k for k in self.PATHS_KEYS})
+        meta = {
+            "tag": "2026.q1.7-lts",
+            "container_name": "proj",
+            "db_type": "postgresql",
+        }
+        service = self.composer._build_liferay_service(
+            paths, meta, "localhost", "proj", False, None
+        )
+        return service.get("volumes") or []
+
+    def test_osgi_configs_is_mounted(self):
+        targets = [v.split(":")[1] for v in self._volumes() if ":" in v]
+        self.assertIn(
+            "/opt/liferay/osgi/configs",
+            targets,
+            "osgi/configs is not mounted, so OSGi .config files never reach Liferay",
+        )
+
+    def test_it_maps_the_projects_own_configs_directory(self):
+        mount = next(
+            v for v in self._volumes() if v.split(":")[1] == "/opt/liferay/osgi/configs"
+        )
+        self.assertTrue(
+            mount.startswith("/tmp/proj/configs:"),
+            f"osgi/configs maps from {mount.split(':')[0]!r}, expected the project's configs path",
+        )
+
+    def test_the_sibling_osgi_mounts_are_still_present(self):
+        """Guard: the same commit removed modules too. Do not lose one again."""
+        targets = [v.split(":")[1] for v in self._volumes() if ":" in v]
+        for expected in (
+            "/opt/liferay/osgi/modules",
+            "/opt/liferay/osgi/client-extensions",
+            "/mnt/liferay/files",
+        ):
+            self.assertIn(expected, targets)
