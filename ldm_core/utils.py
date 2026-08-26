@@ -522,6 +522,134 @@ def _sanitize_shell_command(cmd):
     return cmd
 
 
+_SSH_FAILURE_REASONS = {
+    "operation timed out": "timed out",
+    "connection timed out": "timed out",
+    "connection refused": "refused the connection",
+    "no route to host": "has no network route",
+    "network is unreachable": "is on an unreachable network",
+    "permission denied": "refused the SSH credentials",
+    "host key verification failed": "failed SSH host key verification",
+    "could not resolve hostname": "could not be resolved by DNS",
+    "name or service not known": "could not be resolved by DNS",
+}
+
+
+def diagnose_remote_context_failure(cmd, stderr: str) -> tuple[str, str] | None:
+    """Turns a remote Docker context connection failure into a diagnosis (#1345).
+
+    A `docker --context <node>` command that cannot reach its node prints the
+    entire underlying failure: a URL-encoded Compose label filter, a
+    `docker.example.com` placeholder host that looks alarming and is not real,
+    and -- in the last few words -- the one fact that matters. This recognises
+    that shape and returns ``(message, tip)``; the caller keeps the raw stderr
+    behind ``--verbose``/``--info``.
+
+    Returns None for anything unrecognised, so every other failure keeps
+    printing stderr verbatim. For most commands (a Compose config error, a
+    failed build) the stderr *is* the useful output -- this narrows the cases
+    LDM can name, it does not suppress detail generally.
+    """
+    if not stderr:
+        return None
+
+    parts = cmd if isinstance(cmd, list) else str(cmd).split()
+    node = None
+    for i, token in enumerate(parts):
+        if token == "--context" and i + 1 < len(parts):
+            node = parts[i + 1]
+            break
+    if not node:
+        return None
+
+    lowered = stderr.lower()
+    if "error during connect" not in lowered and "ssh:" not in lowered:
+        return None
+
+    reason = next(
+        (phrase for key, phrase in _SSH_FAILURE_REASONS.items() if key in lowered),
+        "could not be reached",
+    )
+
+    host = None
+    port = "22"
+    match = re.search(r"connect to host (\S+) port (\d+)", stderr)
+    if match:
+        host, port = match.group(1), match.group(2)
+    else:
+        endpoint = re.search(r"ssh://(?:(\S+?)@)?([^\s/:]+)", stderr)
+        if endpoint:
+            host = endpoint.group(2)
+
+    user_match = re.search(r"ssh -l (\S+)", stderr)
+    user = user_match.group(1) if user_match else None
+
+    if host:
+        where = f"{user}@{host}:{port}" if user else f"{host}:{port}"
+        message = f"Cannot reach compute node '{node}' over SSH ({where} {reason})."
+    else:
+        message = f"Cannot reach compute node '{node}' over SSH -- it {reason}."
+
+    rebuild = f"ldm target add {node} --host <ip>"
+    if user:
+        rebuild += f" --user {user}"
+    rebuild += " --key <key>"
+
+    tip = (
+        "The node may be stopped, or its public IP may have changed since it "
+        f"was registered. Check with 'ldm target status {node}', then "
+        f"re-register with '{rebuild}'."
+    )
+    return message, tip
+
+
+def announce_remote_targets(manager, project_paths) -> None:
+    """Says up front that a command will resolve a remote node (LDM-#1341).
+
+    Resolving `docker --context <node>` against a sleeping node waits ~30s per
+    attempt with no output, so the command is indistinguishable from wedged.
+    The delay is legitimate -- a remote node genuinely takes longer to reach --
+    but silence is not.
+
+    Emitted once per command rather than per project, and naming the
+    project/node pairs, so a project unexpectedly pointed at a node is visible
+    too. Uses ``UI.info``: ``UI.detail`` is gated behind ``--info``/``--verbose``
+    (LDM-#1036) and would be invisible exactly when it is needed.
+
+    Remoteness is decided by ``DockerService.get_docker_cmd_prefix()``, which
+    already knows that all of ``127.0.0.0/8`` counts as local -- reused rather
+    than re-derived, because two disagreeing definitions of "is this remote" is
+    what LDM-#1324 had to unpick for project discovery.
+    """
+    from ldm_core.config import get_active_target
+    from ldm_core.docker_service import DockerService
+
+    remote = []
+    for path in project_paths:
+        try:
+            meta = manager.read_meta(path)
+        except Exception:
+            # A project whose meta cannot be read is the existing loops'
+            # problem to report, not this announcement's.
+            continue
+        target_name = get_active_target(meta.get("target")).name
+        if "--context" in DockerService.get_docker_cmd_prefix(target_name):
+            remote.append((Path(path).name, target_name))
+
+    if not remote:
+        return
+
+    pairs = ", ".join(f"{name} -> {node}" for name, node in remote)
+    if len(remote) == 1:
+        subject = "1 project targets"
+    else:
+        subject = f"{len(remote)} projects target"
+    UI.info(
+        f"{subject} a remote compute node ({pairs}); this may take longer "
+        "than usual, and will wait if the node is asleep."
+    )
+
+
 class CommandResult(NamedTuple):
     returncode: int
     stdout: str
@@ -646,14 +774,31 @@ class CommandRunner:
                     )
                     sys.exit(127)
 
-                UI.error(f"Command failed (Exit {e.returncode}): {cmd_str}")
-                UI.trace(f"[ERROR] Exit {e.returncode}")
+                err_details = ""
                 if e.stderr:
                     err_details = (
                         e.stderr
                         if isinstance(e.stderr, str)
                         else e.stderr.decode("utf-8", errors="ignore")
                     )
+
+                # LDM-#1345: a node we cannot reach gets a diagnosis rather than
+                # the whole HTTP/SSH blob. Unrecognised failures fall through and
+                # print stderr verbatim, because for most commands stderr *is*
+                # the useful output.
+                diagnosis = diagnose_remote_context_failure(cmd, err_details)
+                if diagnosis:
+                    message, tip = diagnosis
+                    UI.error(message, tip=tip)
+                    UI.trace(f"[ERROR] Exit {e.returncode}")
+                    UI.trace(f"[STDERR] {err_details.strip()}")
+                    UI.detail(f"Failed command: {cmd_str}")
+                    UI.detail(f"Underlying error: {err_details.strip()}")
+                    sys.exit(e.returncode)
+
+                UI.error(f"Command failed (Exit {e.returncode}): {cmd_str}")
+                UI.trace(f"[ERROR] Exit {e.returncode}")
+                if err_details:
                     UI.trace(f"[STDERR] {err_details.strip()}")
                     try:
                         print(

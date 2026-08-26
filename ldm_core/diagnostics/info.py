@@ -465,6 +465,13 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
     else:
         roots = handler.manager.find_dxp_roots()
 
+    # LDM-#1341: say so before any remote context is dialled. Suppressed under
+    # --json, which is a machine-readable contract (LDM-#1093).
+    if not as_json:
+        from ldm_core.utils import announce_remote_targets
+
+        announce_remote_targets(handler.manager, [r["path"] for r in roots])
+
     active_projects = False
     project_rows = []
     is_requested_project_running = False
@@ -948,6 +955,13 @@ def run_list(handler, as_json=False):  # noqa: C901, PLR0912, PLR0915
         else:
             UI.detail("No projects found.")
         return
+
+    # LDM-#1341: as above -- announced once, before the per-project loop below
+    # starts resolving `docker --context` for any remote node.
+    if not as_json:
+        from ldm_core.utils import announce_remote_targets
+
+        announce_remote_targets(handler.manager, [r["path"] for r in roots])
 
     headers = ["Project", "Version", "Target", "Status", "URL"]
     rows = []
