@@ -563,3 +563,131 @@ class TestOrchestration(unittest.TestCase):
             )
             self.assertTrue(result)
             self.assertTrue(mock_run_cmd.called)
+
+
+class TestBatchResilience(unittest.TestCase):
+    """LDM-#1343: one unreachable node must not abandon the remaining projects.
+
+    `run_command` defaults to `check=True` and, on failure, calls `sys.exit()`
+    rather than raising -- so a single failing project ended the whole batch and
+    the projects after it were never attempted, with nothing said about them.
+    Observed with `ldm rm --all`: one project removed, the next failed against a
+    sleeping compute node, the two after it silently skipped.
+
+    A try/except cannot fix that, so the batch loops pass `check=False` and
+    inspect the return, which is `None` only on failure (success returns a
+    string, possibly empty).
+    """
+
+    def setUp(self):
+        self.manager = MockRuntime()
+        from ldm_core.runtime.orchestration import OrchestrationService
+
+        self.orch = OrchestrationService(self.manager)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.roots = []
+        for name in ("alpha", "bravo", "charlie"):
+            d = Path(self.tmp.name) / name
+            d.mkdir()
+            (d / "docker-compose.yml").write_text("services: {}\n")
+            self.roots.append(d)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _fail_on(self, failing_name):
+        """A run_command stub that mimics the REAL failure semantics.
+
+        This matters: `utils.run_command` does not raise on failure when
+        `check=True` -- it calls `sys.exit()`. A stub that merely returned None
+        would let the unfixed loop carry on regardless, so the test would pass
+        against the bug and only ever exercise the reporting. Honouring `check`
+        is what makes it reproduce the abandonment.
+        """
+
+        calls = []
+
+        def stub(cmd, *args, **kwargs):
+            cwd = str(kwargs.get("cwd", ""))
+            calls.append(cwd)
+            if failing_name in cwd:
+                if kwargs.get("check", True):
+                    raise SystemExit(1)  # what check=True really does
+                return None  # what check=False returns on failure
+            return ""
+
+        return stub, calls
+
+    def _patch_roots(self):
+        return patch.object(
+            self.manager,
+            "find_dxp_roots",
+            return_value=[{"path": r} for r in self.roots],
+        )
+
+    def test_stop_continues_past_a_failing_project(self):
+        stub, calls = self._fail_on("bravo")
+        with self._patch_roots(), patch.object(self.manager, "run_command", stub):
+            with self.assertRaises(SystemExit) as ctx:
+                self.orch.cmd_stop(all_projects=True)
+
+        # charlie MUST have been attempted after bravo failed.
+        self.assertTrue(any("charlie" in c for c in calls), calls)
+        self.assertEqual(3, len(calls))
+        # and the batch still reports failure to automation
+        self.assertEqual(1, ctx.exception.code)
+
+    def test_restart_continues_past_a_failing_project(self):
+        stub, calls = self._fail_on("alpha")
+        with self._patch_roots(), patch.object(self.manager, "run_command", stub):
+            with self.assertRaises(SystemExit):
+                self.orch.cmd_restart(all_projects=True)
+
+        self.assertEqual(3, len(calls))
+        self.assertTrue(any("charlie" in c for c in calls), calls)
+
+    def test_a_fully_successful_batch_does_not_exit(self):
+        """Guard against over-reach: no failures means no SystemExit."""
+        stub, calls = self._fail_on("nothing-matches-this")
+        with self._patch_roots(), patch.object(self.manager, "run_command", stub):
+            self.orch.cmd_stop(all_projects=True)
+        self.assertEqual(3, len(calls))
+
+    def test_a_single_project_still_fails_fast(self):
+        """`check=True` is preserved off the batch path, so behaviour is unchanged."""
+        seen = {}
+
+        def stub(cmd, *args, **kwargs):
+            seen.update(kwargs)
+            return ""
+
+        with (
+            patch.object(
+                self.manager, "detect_project_path", return_value=self.roots[0]
+            ),
+            patch.object(self.manager, "run_command", stub),
+        ):
+            self.orch.cmd_stop(project_id="alpha")
+
+        self.assertTrue(seen.get("check"), "single-project stop must keep check=True")
+
+    def test_the_failure_summary_names_every_failed_project(self):
+        from ldm_core.runtime.orchestration import OrchestrationService
+
+        with patch("ldm_core.runtime.orchestration.UI") as mock_ui:
+            with self.assertRaises(SystemExit):
+                OrchestrationService._report_batch_failures(
+                    ["alpha", "charlie"], "stop"
+                )
+
+        reported = " ".join(str(c) for c in mock_ui.error.call_args_list)
+        self.assertIn("alpha", reported)
+        self.assertIn("charlie", reported)
+        self.assertIn("stop", reported)
+
+    def test_no_failures_means_no_report_and_no_exit(self):
+        from ldm_core.runtime.orchestration import OrchestrationService
+
+        with patch("ldm_core.runtime.orchestration.UI") as mock_ui:
+            OrchestrationService._report_batch_failures([], "stop")
+        mock_ui.error.assert_not_called()

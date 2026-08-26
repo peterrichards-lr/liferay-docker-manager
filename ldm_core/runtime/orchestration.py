@@ -2,6 +2,7 @@ import contextlib
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import yaml
@@ -72,6 +73,8 @@ class OrchestrationService(BaseHandler):
             return
 
         capture = not (UI.INFO_MODE or UI.VERBOSE)
+        # LDM-#1343: batch mode must not abandon the remaining projects.
+        failures = []
         for root in targets:
             UI.detail(f"Starting project: {root.name}...")
             meta = self.manager.read_meta(root)
@@ -152,7 +155,47 @@ class OrchestrationService(BaseHandler):
                     cmd = [*compose_base, "start"]
                 if service:
                     cmd.append(service)
-                self.manager.run_command(cmd, capture_output=capture, cwd=str(root))
+                res = self.manager.run_command(
+                    cmd,
+                    check=not all_projects,
+                    capture_output=capture,
+                    cwd=str(root),
+                )
+                if all_projects and res is None:
+                    UI.warning(f"Could not start '{root.name}'; continuing.")
+                    failures.append(root.name)
+        self._report_batch_failures(failures, "start")
+
+    @staticmethod
+    def _report_batch_failures(failures, action):
+        """Reports projects that failed during a batch operation (LDM-#1343).
+
+        Batch commands used to abandon every remaining project when one failed:
+        `run_command` defaults to `check=True`, and on failure it calls
+        `sys.exit()` rather than raising, so a single unreachable compute node
+        ended the whole run. Observed with `ldm rm --all`: one project was
+        removed, the next failed against a sleeping node, and the two after it
+        were never attempted -- with nothing said about them.
+
+        A try/except cannot fix that, because `sys.exit()` is not an exception
+        the caller can meaningfully catch; the batch loops therefore pass
+        `check=False` and inspect the return, which is `None` only on failure
+        (success returns a string, possibly empty).
+
+        Exits non-zero so automation still notices, but only after every
+        project has had its turn.
+        """
+        if not failures:
+            return
+        UI.error(
+            f"{len(failures)} project(s) failed to {action}: {', '.join(failures)}"
+        )
+        UI.info(
+            "The remaining projects were still processed. A common cause is a "
+            "compute node that is powered off or unreachable -- check with "
+            "'ldm target status'."
+        )
+        sys.exit(1)
 
     def cmd_stop(self, project_id=None, service=None, all_projects=False):
         """Stops project containers."""
@@ -177,6 +220,9 @@ class OrchestrationService(BaseHandler):
         from ldm_core.docker_service import DockerService
 
         capture = not (UI.INFO_MODE or UI.VERBOSE)
+        # LDM-#1343: in batch mode one unreachable node must not abandon the
+        # rest. See _report_batch_failures for why check=False is the mechanism.
+        failures = []
         for root in targets:
             UI.detail(f"Stopping project: {root.name}...")
             meta = self.manager.read_meta(root)
@@ -185,7 +231,16 @@ class OrchestrationService(BaseHandler):
             cmd = [*compose_base, "stop"]
             if service:
                 cmd.append(service)
-            self.manager.run_command(cmd, capture_output=capture, cwd=str(root))
+            res = self.manager.run_command(
+                cmd,
+                check=not all_projects,
+                capture_output=capture,
+                cwd=str(root),
+            )
+            if all_projects and res is None:
+                UI.warning(f"Could not stop '{root.name}'; continuing.")
+                failures.append(root.name)
+        self._report_batch_failures(failures, "stop")
         UI.hint(
             "Run 'ldm run' to restart the container, or 'ldm status' to view environment status."
         )
@@ -210,6 +265,8 @@ class OrchestrationService(BaseHandler):
         from ldm_core.docker_service import DockerService
 
         capture = not (UI.INFO_MODE or UI.VERBOSE)
+        # LDM-#1343: batch mode must not abandon the remaining projects.
+        failures = []
         for root in targets:
             UI.detail(f"Restarting project: {root.name}...")
             meta = self.manager.read_meta(root)
@@ -239,7 +296,16 @@ class OrchestrationService(BaseHandler):
                 cmd = [*compose_base, "restart"]
             if service:
                 cmd.append(service)
-            self.manager.run_command(cmd, capture_output=capture, cwd=str(root))
+            res = self.manager.run_command(
+                cmd,
+                check=not all_projects,
+                capture_output=capture,
+                cwd=str(root),
+            )
+            if all_projects and res is None:
+                UI.warning(f"Could not restart '{root.name}'; continuing.")
+                failures.append(root.name)
+        self._report_batch_failures(failures, "restart")
 
     def cmd_down(  # noqa: C901, PLR0912, PLR0915
         self,
@@ -274,6 +340,10 @@ class OrchestrationService(BaseHandler):
             UI.detail("No projects found to tear down.")
             return
 
+        # LDM-#1343: this is the loop the original report hit -- `ldm rm --all`
+        # removed one project, failed on a sleeping node, and never attempted
+        # the two after it.
+        failures = []
         for root in targets:
             UI.warning(f"Tearing down stack: {root.name}")
 
@@ -318,7 +388,22 @@ class OrchestrationService(BaseHandler):
                 cmd.append("--remove-orphans")
 
                 if (root / "docker-compose.yml").exists():
-                    self.manager.run_command(cmd, capture_output=capture, cwd=str(root))
+                    res = self.manager.run_command(
+                        cmd,
+                        check=not all_projects,
+                        capture_output=capture,
+                        cwd=str(root),
+                    )
+                    if all_projects and res is None:
+                        # Skip the rest of THIS project's teardown -- the
+                        # container sweep and volume removal below assume the
+                        # stack came down -- but carry on with the others.
+                        UI.warning(
+                            f"Could not tear down '{root.name}'; skipping it and "
+                            "continuing with the remaining projects."
+                        )
+                        failures.append(root.name)
+                        continue
                 else:
                     UI.debug(
                         f"No docker-compose.yml found in {root}. Skipping docker-compose down."
@@ -447,6 +532,8 @@ class OrchestrationService(BaseHandler):
 
                     self.manager.unregister_project(root.name)
                     self.manager.safe_rmtree(root)
+
+        self._report_batch_failures(failures, "tear down")
 
     def cmd_deploy(self, project_id=None, targets=None, service=None):
         """Deploys a project, specific services, or individual artifacts."""
