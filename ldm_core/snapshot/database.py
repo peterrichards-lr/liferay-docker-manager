@@ -2,6 +2,7 @@ import time
 from pathlib import Path
 
 from ldm_core.ui import UI
+from ldm_core.utils import shared_database_name
 
 
 class DatabaseSnapshotService:
@@ -47,11 +48,7 @@ class DatabaseSnapshotService:
 
                 db_name = "lportal"
                 if db_mode == "shared":
-                    from ldm_core.utils import sanitize_id
-
-                    db_name = (
-                        f"lportal_{sanitize_id(paths['root'].name).replace('-', '_')}"
-                    )
+                    db_name = shared_database_name(paths["root"].name)
 
                 if db_type in ["mysql", "mariadb"]:
                     dump_cmd = [
@@ -279,9 +276,7 @@ class DatabaseSnapshotService:
         )
         db_name = "lportal"
         if db_mode == "shared":
-            from ldm_core.utils import sanitize_id
-
-            db_name = f"lportal_{sanitize_id(paths['root'].name).replace('-', '_')}"
+            db_name = shared_database_name(paths["root"].name)
 
         def _wipe_db():
             # 1. Clean Slate (LDM-410)
@@ -547,11 +542,7 @@ class DatabaseSnapshotService:
                 )
                 db_name = "lportal"
                 if db_mode == "shared":
-                    from ldm_core.utils import sanitize_id
-
-                    db_name = (
-                        f"lportal_{sanitize_id(paths['root'].name).replace('-', '_')}"
-                    )
+                    db_name = shared_database_name(paths["root"].name)
 
                 if db_type == "postgresql":
                     UI.detail(f"  - Synchronizing Virtual Host entries to: {host_name}")

@@ -14,6 +14,7 @@ from ldm_core.utils import (
     get_compose_cmd,  # noqa: F401 -- kept as the mock injection point several
     # test files patch (`ldm_core.runtime.orchestration.get_compose_cmd`),
     # even though no code in this module calls it directly anymore.
+    shared_database_name,
 )
 
 
@@ -379,12 +380,8 @@ class OrchestrationService(BaseHandler):
                     db_type = meta.get("db_type", "postgresql")
 
                     if db_mode == "shared" and db_type != "hypersonic":
-                        from ldm_core.utils import sanitize_id
-
                         project_name = meta.get("project_name", root.name)
-                        db_name = (
-                            f"lportal_{sanitize_id(project_name).replace('-', '_')}"
-                        )
+                        db_name = shared_database_name(project_name)
                         global_db_container = (
                             "liferay-db-mysql-global"
                             if db_type in ["mysql", "mariadb"]

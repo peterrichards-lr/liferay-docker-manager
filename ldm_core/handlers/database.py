@@ -8,7 +8,10 @@ import sys
 
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
-from ldm_core.utils import resolve_infrastructure_mode, sanitize_id
+from ldm_core.utils import (
+    resolve_infrastructure_mode,
+    shared_database_name,
+)
 
 
 class DatabaseService(BaseHandler):
@@ -180,7 +183,7 @@ class DatabaseService(BaseHandler):
         db_name = "lportal"
         if db_mode == "shared":
             db_container = "liferay-db-global"
-            db_name = f"lportal_{sanitize_id(project_path.name).replace('-', '_')}"
+            db_name = shared_database_name(project_path.name)
         else:
             db_container = project_meta.get("db_container_name")
             if not db_container:
@@ -356,7 +359,7 @@ class DatabaseService(BaseHandler):
 
         update_sql = f"UPDATE User_ SET password_ = '{test_hash}', passwordEncrypted = 1, passwordReset = 0, status = 0, lockDate = NULL, failedLoginAttempts = 0 WHERE emailAddress = '{target_email}';"  # nosec B608
 
-        from ldm_core.utils import resolve_infrastructure_mode, sanitize_id
+        from ldm_core.utils import resolve_infrastructure_mode
 
         container_name = project_meta.get("liferay_container_name") or project_meta.get(
             "container_name"
@@ -370,7 +373,7 @@ class DatabaseService(BaseHandler):
         db_name = "lportal"
         if db_mode == "shared":
             db_container = "liferay-db-global"
-            db_name = f"lportal_{sanitize_id(project_path.name).replace('-', '_')}"
+            db_name = shared_database_name(project_path.name)
         else:
             db_container = project_meta.get("db_container_name", f"{container_name}-db")
 

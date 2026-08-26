@@ -1502,3 +1502,101 @@ class TestVolumeOwnershipLabels(unittest.TestCase):
         self.assertEqual("proj", labels["com.liferay.ldm.project"])
         self.assertEqual("true", labels["com.liferay.ldm.managed"])
         self.assertEqual("state", labels["com.liferay.ldm.role"])
+
+
+class TestSharedDatabaseNameCasing(unittest.TestCase):
+    """LDM-#1354: a capitalised project must get a lowercase shared database.
+
+    PostgreSQL folds an unquoted `CREATE DATABASE`, so a mixed-case JDBC URL
+    named a database that could not exist -- `FATAL: database
+    "lportal_MyProject" does not exist` -- while the existence check compared a
+    quoted literal that never matched, making every run re-attempt the create
+    and the second run die.
+    """
+
+    PATHS_KEYS = (
+        "deploy",
+        "files",
+        "data",
+        "configs",
+        "modules",
+        "cx",
+        "scripts",
+        "state",
+        "logs",
+        "portal_log4j",
+        "ce_dir",
+    )
+
+    def setUp(self):
+        self.manager = MockComposerManager()
+        from ldm_core.handlers.composer import ComposerService
+
+        self.composer = ComposerService(self.manager)
+        self.manager.defaults.get.side_effect = lambda _key, default=None: default
+
+    def _paths(self):
+        root = Path("/tmp/MyProject")
+        paths = {"root": root}
+        paths.update({k: root / k for k in self.PATHS_KEYS})
+        return paths
+
+    def _jdbc_url(self, db_type, project_name="MyProject"):
+        meta = {
+            "tag": "2026.q1.7-lts",
+            "container_name": project_name,
+            "db_type": db_type,
+            "database_mode": "shared",
+        }
+        self.composer._build_liferay_service(
+            self._paths(), meta, "localhost", project_name, False, None
+        )
+        for call in self.manager.config.update_portal_ext.call_args_list:
+            args = call[0]
+            if (
+                len(args) > 1
+                and isinstance(args[1], dict)
+                and "jdbc.default.url" in args[1]
+            ):
+                return args[1]["jdbc.default.url"]
+        self.fail("no jdbc.default.url was written")
+        return ""
+
+    def test_postgresql_shared_url_is_lowercase(self):
+        url = self._jdbc_url("postgresql")
+        self.assertIn("/lportal_myproject", url)
+        self.assertNotIn("MyProject", url)
+
+    def test_mariadb_shared_url_is_lowercase(self):
+        url = self._jdbc_url("mysql")
+        self.assertIn("/lportal_myproject", url)
+        self.assertNotIn("MyProject", url)
+
+    def test_a_transcoded_name_is_lowercased_in_the_url(self):
+        url = self._jdbc_url("postgresql", project_name="Saarbrücken")
+        self.assertIn("/lportal_saarbruecken", url)
+
+    def test_isolated_mode_still_uses_the_constant(self):
+        """The project name must not leak into the isolated database name."""
+        meta = {
+            "tag": "2026.q1.7-lts",
+            "container_name": "MyProject",
+            "db_type": "postgresql",
+        }
+        self.composer._build_liferay_service(
+            self._paths(), meta, "localhost", "MyProject", False, None
+        )
+        url = None
+        for call in self.manager.config.update_portal_ext.call_args_list:
+            args = call[0]
+            if (
+                len(args) > 1
+                and isinstance(args[1], dict)
+                and "jdbc.default.url" in args[1]
+            ):
+                url = args[1]["jdbc.default.url"]
+                break
+        self.assertIsNotNone(url)
+        assert url is not None
+        self.assertIn("/lportal", url)
+        self.assertNotIn("lportal_", url)

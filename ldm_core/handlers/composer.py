@@ -5,7 +5,12 @@ import platform
 from pathlib import Path
 
 from ldm_core.ui import UI
-from ldm_core.utils import dict_to_yaml, resolve_dependency_version, sanitize_id
+from ldm_core.utils import (
+    dict_to_yaml,
+    resolve_dependency_version,
+    sanitize_id,
+    shared_database_name,
+)
 
 
 def _volume_role(volume_name):
@@ -983,10 +988,8 @@ class ComposerService:
             host = f"{project_name}-db"
             db_name = "lportal"
             if db_mode == "shared":
-                from ldm_core.utils import sanitize_id
-
                 host = "liferay-db-global"
-                db_name = f"lportal_{sanitize_id(project_name).replace('-', '_')}"
+                db_name = shared_database_name(project_name)
 
             url = (
                 f"jdbc:mariadb://{host}:3306/{db_name}?"
@@ -1023,9 +1026,7 @@ class ComposerService:
             )
             url = f"jdbc:postgresql://{project_name}-db:5432/lportal"
             if db_mode == "shared":
-                from ldm_core.utils import sanitize_id
-
-                db_name = f"lportal_{sanitize_id(project_name).replace('-', '_')}"
+                db_name = shared_database_name(project_name)
                 url = f"jdbc:postgresql://liferay-db-global:5432/{db_name}"
 
             dialect = (
