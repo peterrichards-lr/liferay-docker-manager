@@ -75,6 +75,7 @@
 
 | ID | Test Case | Steps | Expected Outcome |
 | :-- | :--------------------- | :---------------------------------- | :------------------------------------------ |
+| 3.2 | **Effective Names** | `ldm info <non-ASCII name>` | Heading shows the verbatim project name; every `Liferay:`/`Database:`/`Tunnel:` row shows the transcoded name Docker holds, and none shows the verbatim form. |
 | 3.3 | **Fresh Project Run** | `ldm run test-run -y --tag-latest` | Starts a fresh project from seed. |
 | 3.4 | **Hot Deploy (OSGi)** | Drop `test-bundle.jar` into `deploy/` | Verifies deployment via Gogo shell (`lb`). |
 

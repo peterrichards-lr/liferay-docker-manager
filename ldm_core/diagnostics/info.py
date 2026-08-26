@@ -8,6 +8,7 @@ from ldm_core.ui import UI
 from ldm_core.utils import (
     get_actual_home,
     run_command,
+    sanitize_id,
 )
 
 
@@ -121,7 +122,13 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
     )
 
     # Add Status and URL
-    container_name = (
+    # LDM-#1351: metadata stores the project name VERBATIM by design (#1307:
+    # "metadata records the name verbatim, Docker receives a transcoded ASCII
+    # name"). Docker only ever knows the transcoded form, so querying with the
+    # raw value could never match -- `ldm info` reported "unknown" for any
+    # non-ASCII project while `ldm list`, which does sanitize (see cmd_list
+    # below), reported the true status for the same project in the same moment.
+    container_name = sanitize_id(
         meta.get("liferay_container_name")
         or meta.get("container_name")
         or root.name.replace(".", "-")
@@ -143,16 +150,44 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
         f"  {UI.WHITE}URL:{UI.COLOR_OFF}        {UI.CYAN}{UI.UNDERLINE}{url}{UI.COLOR_OFF}"
     )
 
-    # LDM-388: Explicit Container Names for reference
+    # LDM-388: Explicit Container Names for reference.
+    #
+    # LDM-#1351: every name here must be the one actually APPLIED, because this
+    # block exists to be copied into `docker logs` / `docker exec`. It used to
+    # print the verbatim metadata values, so for a project named "Saarbrücken"
+    # it offered `Saarbrücken`, `Saarbrücken-db` and `Saarbrücken-lfr-tunnel` --
+    # none of which exist; Docker has `Saarbruecken`, `Saarbruecken-db`. The
+    # project name itself stays verbatim: that is what the user types.
     UI.raw("")
     UI.raw(f"  {UI.WHITE}Provisioned Containers:{UI.COLOR_OFF}")
     UI.raw(
-        f"    {UI.WHITE}Liferay:{UI.COLOR_OFF}    {UI.CYAN}{meta.get('liferay_container_name', 'N/A')}{UI.COLOR_OFF}"
+        f"    {UI.WHITE}Liferay:{UI.COLOR_OFF}    {UI.CYAN}{container_name}{UI.COLOR_OFF}"
     )
-    UI.raw(
-        f"    {UI.WHITE}Database:{UI.COLOR_OFF}   {UI.CYAN}{meta.get('db_container_name', 'N/A')}{UI.COLOR_OFF}"
-    )
+
     project_name = meta.get("container_name", root.name)
+    safe_project_name = sanitize_id(project_name)
+
+    # LDM-#1351: in shared mode there is no per-project database container --
+    # the compose file defines only `liferay` -- so naming `<project>-db` sent
+    # the user after something that was deliberately never created. Report the
+    # cluster and the database inside it instead.
+    from ldm_core.utils import resolve_infrastructure_mode, shared_database_name
+
+    db_mode = resolve_infrastructure_mode(
+        "database_mode", meta, handler.manager.defaults
+    )
+    if db_mode == "shared":
+        UI.raw(
+            f"    {UI.WHITE}Database:{UI.COLOR_OFF}   {UI.CYAN}liferay-db-global{UI.COLOR_OFF} {UI.DIM}(shared){UI.COLOR_OFF}"
+        )
+        UI.raw(
+            f"      {UI.WHITE}└─ Database:{UI.COLOR_OFF}    {UI.CYAN}{shared_database_name(project_name)}{UI.COLOR_OFF}"
+        )
+    else:
+        db_container = meta.get("db_container_name")
+        UI.raw(
+            f"    {UI.WHITE}Database:{UI.COLOR_OFF}   {UI.CYAN}{sanitize_id(db_container) if db_container else 'N/A'}{UI.COLOR_OFF}"
+        )
 
     default_shared = (
         "true" if handler.manager.defaults.get("search_mode") == "shared" else "false"
@@ -171,13 +206,18 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
     )
     if use_shared:
         UI.raw(
-            f"      {UI.WHITE}└─ Index Prefix:{UI.COLOR_OFF} {UI.CYAN}ldm-{project_name}-{UI.COLOR_OFF}"
+            # LDM-#1351: Liferay lowercases the prefix on the way in
+            # (CompanyIdIndexNameBuilder.setIndexNamePrefix calls StringUtil.trim
+            # then StringUtil.toLowerCase), and the transcoded form is what it
+            # receives. Verified against a running project: a configured
+            # `ldm-SharedIdx-` produced `ldm-sharedidx-…` indices.
+            f"      {UI.WHITE}└─ Index Prefix:{UI.COLOR_OFF} {UI.CYAN}ldm-{safe_project_name.lower()}-{UI.COLOR_OFF}"
         )
     if meta.get("share_provider") == "lfr-tunnel-docker" or meta.get(
         "tunnel_container_name"
     ):
         UI.raw(
-            f"    {UI.WHITE}Tunnel:{UI.COLOR_OFF}     {UI.CYAN}{meta.get('tunnel_container_name', 'N/A')}{UI.COLOR_OFF}"
+            f"    {UI.WHITE}Tunnel:{UI.COLOR_OFF}     {UI.CYAN}{sanitize_id(meta.get('tunnel_container_name')) or 'N/A'}{UI.COLOR_OFF}"
         )
 
     # Actively scan for client extensions in workspace
