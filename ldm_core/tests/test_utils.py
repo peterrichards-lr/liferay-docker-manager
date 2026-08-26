@@ -2222,8 +2222,13 @@ class TestRemoteFailureIsReportedNotDumped(unittest.TestCase):
         printed.assert_not_called()
 
         # ...and the raw blob is retained, but only for --verbose/--info.
+        # Asserting on `dial-stdio` rather than the placeholder hostname: the
+        # marker is equally specific to the raw stderr, and a bare
+        # `"<host>" in <str>` check trips CodeQL's
+        # py/incomplete-url-substring-sanitization rule, which cannot tell a
+        # test assertion from a security check on a URL.
         self.assertTrue(
-            any("docker.example.com" in d for d in details),
+            any("dial-stdio" in d for d in details),
             "raw stderr should still be available behind UI.detail",
         )
 
