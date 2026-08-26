@@ -631,6 +631,7 @@ class ComposerService:
                     f"LIFERAY_ELASTICSEARCH_PERIOD_INDEX_PERIOD_NAME_PERIOD_PREFIX=ldm-{project_name}-",
                 ]
             )
+            self._write_shared_search_config(paths, meta, project_name)
         else:
             # Check if user has explicitly provided custom remote search configs
             is_es8 = self.manager.parse_version(meta.get("tag")) >= (2024, 1, 0)
@@ -863,6 +864,59 @@ class ComposerService:
                     opt_map[opt] = opt
 
         return f"LIFERAY_JVM_OPTS={' '.join(opt_map.values())}"
+
+    def _write_shared_search_config(self, paths, meta, project_name):
+        """Writes the OSGi config that actually configures shared search (LDM-#1353).
+
+        The `LIFERAY_ELASTICSEARCH*` environment variables above do **not**
+        reach Liferay. `indexNamePrefix`, `productionModeEnabled` and the
+        sidecar toggle are OSGi configuration on
+        `com.liferay.portal.search.elasticsearch{N}.configuration.ElasticsearchConfiguration`
+        -- confirmed from the metatype shipped in the image -- while `LIFERAY_*`
+        variables map to *portal properties*, and `portal.properties` contains
+        no `elasticsearch.*` key at all.
+
+        Measured on a running project: with only the env vars set, Liferay
+        started its embedded sidecar (`Sidecar Elasticsearch … started at
+        127.0.0.1:9201`) and the global cluster stayed empty for 360s. The same
+        values written here produced 18 `ldm-<project>-*` indices in
+        `liferay-search-global` with no sidecar.
+
+        The env vars are left in place deliberately: removing configuration
+        that currently does nothing is tidying, not this fix, and it would
+        inflate the diff.
+
+        `indexNamePrefix` is written in the project's own case; Liferay
+        lowercases it via `CompanyIdIndexNameBuilder.setIndexNamePrefix`
+        (`StringUtil.trim` then `StringUtil.toLowerCase`), which is why the
+        observed indices were `ldm-sharedidx-*` from a configured
+        `ldm-SharedIdx-`.
+        """
+        from ldm_core.utils import safe_write_text, search_index_prefix
+
+        is_es8 = self.manager.parse_version(meta.get("tag")) >= (2024, 1, 0)
+        es_ver = "8" if is_es8 else "7"
+        configs_dir = paths.get("configs") or (paths["root"] / "osgi" / "configs")
+        target = (
+            configs_dir
+            / f"com.liferay.portal.search.elasticsearch{es_ver}.configuration.ElasticsearchConfiguration.config"
+        )
+
+        # Only meaningful because #1364 restored the osgi/configs mount; before
+        # that this directory never reached the container.
+        try:
+            configs_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:  # pragma: no cover - filesystem edge case
+            UI.warning(f"Could not create {configs_dir}: {exc}")
+            return
+
+        contents = (
+            'productionModeEnabled=B"true"\n'
+            'networkHostAddresses=["http://liferay-search-global:9200"]\n'
+            f'indexNamePrefix="{search_index_prefix(project_name)}"\n'
+        )
+        safe_write_text(target, contents)
+        UI.debug(f"Wrote shared-search OSGi config: {target.name}")
 
     def _inject_liferay_search_env(
         self, meta, project_name, use_shared_search, liferay_env

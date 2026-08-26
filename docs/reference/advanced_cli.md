@@ -107,7 +107,25 @@ ldm tray & disown
 
 ### `--search-mode`
 
-Controls whether LDM provisions a dedicated Elasticsearch container or connects to the Global Shared Elasticsearch cluster. Available modes: `sidecar` or `shared`.
+Selects where Liferay's search index lives. Available modes: `sidecar`, `shared` or `remote`.
+
+| Mode | Where Elasticsearch runs | How LDM configures it |
+| :--- | :--- | :--- |
+| `sidecar` | **Inside the Liferay container** as a child process -- there is no separate container | Liferay's own default; LDM does not need to configure anything |
+| `shared` | The global `liferay-search-global` container, shared across projects | LDM writes `com.liferay.portal.search.elasticsearch<N>.configuration.ElasticsearchConfiguration.config` into the project's `osgi/configs/` |
+| `remote` | Your own external cluster | **You** provide the `.config` in `osgi/configs/`; LDM leaves it alone |
+
+In `shared` mode each project gets its own index namespace via `indexNamePrefix`:
+
+```text
+ldm-<project name, sanitized, lowercased>-
+```
+
+Liferay appends the company ID, so the actual indices look like
+`ldm-myproject-20101-workflow-metrics-tasks`. The prefix is written lowercase because Liferay lowercases it regardless (`StringUtil.toLowerCase`), and a mixed-case value would not match the indices it creates.
+
+> [!NOTE]
+> Search settings are OSGi configuration, **not** portal properties, so they cannot be set with `LIFERAY_*` environment variables. This is why the `.config` file is the mechanism.
 
 ### `--database-mode`
 
