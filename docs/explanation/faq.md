@@ -50,7 +50,10 @@ Running multiple Liferay DXP instances locally can quickly overwhelm standard la
 
 #### 1. Shared Database Mode (`use_shared_db`)
 
-By default, each LDM project spins up its own isolated database container (e.g., PostgreSQL or MySQL). In Shared Database Mode, LDM skips launching project-specific databases and routes all projects to a single global database container (`liferay-db-global`), namespaced as `lportal_<project_id>`:
+By default, each LDM project spins up its own isolated database container (PostgreSQL, MySQL or Hypersonic). In Shared Database Mode, LDM skips launching project-specific databases and routes all projects to a single global database container (`liferay-db-global`), namespaced as `lportal_<project_id>` (always lowercase):
+
+> [!NOTE]
+> Shared Database Mode is **PostgreSQL only**. The global container is provisioned as PostgreSQL, so `--database-mode shared --db mysql` is refused. Use `isolated` mode for a dedicated MySQL container.
 
 * **Resource Saved**: Saves **~500MB to 1GB of RAM** per running project by eliminating redundant database container overhead.
 * **Usage**: Configure it globally or toggle it for specific projects:
@@ -230,4 +233,4 @@ This maps your local Liferay HTTP port (`8080`) to a free, secure Cloudflare tun
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*
