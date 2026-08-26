@@ -26,6 +26,17 @@ skill before starting work:
 | Developer runbook | `.agents/skills/ldm_developer/SKILL.md` |
 | Upstream JIRA tracker | `.agents/skills/jira_tracker/SKILL.md` |
 
+`.claude/skills` is a symlink to `.agents/skills` (LDM-#1378). Claude Code only
+discovers project skills under `.claude/skills/`, so without it none of the
+above are auto-activated -- an agent loads a skill only if it remembers to
+consult this table, which is how LDM-#1288 happened. Keep `.agents/` as the
+canonical location so the arrangement stays provider-agnostic; the symlink is a
+pointer, not a second copy.
+
+Reference the skills from this table as markdown links, **not** `@` imports.
+`@` eagerly loads a file into every session, and these seven total ~56 KB
+(~14k tokens) regardless of the task at hand.
+
 ## Global Rules
 
 ### Documentation Maintenance
