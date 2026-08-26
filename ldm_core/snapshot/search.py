@@ -2,6 +2,7 @@ import json
 import time
 
 from ldm_core.ui import UI
+from ldm_core.utils import search_index_prefix
 
 
 class SearchSnapshotService:
@@ -66,7 +67,9 @@ class SearchSnapshotService:
                         "-H",
                         "Content-Type: application/json",
                         "-d",
-                        json.dumps({"indices": f"{container_name}-*"}),
+                        json.dumps(
+                            {"indices": f"{search_index_prefix(container_name)}*"}
+                        ),
                     ],
                     check=False,
                 )
@@ -133,7 +136,7 @@ class SearchSnapshotService:
                         "-d",
                         json.dumps(
                             {
-                                "indices": f"{container_name}-*",
+                                "indices": f"{search_index_prefix(container_name)}*",
                                 "include_global_state": False,
                             }
                         ),

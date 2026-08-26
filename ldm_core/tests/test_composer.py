@@ -1,4 +1,5 @@
 import json
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -1778,3 +1779,107 @@ class TestOsgiConfigsMount(unittest.TestCase):
             "/mnt/liferay/files",
         ):
             self.assertIn(expected, targets)
+
+
+class TestSharedSearchOsgiConfig(unittest.TestCase):
+    """LDM-#1353: shared search is configured by an OSGi .config, not env vars.
+
+    The `LIFERAY_ELASTICSEARCH*` variables LDM emits do not reach Liferay:
+    `indexNamePrefix`, `productionModeEnabled` and the sidecar toggle are OSGi
+    configuration on
+    `com.liferay.portal.search.elasticsearch{N}.configuration.ElasticsearchConfiguration`,
+    while `LIFERAY_*` maps to portal properties. Measured on a running project:
+    env vars alone left the global cluster empty for 360s and Liferay started
+    its embedded sidecar; the same values in a .config produced indices
+    immediately with no sidecar.
+    """
+
+    PATHS_KEYS = (
+        "deploy",
+        "files",
+        "data",
+        "configs",
+        "modules",
+        "cx",
+        "scripts",
+        "state",
+        "logs",
+        "portal_log4j",
+        "ce_dir",
+        "routes",
+    )
+
+    def setUp(self):
+        self.manager = MockComposerManager()
+        from ldm_core.handlers.composer import ComposerService
+
+        self.composer = ComposerService(self.manager)
+        self.manager.defaults.get.side_effect = lambda _key, default=None: default
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name) / "proj"
+        self.root.mkdir()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _paths(self):
+        paths = {"root": self.root}
+        paths.update({k: self.root / k for k in self.PATHS_KEYS})
+        return paths
+
+    def _build(self, project_name="MixedCase", tag="2026.q1.12-lts"):
+        meta = {
+            "tag": tag,
+            "container_name": project_name,
+            "db_type": "postgresql",
+            "use_shared_search": "true",
+        }
+        self.composer._build_liferay_service(
+            self._paths(), meta, "localhost", project_name, False, None
+        )
+        return self.root / "configs"
+
+    def test_the_config_is_written_for_shared_search(self):
+        configs = self._build()
+        written = list(configs.glob("*.config"))
+        self.assertEqual(1, len(written), f"expected one .config, got {written}")
+        self.assertIn("elasticsearch8", written[0].name)
+
+    def test_it_carries_the_cluster_and_prefix(self):
+        configs = self._build()
+        body = next(configs.glob("*.config")).read_text()
+        self.assertIn('productionModeEnabled=B"true"', body)
+        self.assertIn(
+            'networkHostAddresses=["http://liferay-search-global:9200"]', body
+        )
+        # Lowercased at source by `search_index_prefix` -- Liferay lowercases it
+        # anyway, and writing it lowercase keeps what LDM records identical to
+        # what Liferay uses.
+        self.assertIn('indexNamePrefix="ldm-mixedcase-"', body)
+
+    def test_an_older_tag_gets_the_es7_pid(self):
+        """The filename is the PID; ES7 and ES8 are different services.
+
+        `parse_version` is pinned explicitly: the mock manager's default returns
+        a MagicMock, which compares truthy against the (2024, 1, 0) threshold
+        and would make this assert the mock rather than the branch.
+        """
+        self.manager.parse_version = MagicMock(return_value=(7, 4, 13))
+        configs = self._build(tag="7.4.13-u108")
+        self.assertIn("elasticsearch7", next(configs.glob("*.config")).name)
+
+    def test_nothing_is_written_when_search_is_not_shared(self):
+        """Guard against over-reach -- and against clobbering a user's own
+        config on the `--search-mode remote` path, where that file IS the
+        mechanism."""
+        meta = {
+            "tag": "2026.q1.12-lts",
+            "container_name": "proj",
+            "db_type": "postgresql",
+            "use_shared_search": "false",
+        }
+        self.composer._build_liferay_service(
+            self._paths(), meta, "localhost", "proj", False, None
+        )
+        configs = self.root / "configs"
+        self.assertEqual([], list(configs.glob("*.config")) if configs.exists() else [])

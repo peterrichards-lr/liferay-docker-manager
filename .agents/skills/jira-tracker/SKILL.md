@@ -79,4 +79,4 @@ When you discover an upstream bug or platform limitation:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-06* | *Last Reviewed: 2026-08-06*
+*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*

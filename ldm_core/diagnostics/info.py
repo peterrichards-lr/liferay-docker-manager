@@ -165,13 +165,16 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
     )
 
     project_name = meta.get("container_name", root.name)
-    safe_project_name = sanitize_id(project_name)
 
     # LDM-#1351: in shared mode there is no per-project database container --
     # the compose file defines only `liferay` -- so naming `<project>-db` sent
     # the user after something that was deliberately never created. Report the
     # cluster and the database inside it instead.
-    from ldm_core.utils import resolve_infrastructure_mode, shared_database_name
+    from ldm_core.utils import (
+        resolve_infrastructure_mode,
+        search_index_prefix,
+        shared_database_name,
+    )
 
     db_mode = resolve_infrastructure_mode(
         "database_mode", meta, handler.manager.defaults
@@ -189,16 +192,24 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
             f"    {UI.WHITE}Database:{UI.COLOR_OFF}   {UI.CYAN}{sanitize_id(db_container) if db_container else 'N/A'}{UI.COLOR_OFF}"
         )
 
-    default_shared = (
-        "true" if handler.manager.defaults.get("search_mode") == "shared" else "false"
+    # LDM-#1351/#1362: report the mode the project was PROVISIONED with, not a
+    # guess. This used to claim "Shared (Global)" for any project on a tag newer
+    # than 2025.2.0 regardless of how it was built -- observed reporting shared
+    # (and an index prefix) for a project whose compose was unambiguously a
+    # sidecar. That was a second, independent derivation of a fact the composer
+    # already decided, the same pattern behind #1354 and #1359.
+    #
+    # `search_mode` is persisted to meta since #1362, so it can simply be read.
+    # `use_shared_search` remains the fallback for projects provisioned before
+    # that, and the version heuristic is gone.
+    resolved_search_mode = resolve_infrastructure_mode(
+        "search_mode", meta, handler.manager.defaults
     )
-    use_shared = str(meta.get("use_shared_search", default_shared)).lower() == "true"
-    if not use_shared and handler.manager.parse_version(meta.get("tag", "")) >= (
-        2025,
-        2,
-        0,
-    ):
-        use_shared = True
+    use_shared = (
+        resolved_search_mode == "shared"
+        if resolved_search_mode
+        else str(meta.get("use_shared_search", "false")).lower() == "true"
+    )
 
     search_mode = "Shared (Global)" if use_shared else "Sidecar (Isolated)"
     UI.raw(
@@ -211,7 +222,7 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
             # then StringUtil.toLowerCase), and the transcoded form is what it
             # receives. Verified against a running project: a configured
             # `ldm-SharedIdx-` produced `ldm-sharedidx-…` indices.
-            f"      {UI.WHITE}└─ Index Prefix:{UI.COLOR_OFF} {UI.CYAN}ldm-{safe_project_name.lower()}-{UI.COLOR_OFF}"
+            f"      {UI.WHITE}└─ Index Prefix:{UI.COLOR_OFF} {UI.CYAN}{search_index_prefix(project_name)}{UI.COLOR_OFF}"
         )
     if meta.get("share_provider") == "lfr-tunnel-docker" or meta.get(
         "tunnel_container_name"

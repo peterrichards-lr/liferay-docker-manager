@@ -55,6 +55,7 @@
 | 2.1 | **Infra Setup** | `ldm infra-setup --search` | Starts Traefik and ES8. Idempotent. |
 | 2.2 | **Shared DB Mode** | `ldm init <Name> --no-up --no-seed --database-mode shared --db postgresql` | Valid compose (no `depends_on` on an undefined service), JDBC URL targets `liferay-db-global`, derived database name is lowercase, `database_mode` persisted to `meta`. |
 | 2.3 | **Shared DB Refusal** | `ldm init <Name> --no-up --no-seed --database-mode shared --db mysql` | Refused with a non-zero exit -- the shared cluster is PostgreSQL only. |
+| 2.4 | **Shared Search Mode** | `ldm init <Name> --no-up --no-seed --search-mode shared` | `search_mode` persisted to `meta`; an `ElasticsearchConfiguration.config` written under `osgi/configs` with `productionModeEnabled`, the global cluster address and a **lowercase** `indexNamePrefix`; that directory mounted into the container. |
 
 ### 🛠️ Manual
 
@@ -186,6 +187,14 @@ To prevent test-runner hangs, memory exhaustion, and side-effect leakage in CI p
    * `testpaths` in `pyproject.toml` and the explicit `python -m pytest ldm_core/tests/` invocation in `.github/workflows/ci.yml` both scan that single directory. A test file placed anywhere else is **silently never executed** — it does not fail, it simply never runs.
    * This applies even to tests covering code outside the package. Tests for `scripts/` modules belong here too: see `ldm_core/tests/test_sync_compatibility.py` and `test_manage_target_nodes.py`, which reach their target via `sys.path.insert(0, <repo>/scripts)` and then import the module by its bare name.
    * `test_no_test_files_outside_suite_directory` in `ldm_core/tests/test_architectural_contracts.py` enforces this, and fails the suite if a test-defining file appears elsewhere. Standalone scripts that merely *look* like tests (e.g. `scripts/test_ui.py`, a manual Playwright driver) are exempt, because they define no collectable test functions or classes.
+
+5. **Never Touch the Developer's Real `~/.ldm`**:
+   * The `isolate_ldm_home` autouse fixture in `ldm_core/tests/conftest.py` points `LDM_HOME` at a fresh temporary directory for every test. Do not remove it, and do not write tests that depend on the real home.
+   * Before it existed, a full run registered pytest tempdirs as real projects — entries like `tmp58psgp9w` and `test-project` appeared in the developer's `ldm list` — overwrote `~/.ldm/last-command.log` (destroying the trace needed to diagnose whatever was last run), and *deleted* real registry entries whose paths no longer resolved.
+   * `LDM_HOME` is the only lever available: `get_actual_home()` rebuilds `/Users/<user>` from `SUDO_USER`/`USER` on macOS and ignores `HOME` entirely.
+   * Tests that patch `get_actual_home` themselves are unaffected — a patch replaces the function, so it never consults the environment.
+   * This isolates the **filesystem only**. `DockerService` reaches the real daemon regardless, so container operations must still be patched at the call site, or a test will stop or remove the developer's actual containers.
+   * `test_suite_never_touches_the_developers_real_ldm_home` in `ldm_core/tests/test_architectural_contracts.py` enforces that the fixture is in force.
 
 ---
 

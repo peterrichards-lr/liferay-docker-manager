@@ -1,5 +1,6 @@
 import importlib
 import inspect
+import os
 import pkgutil
 import re
 import tempfile
@@ -420,6 +421,42 @@ class TestArchitecturalContracts(unittest.TestCase):
             "Files here are never executed by pytest (see the testpaths setting "
             "in pyproject.toml and the explicit path in ci.yml). Move them into "
             f"ldm_core/tests/: {sorted(orphans)}",
+        )
+
+    def test_suite_never_touches_the_developers_real_ldm_home(self):
+        """Contract: no test may read or write the developer's real ~/.ldm (#1342).
+
+        The suite used to register pytest tempdirs as real projects, so a run
+        added entries like ``tmp58psgp9w`` to ``ldm list``, and it overwrote
+        ``last-command.log`` -- the trace needed to diagnose whatever the
+        developer last ran. It also *deleted* real entries: a registry key
+        pointing at a path that no longer exists was pruned during
+        reconciliation.
+
+        The ``isolate_ldm_home`` autouse fixture in conftest.py redirects
+        ``LDM_HOME`` per test. This asserts the fixture is actually in force,
+        so removing or renaming it fails loudly here rather than silently
+        resuming the pollution.
+        """
+        from ldm_core.utils import get_actual_home
+
+        resolved = get_actual_home()
+        real_home = Path.home()
+
+        self.assertNotEqual(
+            resolved.resolve(),
+            real_home.resolve(),
+            "Quality Gate Violation: get_actual_home() resolved to the "
+            "developer's real home during a test. The isolate_ldm_home "
+            "fixture in ldm_core/tests/conftest.py is missing or disabled; "
+            "without it the suite mutates the developer's ~/.ldm registry "
+            "and last-command.log (see #1342).",
+        )
+        self.assertTrue(
+            os.environ.get("LDM_HOME"),
+            "Quality Gate Violation: LDM_HOME is unset during a test. "
+            "get_actual_home() ignores HOME on macOS (see #1349), so "
+            "LDM_HOME is the only lever that can redirect LDM state.",
         )
 
 
