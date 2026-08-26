@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import unittest
@@ -1924,3 +1925,100 @@ class TestSharedDatabaseName(unittest.TestCase):
             derived = shared_database_name(name)
             self.assertEqual(derived, derived.lower(), name)
             self.assertRegex(derived, r"^[a-z_][a-z0-9_.]*$", name)
+
+
+class TestDnsLabel(unittest.TestCase):
+    """LDM-#1356: the tunnel subdomain must be a valid DNS label."""
+
+    def test_non_ascii_is_transcoded_and_lowercased(self):
+        from ldm_core.utils import dns_label
+
+        self.assertEqual("saarbruecken", dns_label("Saarbrücken"))
+        self.assertEqual("zolc", dns_label("Żółć"))
+        self.assertEqual("duoc", dns_label("Được"))
+
+    def test_underscores_and_dots_become_hyphens(self):
+        """Both are legal in a Docker name and illegal in a DNS label."""
+        from ldm_core.utils import dns_label
+
+        self.assertEqual("my-project", dns_label("My_Project"))
+        self.assertEqual("poc-client", dns_label("poc.client"))
+
+    def test_leading_and_trailing_hyphens_are_stripped(self):
+        from ldm_core.utils import dns_label
+
+        self.assertEqual("weird", dns_label("--weird--"))
+
+    def test_runs_of_separators_collapse(self):
+        from ldm_core.utils import dns_label
+
+        self.assertEqual("a-b", dns_label("a___b"))
+
+    def test_it_is_truncated_to_the_label_limit(self):
+        from ldm_core.utils import dns_label
+
+        self.assertEqual(63, len(dns_label("a" * 80)))
+
+    def test_truncation_cannot_leave_a_trailing_hyphen(self):
+        """A label may not end in '-', including after the 63-char cut."""
+        from ldm_core.utils import dns_label
+
+        derived = dns_label(("ab-" * 30), max_length=5)
+        self.assertFalse(derived.endswith("-"), derived)
+
+    def test_nothing_usable_returns_empty(self):
+        """Callers must treat this as 'no default', not pass it on."""
+        from ldm_core.utils import dns_label
+
+        self.assertEqual("", dns_label("___"))
+        self.assertEqual("", dns_label(""))
+
+    def test_an_already_valid_label_is_unchanged(self):
+        from ldm_core.utils import dns_label
+
+        self.assertEqual("ok-name", dns_label("ok-name"))
+
+    def test_the_result_always_satisfies_the_label_grammar(self):
+
+        from ldm_core.utils import dns_label
+
+        for name in ("Saarbrücken", "My_Project", "--x--", "Żółć", "a" * 80, "9lives"):
+            got = dns_label(name)
+            if got:
+                self.assertRegex(got, r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", name)
+                self.assertLessEqual(len(got), 63, name)
+
+
+class TestSearchSnapshotAcceptance(unittest.TestCase):
+    """LDM-#1355: a snapshot Elasticsearch refused must not be reported as taken."""
+
+    def _accepted(self, response):
+        from ldm_core.snapshot.search import SearchSnapshotService
+
+        return SearchSnapshotService._snapshot_accepted(response)
+
+    def test_an_elasticsearch_rejection_is_detected(self):
+        payload = json.dumps(
+            {
+                "error": {
+                    "type": "invalid_snapshot_name_exception",
+                    "reason": "Invalid snapshot name [X_1], must be lowercase",
+                },
+                "status": 400,
+            }
+        )
+        self.assertFalse(self._accepted(payload))
+
+    def test_an_acknowledgement_is_accepted(self):
+        self.assertTrue(self._accepted(json.dumps({"accepted": True})))
+
+    def test_no_response_is_treated_as_accepted(self):
+        """docker exec curl can legitimately return nothing; do not cry wolf."""
+        for empty in ("", None):
+            self.assertTrue(self._accepted(empty))
+
+    def test_a_truncated_error_payload_is_still_detected(self):
+        self.assertFalse(self._accepted('{"error":"boom"'))
+
+    def test_unrelated_chatter_is_not_a_failure(self):
+        self.assertTrue(self._accepted("some non-json chatter"))

@@ -102,6 +102,21 @@ Instead of starting the tunnel manually, you can tell LDM to automatically boot 
 ldm run my-project --share --share-subdomain custom-sub --share-provider lfr-tunnel
 ```
 
+### Default Subdomain
+
+Without `--share-subdomain`, LDM derives one from the project name. A DNS label may contain only lowercase ASCII letters, digits and hyphens, so the derived value is normalised accordingly -- it is not simply the project name:
+
+| Project | Derived subdomain |
+| :--- | :--- |
+| `my-project` | `my-project` |
+| `My_Project` | `my-project` |
+| `Saarbrücken` | `saarbruecken` |
+| `poc.client` | `poc-client` |
+
+Underscores and dots become hyphens, the result is lowercased and truncated to 63 characters, and leading or trailing hyphens are removed. If nothing usable remains, no default is sent and the provider assigns one -- pass `--share-subdomain` explicitly if you need a specific name.
+
+This is stricter than the sanitisation applied to Docker container names, which permits `_`, `.` and mixed case.
+
 ### Expose Alias (Ngrok Legacy)
 
 For backward compatibility, the `--expose` flag remains supported and behaves as an alias for `--share --share-provider ngrok`:
@@ -405,4 +420,4 @@ If you are running the `lfr-tunnel` Go executable directly or writing custom scr
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*

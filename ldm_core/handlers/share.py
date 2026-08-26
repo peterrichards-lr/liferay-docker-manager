@@ -12,6 +12,7 @@ from typing import ClassVar
 from ldm_core.docker_service import DockerService
 from ldm_core.ui import UI
 from ldm_core.utils import (
+    dns_label,
     download_file,
     get_actual_home,
     is_local_host,
@@ -692,7 +693,15 @@ class ShareService:
             token = self._get_auth_token()
 
             ports = ports or "8080"
-            subdomain = subdomain or project_id
+            # LDM-#1356: the default must be a valid DNS label. `project_id`
+            # is the project DIRECTORY name, unsanitized -- so a project called
+            # "Saarbrücken" asked the provider for a subdomain containing a
+            # character no DNS label may hold, and on macOS the name arrives
+            # NFD-decomposed, so it was not even stable across platforms.
+            #
+            # dns_label() is stricter than sanitize_id(): it lowercases and
+            # rejects "_" and ".", both legal in a Docker name and illegal here.
+            subdomain = subdomain or dns_label(project_id)
 
             cmd = [str(bin_path), "-background", "-ports", ports]
             if subdomain:
@@ -801,7 +810,15 @@ class ShareService:
             # Ensure tunnel auth token is set
             token = self._get_auth_token()
             ports = ports or "8080"
-            subdomain = subdomain or project_id
+            # LDM-#1356: the default must be a valid DNS label. `project_id`
+            # is the project DIRECTORY name, unsanitized -- so a project called
+            # "Saarbrücken" asked the provider for a subdomain containing a
+            # character no DNS label may hold, and on macOS the name arrives
+            # NFD-decomposed, so it was not even stable across platforms.
+            #
+            # dns_label() is stricter than sanitize_id(): it lowercases and
+            # rejects "_" and ".", both legal in a Docker name and illegal here.
+            subdomain = subdomain or dns_label(project_id)
 
             # Set metadata
             project_meta["share"] = "true"
