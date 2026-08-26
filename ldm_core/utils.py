@@ -941,8 +941,28 @@ def get_github_token() -> str | None:
 
 
 def get_actual_home():
-    """Returns the home directory of the real user, even when running with sudo."""
+    """Returns the home directory of the real user, even when running with sudo.
+
+    LDM-#1349: `LDM_HOME` overrides everything else, and is the only way to
+    redirect LDM's state directory (`<home>/.ldm`) from outside the process.
+
+    Setting `HOME` is not sufficient and never was: on macOS this function
+    reconstructs `/Users/<username>` from `SUDO_USER`/`USER`, so it ignores
+    `HOME` entirely. That left subprocess-based tests with no way to isolate
+    themselves -- and one of them runs `ldm prune --seeds --samples`, which
+    deleted the developer's real ~1GB seed cache and sample cache on every
+    suite run (#1349). In-process tests could patch this function; a
+    subprocess could not be reached at all.
+
+    The override is deliberately not restricted to test code. CI, containers
+    and anyone wanting a non-default state directory need the same primitive,
+    and a test-only switch would rot.
+    """
     import getpass
+
+    override = os.environ.get("LDM_HOME", "").strip()
+    if override:
+        return Path(override).expanduser()
 
     real_user = (
         os.environ.get("SUDO_USER") or os.environ.get("USER") or getpass.getuser()

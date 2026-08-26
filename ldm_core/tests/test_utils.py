@@ -1,3 +1,5 @@
+import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -112,11 +114,80 @@ class TestUtils(unittest.TestCase):
 
         # Mock macOS with capitalized "Darwin"
         mock_system.return_value = "Darwin"
-        mock_env.return_value = "tester"
+
+        # LDM-#1349: answer per-key rather than returning "tester" for every
+        # lookup. A blanket return value also answers LDM_HOME, which would
+        # make this test assert the override path while claiming to cover the
+        # SUDO_USER/USER one.
+        def env(key, default=None):
+            return {"SUDO_USER": "", "USER": "tester"}.get(key, default)
+
+        mock_env.side_effect = env
 
         with patch.object(Path, "exists", return_value=True):
             home = get_actual_home()
             self.assertEqual(home.as_posix(), "/Users/tester")
+
+
+class TestLdmHomeOverride(unittest.TestCase):
+    """LDM-#1349: `LDM_HOME` is the only way to redirect LDM's state directory."""
+
+    def test_ldm_home_wins_over_everything(self):
+        from ldm_core.utils import get_actual_home
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(
+                os.environ, {"LDM_HOME": tmp, "SUDO_USER": "root", "USER": "someone"}
+            ):
+                self.assertEqual(Path(tmp), get_actual_home())
+
+    def test_a_tilde_is_expanded(self):
+        from ldm_core.utils import get_actual_home
+
+        with patch.dict(os.environ, {"LDM_HOME": "~/ldm-state"}):
+            self.assertEqual(Path.home() / "ldm-state", get_actual_home())
+
+    def test_an_unset_or_blank_value_falls_through(self):
+        """Blank must not resolve to Path("") -- that would be the CWD."""
+        from ldm_core.utils import get_actual_home
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("LDM_HOME", None)
+            unset = get_actual_home()
+
+        for blank in ("", "   "):
+            with patch.dict(os.environ, {"LDM_HOME": blank}):
+                self.assertEqual(unset, get_actual_home())
+
+    def test_the_override_does_not_need_to_exist_yet(self):
+        """Callers mkdir under it; requiring existence would break first use."""
+        from ldm_core.utils import get_actual_home
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "not-created-yet"
+            with patch.dict(os.environ, {"LDM_HOME": str(target)}):
+                self.assertEqual(target, get_actual_home())
+
+    def test_the_registry_follows_the_override(self):
+        """The point of the primitive: state lands under LDM_HOME, not ~."""
+        from ldm_core.utils import find_dxp_roots
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            workspace = home / "ws"
+            project = workspace / "handmade"
+            project.mkdir(parents=True)
+            (project / "meta").write_text('{"container_name": "handmade"}')
+
+            with patch.dict(
+                os.environ, {"LDM_HOME": str(home), "LDM_WORKSPACE": str(workspace)}
+            ):
+                find_dxp_roots()
+
+            self.assertTrue(
+                (home / ".ldm" / "registry.json").exists(),
+                "registry was not written under LDM_HOME",
+            )
 
     @patch("ldm_core.utils.get_raw")
     @patch("ldm_core.utils.get_actual_home")

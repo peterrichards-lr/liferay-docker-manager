@@ -30,6 +30,23 @@ description: Activate this skill whenever writing tests, running linters, or com
 - **Fix or triage, then re-trigger**: If the failure is caused by the change under review, fix it, push, and watch the re-run. If it is a genuine one-off infra hiccup unrelated to the diff (verify by re-reading the actual error, not by guessing), rerun the failed jobs (`gh run rerun --failed`) rather than leaving them red -- but only after confirming the failure isn't a real regression the rerun would just mask.
 - **A failure on `master` is not "someone else's problem"**: If a push/merge you performed triggers a CI run on `master` and it fails, that failure must be investigated and resolved (fix + re-push, or rerun if transient) before considering the task done -- do not treat PR-merge as the finish line while a resulting `master`-branch CI run sits failed and unexamined.
 
+## Tests MUST NOT Touch the Developer's Real State
+
+**Hard rule: no test may read or write the real `~/.ldm`, `~/.ldmrc`, `~/.ssh`, or the machine's Docker contexts.** Set `LDM_HOME` to a temp directory, or patch `get_actual_home`.
+
+`HOME` is not sufficient and never was. `get_actual_home()` reconstructs `/Users/<username>` from `SUDO_USER`/`USER` on macOS so that it still finds the real home under `sudo`, so it ignores `HOME` completely. `LDM_HOME` (LDM-#1349) exists precisely because there was otherwise no way to redirect state from outside the process -- which meant subprocess-based tests could not be isolated at all.
+
+What that cost, and why the rule is phrased as an absolute:
+
+- `test_e2e_diagnostics.py` ran `ldm prune --seeds --samples --clean-hosts` as a real subprocess against the developer's own home. `--seeds` bypasses the confirmation prompt (`elif prune_seeds or (not non_interactive and UI.confirm(...))`), so the piped "n" answers protected nothing. **Every suite run deleted the real pre-warmed seed cache** -- ~1GB per entry -- and the sample cache. It went unnoticed for months because seeding itself was broken until #1322, so the missing cache was indistinguishable from the pre-existing failure. It surfaced only when a developer's `ldm run` downloaded a seed and the concurrently-running suite deleted it between caching and extraction.
+- `find_dxp_roots()` reconciliation writes to the real `~/.ldm/registry.json`, so running the suite registers pytest tempdirs as the developer's projects (#1342).
+- `cmd_target_add` runs a real `docker context create` for any non-local host, so `test_target.py` leaves a `wsl -> ssh://dev@192.168.1.10` context on the machine (#1342). Patching `_get_config_path` spares `~/.ldmrc` but not Docker.
+
+Two habits follow:
+
+- **A destructive assertion needs a canary, and the canary must be able to fail.** A guard test that writes a sentinel into the real location and asserts it survives is only worth having if it actually trips. The first version of the #1349 guard used a filename that did not match `prune`'s `*.tar.gz` glob, so the delete branch was never reached and the guard passed against the unfixed code. Verify the guard fails before trusting that it passes.
+- **Prefer asserting the behaviour over asserting the absence of a crash.** The destroyed-cache test only checked exit code 0 and one line of stdout; it never asserted that pruning cleared anything. A test that had checked its own temp cache would have been both safer and stronger.
+
 ## Assertions About Runtime Behaviour MUST Be Observed Before Being Committed
 
 **Hard rule: assertions about runtime behaviour must be empirically executed and observed locally before being committed.** Reading the implementation is *not* sufficient evidence that an assertion is correct.
@@ -107,4 +124,4 @@ A release tag fires three to four workflows. Reporting "the" failure after readi
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-25* | *Last Reviewed: 2026-08-25*
+*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*
