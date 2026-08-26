@@ -11,6 +11,7 @@ from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 from ldm_core.utils import (
     ProjectLock,
+    announce_remote_targets,
     get_actual_home,
     get_compose_cmd,  # noqa: F401 -- kept as the mock injection point several
     # test files patch (`ldm_core.runtime.orchestration.get_compose_cmd`),
@@ -48,7 +49,7 @@ class OrchestrationService(BaseHandler):
         )
         return pipeline.run(context)
 
-    def cmd_start(  # noqa: PLR0912
+    def cmd_start(  # noqa: PLR0912, PLR0915
         self,
         project_id=None,
         service=None,
@@ -71,6 +72,8 @@ class OrchestrationService(BaseHandler):
         if not targets:
             UI.detail("No projects found to start.")
             return
+
+        announce_remote_targets(self.manager, targets)
 
         capture = not (UI.INFO_MODE or UI.VERBOSE)
         # LDM-#1343: batch mode must not abandon the remaining projects.
@@ -211,6 +214,8 @@ class OrchestrationService(BaseHandler):
             UI.detail("No projects found to stop.")
             return
 
+        announce_remote_targets(self.manager, targets)
+
         # LDM-#1090/#1133: get_compose_cmd() always returns a plain local
         # ["docker", "compose"] prefix regardless of the project's target --
         # a project running on a remote node would have this command sent
@@ -260,6 +265,8 @@ class OrchestrationService(BaseHandler):
         if not targets:
             UI.detail("No projects found to restart.")
             return
+
+        announce_remote_targets(self.manager, targets)
 
         # LDM-#1090/#1133: see cmd_stop above -- same issue, same fix.
         from ldm_core.docker_service import DockerService
@@ -339,6 +346,8 @@ class OrchestrationService(BaseHandler):
         if not targets and not infra:
             UI.detail("No projects found to tear down.")
             return
+
+        announce_remote_targets(self.manager, targets)
 
         # LDM-#1343: this is the loop the original report hit -- `ldm rm --all`
         # removed one project, failed on a sleeping node, and never attempted

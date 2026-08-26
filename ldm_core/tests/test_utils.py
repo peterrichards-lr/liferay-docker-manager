@@ -1,6 +1,7 @@
 import json
 import os
 import tempfile
+import typing
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -2022,6 +2023,224 @@ class TestSearchSnapshotAcceptance(unittest.TestCase):
 
     def test_unrelated_chatter_is_not_a_failure(self):
         self.assertTrue(self._accepted("some non-json chatter"))
+
+
+class TestRemoteContextFailureDiagnosis(unittest.TestCase):
+    """LDM-#1345: a node we cannot reach gets a diagnosis, not an HTTP/SSH blob."""
+
+    # The exact stderr observed on v2.17.0 with aws-1 powered down.
+    REAL_STDERR = (
+        'error during connect: Get "http://docker.example.com/v1.44/containers/'
+        "json?all=1&filters=%7B%22label%22%3A%7B%22com.docker.compose.config-hash"
+        "%22%3Atrue%2C%22com.docker.compose.project%3De2e-test-env%22%3Atrue%7D%7D"
+        '": command [ssh -l ec2-user -o ConnectTimeout=30 -T -- 51.20.52.201 '
+        "docker system dial-stdio] has exited with exit status 255, make sure "
+        "the URL is valid, and Docker 18.09 or later is installed on the remote "
+        "host: stderr=ssh: connect to host 51.20.52.201 port 22: Operation timed out"
+    )
+    REAL_CMD: typing.ClassVar[list[str]] = [
+        "/opt/homebrew/bin/docker",
+        "--context",
+        "aws-1",
+        "compose",
+        "down",
+        "-v",
+        "--remove-orphans",
+    ]
+
+    def _diagnose(self, cmd, stderr):
+        from ldm_core.utils import diagnose_remote_context_failure
+
+        return diagnose_remote_context_failure(cmd, stderr)
+
+    def test_the_observed_failure_names_node_user_host_and_cause(self):
+        message, tip = self._diagnose(self.REAL_CMD, self.REAL_STDERR)
+        self.assertEqual(
+            "Cannot reach compute node 'aws-1' over SSH "
+            "(ec2-user@51.20.52.201:22 timed out).",
+            message,
+        )
+        # The tip must point at the commands that actually exist, and name the
+        # node, because the usual cause is a stale stored host (LDM-#1346).
+        self.assertIn("ldm target status aws-1", tip)
+        self.assertIn("ldm target add aws-1 --host <ip> --user ec2-user", tip)
+
+    def test_the_alarming_placeholder_host_is_not_repeated_back(self):
+        """`docker.example.com` is a Docker placeholder, not a real endpoint."""
+        message, tip = self._diagnose(self.REAL_CMD, self.REAL_STDERR)
+        self.assertNotIn("docker.example.com", message)
+        self.assertNotIn("docker.example.com", tip)
+        self.assertNotIn("%7B%22label", message)
+
+    def test_a_local_command_is_never_diagnosed_as_remote(self):
+        """No --context means no node to blame, whatever the stderr says."""
+        self.assertIsNone(
+            self._diagnose(["docker", "compose", "down"], self.REAL_STDERR)
+        )
+
+    def test_an_ordinary_failure_still_falls_through_to_raw_stderr(self):
+        """For most commands the stderr *is* the useful output -- do not eat it."""
+        self.assertIsNone(
+            self._diagnose(
+                ["docker", "--context", "aws-1", "compose", "up"],
+                "service 'liferay' has neither an image nor a build context",
+            )
+        )
+
+    def test_empty_stderr_is_not_diagnosed(self):
+        self.assertIsNone(self._diagnose(["docker", "--context", "aws-1", "ps"], ""))
+
+    def test_other_ssh_causes_are_named_distinctly(self):
+        cases = {
+            "connect to host 10.0.0.5 port 22: Connection refused": "refused the connection",
+            "connect to host 10.0.0.5 port 22: No route to host": "has no network route",
+            "ssh: Permission denied (publickey).": "refused the SSH credentials",
+            "ssh: Could not resolve hostname nope": "could not be resolved by DNS",
+        }
+        for stderr, expected in cases.items():
+            with self.subTest(stderr=stderr):
+                message, _ = self._diagnose(
+                    ["docker", "--context", "aws-1", "ps"],
+                    f"error during connect: ... stderr={stderr}",
+                )
+                self.assertIn(expected, message)
+
+    def test_a_string_command_is_handled_as_well_as_a_list(self):
+        """run_command accepts shell strings too; the parser must not assume a list."""
+        message, _ = self._diagnose(
+            "docker --context aws-1 compose down", self.REAL_STDERR
+        )
+        self.assertIn("aws-1", message)
+
+
+class TestAnnounceRemoteTargets(unittest.TestCase):
+    """LDM-#1341: say a remote node is involved *before* blocking on it."""
+
+    def _announce(self, targets_by_path):
+        """Runs the announcement, returning whatever reached UI.info."""
+        from ldm_core.utils import announce_remote_targets
+
+        manager = MagicMock()
+        manager.read_meta.side_effect = lambda p: {
+            "target": targets_by_path[Path(p).name]
+        }
+
+        def fake_prefix(name):
+            return ["docker", "--context", name] if name != "local" else ["docker"]
+
+        def make_target(name):
+            # `MagicMock(name=...)` names the mock itself rather than setting a
+            # `.name` attribute, so it has to be assigned after construction.
+            target = MagicMock()
+            target.name = name or "local"
+            return target
+
+        said: list[str] = []
+        with (
+            patch("ldm_core.config.get_active_target", side_effect=make_target),
+            patch(
+                "ldm_core.docker_service.DockerService.get_docker_cmd_prefix",
+                side_effect=fake_prefix,
+            ),
+            patch("ldm_core.ui.UI.info", side_effect=said.append),
+        ):
+            announce_remote_targets(manager, [Path("/p") / n for n in targets_by_path])
+        return said
+
+    def test_nothing_is_said_when_everything_is_local(self):
+        """Silence is correct here -- a local command has nothing to wait for."""
+        self.assertEqual([], self._announce({"alpha": "local", "beta": "local"}))
+
+    def test_a_single_remote_project_is_announced_with_its_node(self):
+        said = self._announce({"e2e-test-env": "aws-1"})
+        self.assertEqual(1, len(said))
+        self.assertIn("1 project targets", said[0])
+        self.assertIn("e2e-test-env -> aws-1", said[0])
+        self.assertIn("will wait if the node is asleep", said[0])
+
+    def test_it_is_said_once_for_the_command_not_once_per_project(self):
+        said = self._announce({"alpha": "aws-1", "beta": "aws-2", "gamma": "local"})
+        self.assertEqual(1, len(said), "expected a single announcement")
+        self.assertIn("2 projects target", said[0])
+        self.assertIn("alpha -> aws-1", said[0])
+        self.assertIn("beta -> aws-2", said[0])
+        self.assertNotIn("gamma", said[0], "local projects are not worth naming")
+
+    def test_an_unreadable_meta_does_not_break_the_announcement(self):
+        """Reporting a broken project is the calling loop's job, not this one's."""
+        from ldm_core.utils import announce_remote_targets
+
+        manager = MagicMock()
+        manager.read_meta.side_effect = OSError("meta is gone")
+        with patch("ldm_core.ui.UI.info") as info:
+            announce_remote_targets(manager, [Path("/p/alpha")])
+        info.assert_not_called()
+
+
+class TestRemoteFailureIsReportedNotDumped(unittest.TestCase):
+    """LDM-#1345: the diagnosis must reach the user through the real run path.
+
+    The helper being correct is not the fix -- `utils.py` printed `e.stderr`
+    verbatim for every failing command, unconditionally, and that is the line
+    that had to change.
+    """
+
+    def _run_failing_docker(self, cmd, stderr):
+        """Drives the real CommandRunner with a failing subprocess."""
+        import subprocess
+
+        from ldm_core.utils import run_command
+
+        errors: list[tuple] = []
+        details: list[str] = []
+        boom = subprocess.CalledProcessError(1, cmd, stderr=stderr)
+
+        with (
+            patch("subprocess.run", side_effect=boom),
+            patch(
+                "ldm_core.ui.UI.error", side_effect=lambda m, **k: errors.append((m, k))
+            ),
+            patch("ldm_core.ui.UI.detail", side_effect=details.append),
+            patch("builtins.print") as printed,
+        ):
+            with self.assertRaises(SystemExit):
+                run_command(cmd, check=True)
+        return errors, details, printed
+
+    def test_the_user_sees_a_diagnosis_and_not_the_blob(self):
+        cmd = ["docker", "--context", "aws-1", "compose", "down"]
+        errors, details, printed = self._run_failing_docker(
+            cmd, TestRemoteContextFailureDiagnosis.REAL_STDERR
+        )
+
+        self.assertEqual(1, len(errors))
+        message, kwargs = errors[0]
+        self.assertIn("Cannot reach compute node 'aws-1' over SSH", message)
+        self.assertIn("ldm target status aws-1", kwargs.get("tip", ""))
+
+        # The old unconditional `print("Error Details: ...")` must be gone.
+        printed.assert_not_called()
+
+        # ...and the raw blob is retained, but only for --verbose/--info.
+        # Asserting on `dial-stdio` rather than the placeholder hostname: the
+        # marker is equally specific to the raw stderr, and a bare
+        # `"<host>" in <str>` check trips CodeQL's
+        # py/incomplete-url-substring-sanitization rule, which cannot tell a
+        # test assertion from a security check on a URL.
+        self.assertTrue(
+            any("dial-stdio" in d for d in details),
+            "raw stderr should still be available behind UI.detail",
+        )
+
+    def test_an_ordinary_failure_still_prints_its_stderr(self):
+        """The regression risk of this change is swallowing useful output."""
+        cmd = ["docker", "compose", "up"]
+        errors, _, printed = self._run_failing_docker(
+            cmd, "service 'liferay' has neither an image nor a build context"
+        )
+        self.assertIn("Command failed (Exit 1)", errors[0][0])
+        printed.assert_called()
+        self.assertIn("neither an image", str(printed.call_args))
 
 
 class TestSearchIndexPrefix(unittest.TestCase):

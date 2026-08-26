@@ -46,6 +46,50 @@ Separately, categories that are ambiguous by *design*, not just unfixed — thes
 
 Neither of these is a "remote node" bug specifically, but both stem from the same underlying issue: state (is this remote? is this already running? has the user already been warned once this command?) isn't tracked as a single resolved thing and passed along — it's recomputed piecemeal at each point that happens to need it.
 
+### 3.1 What is now fixed
+
+Two of the gaps above have been closed:
+
+- **Announcement before blocking (LDM-#1341).** `list`, `status`, `start`,
+  `stop`, `restart` and `down` now emit a single `UI.info` line before any
+  remote context is dialled, naming the project/node pairs involved:
+
+  ```text
+  ℹ  1 project targets a remote compute node (e2e-test-env -> aws-1); this may
+     take longer than usual, and will wait if the node is asleep.
+  ```
+
+  It is emitted once per command rather than per project, and names the pairs
+  so a project unexpectedly pointed at a node is itself visible. `UI.info` is
+  deliberate: `UI.detail` is gated behind `--info`/`--verbose` (LDM-#1036) and
+  would be invisible exactly when it is needed. It is suppressed under
+  `--json`, which is a machine-readable contract (LDM-#1093).
+
+  Remoteness is decided by `DockerService.get_docker_cmd_prefix()` rather than
+  re-derived, so there is one definition of "is this remote" -- including that
+  all of `127.0.0.0/8` counts as local.
+
+- **Diagnosis instead of a raw blob (LDM-#1345).** A `docker --context <node>`
+  command that cannot reach its node used to print the entire underlying
+  failure: a URL-encoded Compose label filter, a `docker.example.com`
+  placeholder host that looks alarming and is not real, and -- in the last
+  eight words -- the one fact that mattered. It now reports:
+
+  ```text
+  ❌  Cannot reach compute node 'aws-1' over SSH (ec2-user@51.20.52.201:22 timed out).
+  💡 Tip:  The node may be stopped, or its public IP may have changed since it
+           was registered. Check with 'ldm target status aws-1', then re-register
+           with 'ldm target add aws-1 --host <ip> --user ec2-user --key <key>'.
+  ```
+
+  The raw stderr is retained behind `--verbose`/`--info`. **Unrecognised
+  failures still print stderr verbatim**, because for most commands -- a
+  Compose config error, a failed build -- the stderr *is* the useful output.
+  This narrows the cases LDM can name; it does not suppress detail generally.
+
+  The tip points at a stale stored host because that is the usual cause
+  (LDM-#1346).
+
 ## 4. Resolution precedence
 
 Three overlapping signals decide "what target should this operation use," ranked most to least specific:
@@ -125,4 +169,4 @@ See also: [Multi-Node Orchestration & Remote Node Setup](../how-to/multi_node_or
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-17* | *Last Reviewed: 2026-08-17*
+*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*
