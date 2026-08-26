@@ -11,7 +11,7 @@ from pathlib import Path
 from ldm_core.pipelines.base import Pipeline, PipelineContext, PipelineStage
 from ldm_core.pipelines.validation import ValidationStage as SharedValidationStage
 from ldm_core.ui import UI
-from ldm_core.utils import get_actual_home, get_compose_cmd
+from ldm_core.utils import get_actual_home, get_compose_cmd, shared_database_name
 
 
 class RunPipelineContext(PipelineContext):
@@ -1255,7 +1255,7 @@ class ComposerStage(PipelineStage):
             if shutil.which("docker") and use_shared_db and not no_up:
                 from ldm_core.utils import sanitize_id
 
-                db_name = f"lportal_{sanitize_id(context.get('project_id')).replace('-', '_')}"
+                db_name = shared_database_name(context.get("project_id"))
                 UI.detail(f"Ensuring global database '{db_name}' exists...")
                 check_cmd = [
                     "docker",

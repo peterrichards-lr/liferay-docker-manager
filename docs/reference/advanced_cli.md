@@ -113,6 +113,18 @@ Controls whether LDM provisions a dedicated Elasticsearch container or connects 
 
 Controls whether LDM provisions an isolated PostgreSQL database or connects to the Global Shared Database cluster. Available modes: `isolated` or `shared`.
 
+In `shared` mode every project gets its own database on the one cluster, named from the project:
+
+```text
+lportal_<project name, sanitized, lowercased, hyphens as underscores>
+```
+
+**The derived name is always lowercase.** `MyProject` becomes `lportal_myproject`; `Saarbrücken` becomes `lportal_saarbruecken`.
+
+This matters when the shared cluster is **external** and you provision the database yourself: create it with the lowercase name above, because that is the only name LDM will look for. Lowercasing also matches what PostgreSQL itself does with an unquoted `CREATE DATABASE`, so a hand-provisioned database and an LDM-provisioned one end up with the same name.
+
+In `isolated` mode the database is always called `lportal` and the project name is not used.
+
 ## Database Commands
 
 - **`ldm db query [project]`**: Safe, SELECT-only SQL execution against project databases. By default, this resolves credentials automatically and prompts for query confirmation.
@@ -142,4 +154,4 @@ Controls whether LDM provisions an isolated PostgreSQL database or connects to t
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-20* | *Last Reviewed: 2026-08-20*
+*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*

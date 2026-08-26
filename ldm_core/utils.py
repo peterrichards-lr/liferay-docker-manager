@@ -340,6 +340,32 @@ def load_env_blacklist(path):
     return patterns
 
 
+def shared_database_name(identifier):
+    """Returns the shared-mode database name for `identifier`, always lowercase.
+
+    LDM-#1354: the formula was duplicated at nine call sites and none of them
+    lowercased, which broke `--database-mode shared` on PostgreSQL outright.
+    PostgreSQL folds an unquoted identifier, so `CREATE DATABASE
+    lportal_MyProject` creates `lportal_myproject`; the existence check then
+    compared a quoted literal that could never match, and the JDBC URL named a
+    database that does not exist. Every run re-attempted the create, and the
+    second run died because `run_command(check=True)` saw
+    `ERROR: database "lportal_myproject" already exists`.
+
+    Lowercasing is unconditional rather than PostgreSQL-only, and deliberately
+    so: the shared database may be **external**, in which case LDM never runs
+    the create and cannot know how the name was cased. A DBA running an
+    unquoted `CREATE DATABASE` gets a lowercase name, so lowercasing makes
+    LDM's reference match the likely reality *and* makes it predictable -- the
+    name can be computed without knowing which code path produced it.
+
+    Quoting the identifier to preserve case was rejected for the same reason:
+    it only works when LDM controls both creation and connection, which it
+    does not.
+    """
+    return f"lportal_{sanitize_id(identifier).replace('-', '_')}".lower()
+
+
 def sanitize_id(identifier):
     """
     Sanitizes a string to be used as a safe identifier (e.g. project ID, container name, volume prefix).

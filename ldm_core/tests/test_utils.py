@@ -1880,3 +1880,47 @@ class TestMetadataParsing(unittest.TestCase):
                 first = sanitize_id(raw)
                 self.assertEqual(first, sanitize_id(raw))
                 self.assertTrue(first.startswith("project-"))
+
+
+class TestSharedDatabaseName(unittest.TestCase):
+    """LDM-#1354: the shared-mode database name must always be lowercase."""
+
+    def test_a_capitalised_project_is_lowercased(self):
+        """PostgreSQL folds an unquoted CREATE, so anything else cannot match."""
+        from ldm_core.utils import shared_database_name
+
+        self.assertEqual("lportal_myproject", shared_database_name("MyProject"))
+
+    def test_transcoded_characters_are_lowercased_too(self):
+        from ldm_core.utils import shared_database_name
+
+        # sanitize_id expands u-umlaut to "ue" per German convention.
+        self.assertEqual("lportal_saarbruecken", shared_database_name("Saarbrücken"))
+
+    def test_hyphens_become_underscores(self):
+        from ldm_core.utils import shared_database_name
+
+        self.assertEqual("lportal_poc_client", shared_database_name("poc-client"))
+
+    def test_an_already_safe_name_is_unchanged(self):
+        from ldm_core.utils import shared_database_name
+
+        self.assertEqual("lportal_myproject", shared_database_name("myproject"))
+
+    def test_it_is_idempotent_on_its_own_output(self):
+        """Call sites disagree about their input; re-deriving must not drift."""
+        from ldm_core.utils import shared_database_name
+
+        once = shared_database_name("MyProject")
+        self.assertEqual("lportal_lportal_myproject", shared_database_name(once))
+        self.assertEqual(once.lower(), once)
+
+    def test_the_result_is_a_valid_postgres_identifier(self):
+        """Lowercase, and nothing an unquoted CREATE DATABASE would alter."""
+
+        from ldm_core.utils import shared_database_name
+
+        for name in ("MyProject", "Saarbrücken", "Żółć", "poc-client", "a.b"):
+            derived = shared_database_name(name)
+            self.assertEqual(derived, derived.lower(), name)
+            self.assertRegex(derived, r"^[a-z_][a-z0-9_.]*$", name)
