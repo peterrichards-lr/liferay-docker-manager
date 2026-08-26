@@ -33,11 +33,27 @@ class SearchSnapshotService:
             if self.manager.run_command(
                 [*docker_prefix, "ps", "-q", "-f", f"name={search_name}"]
             ):
-                search_snapshot_name = f"{container_name}_{timestamp}"
+                # LDM-#1355: Elasticsearch requires snapshot names to be
+                # lowercase and rejects anything else outright:
+                #
+                #   invalid_snapshot_name_exception: Invalid snapshot name
+                #   [Saarbruecken_20260826_120000], must be lowercase
+                #
+                # Unlike the index prefix -- which Liferay lowercases for us in
+                # CompanyIdIndexNameBuilder.setIndexNamePrefix -- nothing
+                # normalises this, so every capitalised project silently failed
+                # to snapshot its search state.
+                search_snapshot_name = f"{container_name}_{timestamp}".lower()
                 UI.detail(
                     f"Triggering orchestrated search snapshot: {search_snapshot_name}..."
                 )
-                self.manager.run_command(
+                # LDM-#1355: the response is now inspected. `curl -s` with no
+                # --fail and an unchecked return meant Elasticsearch's rejection
+                # was swallowed and the name was still handed back to the caller,
+                # which records it in meta as `search_snapshot`. A restore then
+                # looked for a snapshot that had never been created. A snapshot
+                # that was not taken must not be reported as taken.
+                response = self.manager.run_command(
                     [
                         *docker_prefix,
                         "exec",
@@ -51,9 +67,41 @@ class SearchSnapshotService:
                         "Content-Type: application/json",
                         "-d",
                         json.dumps({"indices": f"{container_name}-*"}),
-                    ]
+                    ],
+                    check=False,
                 )
+                if not self._snapshot_accepted(response):
+                    UI.warning(
+                        "Elasticsearch refused the search snapshot "
+                        f"'{search_snapshot_name}'; search state will NOT be "
+                        "included in this snapshot."
+                    )
+                    if response:
+                        UI.detail(f"Elasticsearch said: {str(response).strip()}")
+                    return None
         return search_snapshot_name
+
+    @staticmethod
+    def _snapshot_accepted(response):
+        """True when Elasticsearch acknowledged the snapshot request (LDM-#1355).
+
+        A missing response is treated as accepted: `docker exec ... curl` can
+        legitimately return nothing, and this must not turn a working snapshot
+        into a reported failure. Only an explicit error payload counts as a
+        refusal.
+        """
+        if not response:
+            return True
+
+        text = str(response)
+        try:
+            payload = json.loads(text)
+        except (ValueError, TypeError):
+            # Not JSON -- fall back to looking for the error shape in the text.
+            lowered = text.lower()
+            return not ('"error"' in lowered or "exception" in lowered)
+
+        return not (isinstance(payload, dict) and payload.get("error"))
 
     def _restore_search(self, choice_path, meta, container_name):
         search_snapshot_name = meta.get("search_snapshot")

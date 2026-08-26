@@ -340,6 +340,35 @@ def load_env_blacklist(path):
     return patterns
 
 
+def dns_label(identifier, max_length=63):
+    """Returns `identifier` reduced to a valid DNS label (LDM-#1356).
+
+    `sanitize_id` targets Docker's rules, which are the most permissive of any
+    consumer: it keeps `_` and `.`, and preserves case. A DNS label allows
+    neither punctuation, and must be lowercase ASCII letters, digits and
+    hyphens, not starting or ending with a hyphen, at most 63 characters.
+
+    The tunnel subdomain defaulted to the raw project directory name, so a
+    project called `Saarbrücken` asked the provider for a subdomain that is not
+    a valid label at all -- and on macOS the directory name arrives NFD-
+    decomposed, so it was not even stable across platforms.
+
+    Returns an empty string when nothing usable survives; callers must treat
+    that as "no default subdomain" rather than passing it on.
+    """
+    import re
+
+    label = sanitize_id(identifier)
+    if not label:
+        return ""
+
+    label = str(label).lower()
+    label = re.sub(r"[^a-z0-9-]+", "-", label)
+    label = re.sub(r"-{2,}", "-", label).strip("-")
+    # Truncating can expose a trailing hyphen, so strip again afterwards.
+    return label[:max_length].strip("-")
+
+
 def shared_database_name(identifier):
     """Returns the shared-mode database name for `identifier`, always lowercase.
 
