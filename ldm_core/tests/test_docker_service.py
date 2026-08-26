@@ -264,3 +264,40 @@ class TestDockerService(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestContextEndpointHost(unittest.TestCase):
+    """LDM-#1346: reading back what a Docker context actually dials."""
+
+    def _endpoint(self, value):
+        return patch("ldm_core.docker_service.run_command", return_value=value)
+
+    def test_strips_scheme_and_user(self):
+        with self._endpoint("ssh://ec2-user@13.49.210.78"):
+            self.assertEqual(
+                "13.49.210.78", DockerService.get_context_endpoint_host("aws-1")
+            )
+
+    def test_handles_an_endpoint_without_a_user(self):
+        with self._endpoint("ssh://13.49.210.78"):
+            self.assertEqual(
+                "13.49.210.78", DockerService.get_context_endpoint_host("aws-1")
+            )
+
+    def test_strips_a_port(self):
+        with self._endpoint("ssh://ec2-user@13.49.210.78:2222"):
+            self.assertEqual(
+                "13.49.210.78", DockerService.get_context_endpoint_host("aws-1")
+            )
+
+    def test_keeps_a_bracketed_ipv6_literal_intact(self):
+        """Splitting an IPv6 address on ':' would truncate it to '['."""
+        with self._endpoint("ssh://ec2-user@[2001:db8::1]:2222"):
+            self.assertEqual(
+                "[2001:db8::1]", DockerService.get_context_endpoint_host("aws-1")
+            )
+
+    def test_returns_none_when_the_context_has_no_endpoint(self):
+        for value in ("", "   ", None):
+            with self._endpoint(value):
+                self.assertIsNone(DockerService.get_context_endpoint_host("aws-1"))

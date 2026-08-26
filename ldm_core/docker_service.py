@@ -27,6 +27,46 @@ class DockerService:
         return ["docker"]
 
     @staticmethod
+    def get_context_endpoint_host(context_name: str) -> str | None:
+        """Returns the host a Docker context dials, or None if it has none.
+
+        LDM-#1346: a context's endpoint is stored by Docker, not by LDM, so it
+        can disagree with the `host` recorded in `~/.ldmrc` -- and when it does,
+        LDM reports the stored host while dialling the context's. Reading it
+        back is what makes that disagreement visible instead of silent.
+        """
+        res = run_command(
+            [
+                "docker",
+                "context",
+                "inspect",
+                context_name,
+                "--format",
+                "{{.Endpoints.docker.Host}}",
+            ],
+            check=False,
+            capture_output=True,
+            timeout=15,
+        )
+        if not res:
+            return None
+
+        endpoint = res.strip()
+        if not endpoint:
+            return None
+
+        # ssh://user@host:port -- strip scheme, any credentials, and any port.
+        without_scheme = endpoint.split("://", 1)[-1]
+        host = without_scheme.rsplit("@", 1)[-1]
+        # An IPv6 literal is bracketed, so the port is whatever follows the
+        # closing bracket -- splitting the whole string on ":" would truncate
+        # the address itself. A bare host splits on its first colon.
+        if host.startswith("["):
+            closing = host.find("]")
+            return host[: closing + 1] if closing != -1 else host
+        return host.split(":", 1)[0] or None
+
+    @staticmethod
     def get_compose_cmd_prefix(target_name: str | None = None) -> list[str]:
         """Returns the docker compose CLI command prefix for target execution."""
         prefix = DockerService.get_docker_cmd_prefix(target_name)

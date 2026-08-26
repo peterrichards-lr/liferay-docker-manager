@@ -129,6 +129,50 @@ ldm target status prod-node
 ldm target use prod-node
 ```
 
+### When a Node's IP Address Changes
+
+A node's address is held in **two** places: the `host` in `~/.ldmrc`, and the endpoint of the Docker CLI context of the same name. Every remote command dials the *context*, so both must agree.
+
+`ldm target add` writes both, which makes re-registering the node the reliable way to move it:
+
+```bash
+ldm target add prod-node --host <new-ip> --user ubuntu --key ~/.ssh/id_rsa
+```
+
+`ldm target status` compares the two and warns when they disagree, because the probe result belongs to whichever host the context names -- not the one the table shows:
+
+```text
+⚠️  Target 'aws-1' is registered as 13.49.210.78, but its Docker context points
+    at 51.20.52.201. The status above was probed against 51.20.52.201.
+💡  Next step: Re-register the node to rebuild the context: ldm target add aws-1 …
+```
+
+> [!TIP]
+> On AWS, an instance without an Elastic IP is assigned a **new public address every time it is stopped and started**. Allocating an Elastic IP per node removes this class of problem entirely; note that AWS bills for public IPv4 addresses either way.
+
+If you use `scripts/manage_target_nodes.py` to power nodes on, it resolves the new address and updates `~/.ldmrc`, `.node-power-config.json` and the Docker context together. Starting an instance from the AWS console -- or via the `node-power-manager` workflow, which runs on a CI runner and updates that runner's files -- leaves your own machine unaware, and re-registering is the fix.
+
+### SSH Key Selection and `IdentitiesOnly`
+
+Docker's context transport invokes `ssh` **without** `-i`, so it relies on `~/.ssh/config` and the SSH agent. A catch-all block like this one prevents the node's key from ever being offered, even when the agent holds it:
+
+```ssh-config
+Host *
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+```
+
+Give the node its own block **above** any `Host *` block, since SSH takes the first value it finds for each keyword:
+
+```ssh-config
+Host 13.49.210.78
+  User ec2-user
+  IdentityFile ~/.ssh/aws-key.pem
+  IdentitiesOnly yes
+```
+
+The symptom otherwise is `Permission denied (publickey)` from `docker --context <node>` while `ssh -i <key> <user>@<host>` succeeds.
+
 ---
 
 ## 4. Remote Workload Deployment & Execution
@@ -232,4 +276,4 @@ ldm run my-project --target prod-node --share --share-provider lfr-tunnel-docker
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-30*
+*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*
