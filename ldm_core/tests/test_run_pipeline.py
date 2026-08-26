@@ -124,6 +124,59 @@ class TestRunPipeline(unittest.TestCase):
         stage.execute(self.context)
         self.context.manager.run_command.assert_not_called()
 
+    def test_execution_stage_honours_no_up_from_args_when_context_is_unset(self):
+        """LDM-#1374: the CLI never puts `no_up` in the context.
+
+        `cli.py` dispatches `("run", None)` as `cmd_run(project)` with no
+        kwarg, so `context.set("no_up", None)` leaves it None. ExecutionStage
+        read only the context and `if not None` is true, so `ldm run --no-up`
+        started the stack and waited for readiness anyway.
+
+        Every existing test in this file sets `no_up` on the CONTEXT, which is
+        why none of them caught it -- the same shape as #1359, where the tests
+        set `database_mode` in meta while the CLI sets it in args. This one
+        deliberately leaves the context unset and sets only `args`.
+        """
+        self.context.set("no_up", None)
+        self.context.manager.args.no_up = True
+        self.context.set("paths", {"root": MagicMock()})
+
+        stage = ExecutionStage()
+        stage.execute(self.context)
+
+        compose_calls = [
+            c
+            for c in self.context.manager.run_command.call_args_list
+            if c.args and isinstance(c.args[0], list) and "up" in c.args[0]
+        ]
+        self.assertEqual(
+            [],
+            compose_calls,
+            f"--no-up still started the stack: {compose_calls}",
+        )
+
+    def test_execution_stage_starts_the_stack_when_no_up_is_absent_everywhere(self):
+        """Guard against over-reach: the default path must still start."""
+        self.context.set("no_up", None)
+        self.context.manager.args.no_up = False
+        self.context.set("paths", {"root": MagicMock()})
+        # `run.py:1646` polls `get_container_status` for up to 60s waiting on a
+        # dependency to become healthy. Against a MagicMock the status never
+        # matches, so the test burned the full window (measured: 60s). Answer
+        # the poll instead -- this test only needs to observe that the stack is
+        # brought up.
+        self.context.set("no_wait", True)
+        self.context.manager.args.no_wait = True
+        self.context.manager.get_container_status.return_value = "healthy"
+
+        stage = ExecutionStage()
+        stage.execute(self.context)
+
+        self.assertTrue(
+            self.context.manager.run_command.called,
+            "the normal path must still bring the stack up",
+        )
+
     def test_execution_stage_syncs_and_uses_compose_prefix_from_target_context(self):
         """Regression guard for a real bug found migrating this stage:
         DockerService.get_compose_cmd_prefix(target_name) used to silently
