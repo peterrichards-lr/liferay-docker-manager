@@ -506,3 +506,106 @@ class TestTargetContext(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTargetStatusContextDrift(unittest.TestCase):
+    """LDM-#1346: `target status` must not report a host it did not probe.
+
+    The probe dials `docker --context <name>`, whose endpoint Docker stores
+    separately from `~/.ldmrc`. When the two disagree the table showed the
+    stored host beside a result obtained from a different machine.
+    """
+
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.config_path = Path(self.temp_dir.name) / ".ldmrc"
+        save_target_node(
+            TargetNode(
+                name="aws-1",
+                host="13.49.210.78",
+                user="ec2-user",
+                key_path="~/.ssh/aws-key.pem",
+            ),
+            self.config_path,
+        )
+
+        from unittest.mock import MagicMock
+
+        from ldm_core.handlers.config import ConfigService
+
+        manager = MagicMock()
+        manager.args = MagicMock()
+        self.service = ConfigService(manager)
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def _run_status(self, context_host, probe=""):
+        """Runs `target status aws-1` and returns (warnings, hints)."""
+        from ldm_core.ui import UI
+
+        warnings: list[str] = []
+        hints: list[str] = []
+        with (
+            patch("ldm_core.config._get_config_path", return_value=self.config_path),
+            patch("ldm_core.utils.run_command", return_value=probe),
+            patch(
+                "ldm_core.docker_service.DockerService.get_context_endpoint_host",
+                return_value=context_host,
+            ),
+            patch.object(UI, "warning", side_effect=warnings.append),
+            patch.object(UI, "hint", side_effect=hints.append),
+            patch.object(UI, "table"),
+        ):
+            self.service.cmd_target_status("aws-1")
+        return warnings, hints
+
+    def test_drift_is_reported_with_both_addresses(self):
+        warnings, _ = self._run_status("51.20.52.201")
+        self.assertEqual(1, len(warnings))
+        self.assertIn("13.49.210.78", warnings[0])
+        self.assertIn("51.20.52.201", warnings[0])
+
+    def test_drift_hint_rebuilds_the_context_with_the_stored_values(self):
+        _, hints = self._run_status("51.20.52.201")
+        self.assertEqual(1, len(hints))
+        self.assertIn("ldm target add aws-1 --host 13.49.210.78", hints[0])
+        self.assertIn("--user ec2-user", hints[0])
+        self.assertIn("--key ~/.ssh/aws-key.pem", hints[0])
+
+    def test_matching_context_is_silent(self):
+        warnings, hints = self._run_status("13.49.210.78")
+        self.assertEqual([], warnings)
+        self.assertEqual([], hints)
+
+    def test_an_unreadable_context_is_not_reported_as_drift(self):
+        """No endpoint is not evidence of disagreement."""
+        warnings, _ = self._run_status(None)
+        self.assertEqual([], warnings)
+
+    def test_drift_is_reported_even_when_the_probe_succeeds(self):
+        """An ONLINE row can still have been probed against the wrong host."""
+        warnings, _ = self._run_status("51.20.52.201", probe="25.0.16|4|17179869184|0")
+        self.assertEqual(1, len(warnings))
+
+    def test_a_local_target_is_never_checked_for_drift(self):
+        from ldm_core.ui import UI
+
+        save_target_node(
+            TargetNode(name="local", host="localhost", is_default=True),
+            self.config_path,
+        )
+        warnings: list[str] = []
+        with (
+            patch("ldm_core.config._get_config_path", return_value=self.config_path),
+            patch("ldm_core.utils.run_command", return_value=""),
+            patch(
+                "ldm_core.docker_service.DockerService.get_context_endpoint_host"
+            ) as mock_endpoint,
+            patch.object(UI, "warning", side_effect=warnings.append),
+            patch.object(UI, "table"),
+        ):
+            self.service.cmd_target_status("local")
+
+        mock_endpoint.assert_not_called()
+        self.assertEqual([], warnings)

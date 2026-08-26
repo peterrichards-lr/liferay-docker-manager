@@ -2402,9 +2402,9 @@ class ConfigService:
 
     def cmd_target_status(self, name: str = "") -> None:
         """Handler for 'ldm target status [name]'."""
-        from ldm_core.config import load_targets
+        from ldm_core.config import TargetNode, load_targets
         from ldm_core.docker_service import DockerService
-        from ldm_core.utils import run_command
+        from ldm_core.utils import is_local_host, run_command
 
         all_targets = load_targets()
         if name:
@@ -2424,6 +2424,7 @@ class ConfigService:
             "RUNNING CONTAINERS",
         ]
         rows = []
+        drifted: list[tuple[str, TargetNode, str]] = []
 
         for t_name, target in targets_to_probe.items():
             cmd = [
@@ -2458,7 +2459,31 @@ class ConfigService:
                 status_str = f"{UI.RED}OFFLINE{UI.COLOR_OFF}"
                 rows.append([t_name, host_display, status_str, "-", "-", "-"])
 
+            # LDM-#1346: the probe above dials `docker --context <name>`, whose
+            # endpoint Docker stores separately from `~/.ldmrc`. When the two
+            # disagree, this table printed the *stored* host beside a result
+            # obtained from a different machine -- an OFFLINE against an address
+            # that was never contacted. Say so rather than quietly disagreeing
+            # with ourselves.
+            if not is_local_host(target.host):
+                context_host = DockerService.get_context_endpoint_host(t_name)
+                if context_host and context_host != target.host:
+                    drifted.append((t_name, target, context_host))
+
         UI.table(rows, headers=headers)
+
+        for t_name, target, context_host in drifted:
+            UI.warning(
+                f"Target '{t_name}' is registered as {target.host}, but its Docker "
+                f"context points at {context_host}. The status above was probed "
+                f"against {context_host}."
+            )
+            fix = f"ldm target add {t_name} --host {target.host}"
+            if target.user:
+                fix += f" --user {target.user}"
+            if target.key_path:
+                fix += f" --key {target.key_path}"
+            UI.hint(f"Re-register the node to rebuild the context: {fix}")
 
     def cmd_target_migrate(self, source_target: str, dest_target: str) -> None:
         """Handler for 'ldm target migrate <source> <dest>'."""

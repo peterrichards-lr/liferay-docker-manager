@@ -179,8 +179,76 @@ def get_ec2_public_ip(ec2_id: str, region: str = "") -> str:
     return ""
 
 
+def get_docker_context_user(node_name: str) -> str:
+    """Returns the SSH user the Docker context for `node_name` should dial as.
+
+    Read from `~/.ldmrc`, deliberately -- *not* from the `user` in
+    `.node-power-config.json`. Those are two different accounts: the power
+    config names the restricted automation user that stops and starts the
+    instance, while the Docker transport connects as the user that is a member
+    of the `docker` group. Using the automation user here would produce a
+    context that authenticates and then cannot talk to the daemon.
+    """
+    if not LDMRC_FILE.exists():
+        return ""
+    try:
+        targets = json.loads(LDMRC_FILE.read_text()).get("targets", {})
+        entry = targets.get(node_name) or {}
+        return str(entry.get("user") or "")
+    except Exception:
+        return ""
+
+
+def update_docker_context(node_name: str, new_ip: str, user: str = "") -> bool:
+    """Repoints the Docker CLI context for `node_name` at `new_ip`.
+
+    LDM-#1346: this is the step that was missing. `docker --context <node>` is
+    what every remote LDM command actually dials, and its endpoint is stored by
+    Docker, not by LDM -- so refreshing `~/.ldmrc` alone left the context on the
+    old address and every remote command still failed, on the very path that had
+    just detected the new one.
+
+    Mirrors `cmd_target_add` (`ldm_core/handlers/config.py`) rather than calling
+    it: this script is deliberately standalone, stdlib-only, so it can run on a
+    CI runner with no `ldm_core` installed. Keep the two in step by hand.
+    """
+    if not new_ip:
+        return False
+
+    if not user:
+        user = get_docker_context_user(node_name)
+    endpoint = f"ssh://{user}@{new_ip}" if user else f"ssh://{new_ip}"
+
+    # `docker context create` fails if the name is taken, and `docker context
+    # update` cannot be relied on across versions, so remove-then-create --
+    # the same sequence cmd_target_add uses.
+    subprocess.run(
+        ["docker", "context", "rm", node_name],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    res = subprocess.run(
+        ["docker", "context", "create", node_name, "--docker", f"host={endpoint}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if res.returncode == 0:
+        print(f"🐳 Repointed Docker context '{node_name}' at {endpoint}.")
+        return True
+
+    # Not fatal: the config files are already correct, and a developer without
+    # the Docker CLI on PATH still wants the IP refresh to have happened.
+    print(
+        f"⚠️ Could not update Docker context '{node_name}': "
+        f"{(res.stderr or '').strip() or 'docker CLI unavailable'}"
+    )
+    return False
+
+
 def update_node_host_ip(node_name: str, new_ip: str) -> None:
-    """Updates .node-power-config.json and ~/.ldmrc host entry when public IP changes."""
+    """Updates .node-power-config.json, ~/.ldmrc and the Docker context on IP change."""
     if not new_ip:
         return
 
@@ -203,6 +271,9 @@ def update_node_host_ip(node_name: str, new_ip: str) -> None:
                 LDMRC_FILE.write_text(json.dumps(ldmrc_data, indent=4) + "\n")
         except Exception:
             pass
+
+    # LDM-#1346: the config files above are not what Docker reads.
+    update_docker_context(node_name, new_ip)
 
 
 def add_ssh_known_host(host: str) -> None:
