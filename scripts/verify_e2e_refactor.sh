@@ -1078,6 +1078,112 @@ else
 fi
 
 
+echo ">> Verifying shared database mode (#1359 / #1354 / #1357)..."
+# Every assertion here is derivable from `init --no-up --no-seed`, so the whole
+# block costs seconds and boots nothing.
+#
+# It exists because this combination was completely broken and no test noticed:
+# the composer tests set `database_mode` in META, which both call sites read,
+# while the CLI flag lands in ARGS, which only one read. The two then disagreed
+# within a single run -- no database service was emitted, yet the liferay
+# service still declared `depends_on: <project>-db` -- so `docker compose
+# config` rejected the file and `ldm run --database-mode shared` failed for
+# every project. The untested axis was the one users take.
+#
+# The name is capitalised deliberately. The derived database name is lowercased
+# (#1354) because PostgreSQL folds an unquoted CREATE DATABASE; an all-lowercase
+# fixture would assert nothing about that.
+SHARED_DB_NAME="TestSharedDb"
+SHARED_DB_WORKDIR="${LDM_WORKSPACE}/shareddb-${TEST_PORT}"
+rm -rf "$SHARED_DB_WORKDIR"
+mkdir -p "$SHARED_DB_WORKDIR"
+SHARED_DB_OK=true
+
+"$LDM_CMD" -y rm "$SHARED_DB_NAME" --delete >/dev/null 2>&1 || true
+
+set +e
+( cd "$SHARED_DB_WORKDIR" && "$LDM_CMD" -y init "$SHARED_DB_NAME" \
+    --no-up --no-seed --database-mode shared --db postgresql ) >/dev/null 2>&1
+SHARED_DB_RC=$?
+set -e
+
+SHARED_DB_DIR="${SHARED_DB_WORKDIR}/${SHARED_DB_NAME}"
+if [ "$SHARED_DB_RC" -ne 0 ]; then
+    # This is the #1359 signature: compose refuses a file whose liferay service
+    # depends on a database service that shared mode deliberately did not emit.
+    echo "❌ ERROR: 'ldm init --database-mode shared' failed with exit ${SHARED_DB_RC}." | tee -a "$RESULTS_FILE_TMP"
+    SHARED_DB_OK=false
+elif ! "$VENV_PYTHON" -c "
+import json, sys
+import yaml
+
+compose_path, meta_path, props_path = sys.argv[1:4]
+
+compose = yaml.safe_load(open(compose_path, encoding='utf-8')) or {}
+services = compose.get('services') or {}
+defined = set(services)
+for name, conf in services.items():
+    deps = conf.get('depends_on') or []
+    if isinstance(deps, dict):
+        deps = list(deps)
+    for dep in deps:
+        assert dep in defined, (
+            f'service {name!r} depends on undefined service {dep!r} -- '
+            'docker compose will refuse this file (#1359)'
+        )
+
+meta = json.load(open(meta_path, encoding='utf-8'))
+assert meta.get('database_mode') == 'shared', (
+    f'meta database_mode is {meta.get(\'database_mode\')!r}, expected \'shared\' -- '
+    'later commands will resolve the mode from defaults instead (#1359)'
+)
+
+url = ''
+for line in open(props_path, encoding='utf-8'):
+    if line.startswith('jdbc.default.url'):
+        url = line.split('=', 1)[1].strip()
+        break
+assert url, 'no jdbc.default.url written'
+assert 'liferay-db-global' in url, (
+    f'JDBC URL {url!r} does not target the shared cluster -- the CLI flag was '
+    'not honoured by _inject_liferay_db_env (#1359)'
+)
+db_part = url.rsplit('/', 1)[-1]
+assert db_part == db_part.lower(), (
+    f'shared database name {db_part!r} is not lowercase; PostgreSQL folds an '
+    'unquoted CREATE DATABASE, so this name can never be connected to (#1354)'
+)
+" "${SHARED_DB_DIR}/docker-compose.yml" "${SHARED_DB_DIR}/meta" "${SHARED_DB_DIR}/files/portal-ext.properties"; then
+    echo "❌ ERROR: shared database mode produced an inconsistent project." | tee -a "$RESULTS_FILE_TMP"
+    SHARED_DB_OK=false
+fi
+
+"$LDM_CMD" -y rm "$SHARED_DB_NAME" --delete >/dev/null 2>&1 || true
+
+# #1357: the global shared database is PostgreSQL only -- `liferay-db-global`
+# is provisioned as postgres and the per-project create runs psql, so a MariaDB
+# driver aimed at port 3306 of it could never connect. Refusal must be loud.
+set +e
+( cd "$SHARED_DB_WORKDIR" && "$LDM_CMD" -y init "${SHARED_DB_NAME}Mysql" \
+    --no-up --no-seed --database-mode shared --db mysql ) >/dev/null 2>&1
+SHARED_DB_MYSQL_RC=$?
+set -e
+if [ "$SHARED_DB_MYSQL_RC" -eq 0 ]; then
+    echo "❌ ERROR: '--database-mode shared --db mysql' was accepted; it cannot work (#1357)." | tee -a "$RESULTS_FILE_TMP"
+    SHARED_DB_OK=false
+fi
+"$LDM_CMD" -y rm "${SHARED_DB_NAME}Mysql" --delete >/dev/null 2>&1 || true
+
+rm -rf "$SHARED_DB_WORKDIR"
+
+if [ "$SHARED_DB_OK" = true ]; then
+    report_ok "✅ Shared database mode verified (valid compose, shared URL, lowercase name, MySQL refused)."
+else
+    echo "❌ ERROR: shared database mode verification failed." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+
 # Final
 log_and_run "Checking Status" "$LDM_CMD" -y status
 

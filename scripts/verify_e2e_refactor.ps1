@@ -1171,6 +1171,122 @@ json.dump({'jira': 'LDM-1264', 'introduced_in': sys.argv[1],
     }
 
 
+    Write-Host ">> Verifying shared database mode (#1359 / #1354 / #1357)..."
+    # Every assertion is derivable from `init --no-up --no-seed`, so this boots
+    # nothing and costs seconds.
+    #
+    # It exists because the combination was completely broken and no unit test
+    # noticed: the composer tests set database_mode in META, which both call
+    # sites read, while the CLI flag lands in ARGS, which only one read. The two
+    # then disagreed inside one run -- no database service was emitted, yet the
+    # liferay service still declared depends_on for it -- so compose refused the
+    # file for every project.
+    #
+    # The project name is capitalised deliberately: the derived database name is
+    # lowercased (#1354) because PostgreSQL folds an unquoted CREATE DATABASE,
+    # and an all-lowercase fixture would assert nothing about that.
+    $sharedDbName = "TestSharedDb"
+    $sharedDbWorkdir = Join-Path $env:LDM_WORKSPACE "shareddb-$TEST_PORT"
+    Remove-Item -Recurse -Force $sharedDbWorkdir -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path $sharedDbWorkdir -Force | Out-Null
+    $sharedDbOk = $true
+
+    Invoke-Cleanup $LDM_CMD "-y rm $sharedDbName --delete"
+
+    Push-Location $sharedDbWorkdir
+    try {
+        & $LDM_CMD -y init $sharedDbName --no-up --no-seed --database-mode shared --db postgresql *> $null
+        $sharedDbRc = $LASTEXITCODE
+    } finally {
+        Pop-Location
+    }
+
+    $sharedDbDir = Join-Path $sharedDbWorkdir $sharedDbName
+    if ($sharedDbRc -ne 0) {
+        # The #1359 signature: compose refuses a file whose liferay service
+        # depends on a database service shared mode deliberately did not emit.
+        Write-Host "[ERROR] 'ldm init --database-mode shared' failed with exit $sharedDbRc." -ForegroundColor Red
+        $sharedDbOk = $false
+    } else {
+        $composePath = Join-Path $sharedDbDir "docker-compose.yml"
+        $metaPath = Join-Path $sharedDbDir "meta"
+        $propsPath = Join-Path $sharedDbDir "files/portal-ext.properties"
+
+        # Parsed in Python rather than PowerShell: 5.1 has no YAML reader, and
+        # the meta name is JSON-escaped so a string match would compare against
+        # the escape sequence (the same trap the naming block documents).
+        & $VENV_PYTHON -c @"
+import json, sys
+import yaml
+
+compose_path, meta_path, props_path = sys.argv[1:4]
+
+compose = yaml.safe_load(open(compose_path, encoding='utf-8')) or {}
+services = compose.get('services') or {}
+defined = set(services)
+for name, conf in services.items():
+    deps = conf.get('depends_on') or []
+    if isinstance(deps, dict):
+        deps = list(deps)
+    for dep in deps:
+        assert dep in defined, (
+            'service %r depends on undefined service %r -- docker compose will refuse this file (#1359)'
+            % (name, dep)
+        )
+
+meta = json.load(open(meta_path, encoding='utf-8'))
+assert meta.get('database_mode') == 'shared', (
+    'meta database_mode is %r, expected shared -- later commands will resolve the mode from defaults (#1359)'
+    % (meta.get('database_mode'),)
+)
+
+url = ''
+for line in open(props_path, encoding='utf-8'):
+    if line.startswith('jdbc.default.url'):
+        url = line.split('=', 1)[1].strip()
+        break
+assert url, 'no jdbc.default.url written'
+assert 'liferay-db-global' in url, (
+    'JDBC URL %r does not target the shared cluster -- the CLI flag was not honoured (#1359)' % (url,)
+)
+db_part = url.rsplit('/', 1)[-1]
+assert db_part == db_part.lower(), (
+    'shared database name %r is not lowercase; PostgreSQL folds an unquoted CREATE DATABASE (#1354)'
+    % (db_part,)
+)
+"@ $composePath $metaPath $propsPath
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[ERROR] shared database mode produced an inconsistent project." -ForegroundColor Red
+            $sharedDbOk = $false
+        }
+    }
+
+    Invoke-Cleanup $LDM_CMD "-y rm $sharedDbName --delete"
+
+    # #1357: the global shared database is PostgreSQL only, so a MariaDB driver
+    # aimed at port 3306 of it could never connect. Refusal must be loud.
+    Push-Location $sharedDbWorkdir
+    try {
+        & $LDM_CMD -y init "$($sharedDbName)Mysql" --no-up --no-seed --database-mode shared --db mysql *> $null
+        $sharedDbMysqlRc = $LASTEXITCODE
+    } finally {
+        Pop-Location
+    }
+    if ($sharedDbMysqlRc -eq 0) {
+        Write-Host "[ERROR] '--database-mode shared --db mysql' was accepted; it cannot work (#1357)." -ForegroundColor Red
+        $sharedDbOk = $false
+    }
+    Invoke-Cleanup $LDM_CMD "-y rm $($sharedDbName)Mysql --delete"
+
+    Remove-Item -Recurse -Force $sharedDbWorkdir -ErrorAction SilentlyContinue
+
+    if ($sharedDbOk) {
+        Write-Verdict "[SUCCESS] Shared database mode verified (valid compose, shared URL, lowercase name, MySQL refused)."
+    } else {
+        throw "Shared database mode verification failed."
+    }
+
+
     Log-AndRun "Checking Status" $LDM_CMD "-y status"
 
     # Clean up any potential orphans from the run

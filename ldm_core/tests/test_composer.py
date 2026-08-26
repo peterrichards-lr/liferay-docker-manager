@@ -1600,3 +1600,106 @@ class TestSharedDatabaseNameCasing(unittest.TestCase):
         assert url is not None
         self.assertIn("/lportal", url)
         self.assertNotIn("lportal_", url)
+
+
+class TestSharedDbModeFromCliFlag(unittest.TestCase):
+    """LDM-#1359: the CLI flag path, which no test covered.
+
+    Existing tests set `database_mode` in **meta**, which both call sites read,
+    so they passed while the flag was broken. The flag lands in **args**, and
+    only `_build_db_service` consulted it -- `_inject_liferay_db_env` did not.
+    The two then disagreed within one run: no database service was emitted, yet
+    `depends_on: <project>-db` remained and the isolated JDBC URL was written,
+    so `docker compose config` rejected the file for every project.
+    """
+
+    PATHS_KEYS = (
+        "deploy",
+        "files",
+        "data",
+        "configs",
+        "modules",
+        "cx",
+        "scripts",
+        "state",
+        "logs",
+        "portal_log4j",
+        "ce_dir",
+    )
+
+    def setUp(self):
+        self.manager = MockComposerManager()
+        from ldm_core.handlers.composer import ComposerService
+
+        self.composer = ComposerService(self.manager)
+        self.manager.defaults.get.side_effect = lambda _key, default=None: default
+        # The flag, on args only -- deliberately NOT in meta.
+        self.manager.args.database_mode = "shared"
+
+    def _paths(self):
+        root = Path("/tmp/MixedCase")
+        paths = {"root": root}
+        paths.update({k: root / k for k in self.PATHS_KEYS})
+        return paths
+
+    def _meta(self):
+        return {
+            "tag": "2026.q1.7-lts",
+            "container_name": "MixedCase",
+            "db_type": "postgresql",
+        }
+
+    def test_no_service_is_depended_on_that_does_not_exist(self):
+        """The #1359 failure exactly: 'depends on undefined service'."""
+        service = self.composer._build_liferay_service(
+            self._paths(), self._meta(), "localhost", "MixedCase", False, None
+        )
+        db_service = self.composer._build_db_service(self._meta(), "MixedCase")
+
+        defined = {"liferay"}
+        if db_service:
+            defined.add("MixedCase-db")
+
+        for dep in service.get("depends_on") or []:
+            self.assertIn(
+                dep,
+                defined,
+                f"liferay depends on undefined service {dep!r} -- compose will refuse the file",
+            )
+
+    def test_the_jdbc_url_is_the_shared_one(self):
+        """The flag must reach the URL, not just the service list."""
+        self.composer._build_liferay_service(
+            self._paths(), self._meta(), "localhost", "MixedCase", False, None
+        )
+        url = None
+        for call in self.manager.config.update_portal_ext.call_args_list:
+            args = call[0]
+            if (
+                len(args) > 1
+                and isinstance(args[1], dict)
+                and "jdbc.default.url" in args[1]
+            ):
+                url = args[1]["jdbc.default.url"]
+                break
+        self.assertIsNotNone(url)
+        assert url is not None
+        self.assertIn("liferay-db-global", url)
+        self.assertIn("lportal_mixedcase", url)
+        self.assertNotIn("MixedCase-db", url)
+
+    def test_meta_still_wins_when_args_are_absent(self):
+        """The pre-existing meta path must keep working."""
+        self.manager.args.database_mode = None
+        meta = self._meta()
+        meta["database_mode"] = "shared"
+        self.assertIsNone(self.composer._build_db_service(meta, "MixedCase"))
+
+    def test_isolated_still_emits_the_database_service_and_its_dependency(self):
+        """Guard against over-reach: the isolated path must be untouched."""
+        self.manager.args.database_mode = "isolated"
+        service = self.composer._build_liferay_service(
+            self._paths(), self._meta(), "localhost", "MixedCase", False, None
+        )
+        self.assertIsNotNone(self.composer._build_db_service(self._meta(), "MixedCase"))
+        self.assertIn("MixedCase-db", service.get("depends_on") or [])
