@@ -415,6 +415,40 @@ Alternatively, you can manually delete the lock file located in your project wor
 rm -f <project-path>/.liferay-docker/.ldm_lock
 ```
 
+## 📂 Project Resolution
+
+### **Issue: "Project '<name>' not found"**
+
+LDM could not resolve the name you passed to a command. The message deliberately stays short, because the list of places LDM looked is diagnostic detail rather than something you can act on.
+
+**The Solution:**
+
+Start with the list of projects LDM actually knows about:
+
+```bash
+ldm list
+```
+
+If the project you expected is missing from that list, it is not registered and not sitting in a searched directory. If it *is* in the list but the command still cannot find it, the registry entry is stale -- the directory has been moved or deleted since it was registered. Running `ldm list` again prunes entries whose path no longer exists.
+
+To see every location that was searched, including the global registry, re-run with `--verbose` (or `--info`):
+
+```bash
+ldm --verbose info <name>
+```
+
+```text
+❌  Project 'my-project' not found.
+Details:  Looked in:
+  - /Users/you/ldm
+  - /Users/you
+  - /Volumes/SanDisk/ldm
+  - the current folder
+  - the project registry (/Users/you/.ldm/registry.json)
+```
+
+Projects are discovered from the current folder, its parent, `~/ldm`, the LDM installation directory, and the global registry at `~/.ldm/registry.json`. Setting `LDM_WORKSPACE` overrides all of those and searches that directory exclusively.
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-21* | *Last Reviewed: 2026-08-21*
+*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*

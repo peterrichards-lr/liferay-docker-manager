@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 import socket
@@ -7,9 +9,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from ldm_core.constants import SCRIPT_DIR
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.diagnostics import DiagnosticsService
 from ldm_core.handlers.workspace import WorkspaceService
+from ldm_core.ui import UI
+
+SCRIPT_DIR_STR = str(SCRIPT_DIR)
 
 
 class MockBaseManager(BaseHandler):
@@ -1127,6 +1133,88 @@ class TestBasePortChecking(unittest.TestCase):
 
         res = self.handler.check_port("127.0.0.1", 80)
         self.assertTrue(res)
+
+
+class TestProjectNotFoundMessage(unittest.TestCase):
+    """LDM-#1344: the not-found error is a next step by default, paths on demand."""
+
+    def setUp(self):
+        self.handler = MockBaseManager()
+
+    @contextlib.contextmanager
+    def _resolve_miss(self, verbose=False, info_mode=False):
+        """Runs a doomed lookup in an isolated home and yields what the user saw.
+
+        The home is patched -- deliberately, and not only for determinism. An
+        unpatched `get_actual_home` reaches the developer's real
+        `~/.ldm/registry.json` (LDM-#1342), and a test that prints a path list
+        must not be the thing that adds entries to it.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            workspace = home / "ldm"
+            workspace.mkdir(parents=True)
+            (home / ".ldm").mkdir()
+
+            captured = io.StringIO()
+            box = {"home": home, "workspace": workspace, "out": captured}
+            with (
+                patch("ldm_core.handlers.base.get_actual_home", return_value=home),
+                patch("ldm_core.utils.get_actual_home", return_value=home),
+                # cwd == ~/ldm is the recommended layout, and the case that
+                # made the old message print the same directory twice.
+                patch("ldm_core.handlers.base.safe_cwd", return_value=workspace),
+                patch.dict(os.environ, {}, clear=False),
+                patch("sys.stderr", captured),
+                UI.patch(verbose=verbose, info_mode=info_mode),
+            ):
+                os.environ.pop("LDM_WORKSPACE", None)
+                with self.assertRaises(SystemExit) as exit_ctx:
+                    self.handler._detect_project_path_raw("no-such-project")
+                box["code"] = exit_ctx.exception.code
+                box["text"] = captured.getvalue()
+            yield box
+
+    def test_default_output_names_the_project_and_a_next_step(self):
+        with self._resolve_miss() as seen:
+            text = seen["text"]
+
+        self.assertIn("Project 'no-such-project' not found.", text)
+        self.assertIn("ldm list", text)
+        self.assertIn("--verbose", text)
+        self.assertEqual(1, seen["code"])
+
+    def test_default_output_does_not_print_search_paths(self):
+        """The paths are the part that read like a stack trace."""
+        with self._resolve_miss() as seen:
+            text = seen["text"]
+            self.assertNotIn(str(seen["workspace"]), text)
+            self.assertNotIn(str(seen["home"]), text)
+        self.assertNotIn("Looked in:", text)
+        self.assertNotIn(SCRIPT_DIR_STR, text)
+
+    def test_verbose_lists_the_locations_including_the_registry(self):
+        with self._resolve_miss(verbose=True) as seen:
+            text = seen["text"]
+            self.assertIn("Looked in:", text)
+            self.assertIn(str(seen["workspace"]), text)
+            self.assertIn("the current folder", text)
+            # The registry is consulted during resolution, so it belongs in the
+            # list -- omitting it sent people looking in the wrong place.
+            self.assertIn(str(seen["home"] / ".ldm"), text)
+
+    def test_verbose_does_not_repeat_a_location(self):
+        """`cwd` and `~/ldm` are the same directory in the recommended layout."""
+        with self._resolve_miss(verbose=True) as seen:
+            occurrences = seen["text"].count(f"- {seen['workspace']}\n")
+        self.assertEqual(1, occurrences)
+
+    def test_info_mode_also_gets_the_locations(self):
+        """--info is the same tier as UI.detail, which these paths belong to."""
+        with self._resolve_miss(info_mode=True) as seen:
+            self.assertIn("Looked in:", seen["text"])
+            # The tip should not then tell the user to enable what is already on.
+            self.assertNotIn("--verbose", seen["text"])
 
 
 class TestBaseFixHosts(unittest.TestCase):

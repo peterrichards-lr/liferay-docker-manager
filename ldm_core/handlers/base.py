@@ -1339,9 +1339,26 @@ class BaseHandler:
         if pid:
             # If we reached here, a PID was specified but not found in any search dir or CWD
             if not for_init and fatal:
+                # LDM-#1344: the searched-location list is diagnostic detail, not
+                # something the user can act on -- it was dominated by the shiv
+                # site-packages path and repeated entries, and offered no next
+                # step. Default output is now the failure plus that next step;
+                # the locations move behind --verbose/--info, the tier UI.detail
+                # already occupies.
+                verbose = UI.VERBOSE or UI.INFO_MODE
                 UI.die(
-                    f"Project '{pid}' not found. Searched subdirectories of: "
-                    f"{', '.join(str(d) for d in search_dirs)} and the current folder."
+                    f"Project '{pid}' not found.",
+                    details=(
+                        "Looked in:\n" + self._describe_search_locations(search_dirs)
+                        if verbose
+                        else None
+                    ),
+                    tip=(
+                        "Run 'ldm list' to see the projects LDM knows about."
+                        if verbose
+                        else "Run 'ldm list' to see the projects LDM knows about, "
+                        "or re-run with --verbose to see every location searched."
+                    ),
                 )
             elif not fatal:
                 return None
@@ -1350,6 +1367,37 @@ class BaseHandler:
         if selection and selection.get("new"):
             return None
         return selection["path"] if selection else None
+
+    @staticmethod
+    def _describe_search_locations(search_dirs):
+        """Renders the discovery locations for the not-found diagnostic (LDM-#1344).
+
+        Deduplicated and order-preserving: `cwd`, `cwd.parent` and `~/ldm`
+        overlap in the common case -- running from the recommended workspace
+        made `~/ldm` appear twice -- and the same path printed twice reads as a
+        bug in the search rather than in the message.
+
+        The registry is named explicitly because it *is* consulted (see the
+        REGISTRY_FILE lookup earlier in `_detect_project_path_raw`) and its
+        absence from the old list sent anyone debugging a miss to the wrong
+        place.
+        """
+        from ldm_core.constants import REGISTRY_FILE
+
+        seen = set()
+        lines = []
+        for d in search_dirs:
+            text = str(d)
+            if text in seen:
+                continue
+            seen.add(text)
+            lines.append(f"  - {text}")
+
+        lines.append("  - the current folder")
+        lines.append(
+            f"  - the project registry ({get_actual_home() / '.ldm' / REGISTRY_FILE})"
+        )
+        return "\n".join(lines)
 
     def find_dxp_roots(self, search_dir=None):
         """Discovers LDM projects via utils."""
