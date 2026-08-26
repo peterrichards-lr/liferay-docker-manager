@@ -1158,6 +1158,52 @@ json.dump({'jira': 'LDM-1264', 'introduced_in': sys.argv[1],
             continue
         }
 
+        # LDM-#1351: `ldm info` must report the name APPLIED to each thing --
+        # the Provisioned Containers block exists to be pasted into
+        # `docker logs`/`docker exec`, and it used to print the verbatim
+        # metadata values, offering names Docker cannot resolve. Asserted on the
+        # command's OUTPUT, which is the contract a user consumes and the half
+        # the file-level assertions cannot see. No boot needed.
+        $infoOut = (& $LDM_CMD info $raw 2>&1 | Out-String)
+
+        if ($infoOut -notmatch [regex]::Escape($raw)) {
+            Write-Host "[ERROR] 'ldm info $raw' does not show the verbatim project name." -ForegroundColor Red
+            $namingOk = $false
+            Invoke-Cleanup $LDM_CMD "-y rm $raw --delete"
+            continue
+        }
+
+        # Parsed in Python for parity with the bash script and to keep the
+        # assertion identical across platforms.
+        & $VENV_PYTHON -c @"
+import sys
+
+raw, expected, out = sys.argv[1], sys.argv[2], sys.argv[3]
+rows = [
+    line
+    for line in out.splitlines()
+    if any(k in line for k in ('Liferay:', 'Database:', 'Tunnel:'))
+]
+assert rows, 'ldm info printed no Provisioned Containers rows'
+
+for line in rows:
+    assert raw not in line, (
+        'ldm info offers a container name Docker does not have (#1351): %r' % line.strip()
+    )
+
+liferay = [line for line in rows if 'Liferay:' in line]
+assert liferay, 'no Liferay row in ldm info output'
+assert expected in liferay[0], (
+    'Liferay row is %r, expected the transcoded name %r' % (liferay[0].strip(), expected)
+)
+"@ $raw $expected $infoOut
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[ERROR] 'ldm info $raw' reported names that are not in effect." -ForegroundColor Red
+            $namingOk = $false
+            Invoke-Cleanup $LDM_CMD "-y rm $raw --delete"
+            continue
+        }
+
         Write-Verdict "   [OK] $raw -> $expected"
         Invoke-Cleanup $LDM_CMD "-y rm $raw --delete"
     }

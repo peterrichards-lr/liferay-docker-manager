@@ -1058,6 +1058,52 @@ assert name == expected, f'Compose project name is {name!r}, expected {expected!
         return 1
     fi
 
+    # LDM-#1351: `ldm info` must report the name APPLIED to each thing, because
+    # the Provisioned Containers block exists to be pasted into `docker logs` /
+    # `docker exec`. It used to print the verbatim metadata values, offering
+    # container names that do not exist. Asserted on the command's OUTPUT rather
+    # than on generated files: this is the contract a user consumes, and it is
+    # the half the file-level assertions cannot see.
+    #
+    # No boot required -- these values are all resolved by `init`.
+    info_out=$("$LDM_CMD" info "${raw}" 2>&1) || true
+
+    # The heading keeps the verbatim name: that is what the user typed.
+    if ! printf '%s' "$info_out" | grep -q -- "${raw}"; then
+        echo "❌ ERROR: 'ldm info ${raw}' does not show the verbatim project name." | tee -a "$RESULTS_FILE_TMP"
+        printf '%s\n' "$info_out" | head -20
+        return 1
+    fi
+
+    # Every Docker-facing row must carry the transcoded name, and must NOT
+    # carry the verbatim one -- a name Docker cannot resolve.
+    if ! "$VENV_PYTHON" -c "
+import sys
+
+raw, expected, out = sys.argv[1], sys.argv[2], sys.argv[3]
+rows = [
+    line
+    for line in out.splitlines()
+    if any(k in line for k in ('Liferay:', 'Database:', 'Tunnel:'))
+]
+assert rows, 'ldm info printed no Provisioned Containers rows'
+
+for line in rows:
+    assert raw not in line, (
+        'ldm info offers a container name Docker does not have (#1351): %r' % line.strip()
+    )
+
+liferay = [line for line in rows if 'Liferay:' in line]
+assert liferay, 'no Liferay row in ldm info output'
+assert expected in liferay[0], (
+    'Liferay row is %r, expected the transcoded name %r' % (liferay[0].strip(), expected)
+)
+" "${raw}" "${expected_docker}" "$info_out"; then
+        echo "❌ ERROR: 'ldm info ${raw}' reported names that are not in effect." | tee -a "$RESULTS_FILE_TMP"
+        printf '%s\n' "$info_out" | sed -n '1,16p'
+        return 1
+    fi
+
     report_ok "   ✅ ${raw} -> ${expected_docker}"
     "$LDM_CMD" -y rm "${raw}" --delete >/dev/null 2>&1 || true
     return 0

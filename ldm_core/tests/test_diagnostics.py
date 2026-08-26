@@ -1871,3 +1871,103 @@ class TestLegacyVolumeSweep(unittest.TestCase):
             removals,
             f"Regression: a name-inferred deletion ran without a human: {removals}",
         )
+
+
+class TestInfoReportsEffectiveNames(unittest.TestCase):
+    """LDM-#1351: `ldm info` must report the name applied to each thing.
+
+    Metadata stores the project name VERBATIM by design (#1307/#1321:
+    "metadata records the name verbatim, Docker receives a transcoded ASCII
+    name"). `run_info` printed those raw values, so for a project named
+    `Saarbrücken` it offered container names that do not exist -- and queried
+    Docker with one, which is why Status read `unknown` while `ldm list`, which
+    does sanitize, reported the true status for the same project.
+
+    The project name itself stays verbatim: that is what the user types.
+    """
+
+    RAW = "Saarbr\u00fccken"  # Saarbrücken
+    SAFE = "Saarbruecken"  # sanitize_id expands the umlaut
+
+    def _run(self, extra_meta=None, status="running"):
+        from pathlib import Path as _Path
+        from unittest.mock import MagicMock, patch
+
+        from ldm_core.diagnostics.info import run_info
+
+        meta = {
+            "container_name": self.RAW,
+            "liferay_container_name": self.RAW,
+            "db_container_name": f"{self.RAW}-db",
+            "tunnel_container_name": f"{self.RAW}-lfr-tunnel",
+            "tag": "2026.q1.12-lts",
+            "use_shared_search": "true",
+        }
+        meta.update(extra_meta or {})
+
+        handler = MagicMock()
+        handler.manager.detect_project_path.return_value = _Path("/tmp") / self.RAW
+        handler.manager.parse_version.return_value = (2026, 1, 12)
+        handler.manager.read_meta.return_value = meta
+        handler.manager.defaults.get.side_effect = lambda _k, default=None: default
+
+        captured = {}
+        with (
+            patch("ldm_core.ui.UI.raw") as mock_raw,
+            patch(
+                "ldm_core.docker_service.DockerService.get_status", return_value=status
+            ) as mock_status,
+            patch("ldm_core.config.load_targets", return_value={}),
+        ):
+            run_info(handler, self.RAW)
+            captured["out"] = "\n".join(
+                c[0][0] for c in mock_raw.call_args_list if c[0]
+            )
+            captured["status_arg"] = (
+                mock_status.call_args[0][0] if mock_status.call_args else None
+            )
+        return captured
+
+    def test_the_status_lookup_uses_the_name_docker_knows(self):
+        """The functional half: querying the verbatim name could never match."""
+        got = self._run()
+        self.assertEqual(self.SAFE, got["status_arg"])
+
+    def test_container_names_are_reported_transcoded(self):
+        out = self._run()["out"]
+        self.assertIn(self.SAFE, out)
+        self.assertIn(f"{self.SAFE}-db", out)
+        self.assertIn(f"{self.SAFE}-lfr-tunnel", out)
+
+    def test_no_container_row_offers_a_name_docker_does_not_have(self):
+        """These lines exist to be pasted into `docker logs`."""
+        out = self._run()["out"]
+        for line in out.splitlines():
+            if any(k in line for k in ("Liferay:", "Database:", "Tunnel:")):
+                self.assertNotIn(self.RAW, line, line)
+
+    def test_the_project_heading_stays_verbatim(self):
+        """The user typed the real name; only Docker-facing values change."""
+        out = self._run()["out"]
+        self.assertIn(self.RAW, out)
+
+    def test_the_index_prefix_is_lowercased(self):
+        """Liferay lowercases it via CompanyIdIndexNameBuilder.setIndexNamePrefix."""
+        out = self._run()["out"]
+        self.assertIn(f"ldm-{self.SAFE.lower()}-", out)
+        self.assertNotIn(f"ldm-{self.SAFE}-", out)
+
+    def test_shared_mode_names_the_cluster_not_a_phantom_container(self):
+        """In shared mode the compose defines only `liferay` -- no <project>-db."""
+        out = self._run(extra_meta={"database_mode": "shared"})["out"]
+        self.assertIn("liferay-db-global", out)
+        self.assertIn("lportal_saarbruecken", out)
+        for line in out.splitlines():
+            if "Database:" in line:
+                self.assertNotIn(f"{self.SAFE}-db", line, line)
+
+    def test_isolated_mode_still_names_the_project_database_container(self):
+        """Guard against over-reach: the isolated row must keep working."""
+        out = self._run(extra_meta={"database_mode": "isolated"})["out"]
+        self.assertIn(f"{self.SAFE}-db", out)
+        self.assertNotIn("liferay-db-global", out)
