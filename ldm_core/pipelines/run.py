@@ -784,12 +784,26 @@ class ConfigResolutionStage(PipelineStage):
 
         from ldm_core.utils import resolve_infrastructure_mode
 
+        # LDM-#1362: the CLI override MUST be passed. Without it
+        # `--search-mode shared` was silently ignored -- `resolve_infrastructure_mode`
+        # prioritises override > meta > defaults, and the override never
+        # arrived, so the flag produced a SIDECAR Elasticsearch embedded in the
+        # Liferay container: the exact opposite of the memory saving shared mode
+        # exists for. Same omission as #1359 (`database_mode`) and #1374
+        # (`no_up`); the sibling `database_mode` call twenty lines below has
+        # always passed it.
         search_mode = resolve_infrastructure_mode(
-            "search_mode", project_meta, manager.defaults
+            "search_mode",
+            project_meta,
+            manager.defaults,
+            getattr(manager.args, "search_mode", None),
         )
         use_shared_search = search_mode == "shared"
+        # `--sidecar` is a separate, older flag meaning "definitely not shared".
+        # It wins over the resolved mode, which is the pre-existing behaviour.
         if getattr(manager.args, "sidecar", False):
             use_shared_search = False
+            search_mode = "sidecar"
 
         # LDM-#1359: resolved here, before the metadata below is assembled, so
         # the mode can be PERSISTED. It used to be resolved only at compose
@@ -870,6 +884,11 @@ class ConfigResolutionStage(PipelineStage):
                 # LDM-#1359: persisted so later commands agree with the run
                 # that provisioned the project.
                 "database_mode": db_mode_resolved,
+                # LDM-#1362: same reasoning for search. Without this, every
+                # later command resolved the mode from defaults and could
+                # disagree with how the project was actually provisioned --
+                # and `ldm info` had to guess it from the Liferay tag.
+                "search_mode": search_mode,
                 "no_vol_cache": str(no_vol_cache).lower(),
                 "internal_state": str(internal_state).lower(),
                 "no_jvm_verify": str(no_jvm_verify).lower(),
@@ -1274,6 +1293,22 @@ class ComposerStage(PipelineStage):
         ssl_enabled = str(project_meta.get("ssl", "false")).lower() == "true"
         ssl_port = project_meta.get("ssl_port", 443)
 
+        # Provision what the resolved modes actually need, and only when
+        # something is being started.
+        #
+        # Deliberately OUTSIDE the `ssl_enabled or --search or use_shared_db`
+        # gate below: a shared-SEARCH-only project satisfies none of those, so
+        # nesting this inside it meant the provisioning never ran for exactly
+        # the case #1363 is about. Found by booting it -- the static reading
+        # looked correct.
+        if shutil.which("docker") and not no_up:
+            if use_shared_search:
+                UI.detail("Ensuring global search service is running...")
+                manager.infra.setup_global_search()
+            if use_shared_db:
+                UI.detail("Ensuring global database service is running...")
+                manager.infra.setup_global_database()
+
         if ssl_enabled or getattr(manager.args, "search", False) or use_shared_db:
             infra_start = time.time()
             resolved_ip = manager.get_resolved_ip(host_name) or "127.0.0.1"
@@ -1300,6 +1335,19 @@ class ComposerStage(PipelineStage):
                 )
             project_meta["ssl_port"] = ssl_port
 
+            # LDM-#1363: `ldm run` assumed the global infrastructure was
+            # already up. For search this meant Liferay was pointed at
+            # `liferay-search-global:9200` and started against a container that
+            # did not exist -- it then indexed nowhere, silently. For the
+            # database the `docker exec liferay-db-global` below simply failed.
+            #
+            # Neither container was provisioned here: `setup_global_search` and
+            # `setup_global_database` were only reachable via `ldm infra setup`
+            # (handlers/infra.py) and, for search, an interactive prompt in
+            # runtime/search.py that `ldm run` never reaches. #1365 made this
+            # routine -- the test suite removed `liferay-search-global` on every
+            # run -- so a developer's next shared-search project booted broken.
+            #
             if shutil.which("docker") and use_shared_db and not no_up:
                 from ldm_core.utils import sanitize_id
 

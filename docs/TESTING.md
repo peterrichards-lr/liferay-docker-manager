@@ -55,6 +55,7 @@
 | 2.1 | **Infra Setup** | `ldm infra-setup --search` | Starts Traefik and ES8. Idempotent. |
 | 2.2 | **Shared DB Mode** | `ldm init <Name> --no-up --no-seed --database-mode shared --db postgresql` | Valid compose (no `depends_on` on an undefined service), JDBC URL targets `liferay-db-global`, derived database name is lowercase, `database_mode` persisted to `meta`. |
 | 2.3 | **Shared DB Refusal** | `ldm init <Name> --no-up --no-seed --database-mode shared --db mysql` | Refused with a non-zero exit -- the shared cluster is PostgreSQL only. |
+| 2.4 | **Shared Search Mode** | `ldm init <Name> --no-up --no-seed --search-mode shared` | `search_mode` persisted to `meta`; an `ElasticsearchConfiguration.config` written under `osgi/configs` with `productionModeEnabled`, the global cluster address and a **lowercase** `indexNamePrefix`; that directory mounted into the container. |
 
 ### 🛠️ Manual
 

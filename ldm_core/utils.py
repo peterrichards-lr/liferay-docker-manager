@@ -369,6 +369,24 @@ def dns_label(identifier, max_length=63):
     return label[:max_length].strip("-")
 
 
+def search_index_prefix(identifier):
+    """Returns the Elasticsearch index prefix Liferay will actually use.
+
+    LDM configures `indexNamePrefix` as `ldm-<sanitized name>-`, and Liferay
+    lowercases it on the way in via
+    `CompanyIdIndexNameBuilder.setIndexNamePrefix` (`StringUtil.trim` then
+    `StringUtil.toLowerCase`). Index names are then `<prefix><companyId>-<...>`
+    -- observed on a running project: a configured `ldm-TrioTest-` produced
+    `ldm-triotest-14683668377142-workflow-metrics-transitions`.
+
+    Centralised because three call sites need it -- the config LDM writes, the
+    value `ldm info` reports, and the pattern snapshot/restore match on. The
+    same formula duplicated across nine sites is how `shared_database_name`
+    drifted and broke `--database-mode shared` (LDM-#1354).
+    """
+    return f"ldm-{sanitize_id(identifier)}-".lower()
+
+
 def shared_database_name(identifier):
     """Returns the shared-mode database name for `identifier`, always lowercase.
 

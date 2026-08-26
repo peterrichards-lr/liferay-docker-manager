@@ -2022,3 +2022,43 @@ class TestSearchSnapshotAcceptance(unittest.TestCase):
 
     def test_unrelated_chatter_is_not_a_failure(self):
         self.assertTrue(self._accepted("some non-json chatter"))
+
+
+class TestSearchIndexPrefix(unittest.TestCase):
+    """LDM-#1353/#1355: one source for the index prefix.
+
+    Three sites need it -- the config LDM writes, what `ldm info` reports, and
+    the pattern snapshot/restore match on. `shared_database_name` had the same
+    formula duplicated at nine sites and drifted, which is what broke
+    `--database-mode shared` (#1354).
+    """
+
+    def test_it_matches_the_indices_liferay_actually_creates(self):
+        """Observed on a running project: a configured `ldm-TrioTest-` produced
+        `ldm-triotest-14683668377142-workflow-metrics-transitions`."""
+        from ldm_core.utils import search_index_prefix
+
+        observed = "ldm-triotest-14683668377142-workflow-metrics-transitions"
+        self.assertTrue(observed.startswith(search_index_prefix("TrioTest")))
+
+    def test_it_is_lowercase(self):
+        """Liferay lowercases indexNamePrefix; writing it lowercase keeps what
+        LDM records identical to what Liferay uses."""
+        from ldm_core.utils import search_index_prefix
+
+        for name in ("TrioTest", "Saarbrücken", "MiXeD"):
+            got = search_index_prefix(name)
+            self.assertEqual(got, got.lower(), name)
+
+    def test_non_ascii_is_transcoded(self):
+        from ldm_core.utils import search_index_prefix
+
+        self.assertEqual("ldm-saarbruecken-", search_index_prefix("Saarbrücken"))
+
+    def test_it_is_a_prefix_not_a_full_index_name(self):
+        """LDM supplies only the prefix; Liferay appends the company ID."""
+        from ldm_core.utils import search_index_prefix
+
+        got = search_index_prefix("proj")
+        self.assertTrue(got.startswith("ldm-"))
+        self.assertTrue(got.endswith("-"))

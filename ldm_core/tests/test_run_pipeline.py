@@ -472,3 +472,67 @@ class TestResolvePipelineTargetContext(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSharedSearchWiring(unittest.TestCase):
+    """LDM-#1362 / #1363: selecting shared search, and satisfying its preconditions.
+
+    `--search-mode shared` was silently ignored: `run.py` resolved the mode
+    without passing the CLI override, so the flag produced a **sidecar**
+    Elasticsearch embedded in the Liferay container -- the opposite of the
+    memory saving the mode exists for.
+
+    Every pre-existing `no_up`/mode test in this file sets the value on the
+    CONTEXT or in META, which is exactly where the CLI does not put it. That is
+    why none of them caught this, nor #1359 (`database_mode`) nor #1374
+    (`no_up`). These tests deliberately set it on `args` only.
+    """
+
+    def _stage_context(self, **args_overrides):
+        manager = MagicMock()
+        manager.non_interactive = True
+        manager.verbose = False
+        manager.args.sidecar = False
+        manager.args.database_mode = None
+        manager.args.search_mode = None
+        for k, v in args_overrides.items():
+            setattr(manager.args, k, v)
+        manager.defaults.get.side_effect = lambda _k, default=None: default
+
+        context = RunPipelineContext(
+            manager, project_id="proj", paths={"root": MagicMock()}
+        )
+        context.set("project_meta", {"container_name": "proj", "tag": "2026.q1.12-lts"})
+        return context
+
+    def test_search_mode_shared_from_args_is_honoured(self):
+        context = self._stage_context(search_mode="shared")
+        ConfigResolutionStage().execute(context)
+        self.assertTrue(
+            context.get("use_shared_search"),
+            "--search-mode shared was ignored; the project would get a sidecar",
+        )
+
+    def test_the_resolved_search_mode_is_persisted_to_meta(self):
+        """Later commands must agree with how the project was provisioned."""
+        context = self._stage_context(search_mode="shared")
+        ConfigResolutionStage().execute(context)
+        self.assertEqual("shared", context.get("project_meta").get("search_mode"))
+
+    def test_sidecar_flag_still_wins_and_meta_agrees(self):
+        """`--sidecar` outranks the resolved mode; the persisted value must match.
+
+        Without also correcting `search_mode`, meta would record "shared" for a
+        project built as a sidecar -- the same two-derivations-of-one-fact
+        problem behind #1354 and #1359.
+        """
+        context = self._stage_context(search_mode="shared", sidecar=True)
+        ConfigResolutionStage().execute(context)
+        self.assertFalse(context.get("use_shared_search"))
+        self.assertEqual("sidecar", context.get("project_meta").get("search_mode"))
+
+    def test_no_flag_leaves_the_mode_to_meta_and_defaults(self):
+        """Guard against over-reach: absent the flag, nothing is forced."""
+        context = self._stage_context()
+        ConfigResolutionStage().execute(context)
+        self.assertFalse(context.get("use_shared_search"))

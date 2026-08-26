@@ -1333,6 +1333,82 @@ assert db_part == db_part.lower(), (
     }
 
 
+    Write-Host ">> Verifying shared search mode (#1362 / #1363 / #1353)..."
+    # Derivable from `init --no-up --no-seed`: no boot, nothing outside this
+    # script's control. Deliberately NOT asserting that Liferay indexes into
+    # the shared cluster -- that needs a boot plus indexing and the wait is
+    # externally timed, which would fail this suite for unrelated reasons.
+    $sharedSearchName = "TestSharedSearch"
+    $sharedSearchWorkdir = Join-Path $env:LDM_WORKSPACE "sharedsearch-$TEST_PORT"
+    Remove-Item -Recurse -Force $sharedSearchWorkdir -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path $sharedSearchWorkdir -Force | Out-Null
+    $sharedSearchOk = $true
+
+    Invoke-Cleanup $LDM_CMD "-y rm $sharedSearchName --delete"
+
+    Push-Location $sharedSearchWorkdir
+    try {
+        & $LDM_CMD -y init $sharedSearchName --no-up --no-seed --search-mode shared *> $null
+        $sharedSearchRc = $LASTEXITCODE
+    } finally {
+        Pop-Location
+    }
+
+    $sharedSearchDir = Join-Path $sharedSearchWorkdir $sharedSearchName
+    if ($sharedSearchRc -ne 0) {
+        Write-Host "[ERROR] 'ldm init --search-mode shared' failed with exit $sharedSearchRc." -ForegroundColor Red
+        $sharedSearchOk = $false
+    } else {
+        & $VENV_PYTHON -c @"
+import json, sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+
+meta = json.loads((root / 'meta').read_text(encoding='utf-8'))
+assert meta.get('search_mode') == 'shared', (
+    'meta search_mode is %r, expected shared -- the CLI flag was ignored (#1362)'
+    % (meta.get('search_mode'),)
+)
+
+configs = list((root / 'osgi' / 'configs').glob('*ElasticsearchConfiguration.config'))
+assert configs, (
+    'no ElasticsearchConfiguration.config written; the LIFERAY_ELASTICSEARCH* '
+    'env vars alone do not configure Liferay (#1353)'
+)
+body = configs[0].read_text(encoding='utf-8')
+assert 'productionModeEnabled=B' in body, body
+assert 'liferay-search-global:9200' in body, body
+
+prefix = [l for l in body.splitlines() if l.startswith('indexNamePrefix')]
+assert prefix, body
+value = prefix[0].split('=', 1)[1].strip().strip(chr(34))
+assert value == value.lower(), (
+    'indexNamePrefix %r is not lowercase; Liferay lowercases it, so a '
+    'mixed-case value cannot match the indices it creates' % (value,)
+)
+
+compose = (root / 'docker-compose.yml').read_text(encoding='utf-8')
+assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
+    'osgi/configs is not mounted, so the config cannot reach Liferay (#1364)'
+)
+"@ $sharedSearchDir
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[ERROR] shared search mode produced an inconsistent project." -ForegroundColor Red
+            $sharedSearchOk = $false
+        }
+    }
+
+    Invoke-Cleanup $LDM_CMD "-y rm $sharedSearchName --delete"
+    Remove-Item -Recurse -Force $sharedSearchWorkdir -ErrorAction SilentlyContinue
+
+    if ($sharedSearchOk) {
+        Write-Verdict "[SUCCESS] Shared search mode verified (flag honoured, mode persisted, OSGi config written and mounted)."
+    } else {
+        throw "Shared search mode verification failed."
+    }
+
+
     Log-AndRun "Checking Status" $LDM_CMD "-y status"
 
     # Clean up any potential orphans from the run
