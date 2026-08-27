@@ -1476,16 +1476,41 @@ class ComposerStage(PipelineStage):
                                 ),
                                 None,
                             )
-                            if alternative:
+                            # LDM-#1397: the promise of a re-run picking another
+                            # port is only true for the port the pre-flight
+                            # actually governs, on an interactive run. Under -y
+                            # the pre-flight dies rather than re-selecting
+                            # (handlers/base.py), and services with a literal
+                            # port in the compose builder -- kibana's 5601,
+                            # lfr-tunnel's 4040 -- are never pre-flighted at all,
+                            # so a re-run regenerates the same port and fails
+                            # identically. Promising otherwise sends the user
+                            # round a loop that cannot terminate.
+                            preflight_governs = svc_name == "liferay"
+                            non_interactive = getattr(manager, "non_interactive", False)
+                            if (
+                                alternative
+                                and preflight_governs
+                                and not non_interactive
+                            ):
                                 tip = (
                                     f"Re-run 'ldm run' -- the pre-flight check will "
                                     f"select port {alternative} instead. Or free up "
                                     f"port {mapped_port} and re-run to keep it."
                                 )
+                            elif preflight_governs and non_interactive:
+                                tip = (
+                                    f"A re-run will fail the same way: with -y the "
+                                    f"pre-flight refuses rather than moving the port. "
+                                    f"Free up port {mapped_port}, or set an explicit "
+                                    f"one with --port, then re-run."
+                                )
                             else:
                                 tip = (
-                                    f"Free up port {mapped_port} and re-run, or set a "
-                                    f"different port for '{svc_name}'."
+                                    f"Service '{svc_name}' has a fixed port, so a "
+                                    f"re-run will produce {mapped_port} again. Free "
+                                    f"up port {mapped_port}, or disable/move that "
+                                    f"service, then re-run."
                                 )
                             UI.die(
                                 f"Port conflict detected: Port {mapped_port} is already in use on the host "
