@@ -444,3 +444,62 @@ class TestInfraService(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGlobalServiceDockerCallsAreBounded(unittest.TestCase):
+    """LDM-#1413: these run on paths a user waits on -- `ldm run` and
+    `ldm restore` both provision global services through here -- and every one
+    contacts a daemon that may never answer.
+
+    Unbounded, a stalled socket is indistinguishable from LDM being slow. That
+    ambiguity cost 84 minutes three times over in LDM-#1410 before anyone
+    realised the restore was not merely taking a while.
+    """
+
+    BOUNDED_FUNCTIONS = (
+        "setup_global_database",
+        "setup_global_search",
+        "_ensure_network",
+    )
+
+    def _calls(self, function_name):
+        """Returns each run_command call's argument text within `function_name`."""
+        from ldm_core.handlers import infra as infra_mod
+
+        lines = Path(infra_mod.__file__).read_text(encoding="utf-8").splitlines()
+        start = next(
+            i
+            for i, line in enumerate(lines, 1)
+            if line.strip().startswith(f"def {function_name}")
+        )
+        end = next(
+            i
+            for i, line in enumerate(lines, 1)
+            if i > start and line.startswith("    def ")
+        )
+        body = "\n".join(lines[start - 1 : end - 1])
+        return [c[:1200] for c in body.split("run_command(")[1:]]
+
+    def test_every_docker_call_in_the_global_setup_paths_is_bounded(self):
+        for fn in self.BOUNDED_FUNCTIONS:
+            calls = self._calls(fn)
+            self.assertTrue(calls, f"expected run_command calls in {fn}")
+            for i, call in enumerate(calls, 1):
+                self.assertIn(
+                    "timeout=",
+                    call,
+                    f"{fn} call #{i} has no timeout -- a stalled daemon would "
+                    "hang it indefinitely and look like LDM being slow (#1413)",
+                )
+
+    def test_the_readiness_probes_are_not_bounded_so_tightly_they_flap(self):
+        """A probe that has not answered in 30s is not going to, but an image
+        pull legitimately takes minutes -- so these must not share a value."""
+        from ldm_core.handlers import infra as infra_mod
+
+        self.assertGreaterEqual(infra_mod._INFRA_PROBE_TIMEOUT, 15)
+        self.assertGreater(
+            infra_mod._INFRA_CREATE_TIMEOUT,
+            infra_mod._INFRA_PROBE_TIMEOUT,
+            "creating a service may pull an image; a probe may not",
+        )
