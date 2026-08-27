@@ -1,8 +1,9 @@
 # LDM — AI Agent Context
 
 > This is the single source of truth for any AI coding agent working on
-> this repository. Provider-specific files (`GEMINI.md`, `CLAUDE.md`)
-> redirect here. Do not duplicate context in those files.
+> this repository. Provider-specific files (`GEMINI.md`, `CLAUDE.md`,
+> `.gemini/gemini.md`) redirect here. Do not duplicate context in those
+> files.
 
 ## Project Identity
 
@@ -106,4 +107,4 @@ should not need to change as work progresses.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*
+*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*

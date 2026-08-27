@@ -38,7 +38,7 @@ def _volume_role(volume_name):
     return "unknown"
 
 
-def _named_volume_definition(safe_vol_key, project_name):
+def _named_volume_definition(safe_vol_key, project_name, project_uuid=None):
     """Builds the compose definition for one named volume (LDM-#1267).
 
     LDM-424: `name` is set explicitly so Docker does not prefix the volume with
@@ -54,6 +54,12 @@ def _named_volume_definition(safe_vol_key, project_name):
             "com.liferay.ldm.project": project_name,
             "com.liferay.ldm.managed": "true",
             "com.liferay.ldm.role": _volume_role(safe_vol_key),
+            # LDM-#1395: the name label is only as stable as the name. A renamed
+            # project's volumes would keep the old one and belong to nothing,
+            # and two projects sharing a name share the label entirely. The UUID
+            # makes ownership exact. The name label stays -- it is what a human
+            # reads in `docker volume inspect`.
+            **({"com.liferay.ldm.project.uuid": project_uuid} if project_uuid else {}),
         },
     }
 
@@ -415,7 +421,8 @@ class ComposerService:
             "networks": {"liferay-net": {"external": True}},
         }
 
-        self._inject_ldm_labels(services, project_name)
+        project_uuid = meta.get("uuid") if isinstance(meta, dict) else None
+        self._inject_ldm_labels(services, project_name, project_uuid)
 
         # LDM-369: Add top-level volumes for Named Volumes (data/state)
         named_volumes: dict[str, dict] = {}
@@ -454,7 +461,7 @@ class ComposerService:
                         # abandoned LDM volume from a third-party one -- which is
                         # why `ldm prune` has no safe way to reclaim them (#1266).
                         named_volumes[safe_vol_key] = _named_volume_definition(
-                            safe_vol_key, project_name
+                            safe_vol_key, project_name, project_uuid
                         )
 
         if named_volumes:
@@ -1369,7 +1376,7 @@ class ComposerService:
             )
         return None
 
-    def _inject_ldm_labels(self, services, project_name):
+    def _inject_ldm_labels(self, services, project_name, project_uuid=None):
         for _, svc_data in services.items():
             if "labels" not in svc_data:
                 svc_data["labels"] = []
@@ -1381,6 +1388,11 @@ class ComposerService:
                 f"com.liferay.ldm.project={project_name}",
                 "com.liferay.ldm.managed=true",
             ]
+            # LDM-#1395: see _named_volume_definition. Applied here rather than
+            # at each individual builder because this is the one place that
+            # sweeps every service.
+            if project_uuid:
+                standard_labels.append(f"com.liferay.ldm.project.uuid={project_uuid}")
             for label in standard_labels:
                 if label not in svc_data["labels"]:
                     svc_data["labels"].append(label)

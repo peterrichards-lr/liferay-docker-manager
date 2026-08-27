@@ -1969,3 +1969,81 @@ class TestSharedSearchOsgiConfig(unittest.TestCase):
         )
         configs = self.root / "configs"
         self.assertEqual([], list(configs.glob("*.config")) if configs.exists() else [])
+
+
+class TestProjectUuidLabels(unittest.TestCase):
+    """LDM-#1395: Docker ownership labels carry the project UUID.
+
+    The name label is only as stable as the name: two projects sharing a name
+    share the label entirely, and a renamed project's resources keep the old one
+    and belong to nothing.
+    """
+
+    UUID = "1234abcd-0000-4444-8888-99990000ffff"
+
+    def _compose(self, with_uuid=True):
+        import yaml
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for d in ("files", "deploy", "data", "logs", "osgi/configs", "osgi/state"):
+                (root / d).mkdir(parents=True, exist_ok=True)
+            from ldm_core.manager import LiferayManager
+
+            manager = LiferayManager(MagicMock())
+            paths = manager.setup_paths(root)
+            meta = {
+                "container_name": "labeltest",
+                "tag": "2026.q1.4",
+                "host_name": "localhost",
+                "db_type": "postgresql",
+                "port": 8080,
+            }
+            if with_uuid:
+                meta["uuid"] = self.UUID
+            with patch.object(manager, "run_command"):
+                manager.composer.write_docker_compose(paths, meta)
+            return yaml.safe_load(paths["compose"].read_text())
+
+    def test_every_service_is_labelled_with_the_uuid(self):
+        compose = self._compose()
+        self.assertTrue(compose["services"], "expected at least one service")
+        for name, svc in compose["services"].items():
+            labels = [str(x) for x in svc.get("labels", [])]
+            self.assertIn(
+                f"com.liferay.ldm.project.uuid={self.UUID}",
+                labels,
+                f"service '{name}' is not labelled with the project UUID",
+            )
+
+    def test_every_named_volume_is_labelled_with_the_uuid(self):
+        compose = self._compose()
+        volumes = compose.get("volumes") or {}
+        self.assertTrue(volumes, "expected at least one named volume")
+        for vol_name, vol in volumes.items():
+            self.assertEqual(
+                self.UUID,
+                (vol or {}).get("labels", {}).get("com.liferay.ldm.project.uuid"),
+                f"volume '{vol_name}' is not labelled with the project UUID",
+            )
+
+    def test_the_name_label_is_kept(self):
+        """It is what a human reads in `docker ps`; removing it would also break
+        anything filtering on it today."""
+        compose = self._compose()
+        for svc in compose["services"].values():
+            labels = [str(x) for x in svc.get("labels", [])]
+            self.assertTrue(
+                any(x.startswith("com.liferay.ldm.project=") for x in labels)
+            )
+
+    def test_a_project_without_a_uuid_emits_no_uuid_label(self):
+        """Pre-#1395 projects must not gain an empty label."""
+        compose = self._compose(with_uuid=False)
+        for svc in compose["services"].values():
+            labels = [str(x) for x in svc.get("labels", [])]
+            self.assertFalse([x for x in labels if "project.uuid" in x])
+        for vol in (compose.get("volumes") or {}).values():
+            self.assertNotIn(
+                "com.liferay.ldm.project.uuid", (vol or {}).get("labels", {})
+            )

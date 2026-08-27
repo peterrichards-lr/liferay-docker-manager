@@ -52,6 +52,13 @@ $PSNativeCommandUseErrorActionPreference = $false
 $TEST_PORT = "8082"
 if ($env:LDM_TEST_PORT) { $TEST_PORT = $env:LDM_TEST_PORT }
 $TARGET_TEST_NODE = "e2e-target-${TEST_PORT}"
+$ANNOUNCE_TEST_NODE = "announce-node-${TEST_PORT}"
+$ANNOUNCE_TEST_PROJ = "announce-proj-${TEST_PORT}"
+$PORTCONFLICT_PROJ = "portconflict-${TEST_PORT}"
+$PORT_HOLDER = "ldm-e2e-port-holder-${TEST_PORT}"
+# Kibana publishes this host port unconditionally (composer.py
+# _build_kibana_service). It is the LDM-#1350 lever -- see that check below.
+$KIBANA_HOST_PORT = 5601
 $ORIGINAL_PWD = Get-Location
 $LDM_CMD = "ldm"
 $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -160,6 +167,25 @@ function Invoke-Cleanup {
     }
 }
 
+function Remove-Ldm1383Artifacts {
+    # LDM-#1383: the artefacts of the two checks below are torn down inline as
+    # soon as each check finishes, and again from Finalize-Verification.
+    # Leaving a Docker context behind is not merely untidy: every later
+    # `ldm list`/`ldm status` in this suite would then resolve
+    # `docker --context` against an unroutable TEST-NET-1 address and block on
+    # an SSH connect timeout, turning one failed check into a suite that
+    # appears to hang.
+    Invoke-Cleanup $LDM_CMD "-y target rm $ANNOUNCE_TEST_NODE"
+    Invoke-Cleanup "docker" "context rm $ANNOUNCE_TEST_NODE"
+    Invoke-Cleanup $LDM_CMD "-y rm $ANNOUNCE_TEST_PROJ --delete"
+    $announceDir = Join-Path $LDM_WORKSPACE $ANNOUNCE_TEST_PROJ
+    if (Test-Path $announceDir) { Remove-Item -Recurse -Force $announceDir -ErrorAction SilentlyContinue }
+    Invoke-Cleanup "docker" "rm -f $PORT_HOLDER"
+    Invoke-Cleanup $LDM_CMD "-y rm $PORTCONFLICT_PROJ --delete"
+    $conflictDir = Join-Path $LDM_WORKSPACE $PORTCONFLICT_PROJ
+    if (Test-Path $conflictDir) { Remove-Item -Recurse -Force $conflictDir -ErrorAction SilentlyContinue }
+}
+
 function Finalize-Verification {
     param($ExitCode)
     $status = "fail"
@@ -189,6 +215,7 @@ function Finalize-Verification {
             Copy-Item (Join-Path $ORIGINAL_PWD $FinalName) $archiveDir -Force
         }
     }
+    Remove-Ldm1383Artifacts
     Invoke-Cleanup "docker" "rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy"
     Invoke-Cleanup $LDM_CMD "-y rm ldm-smoke-test --delete"
     
@@ -445,6 +472,158 @@ try {
     }
     Log-AndRun "Target Status (Loopback Node)" $LDM_CMD "target status $loopbackNode"
     Log-AndRun "Target Remove (Loopback Node)" $LDM_CMD "target rm $loopbackNode"
+
+    # --- LDM-#1383: E2E cover for the v2.18.0 remote-node / port-conflict UX
+    #
+    # #1341, #1345 and #1350 shipped with unit tests only, each deferred on the
+    # same principle: an assertion must depend on nothing the script cannot
+    # control. That principle stands. What #1383 got wrong was assuming the
+    # only way to satisfy it was a real remote node and a real timing race.
+    # Two of the three have a deterministic lever that touches no network.
+    #
+    # #1345 genuinely does not, and is left to its unit/integration tests. See
+    # the note after the second check.
+    #
+    # Kept in step with the bash twin (scripts/verify_e2e_refactor.sh) --
+    # cross-platform script parity is a hard rule, see
+    # .agents/skills/testing-and-ci/SKILL.md.
+
+    Write-Host ">> Verifying Remote Compute Node Announcement (LDM-#1341)..."
+    #
+    # No remote node is needed. announce_remote_targets() (ldm_core/utils.py)
+    # decides remoteness via DockerService.get_docker_cmd_prefix(), which
+    # consults only the LDM target registry -- name != "local" AND host outside
+    # 127.0.0.0/8 -- and never checks that the Docker context actually exists.
+    #
+    # So: register a target on TEST-NET-1 (RFC 5737, permanently unroutable),
+    # delete the Docker context that `target add` created, and point a project
+    # at it. The project is classified remote and therefore announced, while
+    # `docker --context` fails instantly with "context not found" rather than
+    # opening an SSH connection. Measured end to end at 0s.
+    #
+    # Observed to fail against the unfixed code before being committed: at
+    # cfcde7c9^ (the commit before #1341) announce_remote_targets does not
+    # exist and `ldm list` prints no such line, so this check is not vacuous.
+    $announceDir = Join-Path $LDM_WORKSPACE $ANNOUNCE_TEST_PROJ
+    New-Item -ItemType Directory -Path (Join-Path $announceDir "files") -Force | Out-Null
+    $announceMeta = '{"tag": "2026.q1.7-lts", "container_name": "' + $ANNOUNCE_TEST_PROJ + '", "port": 8099, "db_type": "postgresql", "target": "' + $ANNOUNCE_TEST_NODE + '"}'
+    Set-Content -Path (Join-Path $announceDir "meta") -Value $announceMeta -Encoding ASCII
+
+    Log-AndRun "Target Add (TEST-NET-1 Remote Node)" $LDM_CMD "-y target add $ANNOUNCE_TEST_NODE --host 192.0.2.10"
+    Invoke-Cleanup "docker" "context rm $ANNOUNCE_TEST_NODE"
+
+    # Refuse to continue rather than hang: with the context still present, the
+    # `ldm list` below would dial 192.0.2.10 over SSH and block.
+    $ctxNames = & docker context ls --format '{{.Name}}' 2>$null
+    if (($ctxNames -join "`n") -split "`n" -contains $ANNOUNCE_TEST_NODE) {
+        Remove-Ldm1383Artifacts
+        throw "Could not remove Docker context '$ANNOUNCE_TEST_NODE'; refusing to continue because 'ldm list' would block on an SSH connect to 192.0.2.10."
+    }
+
+    $announceOut = (& $LDM_CMD list 2>&1) -join "`n"
+    Write-Host $announceOut
+    $announceOut | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+    if (($announceOut -match "a remote compute node") -and ($announceOut -match "$ANNOUNCE_TEST_PROJ -> $ANNOUNCE_TEST_NODE")) {
+        Write-Verdict "[SUCCESS] Remote compute node announced up front, naming project -> node (LDM-#1341)."
+    } else {
+        Remove-Ldm1383Artifacts
+        throw "'ldm list' did not announce the remote node before resolving it; expected a line naming '$ANNOUNCE_TEST_PROJ -> $ANNOUNCE_TEST_NODE'."
+    }
+
+    # LDM-#1093: --json is a machine-readable contract, so the announcement is
+    # deliberately suppressed there. Asserted because a future edit that moves
+    # the announcement earlier would silently corrupt every --json consumer.
+    $announceJsonOut = (& $LDM_CMD list --json 2>&1) -join "`n"
+    if ($announceJsonOut -match "a remote compute node") {
+        Remove-Ldm1383Artifacts
+        throw "The remote-node announcement leaked into 'ldm list --json'."
+    }
+    Write-Verdict "[SUCCESS] Announcement correctly suppressed under --json (LDM-#1093)."
+    Remove-Ldm1383Artifacts
+
+    Write-Host ">> Verifying Late Port Conflict Guidance (LDM-#1350)..."
+    #
+    # The late check in ComposerStage fires when a port written into the
+    # generated docker-compose.yml is taken by the time compose validation
+    # runs. #1383 assumed reproducing it meant racing the seed download that
+    # sits between the pre-flight check and this one. It does not: the
+    # pre-flight only covers the Liferay port and custom_containers, so any
+    # *other* compose-published port reaches the late check with no race.
+    #
+    # Kibana is the lever -- _build_kibana_service publishes a hardcoded 5601
+    # and the pre-flight never looks at it. Enabling it via meta costs nothing:
+    # the run dies at the port check, several stages before anything is
+    # started, so no Kibana container is created and no image is pulled.
+    #
+    # Note this cannot be done with the Liferay port instead. Under -y the
+    # pre-flight calls UI.die() on a taken port (handlers/base.py) and exits 1
+    # long before ComposerStage -- observed. The obvious "bind 8080 and run"
+    # approach asserts the wrong check.
+    #
+    # Observed to fail against the unfixed code: at d5749b38^ the same conflict
+    # prints "Please stop the service currently using port 5601" and no tip.
+    # The exit code was already 4 before #1350 (from #996), so the tip -- not
+    # the exit code -- is what makes this check non-vacuous. Both are asserted.
+    Invoke-Cleanup "docker" "rm -f $PORT_HOLDER"
+    & docker run -d --name $PORT_HOLDER -p "${KIBANA_HOST_PORT}:80" alpine sleep 300 *> $null
+
+    # `docker run -d` returns before the published port is necessarily
+    # accepting connections, and LDM's check_port() treats a refused connect as
+    # "free". Wait for the bind to actually be live rather than assuming it.
+    $portHeld = $false
+    foreach ($attempt in 1..30) {
+        & $VENV_PYTHON -c "import socket, sys; s = socket.socket(); s.settimeout(1); sys.exit(0 if s.connect_ex(('127.0.0.1', $KIBANA_HOST_PORT)) == 0 else 1)" *> $null
+        if ($LASTEXITCODE -eq 0) { $portHeld = $true; break }
+        Start-Sleep -Seconds 1
+    }
+    if (-not $portHeld) {
+        Remove-Ldm1383Artifacts
+        throw "Could not occupy port $KIBANA_HOST_PORT, so the LDM-#1350 check cannot run. Refusing to skip silently: an assertion that quietly stops running is worse than a red one."
+    }
+
+    $conflictDir = Join-Path $LDM_WORKSPACE $PORTCONFLICT_PROJ
+    New-Item -ItemType Directory -Path (Join-Path $conflictDir "files") -Force | Out-Null
+    $conflictMeta = '{"tag": "2026.q1.7-lts", "container_name": "' + $PORTCONFLICT_PROJ + '", "port": 8097, "db_type": "postgresql", "search_kibana_enabled": "true"}'
+    Set-Content -Path (Join-Path $conflictDir "meta") -Value $conflictMeta -Encoding ASCII
+
+    $conflictOut = (& $LDM_CMD -y run $conflictDir --no-wait 2>&1) -join "`n"
+    $conflictRc = $LASTEXITCODE
+    Write-Host $conflictOut
+    $conflictOut | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+
+    if ($conflictRc -ne 4) {
+        Remove-Ldm1383Artifacts
+        throw "Late port conflict exited $conflictRc, expected 4 (Orchestration/Deployment Error)."
+    }
+    if ($conflictOut -notmatch "Port conflict detected: Port $KIBANA_HOST_PORT") {
+        Remove-Ldm1383Artifacts
+        throw "No port-conflict message naming port $KIBANA_HOST_PORT."
+    }
+    if ($conflictOut -notmatch "the pre-flight check will select port \d+ instead") {
+        Remove-Ldm1383Artifacts
+        throw "The port-conflict tip did not name the port a re-run would pick (LDM-#1350). This is the regression #1350 fixed: advising the user to stop a process, which contradicts LDM's documented next-free-port behaviour."
+    }
+    Write-Verdict "[SUCCESS] Late port conflict exits 4 and names the port a re-run would pick (LDM-#1350)."
+    Remove-Ldm1383Artifacts
+
+    # LDM-#1345 (diagnose an SSH failure instead of dumping the connect blob)
+    # is deliberately NOT asserted here; the deferral stays tracked in #1398,
+    # the successor issue opened when #1383 was closed.
+    #
+    # Unlike the two checks above, its trigger cannot be faked: the diagnosis
+    # is produced from real `ssh`/`docker context` stderr, so provoking it
+    # means actually attempting and failing a connection. Every honest trigger
+    # has a duration this script does not own -- a TEST-NET-1 address fails via
+    # a connect timeout set by the host network stack, a `.invalid` hostname
+    # depends on the resolver, and "connection refused" depends on whether the
+    # machine happens to run sshd. An assertion whose runtime is decided by the
+    # network is the flaky release-gate check #1383 exists to avoid.
+    #
+    # It is covered by TestRemoteContextFailureDiagnosis in
+    # ldm_core/tests/test_utils.py, which drives the real diagnosis function
+    # with captured stderr from a genuine failure, plus an integration test
+    # over the real CommandRunner path that was confirmed to fail against the
+    # unfixed wiring.
 
     $remoteHost = $env:LDM_TEST_REMOTE_HOST
     if (-not $remoteHost) { $remoteHost = $env:LDM_REMOTE_TARGET }
