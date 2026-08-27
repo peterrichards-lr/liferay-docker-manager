@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -511,6 +512,24 @@ class BaseHandler:
                 UI.die("No available ports found.")
         return port
 
+    @staticmethod
+    def _project_uuid_at(path):
+        """Reads the stable UUID of the project rooted at `path`, or None.
+
+        None is a legitimate answer, not an error: a project written before
+        LDM-#1393 has no UUID until something writes its meta again. Callers
+        must treat an unknown identity as "cannot prove these are the same
+        project" and fall back to the pre-UUID behaviour.
+        """
+        from ldm_core.utils import project_meta_file, read_meta
+
+        meta_file = project_meta_file(path)
+        if meta_file is None:
+            return None
+        with contextlib.suppress(Exception):
+            return (read_meta(meta_file) or {}).get("uuid")
+        return None
+
     def check_registry_collisions(self, project_name, project_root, host_name=None):  # noqa: C901, PLR0912, PLR0915
         """Checks if another project with the same name or hostname exists at a different path."""
         from ldm_core.constants import REGISTRY_FILE
@@ -542,6 +561,27 @@ class BaseHandler:
             abs_current = str(current_root_path)
 
             if abs_existing != abs_current:
+                # LDM-#1393: the name is the user's key and can legitimately
+                # describe two different projects, so a name match at a new path
+                # is ambiguous on its own. The UUID resolves it: identical means
+                # this is the *same* project that has moved, which is not a
+                # collision at all -- the later register_project() call simply
+                # re-points the path. Only differing (or unknown) identities
+                # reach the conflict handling below.
+                existing_entry = registry.get(project_name)
+                existing_uuid = (
+                    existing_entry.get("uuid")
+                    if isinstance(existing_entry, dict)
+                    else None
+                )
+                incoming_uuid = self._project_uuid_at(current_root_path)
+                if existing_uuid and incoming_uuid and existing_uuid == incoming_uuid:
+                    UI.detail(
+                        f"Project '{project_name}' moved from {existing_path} to "
+                        f"{abs_current}; updating its registered path."
+                    )
+                    return
+
                 if not Path(abs_existing).exists():
                     UI.detail(
                         f"Stale registry entry found for project '{project_name}' at: {existing_path} (path no longer exists). Cleaning up..."
@@ -554,13 +594,24 @@ class BaseHandler:
                 else:
                     overwrite = getattr(self.args, "overwrite_registry", False)
                     if not overwrite:
-                        if self.non_interactive:
-                            overwrite = True
-                        else:
+                        # LDM-#1393: `non_interactive` used to set overwrite=True
+                        # here, silently unregistering the other project and
+                        # running `compose down -v` against it -- destroying its
+                        # volumes without telling anyone. `--overwrite-registry`
+                        # exists precisely to authorise that, and the error below
+                        # already names it, so automation must pass it explicitly
+                        # rather than have it inferred from `-y`.
+                        if not self.non_interactive:
+                            UI.warning(
+                                f"Two different projects are both called "
+                                f"'{project_name}':"
+                            )
+                            UI.raw(f"    already registered:  {existing_path}")
+                            UI.raw(f"    being registered:    {abs_current}")
                             ans = UI.ask(
-                                f"Project '{project_name}' is already registered at:\n"
-                                f"  {existing_path}\n"
-                                f"Unregister the old project and register at the new path? [y/N]",
+                                "Unregister the one already registered and use "
+                                "this path instead? Its containers and volumes "
+                                "will be destroyed. [y/N]",
                                 "N",
                             ).upper()
                             if ans == "Y":
@@ -649,12 +700,19 @@ class BaseHandler:
             with contextlib.suppress(Exception):
                 registry = json.loads(registry_path.read_text())
 
-        # We store both path and host for better collision detection
-        registry[project_name] = {
-            "path": str(Path(project_root).resolve()),
+        # We store both path and host for better collision detection, plus the
+        # project's UUID (LDM-#1393) -- the primary key that distinguishes a
+        # project that moved from a different project sharing its name.
+        resolved_root = Path(project_root).resolve()
+        entry = {
+            "path": str(resolved_root),
             "host": host_name,
             "last_seen": time.time(),
         }
+        project_uuid = self._project_uuid_at(resolved_root)
+        if project_uuid:
+            entry["uuid"] = project_uuid
+        registry[project_name] = entry
 
         try:
             safe_write_text(registry_path, json.dumps(registry, indent=4))
@@ -762,6 +820,38 @@ class BaseHandler:
             pass
         return read_meta(path)
 
+    @staticmethod
+    def _ensure_project_uuid(target, meta):
+        """Guarantees the project carries a stable internal UUID (LDM-#1393).
+
+        The UUID is LDM's primary key for a project. The project *name* is the
+        user's key -- unique, and what every command resolves by -- but it is
+        chosen by the user and can therefore collide, which is how registering a
+        project copied in from elsewhere could silently unregister an unrelated
+        one and tear down its volumes.
+
+        Deliberately never surfaced by default: users think in names.
+
+        It is read back from the existing meta file rather than taken only from
+        the passed dict, because callers routinely read a meta, build a fresh
+        dict from a subset of it, and write that back. Trusting the dict alone
+        would mint a *new* UUID on such a write and silently change the
+        project's identity -- worse than not having one.
+        """
+        if meta.get("uuid"):
+            return meta
+
+        from ldm_core.utils import read_meta
+
+        carried = None
+        if target.exists():
+            with contextlib.suppress(Exception):
+                carried = (read_meta(target) or {}).get("uuid")
+
+        meta = dict(meta)
+        meta["uuid"] = carried or str(uuid.uuid4())
+        return meta
+
     def write_meta(self, path, meta):
         """Writes project metadata, preserving the existing filename if possible."""
         from ldm_core.utils import resolve_meta_file_path, safe_mkdir, write_meta
@@ -773,7 +863,9 @@ class BaseHandler:
         try:
             target = resolve_meta_file_path(path)
             safe_mkdir(target.parent, parents=True, exist_ok=True)
-            write_meta(target, meta)
+            # LDM-#1393: every write goes through here, so this is also where an
+            # existing project without a UUID gets one, on first touch.
+            write_meta(target, self._ensure_project_uuid(target, meta))
         except Exception:
             pass
 
