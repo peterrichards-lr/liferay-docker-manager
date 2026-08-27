@@ -316,6 +316,52 @@ function Write-Verdict {
     $Message | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
 }
 
+function Test-DockerDiskSpace {
+    # LDM-#1430: a single up-front check cannot cover a run whose disk usage
+    # peaks late. Between the pre-flight and the snapshot the run pulls two
+    # large images, starts the stack, deploys a bundle and generates logs -- so
+    # the headroom at the check says little about the headroom at peak. Hence a
+    # function, called again before the snapshot phase.
+    #
+    # Asked of DOCKER, not the host: on Docker Desktop the engine's storage
+    # lives in a VM with its own, far smaller disk, so Get-PSDrive would pass on
+    # exactly the machines most likely to fail.
+    #
+    # Returns $true when there is room, $false when there is not. The caller
+    # decides whether that is fatal.
+    param([int]$NeedGb, [string]$Label)
+
+    Write-Host "[INFO]  Checking Docker has room $Label (need $NeedGb GB)..."
+    $dfOut = docker run --rm alpine df -P -k / 2>$null
+    $freeKb = $null
+    if ($dfOut) {
+        $line = ($dfOut | Select-Object -Last 1)
+        $fields = ($line -split '\s+') | Where-Object { $_ }
+        if ($fields.Count -ge 4) { $freeKb = [int64]$fields[3] }
+    }
+    if (-not $freeKb) {
+        Write-Host "[WARN]  Could not determine Docker's free space; continuing without the check." -ForegroundColor Yellow
+        return $true
+    }
+
+    $freeGb = [math]::Floor($freeKb / 1024 / 1024)
+    if ($freeGb -ge $NeedGb) {
+        Write-Host "[SUCCESS] Docker has $freeGb GB free."
+        return $true
+    }
+
+    Write-Verdict "[ERROR] Not enough disk space $Label."
+    Write-Verdict "        Docker has $freeGb GB free; this needs about $NeedGb GB."
+    Write-Verdict "        (The host may report far more -- Docker's storage is inside its own VM.)"
+    Write-Verdict ""
+    Write-Verdict "        Free some space, then re-run:"
+    Write-Verdict "          ldm prune --seeds --samples     # reclaim LDM seed and sample archives"
+    Write-Verdict "          ldm prune --all                 # also images, volumes and build cache"
+    Write-Verdict "          docker system prune -a          # everything Docker considers unused"
+    Write-Verdict ""
+    return $false
+}
+
 function Get-PortHolderDiagnostic {
     # LDM-#1428: name what is holding a port when a port check cannot proceed.
     #
@@ -415,7 +461,12 @@ try {
     # machine: host 109.2 GB free, Docker VM 12.5 GB. Same reasoning as
     # Doctor._check_absolute_disk_space (LDM-#1095); using `docker run alpine
     # df` also keeps this identical to the .sh implementation.
-    $minDiskGb = if ($env:LDM_VERIFY_MIN_DISK_GB) { [int]$env:LDM_VERIFY_MIN_DISK_GB } else { 10 }
+    # LDM-#1430: was 10, and the gate is -lt, so exactly 10 GB passed -- then the
+    # run died mid-snapshot with ENOSPC on a machine that had just been pruned.
+    # The images alone are ~7.5 GB before the running stack grows, and the
+    # snapshot then writes a database dump plus a tar of every payload directory
+    # on top of that. 10 GB covered the pull and nothing after it.
+    $minDiskGb = if ($env:LDM_VERIFY_MIN_DISK_GB) { [int]$env:LDM_VERIFY_MIN_DISK_GB } else { 15 }
     # LDM-#1419: clear leftovers from a PREVIOUS run before starting. The port
     # holder is named per-run, so only that run's cleanup removes it; a run
     # killed mid-flight leaves a container publishing 5601 that no later run
@@ -437,31 +488,8 @@ try {
     # it when absent and only stops it afterwards.
     $dbGlobalPreexisted = [bool](docker ps -aq --filter "name=^liferay-db-global$" 2>$null)
 
-    Write-Host "[INFO]  Checking Docker has room to finish (need $minDiskGb GB)..."
-    $dfOut = docker run --rm alpine df -P -k / 2>$null
-    $freeKb = $null
-    if ($dfOut) {
-        $line = ($dfOut | Select-Object -Last 1)
-        $fields = ($line -split '\s+') | Where-Object { $_ }
-        if ($fields.Count -ge 4) { $freeKb = [int64]$fields[3] }
-    }
-    if (-not $freeKb) {
-        Write-Host "[WARN]  Could not determine Docker's free space; continuing without the check." -ForegroundColor Yellow
-    } else {
-        $freeGb = [math]::Floor($freeKb / 1024 / 1024)
-        if ($freeGb -lt $minDiskGb) {
-            Write-Host "[ERROR] Not enough disk space for a verification run." -ForegroundColor Red
-            Write-Host "        Docker has $freeGb GB free; this run needs about $minDiskGb GB." -ForegroundColor Red
-            Write-Host "        (The host may report far more -- Docker's storage is inside its own VM.)" -ForegroundColor Red
-            Write-Host ""
-            Write-Host "        Free some space, then re-run:" -ForegroundColor Yellow
-            Write-Host "          ldm prune --seeds --samples     # reclaim LDM seed and sample archives"
-            Write-Host "          ldm prune --all                 # also images, volumes and build cache"
-            Write-Host "          docker system prune -a          # everything Docker considers unused"
-            Write-Host ""
-            throw "Insufficient Docker disk space: $freeGb GB free, need $minDiskGb GB. Refusing before pulling anything, so no half-finished report is written."
-        }
-        Write-Host "[SUCCESS] Docker has $freeGb GB free."
+    if (-not (Test-DockerDiskSpace -NeedGb $minDiskGb -Label "to finish")) {
+        throw "Insufficient Docker disk space, need $minDiskGb GB. Refusing before pulling anything, so no half-finished report is written."
     }
 
     # Pre-pull large images to avoid containerd lease timeouts during the timed E2E run
@@ -897,6 +925,18 @@ zf.close()
     Write-Host ""
 
     # Integrity
+    # LDM-#1430: the snapshot is the disk-hungry phase -- a database dump plus a
+    # tar of every payload directory, on top of two large images and a running
+    # stack. This is where the OrbStack run died with ENOSPC after passing the
+    # up-front check. Failing at a named check beats failing inside tar; 5 GB is
+    # the headroom the snapshot itself needs, not the run total.
+    if (-not (Test-DockerDiskSpace -NeedGb 5 -Label "for the snapshot")) {
+        Write-Verdict "[ERROR] Refusing to start the snapshot without room to finish it."
+        Write-Verdict "        Continuing would fail inside tar, and a snapshot that cannot"
+        Write-Verdict "        write its payload is not a snapshot (see LDM-#1429)."
+        throw "Insufficient Docker disk space for the snapshot phase."
+    }
+
     Log-AndRun "Creating Snapshot" $LDM_CMD "-y snapshot --name Binary-Verify"
     $latestSnapshotDir = (Get-ChildItem snapshots | Sort LastWriteTime -Desc | Select -First 1).FullName
     $shaFile = Join-Path $latestSnapshotDir "files.tar.gz.sha256"

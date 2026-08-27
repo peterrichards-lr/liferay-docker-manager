@@ -426,31 +426,55 @@ fi
 # and using `docker run alpine df` keeps the .sh and .ps1 implementations
 # identical rather than needing two host-specific ones.
 #
-# Provisional threshold: the images alone are ~7.5 GB (liferay/dxp ~5.3,
-# postgres ~0.7, elasticsearch ~1.5) before the running stack grows. Override
-# with LDM_VERIFY_MIN_DISK_GB when you know better than this default.
-MIN_DISK_GB="${LDM_VERIFY_MIN_DISK_GB:-10}"
-echo "ℹ  Checking Docker has room to finish (need ${MIN_DISK_GB} GB)..."
-DISK_FREE_KB=$(docker run --rm alpine df -P -k / 2>/dev/null | awk 'NR==2 {print $4}')
-if [ -z "$DISK_FREE_KB" ]; then
-    echo "⚠️  Could not determine Docker's free space; continuing without the check." | tee -a "$RESULTS_FILE_TMP"
-else
-    DISK_FREE_GB=$((DISK_FREE_KB / 1024 / 1024))
-    if [ "$DISK_FREE_GB" -lt "$MIN_DISK_GB" ]; then
-        echo "❌ ERROR: not enough disk space for a verification run." | tee -a "$RESULTS_FILE_TMP"
-        echo "   Docker has ${DISK_FREE_GB} GB free; this run needs about ${MIN_DISK_GB} GB." | tee -a "$RESULTS_FILE_TMP"
-        echo "   (The host may report far more -- Docker's storage is inside its own VM.)" | tee -a "$RESULTS_FILE_TMP"
-        echo "" | tee -a "$RESULTS_FILE_TMP"
-        echo "   Free some space, then re-run:" | tee -a "$RESULTS_FILE_TMP"
-        echo "     ldm prune --seeds --samples     # reclaim LDM seed and sample archives" | tee -a "$RESULTS_FILE_TMP"
-        echo "     ldm prune --all                 # also images, volumes and build cache" | tee -a "$RESULTS_FILE_TMP"
-        echo "     docker system prune -a          # everything Docker considers unused" | tee -a "$RESULTS_FILE_TMP"
-        echo "" | tee -a "$RESULTS_FILE_TMP"
-        echo "   Refusing before pulling anything, so no half-finished report is written." | tee -a "$RESULTS_FILE_TMP"
-        exit 1
+# LDM-#1430: the floor was 10 GB and the gate is `-lt`, so exactly 10 GB passed
+# -- and then the run died mid-snapshot with ENOSPC on a machine that had just
+# been pruned. The images alone are ~7.5 GB (liferay/dxp ~5.3, postgres ~0.7,
+# elasticsearch ~1.5) before the running stack grows, and the snapshot then
+# writes a database dump plus a tar of every payload directory on top of that.
+# 10 GB covered the pull and nothing after it.
+#
+# Override with LDM_VERIFY_MIN_DISK_GB when you know better than this default.
+MIN_DISK_GB="${LDM_VERIFY_MIN_DISK_GB:-15}"
+
+# LDM-#1430: a single up-front check cannot cover a run whose disk usage peaks
+# late. Between the pre-flight and the snapshot the run pulls two large images,
+# starts the stack, deploys a bundle and generates logs -- so the headroom at
+# the check says little about the headroom at peak. This is therefore a
+# function, called again before the snapshot phase.
+#
+# $1 = GB required, $2 = label for the message, $3 = "fatal" or "warn"
+check_docker_disk() {
+    local need="$1" label="$2" mode="${3:-fatal}"
+    echo "ℹ  Checking Docker has room ${label} (need ${need} GB)..."
+    local free_kb free_gb
+    free_kb=$(docker run --rm alpine df -P -k / 2>/dev/null | awk 'NR==2 {print $4}')
+    if [ -z "$free_kb" ]; then
+        echo "⚠️  Could not determine Docker's free space; continuing without the check." | tee -a "$RESULTS_FILE_TMP"
+        return 0
     fi
-    echo "✅ Docker has ${DISK_FREE_GB} GB free."
-fi
+    free_gb=$((free_kb / 1024 / 1024))
+    if [ "$free_gb" -ge "$need" ]; then
+        echo "✅ Docker has ${free_gb} GB free."
+        return 0
+    fi
+
+    echo "❌ ERROR: not enough disk space ${label}." | tee -a "$RESULTS_FILE_TMP"
+    echo "   Docker has ${free_gb} GB free; this needs about ${need} GB." | tee -a "$RESULTS_FILE_TMP"
+    echo "   (The host may report far more -- Docker's storage is inside its own VM.)" | tee -a "$RESULTS_FILE_TMP"
+    echo "" | tee -a "$RESULTS_FILE_TMP"
+    echo "   Free some space, then re-run:" | tee -a "$RESULTS_FILE_TMP"
+    echo "     ldm prune --seeds --samples     # reclaim LDM seed and sample archives" | tee -a "$RESULTS_FILE_TMP"
+    echo "     ldm prune --all                 # also images, volumes and build cache" | tee -a "$RESULTS_FILE_TMP"
+    echo "     docker system prune -a          # everything Docker considers unused" | tee -a "$RESULTS_FILE_TMP"
+    echo "" | tee -a "$RESULTS_FILE_TMP"
+    if [ "$mode" = "warn" ]; then
+        return 1
+    fi
+    echo "   Refusing before pulling anything, so no half-finished report is written." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+}
+
+check_docker_disk "$MIN_DISK_GB" "to finish"
 
 # Pre-pull large images to avoid containerd lease timeouts during the timed E2E run
 echo "ℹ  Pre-pulling required Docker images..."
@@ -917,6 +941,18 @@ fi
 echo ""
 
 # Integrity
+# LDM-#1430: the snapshot is the disk-hungry phase -- a database dump plus a tar
+# of every payload directory, written uncompressed-in-flight on top of two large
+# images and a running stack. This is where the OrbStack run died with ENOSPC
+# after passing the up-front check. Failing at a named check beats failing
+# inside tar; 5 GB is the headroom the snapshot itself needs, not the run total.
+if ! check_docker_disk 5 "for the snapshot" warn; then
+    echo "❌ ERROR: refusing to start the snapshot without room to finish it." | tee -a "$RESULTS_FILE_TMP"
+    echo "   Continuing would fail inside tar, and a snapshot that cannot write" | tee -a "$RESULTS_FILE_TMP"
+    echo "   its payload is not a snapshot (see LDM-#1429)." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
 log_and_run "Creating Snapshot" "$LDM_CMD" -y snapshot --name "Binary-Verify"
 LATEST_DIR=$(find snapshots -maxdepth 1 -mindepth 1 -type d -print0 | xargs -0 ls -td | head -n 1)
 SHA_FILE="${LATEST_DIR}/files.tar.gz.sha256"

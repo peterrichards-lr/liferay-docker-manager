@@ -260,7 +260,13 @@ detect a real conflict" from "the fixture never held the port".
 ### Disk space pre-flight
 
 Both scripts refuse to start unless Docker has room to finish (LDM-#1406). The
-default floor is **10 GB**; override with `LDM_VERIFY_MIN_DISK_GB`.
+default floor is **15 GB**; override with `LDM_VERIFY_MIN_DISK_GB`.
+
+The floor was **10 GB** until LDM-#1430, and the gate is `-lt`, so a machine
+with exactly 10 GB passed — then died mid-snapshot with `ENOSPC`, on a run where
+`ldm prune` had reclaimed 2.957 GB immediately beforehand. The images alone are
+~7.5 GB (`liferay/dxp` ~5.3, `postgres` ~0.7, `elasticsearch` ~1.5) before the
+running stack grows; 10 GB covered the pull and nothing after it.
 
 The check asks **Docker**, not the host:
 
@@ -280,6 +286,15 @@ A host-side check would have waved that run through. This is the same reasoning
 as `Doctor._check_absolute_disk_space` (LDM-#1095), and using a throwaway
 container keeps the `.sh` and `.ps1` implementations identical rather than
 needing two host-specific ones.
+
+**The check runs twice** (LDM-#1430). A single up-front check cannot cover a run
+whose disk usage peaks late: between the pre-flight and the snapshot the run
+pulls two large images, starts the stack, deploys a bundle and generates logs,
+so the headroom at the check says little about the headroom at peak. The second
+check runs immediately before the snapshot — the disk-hungry phase, writing a
+database dump plus a tar of every payload directory — and needs 5 GB of
+remaining headroom. Failing at a named check beats failing inside `tar`, and a
+snapshot that cannot write its payload is not a snapshot (LDM-#1429).
 
 The run refuses **before pulling anything**, so a machine that cannot finish
 never produces a half-written report. That matters because a report which failed
