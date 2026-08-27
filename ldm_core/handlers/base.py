@@ -359,6 +359,35 @@ class BaseHandler:
             UI.error(f"Failed to update hosts file: {e}")
             return False
 
+    def _list_hosts_entries(self):
+        """Returns the hostnames LDM manages in the system hosts file (#1416).
+
+        Read-only and unprivileged -- the hosts file is world-readable, so the
+        caller can show the user what is about to be removed *before* asking for
+        sudo. Previously nothing listed them, so an `ldm system prune --all`
+        surfaced only an unexplained `Password:` prompt and the entries were
+        gone with no record of what they had been.
+        """
+        hosts_path = (
+            Path(r"C:\Windows\System32\drivers\etc\hosts")
+            if platform.system().lower() == "windows"
+            else Path("/etc/hosts")
+        )
+        found = []
+        try:
+            for line in hosts_path.read_text(errors="ignore").splitlines():
+                if self.LDM_HOST_TAG not in line or line.strip().startswith("#"):
+                    continue
+                parts = line.split()
+                # `<ip> <hostname> # [LDM]` -- take the hostnames between them.
+                for token in parts[1:]:
+                    if token.startswith("#"):
+                        break
+                    found.append(token)
+        except Exception:  # nosec B110 -- an unreadable hosts file is not fatal
+            return []
+        return found
+
     def _remove_hosts_entries(self, hostnames=None, all_ldm=False):
         """Removes LDM-tagged entries from the system hosts file."""
         if not hostnames and not all_ldm:
@@ -412,12 +441,15 @@ class BaseHandler:
             try:
                 # Use sudo sed to surgically remove lines
                 sudo_prefix = ["sudo", "-n"] if self.non_interactive else ["sudo"]
-                cmd = [
-                    *sudo_prefix,
-                    "sed",
-                    "-i",
-                    ".bak" if platform.system().lower() == "darwin" else "",
-                ]
+                # LDM-#1416: BSD sed (macOS) takes the backup suffix as a
+                # separate argument; GNU sed (Linux) requires it attached, and
+                # the previous `else ""` appended an *empty* argument that GNU
+                # sed reads as the script expression. Both now write a backup,
+                # so a mistaken removal is always recoverable.
+                if platform.system().lower() == "darwin":
+                    cmd = [*sudo_prefix, "sed", "-i", ".ldm.bak"]
+                else:
+                    cmd = [*sudo_prefix, "sed", "-i.ldm.bak"]
 
                 # ... remaining cmd logic ...
                 UI.detail(f"Command: {' '.join(cmd)}")

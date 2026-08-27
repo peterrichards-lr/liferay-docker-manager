@@ -1,4 +1,5 @@
 import json
+import typing
 import unittest
 from pathlib import Path
 from typing import Any
@@ -2087,3 +2088,80 @@ class TestInfoReportsTheProjectId(unittest.TestCase):
         nothing rather than a blank field."""
         out = self._run({})
         self.assertNotIn("ID:", out)
+
+
+class TestPruneHostsGuard(unittest.TestCase):
+    """LDM-#1416: `--all` both enabled the hosts wipe and skipped its own
+    confirmation, because `prune_all or (...)` short-circuits before UI.confirm
+    is evaluated. A maintainer lost 15 entries -- hostnames for real
+    client-extension projects -- to an unexplained `Password:` prompt with no
+    list and no question.
+
+    `--all` means "prune all categories", not "skip all confirmations".
+    """
+
+    ENTRIES: typing.ClassVar[list[str]] = ["ldm.demo", "aica.local", "forge.demo"]
+
+    def _run(self, *, prune_all, confirm_answer, non_interactive=False):
+        from ldm_core.diagnostics import prune as prune_mod
+
+        handler = MagicMock()
+        handler.manager.dry_run = False
+        handler.manager.non_interactive = non_interactive
+        handler.manager.args = MagicMock(
+            all=prune_all, clean_hosts=True, seeds=False, samples=False, images=False
+        )
+        handler.manager.target = None
+        handler.manager.find_dxp_roots.return_value = []
+        handler.manager._list_hosts_entries.return_value = list(self.ENTRIES)
+
+        shown = []
+        with (
+            patch.object(prune_mod, "run_command", return_value=""),
+            patch.object(prune_mod.UI, "confirm", return_value=confirm_answer) as conf,
+            patch.object(
+                prune_mod.UI, "raw", side_effect=lambda m="": shown.append(str(m))
+            ),
+            patch.object(
+                prune_mod.UI, "warning", side_effect=lambda m: shown.append(str(m))
+            ),
+            patch.object(prune_mod.UI, "detail"),
+            patch.object(prune_mod.UI, "info"),
+            patch.object(prune_mod.UI, "heading"),
+            patch.object(prune_mod.UI, "success"),
+            patch.object(prune_mod, "_orphaned_ldm_volumes", return_value=[]),
+        ):
+            prune_mod.run_prune(handler)
+        return handler, conf, "\n".join(shown)
+
+    def test_all_no_longer_skips_the_confirmation(self):
+        """The regression: --all reached the removal without ever asking."""
+        handler, confirm, _ = self._run(prune_all=True, confirm_answer=False)
+        confirm.assert_called()
+        handler.manager._remove_hosts_entries.assert_not_called()
+
+    def test_declining_leaves_the_hosts_file_alone(self):
+        handler, _, _ = self._run(prune_all=False, confirm_answer=False)
+        handler.manager._remove_hosts_entries.assert_not_called()
+
+    def test_accepting_still_removes_them(self):
+        """Refusing by default must not remove the capability."""
+        handler, _, _ = self._run(prune_all=True, confirm_answer=True)
+        handler.manager._remove_hosts_entries.assert_called_once_with(all_ldm=True)
+
+    def test_the_entries_are_listed_before_the_sudo_prompt(self):
+        """The user cannot judge the request without seeing it -- and the sudo
+        prompt arrives with no explanation otherwise."""
+        _, _, shown = self._run(prune_all=True, confirm_answer=False)
+        for host in self.ENTRIES:
+            self.assertIn(host, shown, f"{host} was not shown before removal")
+        self.assertIn("sudo", shown.lower())
+        self.assertIn("reclaims no disk space", shown.lower())
+
+    def test_y_still_means_do_not_ask_me(self):
+        """-y is how a user opts out of prompts; --all is not."""
+        handler, confirm, _ = self._run(
+            prune_all=True, confirm_answer=False, non_interactive=True
+        )
+        confirm.assert_not_called()
+        handler.manager._remove_hosts_entries.assert_called_once_with(all_ldm=True)
