@@ -599,11 +599,19 @@ try {
         Remove-Ldm1383Artifacts
         throw "No port-conflict message naming port $KIBANA_HOST_PORT."
     }
-    if ($conflictOut -notmatch "the pre-flight check will select port \d+ instead") {
+    # LDM-#1397: kibana publishes a literal 5601 in the compose builder, so the
+    # correct tip is NOT the next-free-port promise -- a re-run regenerates the
+    # same literal and fails identically. Asserting the promise would re-enshrine
+    # the bug #1397 fixed.
+    if ($conflictOut -notmatch "has a fixed port") {
         Remove-Ldm1383Artifacts
-        throw "The port-conflict tip did not name the port a re-run would pick (LDM-#1350). This is the regression #1350 fixed: advising the user to stop a process, which contradicts LDM's documented next-free-port behaviour."
+        throw "The tip did not say the port is fixed (LDM-#1397). kibana's port is a literal in the compose builder, so a re-run cannot move it; promising one sends the user round a loop that cannot terminate."
     }
-    Write-Verdict "[SUCCESS] Late port conflict exits 4 and names the port a re-run would pick (LDM-#1350)."
+    if ($conflictOut -match "the pre-flight check will select port \d+ instead") {
+        Remove-Ldm1383Artifacts
+        throw "The tip promised a pre-flight re-select for a fixed-port service (LDM-#1397)."
+    }
+    Write-Verdict "[SUCCESS] Late port conflict exits 4 and gives honest advice for a fixed-port service (LDM-#1350/#1397)."
     Remove-Ldm1383Artifacts
 
     # LDM-#1345 (diagnose an SSH failure instead of dumping the connect blob)
@@ -1511,6 +1519,118 @@ assert db_part == db_part.lower(), (
         throw "Shared database mode verification failed."
     }
 
+
+    Write-Host ">> Verifying 'ldm db start' / 'ldm db stop' (LDM-#1400)..."
+    # Dead in every release up to v2.18.0-pre.4: both built
+    # `docker compose -f infra-compose.yml start db`, but that file defines only
+    # `traefik` -- there is no `db` service, and the global database is created
+    # by a bare `docker run`. It matters because cmd_reset_admin tells shared-DB
+    # users to run `ldm db start`, so LDM directed people into a command that
+    # could not work.
+    $dbGlobal = "liferay-db-global"
+    $dbCmdOk = $true
+
+    & $LDM_CMD -y db start *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] 'ldm db start' exited non-zero (LDM-#1400)." -ForegroundColor Red
+        $dbCmdOk = $false
+    } else {
+        $running = docker ps --filter "name=^$dbGlobal$" --format "{{.Names}}"
+        if ($running -notmatch $dbGlobal) {
+            Write-Host "[ERROR] 'ldm db start' returned 0 but $dbGlobal is not running. A silent success is what made the original breakage hard to notice." -ForegroundColor Red
+            $dbCmdOk = $false
+        }
+    }
+
+    # Idempotence: a second start must succeed and must say something. A command
+    # that succeeds silently is indistinguishable from one that did nothing.
+    if ($dbCmdOk) {
+        $dbAgain = & $LDM_CMD -y db start 2>&1 | Out-String
+        if ($dbAgain -notmatch "already running") {
+            Write-Host "[ERROR] A second 'ldm db start' did not report the container was already running." -ForegroundColor Red
+            $dbCmdOk = $false
+        }
+    }
+
+    if ($dbCmdOk) {
+        & $LDM_CMD -y db stop *> $null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[ERROR] 'ldm db stop' exited non-zero (LDM-#1400)." -ForegroundColor Red
+            $dbCmdOk = $false
+        } else {
+            $stillUp = docker ps --filter "name=^$dbGlobal$" --format "{{.Names}}"
+            if ($stillUp -match $dbGlobal) {
+                Write-Host "[ERROR] 'ldm db stop' returned 0 but $dbGlobal is still running." -ForegroundColor Red
+                $dbCmdOk = $false
+            }
+        }
+    }
+
+    if ($dbCmdOk) {
+        Write-Verdict "[SUCCESS] 'ldm db start'/'db stop' drive the real global container, idempotently (LDM-#1400)."
+    } else {
+        throw "Shared database start/stop verification failed."
+    }
+
+    Write-Host ">> Verifying project UUID ownership labels (LDM-#1393 / #1395)..."
+    # Ownership was labelled by NAME, which is only as stable as the name: a
+    # renamed project's volumes keep the old label and belong to nothing, so
+    # `ldm prune` reports live resources as orphans. Artefact inspection only.
+    $uuidWorkdir = Join-Path $env:LDM_WORKSPACE "uuidcheck-$TEST_PORT"
+    Remove-Item -Recurse -Force $uuidWorkdir -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path $uuidWorkdir -Force | Out-Null
+    $uuidOk = $true
+
+    Invoke-Cleanup $LDM_CMD "-y rm UuidCheck --delete"
+
+    Push-Location $uuidWorkdir
+    try {
+        & $LDM_CMD -y init UuidCheck --no-up --no-seed *> $null
+        $uuidRc = $LASTEXITCODE
+    } finally {
+        Pop-Location
+    }
+
+    if ($uuidRc -ne 0) {
+        Write-Host "[ERROR] 'ldm init' failed; the LDM-#1393 check cannot run." -ForegroundColor Red
+        $uuidOk = $false
+    } else {
+        $uuidDir = Join-Path $uuidWorkdir "UuidCheck"
+        & $VENV_PYTHON -c @"
+import json, sys
+import yaml
+
+meta_path, compose_path = sys.argv[1:3]
+label = 'com.liferay.ldm.project.uuid'
+
+want = json.load(open(meta_path, encoding='utf-8')).get('uuid', '')
+assert want, 'the project meta carries no uuid (#1393)'
+
+compose = yaml.safe_load(open(compose_path, encoding='utf-8')) or {}
+
+for name, svc in (compose.get('services') or {}).items():
+    labels = [str(x) for x in (svc.get('labels') or [])]
+    assert '%s=%s' % (label, want) in labels, (
+        'service %r is not labelled with the project uuid -- prune matches owners '
+        'by name, so a renamed project would look like an orphan (#1395)' % (name,)
+    )
+
+for vname, vdef in (compose.get('volumes') or {}).items():
+    got = ((vdef or {}).get('labels') or {}).get(label)
+    assert got == want, (
+        'volume %r carries %r, expected the project uuid (#1395)' % (vname, got)
+    )
+"@ (Join-Path $uuidDir "meta") (Join-Path $uuidDir "docker-compose.yml")
+        if ($LASTEXITCODE -ne 0) { $uuidOk = $false }
+    }
+
+    Remove-Item -Recurse -Force $uuidWorkdir -ErrorAction SilentlyContinue
+
+    if ($uuidOk) {
+        Write-Verdict "[SUCCESS] Every service and volume carries the project UUID ownership label (LDM-#1393/#1395)."
+    } else {
+        throw "Project UUID label verification failed."
+    }
 
     Write-Host ">> Verifying shared search mode (#1362 / #1363 / #1353)..."
     # Derivable from `init --no-up --no-seed`: no boot, nothing outside this
