@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 import requests
 
 from ldm_core.utils import (
@@ -448,6 +449,7 @@ class TestLdmHomeOverride(unittest.TestCase):
 
     @patch("ldm_core.utils.run_command")
     @patch("ldm_core.utils.platform.system")
+    @pytest.mark.exercises_docker_helper
     def test_reclaim_volume_permissions_dynamic_uid_gid(self, mock_system, mock_run):
         from ldm_core.utils import reclaim_volume_permissions
 
@@ -826,6 +828,7 @@ class TestUpdateChecks(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 safe_mkdir("/fake/path")
 
+    @pytest.mark.exercises_docker_helper
     def test_reclaim_volume_permissions(self):
         from ldm_core.utils import reclaim_volume_permissions
 
@@ -902,6 +905,7 @@ class TestUpdateChecks(unittest.TestCase):
                 any("Error Details (Safe):" in call for call in print_calls)
             )
 
+    @pytest.mark.exercises_docker_helper
     def test_reclaim_volume_permissions_timeout(self):
         import subprocess
 

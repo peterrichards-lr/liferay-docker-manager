@@ -157,6 +157,28 @@ def stub_docker_environment_probes(request, monkeypatch):
         lambda: "/var/run/docker.sock",
     )
 
+    # `reclaim_volume_permissions()` mutates the filesystem via
+    # `docker run --rm ... alpine chown/chmod`, and is reached from ~20 call
+    # sites across snapshot/, pipelines/ and handlers/.
+    #
+    # It is gated behind `platform.system() == "linux"` (pipelines/run.py:1818),
+    # so it is invisible to a macOS measurement and fires on every Linux CI run
+    # -- three tests reached the daemon through it while this suite measured
+    # zero. A platform-gated Docker call is the one offender a single-platform
+    # baseline cannot see; see docs/TESTING.md.
+    #
+    # Every call site imports it *inside* the function, so the name is
+    # re-resolved from `ldm_core.utils` at call time -- patching the importing
+    # module would do nothing, and patching the source module reaches all of
+    # them. True is the success path callers branch on.
+    if not request.node.get_closest_marker("exercises_docker_helper"):
+        _patch_in_every_importer(
+            monkeypatch,
+            "ldm_core.utils",
+            "reclaim_volume_permissions",
+            lambda *_a, **_k: True,
+        )
+
     # DockerService is LDM's Docker facade: every static on it
     # (is_running/exists/get_status/inspect/stop/rm/start/logs/exec/...) funnels
     # through the module-scope `run_command` imported in docker_service.py.
