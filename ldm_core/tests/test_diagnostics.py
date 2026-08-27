@@ -1972,3 +1972,69 @@ class TestInfoReportsEffectiveNames(unittest.TestCase):
         out = self._run(extra_meta={"database_mode": "isolated"})["out"]
         self.assertIn(f"{self.SAFE}-db", out)
         self.assertNotIn("liferay-db-global", out)
+
+
+class TestPruneRespectsProjectUuid(unittest.TestCase):
+    """LDM-#1395: a renamed project keeps its ORIGINAL name on its Docker labels.
+
+    Matching owners by name alone therefore reports a live, renamed project's
+    containers as orphans and offers them for deletion. The UUID is stable across
+    a rename, so it is the reliable owner check.
+    """
+
+    UUID = "1234abcd-0000-4444-8888-99990000ffff"
+
+    def _run(self, container_label_name, container_label_uuid, project_uuid):
+        """Drives run_prune with one container and one live project."""
+        from ldm_core.diagnostics import prune as prune_mod
+
+        handler = MagicMock()
+        handler.manager.dry_run = True
+        handler.manager.args = MagicMock(
+            all=False, clean_hosts=False, seeds=False, samples=False, images=False
+        )
+        handler.manager.target = None
+        handler.manager.find_dxp_roots.return_value = [{"path": Path("/tmp/renamed")}]
+        handler.manager.read_meta.return_value = {
+            "container_name": "new-name",
+            "uuid": project_uuid,
+        }
+
+        def fake_run(cmd, *_a, **_k):
+            joined = " ".join(str(c) for c in cmd)
+            if (
+                "ps" in cmd
+                and "--filter" in joined
+                and "label=com.liferay.ldm.project" in joined
+            ):
+                return f"old-name|{container_label_name}|{container_label_uuid}"
+            return ""
+
+        reported = []
+        with (
+            patch.object(prune_mod, "run_command", side_effect=fake_run),
+            patch.object(
+                prune_mod.UI, "detail", side_effect=lambda m: reported.append(str(m))
+            ),
+            patch.object(prune_mod.UI, "raw"),
+            patch.object(prune_mod.UI, "success"),
+            patch.object(prune_mod.UI, "heading"),
+            patch.object(prune_mod.UI, "warning"),
+            patch.object(prune_mod.UI, "info"),
+            patch.object(prune_mod, "_orphaned_ldm_volumes", return_value=[]),
+        ):
+            prune_mod.run_prune(handler)
+        return " ".join(reported)
+
+    def test_a_renamed_projects_containers_are_not_orphans(self):
+        """The container still says 'old-name'; the project is now 'new-name'."""
+        out = self._run("old-name", self.UUID, self.UUID)
+        self.assertIn("No orphaned containers found", out)
+        self.assertNotIn(
+            "Found 1 orphaned", out, "a live renamed project must not be pruned"
+        )
+
+    def test_a_genuinely_dead_projects_containers_still_are(self):
+        """The safeguard must not blind prune to real orphans."""
+        out = self._run("gone-project", "some-other-uuid", self.UUID)
+        self.assertIn("Found 1 orphaned containers", out)
