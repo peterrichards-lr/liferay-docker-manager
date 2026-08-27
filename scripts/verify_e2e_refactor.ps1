@@ -316,6 +316,76 @@ function Write-Verdict {
     $Message | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
 }
 
+function Get-PortHolderDiagnostic {
+    # LDM-#1428: name what is holding a port when a port check cannot proceed.
+    #
+    # Two sources are queried, and BOTH are needed, because neither can answer
+    # the question alone:
+    #
+    #   docker ps --filter publish=   is the only thing that names a CONTAINER.
+    #   Get-NetTCPConnection          is the only thing that sees a NON-container
+    #                                 holder (a stray service, an unrelated tunnel).
+    #
+    # The native lookup never names the container, because a published port is
+    # held on the host by the runtime's forwarder: com.docker.backend on Docker
+    # Desktop, wslrelay/vpnkit under WSL2, docker-proxy on native Linux, and
+    # ssh on Colima/Lima. Reporting that alone sends the operator chasing a
+    # process that is working perfectly -- so a known forwarder is labelled as
+    # such and the reader is pointed back at the Docker line.
+    param([int]$Port)
+
+    Write-Verdict "[DIAG] What is holding port ${Port}?"
+
+    $containers = @()
+    try {
+        $raw = & docker ps --filter "publish=$Port" --format '{{.Names}}  {{.Image}}  {{.Ports}}' 2>$null
+        if ($LASTEXITCODE -eq 0 -and $raw) { $containers = @($raw) }
+    } catch { }
+
+    if ($containers.Count -gt 0) {
+        Write-Verdict "   Container(s) publishing ${Port}:"
+        foreach ($c in $containers) { Write-Verdict "     $c" }
+    } else {
+        Write-Verdict "   No running container publishes ${Port}."
+    }
+
+    $procs = @()
+    try {
+        $conns = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop
+        foreach ($conn in $conns) {
+            $procName = "unknown"
+            try {
+                $procName = (Get-Process -Id $conn.OwningProcess -ErrorAction Stop).ProcessName
+            } catch { }
+            $procs += "$procName (PID $($conn.OwningProcess))  $($conn.LocalAddress):$($conn.LocalPort)"
+        }
+    } catch {
+        # Get-NetTCPConnection is absent on some editions; netstat always exists.
+        try {
+            $net = & netstat -ano 2>$null | Select-String ":$Port\s.*LISTENING"
+            foreach ($line in $net) { $procs += $line.ToString().Trim() }
+        } catch { }
+    }
+
+    if ($procs.Count -eq 0) {
+        Write-Verdict "   No host process found listening on ${Port}."
+        return
+    }
+
+    Write-Verdict "   Host process(es) listening on ${Port}:"
+    foreach ($pr in $procs) { Write-Verdict "     $pr" }
+
+    if ($procs -match "com\.docker|dockerd|docker-proxy|wslrelay|vpnkit|ssh") {
+        Write-Verdict "   [INFO] That is a container-runtime port forwarder, not the owner."
+        if ($containers.Count -gt 0) {
+            Write-Verdict "          The container named above is what actually holds ${Port}."
+        } else {
+            Write-Verdict "          A container in another Docker context may hold ${Port};"
+            Write-Verdict "          try: docker context ls, then docker ps --filter publish=$Port"
+        }
+    }
+}
+
 function Log-AndRun {
     param($msg, $cmd, $args_list)
     Write-Host ">> $msg"
@@ -628,6 +698,18 @@ try {
     # The exit code was already 4 before #1350 (from #996), so the tip -- not
     # the exit code -- is what makes this check non-vacuous. Both are asserted.
     Invoke-Cleanup "docker" "rm -f $PORT_HOLDER"
+
+    # LDM-#1428: this check must be the ONLY thing holding the port. If something
+    # else already has it, our holder silently fails to start, the connect probe
+    # below still succeeds against the foreign listener, and the assertion then
+    # passes for entirely the wrong reason. Detect that up front and name it.
+    & $VENV_PYTHON -c "import socket, sys; s = socket.socket(); s.settimeout(1); sys.exit(0 if s.connect_ex(('127.0.0.1', $KIBANA_HOST_PORT)) == 0 else 1)" *> $null
+    if ($LASTEXITCODE -eq 0) {
+        Get-PortHolderDiagnostic -Port $KIBANA_HOST_PORT
+        Remove-Ldm1383Artifacts
+        throw "Port $KIBANA_HOST_PORT is already in use before the LDM-#1350 check starts. This check must own the port; a foreign listener would make it pass for the wrong reason."
+    }
+
     & docker run -d --name $PORT_HOLDER -p "${KIBANA_HOST_PORT}:80" alpine sleep 300 *> $null
 
     # `docker run -d` returns before the published port is necessarily
@@ -640,6 +722,9 @@ try {
         Start-Sleep -Seconds 1
     }
     if (-not $portHeld) {
+        # LDM-#1428: say what holds it, rather than leaving the operator to work
+        # it out per-OS. Most often a leftover container from an interrupted run.
+        Get-PortHolderDiagnostic -Port $KIBANA_HOST_PORT
         Remove-Ldm1383Artifacts
         throw "Could not occupy port $KIBANA_HOST_PORT, so the LDM-#1350 check cannot run. Refusing to skip silently: an assertion that quietly stops running is worse than a red one."
     }
@@ -655,6 +740,11 @@ try {
     $conflictOut | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
 
     if ($conflictRc -ne 4) {
+        # LDM-#1428: exit 1 here means LDM did not detect the conflict and Docker
+        # hit it instead. The question that decides whether that is an LDM bug or
+        # a broken fixture is "was the port actually held?" -- so answer it, in
+        # the report, at the moment of failure.
+        Get-PortHolderDiagnostic -Port $KIBANA_HOST_PORT
         Remove-Ldm1383Artifacts
         throw "Late port conflict exited $conflictRc, expected 4 (Orchestration/Deployment Error)."
     }
