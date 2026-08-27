@@ -707,6 +707,83 @@ services:
                 mock_check_port.assert_any_call("127.0.0.1", 8080)
                 mock_die.assert_not_called()
 
+    def test_late_port_conflict_fires_when_only_docker_knows(self):
+        """LDM-#1417: a container-held port must be fatal even if the socket says free.
+
+        The first fix for #1417 probed for a listener before binding, which is
+        right in principle and insufficient in practice. On Windows 11 /
+        Docker Desktop a published 5601 was measured taking 1-3 seconds to
+        accept, so the 0.5s probe timed out, fell through to the bind test --
+        which succeeds under Windows' permissive semantics -- and reported the
+        port free. LDM-#1350's guard stayed silent and the run died on
+        Docker's own "port is already allocated" with exit 1.
+
+        So this pins the case the socket cannot see: `check_port` insists the
+        port is free, and only Docker's allocator knows otherwise. If the
+        guard ever goes back to trusting the socket alone, this fails.
+        """
+        with tempfile.TemporaryDirectory() as tmp_root:
+            root = Path(tmp_root)
+            compose_file = root / "docker-compose.yml"
+            compose_file.write_text("""
+services:
+  kibana:
+    container_name: test-project-kibana
+    ports:
+      - "5601:5601"
+            """)
+            paths = self.handler.setup_paths(root)
+            paths["compose"] = compose_file
+
+            captured = {}
+
+            def capture_die(msg, details=None, tip=None, exit_code=1):
+                captured["msg"] = msg
+                captured["tip"] = tip
+                captured["exit_code"] = exit_code
+                raise SystemExit(exit_code)
+
+            self.handler.args.no_wait = True
+            self.handler.args.no_up = False
+            self.handler.non_interactive = False
+
+            with (
+                patch.object(DockerService, "is_running", return_value=False),
+                # The whole point: the socket probe is wrong here, exactly as
+                # it is on a Windows host, and Docker is the only witness.
+                patch.object(
+                    DockerService, "published_host_ports", return_value={5601}
+                ),
+                patch.object(self.handler, "check_port", return_value=True),
+                patch.object(BaseHandler, "run_command"),
+                patch.object(
+                    self.handler, "get_container_status", return_value="healthy"
+                ),
+                patch.object(self.handler.infra, "setup_global_search"),
+                patch.object(self.handler.infra, "setup_global_database"),
+                patch.object(self.handler.composer, "write_docker_compose"),
+                patch("ldm_core.ui.UI.die", side_effect=capture_die),
+            ):
+                with self.assertRaises(SystemExit):
+                    self.handler.handler.orchestration.cmd_run(
+                        project_id="test-project-kibana",
+                        no_up=False,
+                        no_wait=True,
+                        is_restart=True,
+                        paths=paths,
+                        project_meta={
+                            "container_name": "test-project-kibana",
+                            "tag": "7.4.3.132",
+                        },
+                    )
+
+            self.assertEqual(
+                4,
+                captured.get("exit_code"),
+                "a Docker-held port must still be a fatal exit 4, not Docker's exit 1",
+            )
+            self.assertIn("5601", captured["msg"])
+
     def test_late_port_conflict_names_the_port_a_rerun_would_pick(self):
         """LDM-#1350: the fatal late check must not tell you to go kill a process.
 
@@ -761,6 +838,10 @@ services:
 
             with (
                 patch.object(DockerService, "is_running", return_value=False),
+                # LDM-#1417: the guard now asks Docker's allocator first.
+                # Empty keeps these cases socket-driven, and keeps the suite
+                # off a real daemon.
+                patch.object(DockerService, "published_host_ports", return_value=set()),
                 patch.object(self.handler, "check_port", side_effect=check_port),
                 patch.object(BaseHandler, "run_command"),
                 patch.object(
@@ -829,6 +910,10 @@ services:
 
             with (
                 patch.object(DockerService, "is_running", return_value=False),
+                # LDM-#1417: the guard now asks Docker's allocator first.
+                # Empty keeps these cases socket-driven, and keeps the suite
+                # off a real daemon.
+                patch.object(DockerService, "published_host_ports", return_value=set()),
                 patch.object(self.handler, "check_port", side_effect=check_port),
                 patch.object(BaseHandler, "run_command"),
                 patch.object(

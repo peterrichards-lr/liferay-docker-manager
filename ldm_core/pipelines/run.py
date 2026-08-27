@@ -1435,15 +1435,26 @@ class ComposerStage(PipelineStage):
                             published = port_entry.get("published")
                             if published:
                                 ports_to_check.append((svc_name, int(published)))
+                from ldm_core.docker_service import DockerService
+
+                # LDM-#1417: ask Docker's allocator, once, before probing any
+                # socket. `docker compose up` refuses a taken port from this
+                # table -- "port is already allocated" -- without ever
+                # attempting a host bind, and on Windows the socket probes
+                # cannot see a container-held port at all. Resolved here
+                # rather than per-service so the whole loop costs one call.
+                docker_held_ports = DockerService.published_host_ports()
+
                 for svc_name, mapped_port in ports_to_check:
                     container_name = (
                         services[svc_name].get("container_name")
                         or f"{context.get('project_id')}-{svc_name}-1"
                     )
-                    from ldm_core.docker_service import DockerService
 
                     if not DockerService.is_running(container_name):
-                        if not manager.check_port("127.0.0.1", mapped_port):
+                        if mapped_port in docker_held_ports or not manager.check_port(
+                            "127.0.0.1", mapped_port
+                        ):
                             # LDM-#996: staying fatal here is deliberate. By this
                             # point the port is written into the generated
                             # docker-compose.yml, so moving it means regenerating
@@ -1472,7 +1483,8 @@ class ComposerStage(PipelineStage):
                                         mapped_port + 1,
                                         min(mapped_port + 21, 65536),
                                     )
-                                    if manager.check_port("127.0.0.1", candidate)
+                                    if candidate not in docker_held_ports
+                                    and manager.check_port("127.0.0.1", candidate)
                                 ),
                                 None,
                             )

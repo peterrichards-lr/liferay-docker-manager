@@ -53,6 +53,42 @@ class TestDockerService(unittest.TestCase):
         self.assertFalse(DockerService.is_running("test-container"))
 
     @patch("ldm_core.docker_service.run_command")
+    def test_published_host_ports_parses_docker_ps(self, mock_run):
+        """LDM-#1417: the allocator, not a socket, decides a container-held port.
+
+        The socket probes cannot answer this on Windows -- a bind to
+        127.0.0.1:P succeeds while Docker Desktop holds 0.0.0.0:P, and a
+        connect to a published port was measured taking 1-3s to accept, so a
+        probe short enough to run on every check times out and calls it free.
+        """
+        mock_run.return_value = (
+            "0.0.0.0:5601->80/tcp, [::]:5601->80/tcp\n"
+            "0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp\n"
+        )
+        self.assertEqual(DockerService.published_host_ports(), {5601, 8080})
+        mock_run.assert_called_with(
+            ["docker", "ps", "--format", "{{.Ports}}"], check=False
+        )
+
+    @patch("ldm_core.docker_service.run_command")
+    def test_published_host_ports_ignores_unpublished_ports(self, mock_run):
+        """A container port with no host mapping is not a host port."""
+        mock_run.return_value = "80/tcp, 443/tcp\n0.0.0.0:9200->9200/tcp\n"
+        self.assertEqual(DockerService.published_host_ports(), {9200})
+
+    @patch("ldm_core.docker_service.run_command")
+    def test_published_host_ports_empty_when_docker_unreachable(self, mock_run):
+        """No answer is not the same as "free".
+
+        Returning an empty set leaves the verdict to the socket probes rather
+        than silently declaring every port available.
+        """
+        mock_run.return_value = ""
+        self.assertEqual(DockerService.published_host_ports(), set())
+        mock_run.return_value = None
+        self.assertEqual(DockerService.published_host_ports(), set())
+
+    @patch("ldm_core.docker_service.run_command")
     def test_get_status_running(self, mock_run):
         mock_run.return_value = "running\n"
         self.assertEqual(DockerService.get_status("test-container"), "running")
