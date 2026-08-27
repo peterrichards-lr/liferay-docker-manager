@@ -1,5 +1,7 @@
+import contextlib
 import json
 import os
+import shutil
 import tempfile
 import typing
 import unittest
@@ -2349,3 +2351,87 @@ class TestProjectUuid(unittest.TestCase):
             h.write_meta(Path(a), {"container_name": "same-name"})
             h.write_meta(Path(b), {"container_name": "same-name"})
             self.assertNotEqual(self._meta(a)["uuid"], self._meta(b)["uuid"])
+
+
+class TestRegistryIdentityCollisions(unittest.TestCase):
+    """LDM-#1393: telling "this project moved" apart from "a different project
+    happens to share this name". Those were indistinguishable, so the
+    non-interactive path guessed -- and guessed destructively."""
+
+    def _handler(self, non_interactive=True, overwrite=False):
+        from ldm_core.handlers.base import BaseHandler
+
+        h = BaseHandler.__new__(BaseHandler)
+        h.args = MagicMock()
+        h.args.overwrite_registry = overwrite
+        h.non_interactive = non_interactive
+        torn_down: list = []
+        h.run_command = MagicMock(side_effect=lambda *a, **_k: torn_down.append(a))  # type: ignore[method-assign]
+        return h, torn_down
+
+    @contextlib.contextmanager
+    def _world(self, handler):
+        """A sandboxed LDM home with one project registered as 'proj'."""
+        with (
+            tempfile.TemporaryDirectory() as home,
+            tempfile.TemporaryDirectory() as work,
+        ):
+            home_dir, work_dir = Path(home), Path(work)
+            (home_dir / ".ldm").mkdir()
+            original, incoming = work_dir / "original", work_dir / "incoming"
+            original.mkdir()
+            incoming.mkdir()
+            with patch("ldm_core.handlers.base.get_actual_home", return_value=home_dir):
+                handler.write_meta(original, {"container_name": "proj"})
+                handler.register_project("proj", original, "localhost")
+                (original / "docker-compose.yml").write_text("services: {}\n")
+                yield home_dir, original, incoming
+
+    def test_the_registry_records_the_uuid(self):
+        h, torn = self._handler()
+        with self._world(h) as (home, original, _incoming):
+            entry = json.loads((home / ".ldm" / "registry.json").read_text())["proj"]
+            expected = json.loads((original / "meta").read_text())["uuid"]
+            self.assertEqual(expected, entry.get("uuid"))
+
+    def test_the_same_project_moved_is_not_a_collision(self):
+        """Same UUID at a new path: re-point it, do not tear anything down."""
+        h, torn = self._handler()
+        with self._world(h) as (home, original, incoming):
+            shutil.copy(original / "meta", incoming / "meta")
+            with patch("ldm_core.handlers.base.get_actual_home", return_value=home):
+                h.check_registry_collisions("proj", incoming, "localhost")
+            self.assertEqual([], torn, "a move must never tear down volumes")
+
+    def test_a_different_project_sharing_a_name_is_refused_under_y(self):
+        """The regression this exists to prevent: -y used to destroy the other
+        project's volumes without saying anything."""
+        h, torn = self._handler(non_interactive=True, overwrite=False)
+        with self._world(h) as (home, _original, incoming):
+            h.write_meta(incoming, {"container_name": "proj"})  # different UUID
+            with (
+                patch("ldm_core.handlers.base.get_actual_home", return_value=home),
+                self.assertRaises(SystemExit),
+            ):
+                h.check_registry_collisions("proj", incoming, "localhost")
+            self.assertEqual([], torn, "nothing may be destroyed on refusal")
+
+    def test_overwrite_registry_still_authorises_it(self):
+        """The flag exists for this; refusing must not remove the capability."""
+        h, torn = self._handler(non_interactive=True, overwrite=True)
+        with self._world(h) as (home, _original, incoming):
+            h.write_meta(incoming, {"container_name": "proj"})
+            with patch("ldm_core.handlers.base.get_actual_home", return_value=home):
+                h.check_registry_collisions("proj", incoming, "localhost")
+            self.assertTrue(torn, "explicit opt-in should still tear down")
+
+    def test_an_unknown_identity_falls_back_rather_than_assuming_a_move(self):
+        """A pre-#1393 project has no UUID. Unknown must not mean 'same'."""
+        h, torn = self._handler(non_interactive=True, overwrite=False)
+        with self._world(h) as (home, _original, incoming):
+            (incoming / "meta").write_text(json.dumps({"container_name": "proj"}))
+            with (
+                patch("ldm_core.handlers.base.get_actual_home", return_value=home),
+                self.assertRaises(SystemExit),
+            ):
+                h.check_registry_collisions("proj", incoming, "localhost")
