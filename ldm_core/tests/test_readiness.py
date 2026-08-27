@@ -1,3 +1,4 @@
+import contextlib
 import os
 import tempfile
 import unittest
@@ -736,6 +737,11 @@ services:
 
             self.handler.args.no_wait = True
             self.handler.args.no_up = False
+            # LDM-#1397: this models the interactive case the tip describes.
+            # It previously ran with non_interactive=True, where the pre-flight
+            # refuses rather than re-selecting -- so the assertion passed while
+            # describing a scenario the code never reached.
+            self.handler.non_interactive = False
 
             with (
                 patch.object(DockerService, "is_running", return_value=False),
@@ -775,6 +781,86 @@ services:
             # The old advice sent the user hunting for a process to kill.
             self.assertNotIn("stop the service currently using", captured["msg"])
             self.assertNotIn("stop the service currently using", tip)
+
+    def _late_conflict_tip(self, svc_name, port, non_interactive):
+        """Drives the late compose-validation check and returns the tip (#1397)."""
+        with tempfile.TemporaryDirectory() as tmp_root:
+            root = Path(tmp_root)
+            compose_file = root / "docker-compose.yml"
+            compose_file.write_text(
+                f"services:\n"
+                f"  {svc_name}:\n"
+                f"    container_name: test-project-liferay-1\n"
+                f"    ports:\n"
+                f'      - "{port}:{port}"\n'
+            )
+            paths = self.handler.setup_paths(root)
+            paths["compose"] = compose_file
+            state = {"taken": False}
+
+            def check_port(_ip, p):
+                return True if not state["taken"] else p != port
+
+            captured = {}
+
+            def capture_die(msg, details=None, tip=None, exit_code=1):
+                captured["tip"] = tip
+                raise SystemExit(exit_code)
+
+            self.handler.args.no_wait = True
+            self.handler.args.no_up = False
+            self.handler.non_interactive = non_interactive
+
+            with (
+                patch.object(DockerService, "is_running", return_value=False),
+                patch.object(self.handler, "check_port", side_effect=check_port),
+                patch.object(BaseHandler, "run_command"),
+                patch.object(
+                    self.handler, "get_container_status", return_value="healthy"
+                ),
+                patch.object(self.handler.infra, "setup_global_search"),
+                patch.object(self.handler.infra, "setup_global_database"),
+                patch.object(
+                    self.handler.composer,
+                    "write_docker_compose",
+                    side_effect=lambda *_a, **_k: state.update(taken=True),
+                ),
+                patch("ldm_core.ui.UI.die", side_effect=capture_die),
+            ):
+                with contextlib.suppress(SystemExit):
+                    self.handler.handler.orchestration.cmd_run(
+                        project_id="test-project-liferay-1",
+                        no_up=False,
+                        no_wait=True,
+                        is_restart=True,
+                        paths=paths,
+                        project_meta={
+                            "container_name": "test-project-liferay-1",
+                            "tag": "7.4.3.132",
+                        },
+                    )
+            return captured.get("tip") or ""
+
+    def test_the_tip_only_promises_a_reselect_when_that_will_happen(self):
+        """LDM-#1350 named the port a re-run would pick. LDM-#1397: that is only
+        true for the Liferay port on an interactive run."""
+        tip = self._late_conflict_tip("liferay", 8080, non_interactive=False)
+        self.assertIn("8081", tip)
+        self.assertIn("pre-flight check will", tip)
+
+    def test_under_y_the_tip_says_a_rerun_will_fail_the_same_way(self):
+        """The pre-flight refuses rather than moving the port under -y, so the
+        old tip sent the user round a loop that could not terminate."""
+        tip = self._late_conflict_tip("liferay", 8080, non_interactive=True)
+        self.assertIn("fail the same way", tip)
+        self.assertNotIn("pre-flight check will select", tip)
+
+    def test_a_fixed_port_service_is_not_promised_a_reselect(self):
+        """kibana's 5601 is a literal in the compose builder; a re-run
+        regenerates it."""
+        tip = self._late_conflict_tip("kibana", 5601, non_interactive=False)
+        self.assertIn("fixed port", tip)
+        self.assertNotIn("pre-flight check will select", tip)
 
     def test_preflight_custom_container_port_collision_check(self):
         with tempfile.TemporaryDirectory() as tmp_root:
