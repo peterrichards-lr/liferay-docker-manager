@@ -90,6 +90,24 @@ ldm info [project] --credentials --credential-type database  # Print the databas
 ldm info [project] --credentials --password-only  # Print ONLY the raw password string (useful for CI scripts: `export PASS=$(ldm info --credentials --password-only)`)
 ```
 
+The output includes an **`ID:`** row -- the project's internal UUID (LDM-#1393).
+LDM identifies projects by this, not by their name: the name is yours to choose
+and can legitimately be shared by two projects in different directories, so it
+cannot be a reliable identity.
+
+You will not see it anywhere else. `ldm list` and every routine command work in
+project names, because that is how you think about them. It appears here because
+this is the diagnostic view, and it is the value stamped on every container and
+volume as `com.liferay.ldm.project.uuid` -- so it is what to match when working
+out which Docker resources belong to which project:
+
+```bash
+docker ps --filter "label=com.liferay.ldm.project.uuid=<id from ldm info>"
+```
+
+Projects created before this existed have no ID, and the row is simply omitted.
+One is assigned the next time their metadata is written.
+
 > [!NOTE]
 > **Security Posture regarding `ldm info --credentials`:**
 > This feature intentionally outputs clear-text credentials to stdout. Because LDM is a local development and CI tool, the caller already has read access to the local `.liferay-docker.meta` file on disk. Providing a native extraction method encourages developers to dynamically source passwords in automated integration scripts, rather than hardcoding sensitive data into version control (which is significantly riskier).
@@ -498,4 +516,4 @@ ldm target migrate win-wsl aws-1
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-22* | *Last Reviewed: 2026-08-22*
+*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*

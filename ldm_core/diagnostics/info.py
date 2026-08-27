@@ -150,6 +150,19 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
         f"  {UI.WHITE}URL:{UI.COLOR_OFF}        {UI.CYAN}{UI.UNDERLINE}{url}{UI.COLOR_OFF}"
     )
 
+    # LDM-#1393: the UUID is LDM's primary key -- users think in project names,
+    # so it is deliberately absent from `ldm list` and every routine command.
+    # `ldm info` is the diagnostic view, and this is where it earns its place:
+    # it is what the Docker ownership labels carry (LDM-#1395), so it is the
+    # value to match when working out which resources belong to which project.
+    # Absent on projects created before #1393, which is a legitimate state --
+    # show nothing rather than an empty field.
+    project_uuid = meta.get("uuid")
+    if project_uuid:
+        UI.raw(
+            f"  {UI.WHITE}ID:{UI.COLOR_OFF}         {UI.DIM}{project_uuid}{UI.COLOR_OFF}"
+        )
+
     # LDM-388: Explicit Container Names for reference.
     #
     # LDM-#1351: every name here must be the one actually APPLIED, because this
