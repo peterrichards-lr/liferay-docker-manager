@@ -284,6 +284,68 @@ report_ok() {
     echo "$1" | tee -a "$RESULTS_FILE_TMP"
 }
 
+# LDM-#1428: name what is holding a port when a port check cannot proceed.
+#
+# Two sources are queried, and BOTH are needed, because neither can answer the
+# question alone:
+#
+#   docker ps --filter publish=  is the only thing that names a CONTAINER.
+#   lsof/ss/netstat              is the only thing that sees a NON-container
+#                                holder (a stray service, an unrelated tunnel).
+#
+# The native tool never names the container, because a published port is held
+# on the host by the runtime's forwarder. Measured on Colima: a container
+# publishing 5601 shows up as `ssh` (the Lima SSH mux), PID owned by the user.
+# Docker Desktop shows com.docker.backend, native Linux docker-proxy, WSL2
+# wslrelay. Printing that alone sends the operator chasing a process that is
+# working perfectly -- so a known forwarder is labelled as such and the reader
+# is pointed back at the Docker line.
+diagnose_port_holder() {
+    local port="$1"
+    echo "🔎 What is holding port ${port}?" | tee -a "$RESULTS_FILE_TMP"
+
+    local containers=""
+    if command -v docker >/dev/null 2>&1; then
+        containers=$(docker ps --filter "publish=${port}" \
+            --format '{{.Names}}  {{.Image}}  {{.Ports}}' 2>/dev/null || true)
+    fi
+    if [ -n "$containers" ]; then
+        echo "   Container(s) publishing ${port}:" | tee -a "$RESULTS_FILE_TMP"
+        echo "$containers" | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
+    else
+        echo "   No running container publishes ${port}." | tee -a "$RESULTS_FILE_TMP"
+    fi
+
+    local native=""
+    if command -v lsof >/dev/null 2>&1; then
+        native=$(lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | tail -n +2 || true)
+    elif command -v ss >/dev/null 2>&1; then
+        native=$(ss -lptnH "sport = :${port}" 2>/dev/null || true)
+    elif command -v netstat >/dev/null 2>&1; then
+        native=$(netstat -anv 2>/dev/null | grep -E "[.:]${port} .*LISTEN" || true)
+    fi
+
+    if [ -z "$native" ]; then
+        echo "   No host process found listening on ${port}." | tee -a "$RESULTS_FILE_TMP"
+        echo "   (No native tool available, or the holder is not visible to this user.)" | tee -a "$RESULTS_FILE_TMP"
+        return 0
+    fi
+
+    echo "   Host process(es) listening on ${port}:" | tee -a "$RESULTS_FILE_TMP"
+    echo "$native" | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
+
+    # A runtime forwarder is not the culprit -- it is how a container publishes.
+    if echo "$native" | grep -Eq '(^|[^a-zA-Z])(ssh|docker-proxy|com\.docker\.backend|vpnkit|wslrelay|qemu)'; then
+        echo "   ℹ  That is a container-runtime port forwarder, not the owner." | tee -a "$RESULTS_FILE_TMP"
+        if [ -n "$containers" ]; then
+            echo "      The container named above is what actually holds ${port}." | tee -a "$RESULTS_FILE_TMP"
+        else
+            echo "      A container in another Docker context may hold ${port};" | tee -a "$RESULTS_FILE_TMP"
+            echo "      try: docker context ls, then docker ps --filter publish=${port}" | tee -a "$RESULTS_FILE_TMP"
+        fi
+    fi
+}
+
 # --- Execution ---
 
 # 0. Dependencies & Virtual Environment
@@ -645,6 +707,25 @@ echo ">> Verifying Late Port Conflict Guidance (LDM-#1350)..."
 # exit code was already 4 before #1350 (from #996), so the tip -- not the exit
 # code -- is what makes this check non-vacuous. Both are asserted.
 docker rm -f "$PORT_HOLDER" >/dev/null 2>&1 || true
+
+# LDM-#1428: this check needs to be the ONLY thing holding the port. If
+# something else already has it, our holder silently fails to start, the
+# connect probe below still succeeds against the foreign listener, and the
+# assertion then passes for entirely the wrong reason. Detect that up front
+# and name the holder.
+if "$VENV_PYTHON" -c "
+import socket, sys
+s = socket.socket()
+s.settimeout(1)
+sys.exit(0 if s.connect_ex(('127.0.0.1', ${KIBANA_HOST_PORT})) == 0 else 1)
+" 2>/dev/null; then
+    echo "❌ ERROR: port ${KIBANA_HOST_PORT} is already in use before the LDM-#1350 check starts." | tee -a "$RESULTS_FILE_TMP"
+    echo "   This check must own the port; a foreign listener would make it pass for the wrong reason." | tee -a "$RESULTS_FILE_TMP"
+    diagnose_port_holder "${KIBANA_HOST_PORT}"
+    cleanup_1383_artifacts
+    exit 1
+fi
+
 docker run -d --name "$PORT_HOLDER" -p "${KIBANA_HOST_PORT}:80" alpine sleep 300 >/dev/null 2>&1 || true
 
 # `docker run -d` returns before the published port is necessarily accepting
@@ -667,6 +748,10 @@ done
 if [ "$PORT_HELD" != "true" ]; then
     echo "❌ ERROR: could not occupy port ${KIBANA_HOST_PORT}; the LDM-#1350 check cannot run." | tee -a "$RESULTS_FILE_TMP"
     echo "   Refusing to skip silently: an assertion that quietly stops running is worse than a red one." | tee -a "$RESULTS_FILE_TMP"
+    # LDM-#1428: say what holds it, rather than leaving the operator to work it
+    # out per-OS. Most often this is a leftover container from an interrupted
+    # run, but it can equally be something unrelated to LDM entirely.
+    diagnose_port_holder "${KIBANA_HOST_PORT}"
     cleanup_1383_artifacts
     exit 1
 fi
@@ -684,6 +769,12 @@ echo "$PORTCONFLICT_OUT" | tee -a "$RESULTS_FILE_TMP"
 
 if [ "$PORTCONFLICT_RC" -ne 4 ]; then
     echo "❌ ERROR: late port conflict exited ${PORTCONFLICT_RC}, expected 4 (Orchestration/Deployment Error)." | tee -a "$RESULTS_FILE_TMP"
+    # LDM-#1428: exit 1 here means LDM did not detect the conflict and Docker
+    # hit it instead. The question that decides whether that is an LDM bug or a
+    # broken fixture is "was the port actually held?" -- so answer it, in the
+    # report, at the moment of failure. Without this the report says only that
+    # the exit code was wrong.
+    diagnose_port_holder "${KIBANA_HOST_PORT}"
     cleanup_1383_artifacts
     exit 1
 fi

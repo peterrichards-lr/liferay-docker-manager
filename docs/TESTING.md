@@ -223,6 +223,40 @@ To prevent test-runner hangs, memory exhaustion, and side-effect leakage in CI p
 
 ## 🚀 Local E2E Platform Verification Scripts (Multi-OS)
 
+### Port-conflict diagnostics
+
+When a port check cannot proceed, both scripts name what holds the port
+(LDM-#1428) rather than aborting with only the port number. The output goes to
+the durable report, not just the console.
+
+**Two sources are queried, and both are needed.** Neither can answer the
+question alone:
+
+| Source | Answers |
+|---|---|
+| `docker ps --filter publish=<port>` | which **container** holds it — the only source that can |
+| `lsof` / `ss` / `netstat` / `Get-NetTCPConnection` | which **host process** holds it, when no container does |
+
+A container-published port is held on the host by the runtime's **forwarder**,
+which never identifies the container:
+
+| Runtime | What the native tool names |
+|---|---|
+| Colima / Lima | `ssh` (the Lima SSH mux — it forwards ports over SSH) |
+| Docker Desktop (macOS) | `com.docker.backend` |
+| Docker Desktop / WSL2 | `wslrelay` / `vpnkit` |
+| Native Linux | `docker-proxy` |
+
+Measured on Colima with a container publishing 5601, `lsof` reports `ssh` while
+`docker ps` reports the container. Printing only the `lsof` line would send the
+operator chasing a process that is working perfectly, so a recognised forwarder
+is labelled as such and the reader is pointed back at the container.
+
+It fires at three points: before the check starts (a foreign listener would make
+the assertion pass for the wrong reason), when the holder cannot be created, and
+when LDM exits with the wrong code — that last one distinguishes "LDM failed to
+detect a real conflict" from "the fixture never held the port".
+
 ### Disk space pre-flight
 
 Both scripts refuse to start unless Docker has room to finish (LDM-#1406). The
