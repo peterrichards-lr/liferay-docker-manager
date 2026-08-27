@@ -480,6 +480,34 @@ class BaseHandler:
         import errno
         import socket
 
+        # LDM-#1417: ask whether anything is *listening* before asking whether
+        # we can bind. Windows permits a bind to 127.0.0.1:P while another
+        # socket holds 0.0.0.0:P -- which is exactly how Docker Desktop
+        # publishes -- so the bind test alone reports a container-held port as
+        # free. The EADDRINUSE fallback below never runs because the bind does
+        # not raise, and LDM-#1350's fatal guard silently passes; the run then
+        # dies with Docker's own "port is already allocated" and exit 1.
+        # A successful connect proves a listener on every platform.
+        #
+        # Order matters: this must precede the bind, which would otherwise be
+        # testing against the socket this call just bound.
+        #
+        # Keep the timeout short. Measured on Windows 11 / Docker Desktop, a
+        # container-held port connects in under 25ms, but a *free* port never
+        # refuses quickly -- it burns the whole timeout -- so this is the cost
+        # of every negative answer. find_available_port() pays it once, on the
+        # port it settles on, because occupied candidates answer immediately.
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conn_s:
+            conn_s.settimeout(0.5)
+            try:
+                if conn_s.connect_ex((ip, int(port))) == 0:
+                    return False
+            except (OSError, OverflowError, ValueError):
+                # An unreachable address or an out-of-range port is not
+                # evidence of a listener. Leave the verdict to the bind test,
+                # which already classifies both.
+                pass
+
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(1)
             try:
