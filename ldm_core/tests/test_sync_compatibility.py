@@ -1,8 +1,12 @@
+import shutil
 import sys
+import typing
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+from ldm_core.ui import UI
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"))
 
@@ -171,3 +175,191 @@ class TestArgumentHandling:
         sync_compatibility.DRY_RUN = False
         sync_compatibility._mutate("do a thing", lambda: called.append(1))
         assert called == [1]
+
+
+class TestMismatchedCheckoutGuard:
+    """LDM-#1390: a raw report whose version does not match this checkout used to
+    be archived after nothing but a `UI.warning`. A warning is easy to miss in a
+    long run, and by then the file has moved -- while each report can represent
+    hours of real multi-platform testing. The mismatch almost always means the
+    operator is on the wrong ref, not that the report is obsolete."""
+
+    def teardown_method(self):
+        sync_compatibility.DRY_RUN = False
+        sync_compatibility.ARCHIVE_STALE = False
+
+    STALE: typing.ClassVar[list[tuple[str, str]]] = [
+        ("verify-linux-ubuntu-pass.txt", "binary version 9.9.9 != 2.18.0")
+    ]
+
+    def test_it_exits_rather_than_archiving(self):
+        sync_compatibility.DRY_RUN = False
+        with pytest.raises(SystemExit) as exc:
+            sync_compatibility._report_mismatched_checkout(self.STALE)
+        assert exc.value.code != 0, "must be a failing exit so CI/tooling notices"
+
+    def test_dry_run_reports_without_failing(self):
+        """A preview must stay safe to run from tooling."""
+        sync_compatibility.DRY_RUN = True
+        sync_compatibility._report_mismatched_checkout(self.STALE, fatal=False)
+
+    def test_the_message_names_the_report_and_both_versions(self, capsys):
+        """The whole point is that the operator can see what to fix."""
+        with pytest.raises(SystemExit):
+            sync_compatibility._report_mismatched_checkout(self.STALE)
+        out = capsys.readouterr()
+        combined = out.out + out.err
+        assert "verify-linux-ubuntu-pass.txt" in combined
+        assert "9.9.9" in combined and "2.18.0" in combined
+        assert "--archive-stale" in combined, "must name the deliberate opt-out"
+
+    @patch("sync_compatibility.sync_reports")
+    def test_archive_stale_flag_is_off_by_default(self, mock_sync):
+        sync_compatibility.main([])
+        assert sync_compatibility.ARCHIVE_STALE is False
+
+    @patch("sync_compatibility.sync_reports")
+    def test_archive_stale_flag_can_be_opted_into(self, mock_sync):
+        sync_compatibility.main(["--archive-stale"])
+        assert sync_compatibility.ARCHIVE_STALE is True
+
+
+class TestArchivePlanOutput:
+    """LDM-#1390: --archive-stale is the deliberate path, and "deliberate" only
+    means something if you can see what it is about to do. The moves used to be
+    announced one line at a time as each happened, interleaved with the rest of
+    the sync."""
+
+    PLANNED: typing.ClassVar[list] = [
+        (
+            Path("verify-linux-ubuntu-20260827-pass.txt"),
+            "verify-linux-ubuntu-fail-ab12cd34.txt",
+            "binary version 9.9.9 != 2.18.0",
+        ),
+        (
+            Path("verify-macos-colima-20260827-pass.txt"),
+            "verify-macos-colima-fail-ef56ab78.txt",
+            "verify script version 9.9.9 != 2.18.0",
+        ),
+    ]
+
+    def teardown_method(self):
+        UI.QUIET_MODE = False
+        sync_compatibility.ARCHIVE_STALE = False
+
+    def test_it_lists_each_source_and_its_destination(self, capsys):
+        UI.QUIET_MODE = False
+        sync_compatibility._announce_archive_plan(self.PLANNED)
+        out = capsys.readouterr().out + capsys.readouterr().err
+        for src, dest, reason in self.PLANNED:
+            assert src.name in out, f"{src.name} not listed"
+            assert dest in out, f"destination {dest} not shown"
+            assert reason in out, "the reason for archiving must be visible"
+
+    def test_it_says_how_many_and_which_version_it_matched_against(self, capsys):
+        UI.QUIET_MODE = False
+        sync_compatibility._announce_archive_plan(self.PLANNED)
+        out = capsys.readouterr().out
+        assert "2 raw report(s)" in out
+        assert sync_compatibility.VERSION in out
+
+    def test_quiet_suppresses_the_plan(self, capsys):
+        UI.QUIET_MODE = True
+        sync_compatibility._announce_archive_plan(self.PLANNED)
+        assert capsys.readouterr().out.strip() == ""
+
+    @patch("sync_compatibility.sync_reports")
+    def test_quiet_flag_sets_the_ui_switch(self, mock_sync):
+        sync_compatibility.main(["--quiet"])
+        assert UI.QUIET_MODE is True
+
+    @patch("sync_compatibility.sync_reports")
+    def test_not_quiet_by_default(self, mock_sync):
+        sync_compatibility.main([])
+        assert UI.QUIET_MODE is False
+
+    def test_quiet_never_hides_the_refusal(self, capsys):
+        """Suppressing progress must not suppress a failure."""
+        UI.QUIET_MODE = True
+        with pytest.raises(SystemExit):
+            sync_compatibility._report_mismatched_checkout(
+                [("verify-linux-ubuntu-pass.txt", "binary version 9.9.9 != 2.18.0")]
+            )
+        captured = capsys.readouterr()
+        assert "Refusing to archive" in (captured.out + captured.err)
+
+
+class TestSandboxedPaths:
+    """LDM-#1391: the script used to hardcode the two paths it mutates, so there
+    was no way to exercise it without operating on the real verification record --
+    reports that are a verbatim account of what was actually tested, each
+    representing hours of real multi-platform running."""
+
+    def teardown_method(self):
+        UI.QUIET_MODE = False
+        sync_compatibility.ARCHIVE_STALE = False
+        sync_compatibility.DRY_RUN = False
+
+    @staticmethod
+    def _report(directory, name, version):
+        p = directory / name
+        p.write_text(
+            "LDM Verification Report\n"
+            f"Version:      {version}\n"
+            f"Script Ver:   {version}\n"
+            "Platform:     sandbox-probe\n"
+            "Result:       PASS\n"
+        )
+        return p
+
+    def test_defaults_point_at_the_shipped_locations(self):
+        """The override must not change real behaviour."""
+        assert (
+            Path("references/verification-results")
+            == sync_compatibility.DEFAULT_RESULTS_DIR
+        )
+        assert (
+            Path("docs/reference/compatibility.md")
+            == sync_compatibility.DEFAULT_TABLE_FILE
+        )
+
+    def test_a_real_sync_stays_inside_the_sandbox(self, tmp_path):
+        """The whole point: a full, non-dry sync that touches nothing real."""
+        results = tmp_path / "results"
+        results.mkdir()
+        table = tmp_path / "compatibility.md"
+        shutil.copy(sync_compatibility.DEFAULT_TABLE_FILE, table)
+        stale = self._report(
+            results, "verify-sandbox-20260827-000000-pass.txt", "9.9.9-pre.1"
+        )
+
+        real_before = sorted(
+            p.name for p in sync_compatibility.DEFAULT_RESULTS_DIR.rglob("*")
+        )
+
+        sync_compatibility.ARCHIVE_STALE = True
+        sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        assert not stale.exists(), "the stale report should have been archived"
+        assert list((results / "archived_findings").glob("*.txt")), (
+            "and archived inside the sandbox"
+        )
+        assert (
+            sorted(p.name for p in sync_compatibility.DEFAULT_RESULTS_DIR.rglob("*"))
+            == real_before
+        ), "the real verification record must be untouched"
+
+    def test_the_refusal_also_honours_the_sandbox(self, tmp_path):
+        results = tmp_path / "results"
+        results.mkdir()
+        table = tmp_path / "compatibility.md"
+        shutil.copy(sync_compatibility.DEFAULT_TABLE_FILE, table)
+        stale = self._report(
+            results, "verify-sandbox-20260827-000000-pass.txt", "9.9.9-pre.1"
+        )
+
+        sync_compatibility.ARCHIVE_STALE = False
+        with pytest.raises(SystemExit):
+            sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        assert stale.exists(), "refusing must leave the report where it was"

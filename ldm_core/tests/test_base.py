@@ -548,8 +548,15 @@ class TestBaseProject(unittest.TestCase):
                 updated_reg = json.loads(registry_path.read_text())
                 self.assertNotIn("p2", updated_reg)
 
-                # Case 3: Different path (exists on disk), non-interactive, no overwrite_registry -> should unregister & not die
-                # and should trigger stack teardown if docker-compose.yml exists
+                # Case 3: Different path (exists on disk), non-interactive, no
+                # overwrite_registry -> REFUSE.
+                #
+                # LDM-#1393 changed this. It used to unregister the other
+                # project and run `compose down -v` against it -- destroying its
+                # volumes -- without saying anything, because `non_interactive`
+                # set overwrite=True. `--overwrite-registry` exists to authorise
+                # exactly that and the error message already names it, so
+                # automation must pass it rather than have it inferred from -y.
                 p3_old_path = base_path / "p3_old"
                 p3_old_path.mkdir()
                 (p3_old_path / "docker-compose.yml").touch()
@@ -561,19 +568,15 @@ class TestBaseProject(unittest.TestCase):
                 BaseHandler.check_registry_collisions(
                     self.handler, "p3", base_path / "p3"
                 )
-                mock_die.assert_not_called()
-                # Assert compose down was executed on p3_old_path
-                mock_run_cmd.assert_called_once()
-                cmd_args = mock_run_cmd.call_args[0][0]
-                self.assertIn("down", cmd_args)
-                self.assertEqual(
-                    mock_run_cmd.call_args[1].get("cwd"), str(p3_old_path.resolve())
-                )
+                mock_die.assert_called_once()
+                mock_die.reset_mock()
+                # Nothing may be torn down when the request is refused.
+                mock_run_cmd.assert_not_called()
                 mock_run_cmd.reset_mock()
 
-                # Assert p3 is removed from registry
+                # ...and the other project keeps its registration.
                 updated_reg = json.loads(registry_path.read_text())
-                self.assertNotIn("p3", updated_reg)
+                self.assertIn("p3", updated_reg)
 
                 # Case 4: Different path (exists on disk), interactive, overwrite_registry=True -> should unregister & not die
                 p3_old_path.mkdir(exist_ok=True)
