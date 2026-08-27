@@ -2038,3 +2038,52 @@ class TestPruneRespectsProjectUuid(unittest.TestCase):
         """The safeguard must not blind prune to real orphans."""
         out = self._run("gone-project", "some-other-uuid", self.UUID)
         self.assertIn("Found 1 orphaned containers", out)
+
+
+class TestInfoReportsTheProjectId(unittest.TestCase):
+    """LDM-#1393: the UUID is LDM's primary key and is deliberately hidden from
+    routine output -- users think in project names. `ldm info` is the diagnostic
+    view, and it is where the UUID earns its place: it is the value carried on
+    the Docker ownership labels (#1395), so it is what you match when working
+    out which resources belong to which project."""
+
+    UUID = "eea28136-495b-4d43-87fb-b2e84e2543ba"
+
+    def _run(self, meta_extra):
+        from pathlib import Path as _Path
+
+        from ldm_core.diagnostics.info import run_info
+
+        meta = {
+            "container_name": "InfoCheck",
+            "tag": "2026.q1.12-lts",
+        }
+        meta.update(meta_extra)
+
+        handler = MagicMock()
+        handler.manager.detect_project_path.return_value = _Path("/tmp/InfoCheck")
+        handler.manager.parse_version.return_value = (2026, 1, 12)
+        handler.manager.read_meta.return_value = meta
+        handler.manager.defaults.get.side_effect = lambda _k, default=None: default
+
+        with (
+            patch("ldm_core.ui.UI.raw") as mock_raw,
+            patch(
+                "ldm_core.docker_service.DockerService.get_status",
+                return_value="running",
+            ),
+            patch("ldm_core.config.load_targets", return_value={}),
+        ):
+            run_info(handler, "InfoCheck")
+            return "\n".join(c[0][0] for c in mock_raw.call_args_list if c[0])
+
+    def test_the_id_is_shown_when_the_project_has_one(self):
+        out = self._run({"uuid": self.UUID})
+        self.assertIn(self.UUID, out)
+        self.assertIn("ID:", out)
+
+    def test_no_empty_row_for_a_project_created_before_uuids(self):
+        """A project with no UUID is a legitimate state, not an error -- show
+        nothing rather than a blank field."""
+        out = self._run({})
+        self.assertNotIn("ID:", out)
