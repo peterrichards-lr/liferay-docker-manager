@@ -224,8 +224,14 @@ powershell -ExecutionPolicy Bypass -File scripts/verify_e2e_refactor.ps1
 * Full project initialization, compose generation, and database sidecar startup.
 * Automated snapshot extraction, integrity verification (SHA-256 signature generation), and directory structure restores.
 * Metadata namespacing and port collision handling (confirming the **`ldm fork`** command works cleanly without conflicts).
+* Up-front announcement of a project targeting a remote compute node, and its
+  deliberate suppression under `--json` (LDM-#1341 / #1093). Provoked with an
+  RFC 5737 TEST-NET-1 target whose Docker context is then deleted, so the
+  project is classified remote without anything ever opening an SSH connection.
+* Late port-conflict handling: exit code `4` plus guidance naming the port a
+  re-run would pick, rather than telling you to go stop a process (LDM-#1350).
 * Teardown of resources and network isolation.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*
+*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*
