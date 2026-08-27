@@ -9,8 +9,8 @@ set -e
 # by scripts/release.py on every bump) so a locally-held copy can be checked
 # against what actually shipped, rather than guessing from a file mtime -- git
 # checkout/pull doesn't preserve original commit timestamps.
-# LDM_MAGIC_VERSION: 2.18.0-pre.9
-SCRIPT_VERSION="2.18.0-pre.9"
+# LDM_MAGIC_VERSION: 2.18.0-pre.10
+SCRIPT_VERSION="2.18.0-pre.10"
 
 TEST_PORT="${LDM_TEST_PORT}"
 if [ -z "$TEST_PORT" ]; then
