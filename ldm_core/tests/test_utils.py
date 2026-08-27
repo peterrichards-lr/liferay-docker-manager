@@ -2000,10 +2000,15 @@ class TestSharedDatabaseContainer(unittest.TestCase):
     def test_shared_capability_excludes_hypersonic_and_external(self):
         from ldm_core.utils import is_shared_capable_db
 
-        for engine in ("postgresql", "mysql", "mariadb"):
-            with self.subTest(engine=engine):
-                self.assertTrue(is_shared_capable_db(engine))
-        for engine in ("hypersonic", "external", None, ""):
+        for capable in ("postgresql", "mysql", "mariadb"):
+            with self.subTest(engine=capable):
+                self.assertTrue(is_shared_capable_db(capable))
+
+        # Annotated because `db_type` genuinely arrives as None from a meta
+        # written before the key existed. Reusing the loop variable above
+        # would pin it to `str` and make mypy reject the None case.
+        incapable: tuple[str | None, ...] = ("hypersonic", "external", None, "")
+        for engine in incapable:
             with self.subTest(engine=engine):
                 self.assertFalse(is_shared_capable_db(engine))
 
