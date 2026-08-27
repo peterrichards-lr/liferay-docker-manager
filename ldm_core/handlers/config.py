@@ -1993,7 +1993,9 @@ class ConfigService:
             UI.warning(
                 f"Stopping running project container stack '{project_name}' (downtime initiated)..."
             )
-            self.manager.runtime.cmd_stop(project_id=project_name)
+            # LDM-#1410: internal step of an SSL mode switch, not the end of a
+            # user-facing stop.
+            self.manager.runtime.cmd_stop(project_id=project_name, emit_hint=False)
 
         if mode == "hosts":
             # Switch to local hosts-based SSL

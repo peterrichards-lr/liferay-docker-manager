@@ -4,6 +4,16 @@ from pathlib import Path
 from ldm_core.ui import UI
 from ldm_core.utils import shared_database_name
 
+# LDM-#1410: every Docker call in the restore path is bounded. Unbounded, a
+# stalled socket wedges `ldm restore` forever -- observed at 84 minutes on three
+# machines across two runtimes, unkillable with Ctrl+C, behind a hint that said
+# it had finished. A timeout turns that into a clear failure at a known step.
+#
+# Generous rather than tight: starting the database may pull its image on a
+# clean machine. The point is to bound it at all, not to be strict.
+_DB_START_TIMEOUT = 300  # `compose up -d <db>` -- may include an image pull
+_DB_PROBE_TIMEOUT = 30  # `docker ps` probes -- fast, or the socket is gone
+
 
 class DatabaseSnapshotService:
     def __init__(self, facade):
@@ -35,7 +45,8 @@ class DatabaseSnapshotService:
                 for suffix in ["-db", "-db-1"]:
                     candidate = f"{container_name}{suffix}"
                     if self.manager.run_command(
-                        [*docker_prefix, "ps", "-q", "-f", f"name=^{candidate}$"]
+                        [*docker_prefix, "ps", "-q", "-f", f"name=^{candidate}$"],
+                        timeout=_DB_PROBE_TIMEOUT,
                     ):
                         db_container = candidate
                         break
@@ -163,7 +174,11 @@ class DatabaseSnapshotService:
 
             UI.detail(f"Triggering orchestrated database restore ({db_type})...")
 
-            self.manager.runtime.cmd_stop(paths["root"].name, service="liferay")
+            # LDM-#1410: no terminal hint -- this is an internal step of the
+            # restore, not the end of a user-facing stop.
+            self.manager.runtime.cmd_stop(
+                paths["root"].name, service="liferay", emit_hint=False
+            )
 
             from ldm_core.utils import resolve_infrastructure_mode
 
@@ -196,9 +211,14 @@ class DatabaseSnapshotService:
                         break
 
             if not db_container or not self.manager.run_command(
-                [*docker_prefix, "ps", "-q", "-f", f"name=^{db_container}$"]
+                [*docker_prefix, "ps", "-q", "-f", f"name=^{db_container}$"],
+                timeout=_DB_PROBE_TIMEOUT,
             ):
-                UI.detail("  + Starting database container for restore...")
+                # UI.info, not UI.detail: the latter is gated behind
+                # --info/--verbose (LDM-#1036), so the one line that locates a
+                # block here was invisible by default -- the same mistake
+                # LDM-#1306 and LDM-#1341 each had to correct.
+                UI.info("Starting the database container for the restore...")
                 if db_mode == "shared":
                     self.manager.infra.setup_global_database()
                 else:
@@ -211,7 +231,9 @@ class DatabaseSnapshotService:
                         # resolve for a non-ASCII project.
                         db_svc = f"{sanitize_id(paths['root'].name)}-db"
                         self.manager.run_command(
-                            [*compose_base, "up", "-d", db_svc], cwd=str(paths["root"])
+                            [*compose_base, "up", "-d", db_svc],
+                            cwd=str(paths["root"]),
+                            timeout=_DB_START_TIMEOUT,
                         )
 
                         for _i in range(10):
@@ -225,7 +247,8 @@ class DatabaseSnapshotService:
                                         "-q",
                                         "-f",
                                         f"name=^{candidate}$",
-                                    ]
+                                    ],
+                                    timeout=_DB_PROBE_TIMEOUT,
                                 ):
                                     db_container = candidate
                                     break
