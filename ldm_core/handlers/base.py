@@ -848,7 +848,13 @@ class BaseHandler:
             with contextlib.suppress(Exception):
                 carried = (read_meta(target) or {}).get("uuid")
 
-        meta = dict(meta)
+        # Mutated in place, not copied. The UUID belongs to the project, and
+        # everything downstream of the write -- notably the compose builder,
+        # which stamps it onto the ownership labels (LDM-#1395) -- reads the
+        # caller's dict. Returning a copy left that dict without the key, so the
+        # labels were silently never applied even though the meta file on disk
+        # had it. Caught by asserting against a real `ldm init` rather than a
+        # meta dict with the uuid pre-set by the test.
         meta["uuid"] = carried or str(uuid.uuid4())
         return meta
 

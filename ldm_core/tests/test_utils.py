@@ -2344,6 +2344,25 @@ class TestProjectUuid(unittest.TestCase):
             h.write_meta(Path(tmp), {"container_name": "legacy", "tag": "t"})
             self.assertEqual(first, self._meta(tmp)["uuid"])
 
+    def test_write_meta_makes_the_uuid_visible_to_the_caller(self):
+        """LDM-#1395 depends on this and it is easy to get wrong.
+
+        `_ensure_project_uuid` originally returned a *copy* carrying the UUID,
+        so the meta file on disk had it but the caller's dict did not. The
+        compose builder reads the caller's dict, so every ownership label was
+        silently skipped while the unit tests -- which pre-set `uuid` by hand --
+        passed. Caught only by asserting against a real `ldm init`.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            meta = {"container_name": "p"}
+            self._handler().write_meta(Path(tmp), meta)
+            self.assertIn(
+                "uuid",
+                meta,
+                "write_meta must put the UUID on the caller's dict, not only on disk",
+            )
+            self.assertEqual(meta["uuid"], self._meta(tmp)["uuid"])
+
     def test_two_projects_get_different_uuids(self):
         """The point: same name, different identity."""
         with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
