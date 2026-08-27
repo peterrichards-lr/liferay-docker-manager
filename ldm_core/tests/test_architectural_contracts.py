@@ -522,6 +522,46 @@ class TestArchitecturalContracts(unittest.TestCase):
         self.assertEqual(0, completed.returncode)
         self.assertIn("not docker", completed.stdout)
 
+    def test_reclaim_volume_permissions_is_neutralised(self):
+        """Contract: the alpine chown/chmod helper must not reach Docker (#1409).
+
+        `reclaim_volume_permissions()` runs
+        `docker run --rm -v <path>:/workspace alpine sh -c chown.../chmod...`.
+        Three tests reached the daemon through it while this suite reported
+        zero, because its caller at `pipelines/run.py` is gated behind
+        `platform.system() == "linux"` -- so a macOS run never took the branch
+        and CI did, on every Linux runner.
+
+        The stub lives in `stub_docker_environment_probes` rather than in those
+        three tests, because ~20 call sites reach this helper and a per-test
+        patch is a thing to forget.
+
+        This canary is platform-independent even though the bug was not: the
+        helper accepts both darwin and linux, so calling it directly here would
+        shell out on either, and the guard would stop it. Removing the stub
+        fails this test on any developer machine, not only on CI.
+        """
+        import os
+        import tempfile
+
+        self.assertNotEqual(
+            "true",
+            os.environ.get("LDM_DRY_RUN", "").lower(),
+            "LDM_DRY_RUN short-circuits the helper, which would make this "
+            "canary pass without proving anything.",
+        )
+
+        from ldm_core.utils import reclaim_volume_permissions
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertTrue(
+                reclaim_volume_permissions(tmp),
+                "Quality Gate Violation: reclaim_volume_permissions() is not "
+                "stubbed. Without it the suite runs `docker run alpine "
+                "chown/chmod` against real paths -- see the platform-gating "
+                "trap in docs/TESTING.md.",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
