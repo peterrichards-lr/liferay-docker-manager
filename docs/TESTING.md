@@ -200,6 +200,35 @@ To prevent test-runner hangs, memory exhaustion, and side-effect leakage in CI p
 
 ## 🚀 Local E2E Platform Verification Scripts (Multi-OS)
 
+### Disk space pre-flight
+
+Both scripts refuse to start unless Docker has room to finish (LDM-#1406). The
+default floor is **10 GB**; override with `LDM_VERIFY_MIN_DISK_GB`.
+
+The check asks **Docker**, not the host:
+
+```bash
+docker run --rm alpine df -P -k /
+```
+
+On Docker Desktop, Colima and OrbStack the engine's storage lives inside a VM
+with its own, far smaller disk. Measured on a developer machine mid-verification:
+
+| View | Free |
+|---|---|
+| Host (`df /`) | 109.2 GB |
+| Docker VM | 12.5 GB |
+
+A host-side check would have waved that run through. This is the same reasoning
+as `Doctor._check_absolute_disk_space` (LDM-#1095), and using a throwaway
+container keeps the `.sh` and `.ps1` implementations identical rather than
+needing two host-specific ones.
+
+The run refuses **before pulling anything**, so a machine that cannot finish
+never produces a half-written report. That matters because a report which failed
+for lack of disk still reads as a defect finding, and these reports are the
+project's honest record of what was actually tested.
+
 To verify the complete container lifecycle, volume mount synchronization, and CLI options natively on local developer machines:
 
 ### **1. macOS & Linux**
