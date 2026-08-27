@@ -2,6 +2,8 @@ import subprocess
 import unittest
 from pathlib import Path
 
+import pytest
+
 # LDM-#1271: these tests invoke the real `ldm run` in a temp directory, which
 # creates real Docker volumes named after the project -- and the project name is
 # the temp directory's basename. `shutil.rmtree` removes the directory, but
@@ -49,7 +51,22 @@ def _remove_ldm_volumes_for(tmp_dir):
         )
 
 
+@pytest.mark.needs_docker
 class TestE2EInteractive(unittest.TestCase):
+    """LDM-#1409: genuinely needs a daemon, so it is marked rather than mocked.
+
+    These drive the real ``ldm`` CLI as a subprocess. The Docker work therefore
+    happens in a child process, where the in-process guard cannot see it -- and
+    mocking would defeat the point, since what they verify is the behaviour of
+    the shipped entry point.
+
+    They do create and destroy real resources (``docker compose down -v``,
+    ``docker rm -f <tmpname>``, ``docker volume rm <tmpname>-data``), all named
+    after the pytest tmpdir that owns them. Skip them with::
+
+        pytest -m "not needs_docker"
+    """
+
     def test_interactive_fallback_with_piped_input(self):
         """
         End-to-End test to ensure that piped input correctly navigates

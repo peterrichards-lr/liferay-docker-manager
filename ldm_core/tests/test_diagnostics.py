@@ -22,6 +22,7 @@ from ldm_core.diagnostics.doctor import (
 )
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.diagnostics import DiagnosticsService
+from ldm_core.tests.tmproot import TEST_TMP_ROOT
 
 
 class MockArgs:
@@ -279,7 +280,13 @@ class TestDiagnostics(unittest.TestCase):
         self.assertTrue(any("LDM Version" in r[0] for r in runner.results))
         self.assertTrue(any("Executable Integrity" in r[0] for r in runner.results))
 
-    @patch("ldm_core.utils.get_actual_home", return_value=Path("/tmp"))
+    # LDM-#1402: this must stay the parent of the project path set below --
+    # _check_global_config_and_network does
+    # `test_path.relative_to(get_actual_home())` and skips the whole volume
+    # check when the project is not under the home. Pinning the home to /tmp
+    # while the project moved to the per-process root silently removed the
+    # "Volume Permissions" result this test asserts on.
+    @patch("ldm_core.utils.get_actual_home", return_value=Path(TEST_TMP_ROOT))
     @patch(
         "ldm_core.diagnostics.doctor.check_mkcert",
         return_value=("OK", True, "/root"),
@@ -288,8 +295,12 @@ class TestDiagnostics(unittest.TestCase):
     def test_check_global_config_and_network(self, mock_run, mock_mkcert, mock_home):
         runner = DoctorRunner(self.manager.diagnostics)
         runner.docker_version = "24.0.0"
-        runner.project_paths = [Path("/tmp/proj1")]
-        runner._check_global_config_and_network()
+        runner.project_paths = [Path(f"{TEST_TMP_ROOT}/proj1")]
+        # LDM-#1409: the network check calls the module-scope run_command in
+        # doctor.py (`docker network inspect liferay-net`), which patching the
+        # manager's own run_command does not reach.
+        with patch("ldm_core.diagnostics.doctor.run_command", return_value=""):
+            runner._check_global_config_and_network()
         self.assertTrue(any("mkcert" in r[0] for r in runner.results))
         self.assertTrue(any("Volume Permissions" in r[0] for r in runner.results))
 
@@ -311,7 +322,7 @@ class TestDiagnostics(unittest.TestCase):
             name="local", host="localhost", is_default=True
         )
         runner = DoctorRunner(self.manager.diagnostics)
-        runner.project_paths = [Path("/tmp/proj1")]
+        runner.project_paths = [Path(f"{TEST_TMP_ROOT}/proj1")]
         runner._check_project_specific()
         self.assertTrue(any("[proj1] Metadata" in r[0] for r in runner.results))
         self.assertTrue(any("[proj1] Config" in r[0] for r in runner.results))
@@ -339,7 +350,7 @@ class TestDiagnostics(unittest.TestCase):
             return_value={"tag": "2026.q1.4-lts", "env_args": [], "target": "aws-1"},
         ):
             runner = DoctorRunner(self.manager.diagnostics)
-            runner.project_paths = [Path("/tmp/proj1")]
+            runner.project_paths = [Path(f"{TEST_TMP_ROOT}/proj1")]
             runner._check_project_specific()
 
         ps_calls = [
@@ -498,7 +509,9 @@ class TestDiagnostics(unittest.TestCase):
             patch.object(
                 self.manager,
                 "find_dxp_roots",
-                return_value=[{"path": Path("/tmp/proj1"), "version": "2024.q1.0"}],
+                return_value=[
+                    {"path": Path(f"{TEST_TMP_ROOT}/proj1"), "version": "2024.q1.0"}
+                ],
             ),
             patch.object(
                 self.manager,
@@ -549,7 +562,7 @@ class TestDiagnostics(unittest.TestCase):
                 "find_dxp_roots",
                 return_value=[
                     {
-                        "path": Path("/tmp/proj1"),
+                        "path": Path(f"{TEST_TMP_ROOT}/proj1"),
                         "version": "2024.q1.0",
                         "last_seen": None,
                     }
@@ -586,7 +599,7 @@ class TestDiagnostics(unittest.TestCase):
             self.assertEqual(entry["total_containers"], 1)
             self.assertEqual(entry["url"], "http://localhost:8080")
             self.assertTrue(entry["seeded"])
-            self.assertEqual(entry["path"], str(Path("/tmp/proj1")))
+            self.assertEqual(entry["path"], str(Path(f"{TEST_TMP_ROOT}/proj1")))
             self.assertIn("http_ready", entry)
             self.assertIn("http_status", entry)
             # No ANSI color codes should ever leak into JSON output.
@@ -612,7 +625,7 @@ class TestDiagnostics(unittest.TestCase):
                 "find_dxp_roots",
                 return_value=[
                     {
-                        "path": Path("/tmp/proj1"),
+                        "path": Path(f"{TEST_TMP_ROOT}/proj1"),
                         "version": "2024.q1.0",
                         "last_seen": None,
                     }
@@ -659,7 +672,7 @@ class TestDiagnostics(unittest.TestCase):
                 "find_dxp_roots",
                 return_value=[
                     {
-                        "path": Path("/tmp/proj1"),
+                        "path": Path(f"{TEST_TMP_ROOT}/proj1"),
                         "version": "2024.q1.0",
                         "last_seen": None,
                     }
@@ -923,12 +936,17 @@ class TestDiagnostics(unittest.TestCase):
     def test_check_global_config_and_network_ro(self):
         runner = DoctorRunner(self.manager.diagnostics)
         runner.docker_version = "24.0.0"
-        runner.project_paths = [Path("/tmp/proj1")]
+        runner.project_paths = [Path(f"{TEST_TMP_ROOT}/proj1")]
         runner.provider = "Colima"
         # Patch ldm_core.utils.get_actual_home directly
         with (
-            patch("ldm_core.utils.get_actual_home", return_value=Path("/tmp")),
+            # LDM-#1402: as above -- must be the parent of runner.project_paths
+            # or the volume check is skipped entirely.
+            patch("ldm_core.utils.get_actual_home", return_value=Path(TEST_TMP_ROOT)),
             patch.object(self.manager, "run_command", return_value="Permission denied"),
+            # LDM-#1409: as above -- the manager's run_command is a different
+            # function from the module-scope one the network check uses.
+            patch("ldm_core.diagnostics.doctor.run_command", return_value=""),
         ):
             runner._check_global_config_and_network()
             self.assertTrue(any("Read-Only" in str(r[1]) for r in runner.results))
@@ -1021,7 +1039,21 @@ class TestDiagnostics(unittest.TestCase):
         from contextlib import redirect_stdout
 
         f = io.StringIO()
-        with redirect_stdout(f), patch("sys.exit"):
+        # LDM-#1409: _check_dangling_and_print calls _check_absolute_disk_space,
+        # which runs `docker run --rm alpine df -P -k /` -- a real container, on
+        # a machine these tests only want to render a table on. It is also the
+        # call that hangs indefinitely on a stalled Docker socket (#1410), since
+        # it passes no timeout. Neither test asserts anything about disk space.
+        with (
+            redirect_stdout(f),
+            patch("sys.exit"),
+            patch.object(runner, "_check_absolute_disk_space"),
+            # ...and the dangling-resource scan itself runs
+            # `docker system df --format {{json .}}` through the module-scope
+            # run_command. Both tests only assert on which section headings the
+            # rendered table contains.
+            patch("ldm_core.diagnostics.doctor.run_command", return_value=""),
+        ):
             runner._check_dangling_and_print()
             output = f.getvalue()
             self.assertIn("System (Python, Executable, Venv)", output)
@@ -1048,7 +1080,21 @@ class TestDiagnostics(unittest.TestCase):
         from contextlib import redirect_stdout
 
         f = io.StringIO()
-        with redirect_stdout(f), patch("sys.exit"):
+        # LDM-#1409: _check_dangling_and_print calls _check_absolute_disk_space,
+        # which runs `docker run --rm alpine df -P -k /` -- a real container, on
+        # a machine these tests only want to render a table on. It is also the
+        # call that hangs indefinitely on a stalled Docker socket (#1410), since
+        # it passes no timeout. Neither test asserts anything about disk space.
+        with (
+            redirect_stdout(f),
+            patch("sys.exit"),
+            patch.object(runner, "_check_absolute_disk_space"),
+            # ...and the dangling-resource scan itself runs
+            # `docker system df --format {{json .}}` through the module-scope
+            # run_command. Both tests only assert on which section headings the
+            # rendered table contains.
+            patch("ldm_core.diagnostics.doctor.run_command", return_value=""),
+        ):
             runner._check_dangling_and_print()
             output = f.getvalue()
             self.assertIn("Python Version", output)
@@ -2014,6 +2060,12 @@ class TestPruneRespectsProjectUuid(unittest.TestCase):
         reported = []
         with (
             patch.object(prune_mod, "run_command", side_effect=fake_run),
+            # LDM-#1409: run_prune also asks DockerService whether the global
+            # search container is up. DockerService's statics call the
+            # module-scope run_command in docker_service.py, which the patch
+            # above does not reach, so this test issued a real
+            # `docker ps -f name=^liferay-search-global$` on every run.
+            patch("ldm_core.docker_service.run_command", return_value=""),
             patch.object(
                 prune_mod.UI, "detail", side_effect=lambda m: reported.append(str(m))
             ),

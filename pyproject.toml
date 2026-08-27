@@ -120,6 +120,13 @@ python_files = "test_*.py"
 # floors declared (40 here, 60 below) with only the looser one enforced.
 # The floor is defined in exactly one place -- see fail_under below. (#1239)
 addopts = "--cov=ldm_core --cov-report=term-missing"
+markers = [
+    # LDM-#1409: opts a test out of the block_real_docker guard in
+    # ldm_core/tests/conftest.py. Use it only for tests that genuinely need a
+    # live daemon, and expect them to create and remove real resources on the
+    # machine that runs them. Skip them with: pytest -m "not needs_docker"
+    "needs_docker: test requires a real Docker daemon and may touch real containers",
+]
 
 [tool.coverage.run]
 source = ["ldm_core"]
