@@ -2281,3 +2281,71 @@ class TestSearchIndexPrefix(unittest.TestCase):
         got = search_index_prefix("proj")
         self.assertTrue(got.startswith("ldm-"))
         self.assertTrue(got.endswith("-"))
+
+
+class TestProjectUuid(unittest.TestCase):
+    """LDM-#1393: LDM's primary key for a project is an internal UUID.
+
+    The project *name* is the user's key -- unique, and what every command
+    resolves by -- but the user chooses it, so it can collide. Two projects
+    sharing a name were previously indistinguishable from one project that had
+    moved, which is why the non-interactive path silently unregistered the
+    other and tore down its volumes.
+    """
+
+    def _handler(self):
+        from ldm_core.handlers.base import BaseHandler
+
+        return BaseHandler.__new__(BaseHandler)
+
+    def _meta(self, root):
+        return json.loads((Path(root) / "meta").read_text())
+
+    def test_a_new_project_is_given_a_uuid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._handler().write_meta(Path(tmp), {"container_name": "p"})
+            got = self._meta(tmp).get("uuid")
+            self.assertTrue(got)
+            # A real UUID, not a name-derived string.
+            self.assertEqual(5, len(got.split("-")))
+
+    def test_it_survives_a_read_modify_write_that_drops_the_key(self):
+        """The hazard: callers routinely rebuild meta from a subset of itself.
+
+        Minting from the passed dict alone would silently change the project's
+        identity on such a write -- worse than having no UUID at all.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            h = self._handler()
+            h.write_meta(Path(tmp), {"container_name": "p", "tag": "a"})
+            first = self._meta(tmp)["uuid"]
+            h.write_meta(Path(tmp), {"container_name": "p", "tag": "b"})
+            after = self._meta(tmp)
+            self.assertEqual(first, after["uuid"], "identity must not change")
+            self.assertEqual("b", after["tag"], "and the write must still apply")
+
+    def test_an_explicit_uuid_is_respected(self):
+        """Restore and import paths carry the original project's identity."""
+        with tempfile.TemporaryDirectory() as tmp:
+            self._handler().write_meta(
+                Path(tmp), {"container_name": "p", "uuid": "carried-over"}
+            )
+            self.assertEqual("carried-over", self._meta(tmp)["uuid"])
+
+    def test_an_existing_project_is_backfilled_once_and_then_stable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "meta").write_text(json.dumps({"container_name": "legacy"}))
+            h = self._handler()
+            h.write_meta(Path(tmp), {"container_name": "legacy"})
+            first = self._meta(tmp)["uuid"]
+            self.assertTrue(first, "a pre-UUID project must be backfilled")
+            h.write_meta(Path(tmp), {"container_name": "legacy", "tag": "t"})
+            self.assertEqual(first, self._meta(tmp)["uuid"])
+
+    def test_two_projects_get_different_uuids(self):
+        """The point: same name, different identity."""
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+            h = self._handler()
+            h.write_meta(Path(a), {"container_name": "same-name"})
+            h.write_meta(Path(b), {"container_name": "same-name"})
+            self.assertNotEqual(self._meta(a)["uuid"], self._meta(b)["uuid"])

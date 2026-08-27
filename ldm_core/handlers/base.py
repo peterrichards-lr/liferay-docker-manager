@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -762,6 +763,38 @@ class BaseHandler:
             pass
         return read_meta(path)
 
+    @staticmethod
+    def _ensure_project_uuid(target, meta):
+        """Guarantees the project carries a stable internal UUID (LDM-#1393).
+
+        The UUID is LDM's primary key for a project. The project *name* is the
+        user's key -- unique, and what every command resolves by -- but it is
+        chosen by the user and can therefore collide, which is how registering a
+        project copied in from elsewhere could silently unregister an unrelated
+        one and tear down its volumes.
+
+        Deliberately never surfaced by default: users think in names.
+
+        It is read back from the existing meta file rather than taken only from
+        the passed dict, because callers routinely read a meta, build a fresh
+        dict from a subset of it, and write that back. Trusting the dict alone
+        would mint a *new* UUID on such a write and silently change the
+        project's identity -- worse than not having one.
+        """
+        if meta.get("uuid"):
+            return meta
+
+        from ldm_core.utils import read_meta
+
+        carried = None
+        if target.exists():
+            with contextlib.suppress(Exception):
+                carried = (read_meta(target) or {}).get("uuid")
+
+        meta = dict(meta)
+        meta["uuid"] = carried or str(uuid.uuid4())
+        return meta
+
     def write_meta(self, path, meta):
         """Writes project metadata, preserving the existing filename if possible."""
         from ldm_core.utils import resolve_meta_file_path, safe_mkdir, write_meta
@@ -773,7 +806,9 @@ class BaseHandler:
         try:
             target = resolve_meta_file_path(path)
             safe_mkdir(target.parent, parents=True, exist_ok=True)
-            write_meta(target, meta)
+            # LDM-#1393: every write goes through here, so this is also where an
+            # existing project without a UUID gets one, on first touch.
+            write_meta(target, self._ensure_project_uuid(target, meta))
         except Exception:
             pass
 
