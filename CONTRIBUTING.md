@@ -51,7 +51,7 @@ We enforce a **Structured Gated Workflow** for all contributions to maintain qua
 We encourage the use of AI to help improve LDM.
 
 - **Preferred Tool**: [Gemini](https://gemini.google.com/) is the preferred AI assistant for this project.
-- **Guidance**: You are free to use other AI tools (like Copilot or ChatGPT), but you **MUST** ensure that your tool adheres to the architectural and engineering standards defined in [`.gemini/gemini.md`](.gemini/gemini.md).
+- **Guidance**: You are free to use other AI tools (like Copilot or ChatGPT), but you **MUST** ensure that your tool adheres to the architectural and engineering standards defined in [`AGENTS.md`](AGENTS.md) and the skill modules it routes to.
 - **Verification**: AI-generated code must still pass all local linting and unit tests (`./lint.sh`) before being submitted.
 - **Documentation**: AI-assisted changes MUST include corresponding documentation updates where applicable (e.g., README updates for new flags or behavior changes).
 
@@ -177,4 +177,4 @@ By contributing, you agree that your contributions will be licensed under its **
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-04* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*

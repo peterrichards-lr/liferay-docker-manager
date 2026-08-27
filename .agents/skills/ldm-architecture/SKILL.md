@@ -5,6 +5,16 @@ description: Activate this skill whenever designing new features, modifying Dock
 
 # LDM Architecture Mandates
 
+## Founding Patterns of LDM
+
+These are the UX invariants every LDM command is built around. A new command
+that breaks one of them is a design defect, not a matter of taste:
+
+- **Sensible Defaults**: Where a standard Liferay convention exists, LDM adopts it automatically (port `8080`, managed database name `lportal`).
+- **Smart Context**: A command run from inside a project folder detects the project context rather than demanding it be named.
+- **Interactive Fallback**: When a required value (project name, Liferay tag) is neither supplied nor detectable, LDM prompts for it or offers a list of choices -- it does not simply error out.
+- **Graceful Abort**: Typing `q` at any interactive prompt safely cancels the operation.
+
 ## Hybrid Volume Strategy (macOS / ExFAT)
 
 To resolve critical filesystem locking deadlocks (e.g., `Unable to create lock manager` or `access_denied_exception`), LDM MUST use a split-volume approach:
@@ -54,6 +64,15 @@ To resolve critical filesystem locking deadlocks (e.g., `Unable to create lock m
 - **Search**: Use shared Global Search (ES8) by default; support Sidecar fallback isolation.
 - **Self-Tuning JVM**: LDM MUST proactively scale JVM resources (e.g. `ReservedCodeCacheSize=512m`) and disable restrictive optimizations (e.g. `TieredStopAtLevel=1`) during "Production-grade" workloads like full search reindexing to prevent `NoSuchMethodException` and `CodeCache` exhaustion.
 - **Logging**: Force `LIFERAY_LOG4J2_CONFIGURATION_FILE` injection to guarantee hot-reload capability.
+
+## Terminal UI Integrity
+
+- **Line Clearing**: Any long-running operation that renders a spinner or progress line MUST emit the `\033[K` ANSI erase-to-end-of-line code before each update. Without it, a shorter frame leaves characters from the previous frame on screen ("bleed").
+- **Whitespace-Aware Truncation**: Truncating a status line to the terminal width MUST break on whitespace, never mid-word.
+
+Both are already implemented by the `Spinner` engine (`ldm_core/ui.py:244`,
+line-clearing at `:283-296`, truncation at `:273-279`). Route new progress
+reporting through that engine rather than hand-rolling carriage returns.
 
 ## Automation Standards
 
@@ -108,6 +127,17 @@ To support CI/CD pipelines and headless automation, all LDM commands MUST adhere
   `124`/`127` this is a deliberate shell-convention exit, not an LDM-contract
   code, so do not renumber it into the 0-5 range.
 
+### Piped-Input Automation
+
+LDM accepts answers to interactive prompts on standard input, so a prompting
+flow can be scripted without needing a dedicated flag for every question:
+
+```bash
+echo -e "n\nmy-project\n\n\n" | ldm run
+```
+
+- **Shell Precedence Pitfall**: When piping into a chained command, the pipe must bind to LDM itself. `echo "y" | cd /tmp && ldm run` pipes into `cd`, not into `ldm`. Write `cd /tmp && echo "y" | ldm run` instead.
+
 ## Liferay Cloud Golden Path
 
 LDM serves as a bridge for Liferay Cloud development. To maintain stability, it enforces a strict boundary:
@@ -116,6 +146,15 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - **Data (LCP)**: LDM automates the retrieval and restoration of Cloud backups (`database.gz` and `volume.tgz`).
 - **Orchestration**: LDM must dynamically flatten LCP's nested backup structures into standard LDM snapshots during hydration.
 
+## Liferay Client Extension (CX) Standards
+
+When LDM generates, deploys, or reasons about Client Extensions:
+
+- **YAML Integrity**: Cross-reference generated or modified code against the extension's `client-extension.yaml`. The descriptor and the code must agree.
+- **OAuth2 & Context**: Authenticate through `Liferay.authToken` / the platform's OAuth2 flow. Never hardcode credentials.
+- **Workspace Awareness**: Respect the workspace layout -- Client Extensions live under `[workspace-root]/client-extensions/`, which is why that path is a host bind-mount in the volume strategy above rather than a Named Volume.
+- **Deployment Ordering**: Client Extensions have ordering dependencies (an OAuth2 CX before the Batch CX that authenticates through it, before the frontend custom element that calls it). State the required order rather than deploying blind.
+
 ## Custom Containers & Multi-Compose Architecture
 
 - **Custom Containers Integration**: When a user requests to run external services (e.g., WordPress, Node.js, Web Crawler) alongside Liferay, use the LDM `custom_containers` feature rather than altering the native LDM Python orchestration.
@@ -123,4 +162,4 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-22* | *Last Reviewed: 2026-08-22*
+*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*
