@@ -1,3 +1,5 @@
+import re
+
 from ldm_core.config import get_active_target
 from ldm_core.utils import is_local_host, run_command
 
@@ -99,6 +101,48 @@ class DockerService:
         ]
         res = run_command(cmd, check=False)
         return bool(res and res.strip())
+
+    @staticmethod
+    def published_host_ports(target_name: str | None = None) -> set[int]:
+        """Host ports currently published by running containers.
+
+        Docker's port allocator -- not the host socket -- is the authority on
+        whether a container can take a port. `docker compose up` fails with
+        "port is already allocated" straight from that allocation table,
+        before any host bind is attempted, so a socket probe is answering a
+        different question and can disagree with it.
+
+        LDM-#1417: on Windows the socket probes cannot answer it at all. A
+        bind to 127.0.0.1:P succeeds while Docker Desktop holds 0.0.0.0:P, and
+        the connect probe added to work around that was measured taking 1-3
+        seconds to be accepted on a published port -- far longer than any
+        timeout worth spending on every free-port check, so it timed out and
+        reported the port free. One `docker ps` costs ~100ms and is
+        deterministic, which is why the allocator is asked directly rather
+        than inferred from a socket.
+
+        Returns an empty set if Docker is unreachable: absence of evidence is
+        not evidence the port is free, and the socket probes still run.
+        """
+        cmd = [
+            *DockerService.get_docker_cmd_prefix(target_name),
+            "ps",
+            "--format",
+            "{{.Ports}}",
+        ]
+        res = run_command(cmd, check=False)
+        if not res:
+            return set()
+        # Rows look like "0.0.0.0:5601->80/tcp, [::]:5601->80/tcp". Only the
+        # published host port (left of "->") matters; the container-side port
+        # and any unpublished "80/tcp" entry must not be picked up.
+        ports = set()
+        for match in re.findall(r":(\d{1,5})->", res):
+            try:
+                ports.add(int(match))
+            except ValueError:  # pragma: no cover - re guarantees digits
+                continue
+        return ports
 
     @staticmethod
     def get_status(container_name: str, target_name: str | None = None) -> str:
