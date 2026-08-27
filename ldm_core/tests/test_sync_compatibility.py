@@ -5,6 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from ldm_core.ui import UI
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"))
 
 import sync_compatibility
@@ -219,3 +221,68 @@ class TestMismatchedCheckoutGuard:
     def test_archive_stale_flag_can_be_opted_into(self, mock_sync):
         sync_compatibility.main(["--archive-stale"])
         assert sync_compatibility.ARCHIVE_STALE is True
+
+
+class TestArchivePlanOutput:
+    """LDM-#1390: --archive-stale is the deliberate path, and "deliberate" only
+    means something if you can see what it is about to do. The moves used to be
+    announced one line at a time as each happened, interleaved with the rest of
+    the sync."""
+
+    PLANNED: typing.ClassVar[list] = [
+        (
+            Path("verify-linux-ubuntu-20260827-pass.txt"),
+            "verify-linux-ubuntu-fail-ab12cd34.txt",
+            "binary version 9.9.9 != 2.18.0",
+        ),
+        (
+            Path("verify-macos-colima-20260827-pass.txt"),
+            "verify-macos-colima-fail-ef56ab78.txt",
+            "verify script version 9.9.9 != 2.18.0",
+        ),
+    ]
+
+    def teardown_method(self):
+        UI.QUIET_MODE = False
+        sync_compatibility.ARCHIVE_STALE = False
+
+    def test_it_lists_each_source_and_its_destination(self, capsys):
+        UI.QUIET_MODE = False
+        sync_compatibility._announce_archive_plan(self.PLANNED)
+        out = capsys.readouterr().out + capsys.readouterr().err
+        for src, dest, reason in self.PLANNED:
+            assert src.name in out, f"{src.name} not listed"
+            assert dest in out, f"destination {dest} not shown"
+            assert reason in out, "the reason for archiving must be visible"
+
+    def test_it_says_how_many_and_which_version_it_matched_against(self, capsys):
+        UI.QUIET_MODE = False
+        sync_compatibility._announce_archive_plan(self.PLANNED)
+        out = capsys.readouterr().out
+        assert "2 raw report(s)" in out
+        assert sync_compatibility.VERSION in out
+
+    def test_quiet_suppresses_the_plan(self, capsys):
+        UI.QUIET_MODE = True
+        sync_compatibility._announce_archive_plan(self.PLANNED)
+        assert capsys.readouterr().out.strip() == ""
+
+    @patch("sync_compatibility.sync_reports")
+    def test_quiet_flag_sets_the_ui_switch(self, mock_sync):
+        sync_compatibility.main(["--quiet"])
+        assert UI.QUIET_MODE is True
+
+    @patch("sync_compatibility.sync_reports")
+    def test_not_quiet_by_default(self, mock_sync):
+        sync_compatibility.main([])
+        assert UI.QUIET_MODE is False
+
+    def test_quiet_never_hides_the_refusal(self, capsys):
+        """Suppressing progress must not suppress a failure."""
+        UI.QUIET_MODE = True
+        with pytest.raises(SystemExit):
+            sync_compatibility._report_mismatched_checkout(
+                [("verify-linux-ubuntu-pass.txt", "binary version 9.9.9 != 2.18.0")]
+            )
+        captured = capsys.readouterr()
+        assert "Refusing to archive" in (captured.out + captured.err)

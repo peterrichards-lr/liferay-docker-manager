@@ -30,6 +30,31 @@ def _mutate(description, action):
     action()
 
 
+def _announce_archive_plan(planned):
+    """Lists every raw report about to be archived, and the name it moves to.
+
+    LDM-#1390. `--archive-stale` is the deliberate path, but "deliberate" only
+    means something if the operator can see what it is about to do. These moves
+    used to be announced one line at a time as each happened, interleaved with
+    the rest of the sync. A plan printed up front is checkable *before* anything
+    moves, and reads as one list rather than scattered lines.
+
+    Suppressed by `--quiet` via `UI.QUIET_MODE`. Only this routine progress
+    output is suppressible -- the refusal in _report_mismatched_checkout is not.
+    """
+    if UI.QUIET_MODE:
+        return
+    width = max(len(r.name) for r, _n, _reason in planned)
+    UI.info(
+        f"Archiving {len(planned)} raw report(s) whose version does not match "
+        f"this checkout (VERSION {VERSION}):"
+    )
+    for r, archived_name, reason in planned:
+        UI.raw(f"    {r.name.ljust(width)}  ->  {archived_name}")
+        UI.raw(f"    {' ' * width}      ({reason})")
+    UI.raw("")
+
+
 def _report_mismatched_checkout(stale, fatal=True):
     """Refuses to archive raw reports that only look stale because of the checkout.
 
@@ -659,14 +684,15 @@ def sync_reports():  # noqa: C901, PLR0912, PLR0915
                 fatal=not DRY_RUN,
             )
             stale_reports = []
-        for r, archived_name, reason in stale_reports:
-            UI.warning(
-                f"Archiving outdated raw report {r.name} -> {archived_name} ({reason})."
-            )
-            _mutate(
-                f"archive outdated raw report {r.name} -> {archived_name}",
-                lambda r=r, n=archived_name: shutil.move(str(r), str(archive_dir / n)),
-            )
+        if stale_reports:
+            _announce_archive_plan(stale_reports)
+            for r, archived_name, _reason in stale_reports:
+                _mutate(
+                    f"archive outdated raw report {r.name} -> {archived_name}",
+                    lambda r=r, n=archived_name: shutil.move(
+                        str(r), str(archive_dir / n)
+                    ),
+                )
 
     # 2. Standardize Filenames & Archive Old Reports
     # We only keep the LATEST report for each environment (internal_slug) in the root
@@ -861,6 +887,15 @@ def main(argv=None):
         help="Report every rename, archive and table edit without changing anything.",
     )
     parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help=(
+            "Suppress routine progress output, including the archive plan. "
+            "Warnings, refusals and errors are always shown."
+        ),
+    )
+    parser.add_argument(
         "--archive-stale",
         action="store_true",
         help=(
@@ -876,6 +911,8 @@ def main(argv=None):
     global DRY_RUN, ARCHIVE_STALE  # noqa: PLW0603
     DRY_RUN = args.dry_run
     ARCHIVE_STALE = args.archive_stale
+    # Reuses the existing UI-wide quiet switch rather than adding a parallel one.
+    UI.QUIET_MODE = args.quiet
 
     # The documented failure mode is a version mismatch between this checkout
     # and the reports, and it is otherwise invisible until files start moving.
