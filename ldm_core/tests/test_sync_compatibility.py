@@ -1,3 +1,4 @@
+import shutil
 import sys
 import typing
 from pathlib import Path
@@ -286,3 +287,79 @@ class TestArchivePlanOutput:
             )
         captured = capsys.readouterr()
         assert "Refusing to archive" in (captured.out + captured.err)
+
+
+class TestSandboxedPaths:
+    """LDM-#1391: the script used to hardcode the two paths it mutates, so there
+    was no way to exercise it without operating on the real verification record --
+    reports that are a verbatim account of what was actually tested, each
+    representing hours of real multi-platform running."""
+
+    def teardown_method(self):
+        UI.QUIET_MODE = False
+        sync_compatibility.ARCHIVE_STALE = False
+        sync_compatibility.DRY_RUN = False
+
+    @staticmethod
+    def _report(directory, name, version):
+        p = directory / name
+        p.write_text(
+            "LDM Verification Report\n"
+            f"Version:      {version}\n"
+            f"Script Ver:   {version}\n"
+            "Platform:     sandbox-probe\n"
+            "Result:       PASS\n"
+        )
+        return p
+
+    def test_defaults_point_at_the_shipped_locations(self):
+        """The override must not change real behaviour."""
+        assert (
+            Path("references/verification-results")
+            == sync_compatibility.DEFAULT_RESULTS_DIR
+        )
+        assert (
+            Path("docs/reference/compatibility.md")
+            == sync_compatibility.DEFAULT_TABLE_FILE
+        )
+
+    def test_a_real_sync_stays_inside_the_sandbox(self, tmp_path):
+        """The whole point: a full, non-dry sync that touches nothing real."""
+        results = tmp_path / "results"
+        results.mkdir()
+        table = tmp_path / "compatibility.md"
+        shutil.copy(sync_compatibility.DEFAULT_TABLE_FILE, table)
+        stale = self._report(
+            results, "verify-sandbox-20260827-000000-pass.txt", "9.9.9-pre.1"
+        )
+
+        real_before = sorted(
+            p.name for p in sync_compatibility.DEFAULT_RESULTS_DIR.rglob("*")
+        )
+
+        sync_compatibility.ARCHIVE_STALE = True
+        sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        assert not stale.exists(), "the stale report should have been archived"
+        assert list((results / "archived_findings").glob("*.txt")), (
+            "and archived inside the sandbox"
+        )
+        assert (
+            sorted(p.name for p in sync_compatibility.DEFAULT_RESULTS_DIR.rglob("*"))
+            == real_before
+        ), "the real verification record must be untouched"
+
+    def test_the_refusal_also_honours_the_sandbox(self, tmp_path):
+        results = tmp_path / "results"
+        results.mkdir()
+        table = tmp_path / "compatibility.md"
+        shutil.copy(sync_compatibility.DEFAULT_TABLE_FILE, table)
+        stale = self._report(
+            results, "verify-sandbox-20260827-000000-pass.txt", "9.9.9-pre.1"
+        )
+
+        sync_compatibility.ARCHIVE_STALE = False
+        with pytest.raises(SystemExit):
+            sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        assert stale.exists(), "refusing must leave the report where it was"

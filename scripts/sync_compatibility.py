@@ -1,5 +1,6 @@
 import argparse
 import hashlib
+import os
 import re
 import shutil
 import subprocess
@@ -17,6 +18,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # typo) fell straight through to a full sync -- archiving reports and rewriting
 # the compatibility table. For a tool the release runbook describes as able to
 # "discard real test data with no error", asking what it does must be safe.
+# The real, shipped locations. Overridable so tests never operate on the actual
+# verification record -- those reports are an honest historical account of what
+# was tested, and a test that rewrites them destroys real data (LDM-#1391).
+DEFAULT_RESULTS_DIR = Path("references/verification-results")
+DEFAULT_TABLE_FILE = Path("docs/reference/compatibility.md")
+
 DRY_RUN = False
 # LDM-#1390: opt-in before any raw report is archived for a version mismatch.
 ARCHIVE_STALE = False
@@ -573,12 +580,18 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
     }
 
 
-def sync_reports():  # noqa: C901, PLR0912, PLR0915
-    """Main synchronization logic."""
-    results_dir = Path("references/verification-results")
+def sync_reports(results_dir=None, table_file=None):  # noqa: C901, PLR0912, PLR0915
+    """Main synchronization logic.
+
+    `results_dir` and `table_file` default to the shipped locations. They exist
+    so tests can point at a temporary directory: a test that ran against the
+    real paths would archive and rewrite the actual verification record
+    (LDM-#1391).
+    """
+    results_dir = Path(results_dir) if results_dir else DEFAULT_RESULTS_DIR
     archive_dir = results_dir / "archived_findings"
     archive_dir.mkdir(parents=True, exist_ok=True)
-    source_file = Path("docs/reference/compatibility.md")
+    source_file = Path(table_file) if table_file else DEFAULT_TABLE_FILE
     if not source_file.exists():
         print(f"Error: {source_file} not found.")
         return
@@ -796,7 +809,13 @@ def sync_reports():  # noqa: C901, PLR0912, PLR0915
     for meta in sorted(table_metas, key=lambda x: (x["arch"], x["os"], x["provider"])):
         badge = get_badge(meta["provider"], meta["os"])
         icon = "✅" if meta["passed"] else "❌"
-        report_link = f"[{meta['report_path'].name}](../../references/verification-results/{meta['report_path'].name})"
+        # Derived rather than hardcoded, so an overridden results_dir still
+        # produces a correct link. At the defaults this is byte-identical to the
+        # previous literal "../../references/verification-results/<name>".
+        rel_report = os.path.relpath(
+            results_dir / meta["report_path"].name, source_file.parent
+        ).replace(os.sep, "/")
+        report_link = f"[{meta['report_path'].name}]({rel_report})"
 
         provider_display = f"**{meta['provider']}**"
         if meta["provider_v"]:
@@ -887,6 +906,19 @@ def main(argv=None):
         help="Report every rename, archive and table edit without changing anything.",
     )
     parser.add_argument(
+        "--results-dir",
+        metavar="PATH",
+        help=(
+            "Directory holding the raw verification reports "
+            f"(default: {DEFAULT_RESULTS_DIR})."
+        ),
+    )
+    parser.add_argument(
+        "--table",
+        metavar="PATH",
+        help=f"Compatibility table to rewrite (default: {DEFAULT_TABLE_FILE}).",
+    )
+    parser.add_argument(
         "-q",
         "--quiet",
         action="store_true",
@@ -918,7 +950,7 @@ def main(argv=None):
     # and the reports, and it is otherwise invisible until files start moving.
     UI.info(f"Syncing against VERSION {VERSION}{' (dry run)' if DRY_RUN else ''}")
 
-    sync_reports()
+    sync_reports(results_dir=args.results_dir, table_file=args.table)
 
     if DRY_RUN:
         UI.info("[dry-run] no files were changed. Re-run without --dry-run to apply.")
