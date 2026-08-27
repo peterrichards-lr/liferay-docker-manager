@@ -227,7 +227,13 @@ def test_circuit_breaker_trips(mock_manager):
     assert "Error: AI Action Circuit Breaker is currently TRIPPED" in res_stop
 
 
-def test_circuit_breaker_non_mutating_allowed(mock_manager):
+@patch("ldm_core.handlers.mcp.run_command", return_value="")
+def test_circuit_breaker_non_mutating_allowed(_mock_run_command, mock_manager):
+    """LDM-#1409: get_projects shells out to
+    `docker ps -a --filter name=^liferay-project1$ --format {{.State}}` via the
+    module-scope run_command in handlers/mcp.py. This test is about the circuit
+    breaker allowing a non-mutating call, not about what the machine happens to
+    be running."""
     from ldm_core.handlers.mcp import get_projects, start_project
 
     # Trip it

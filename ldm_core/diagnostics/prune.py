@@ -730,14 +730,43 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
 
     # 7. DNS Cleanup (Explicitly requested via --clean-hosts)
     if clean_hosts:
-        if is_dry_run:
-            UI.detail(
-                f"{UI.BYELLOW}[Dry Run] Would remove ALL LDM-managed entries from hosts file.{UI.COLOR_OFF}"
+        # LDM-#1416: `prune_all or (...)` short-circuited, so `--all` both
+        # enabled this and skipped its own confirmation -- the guard existed and
+        # was unreachable exactly when the operation was broadest. A maintainer
+        # lost 15 entries, including hostnames for real client-extension
+        # projects, to an unexplained `Password:` prompt with no list and no
+        # question. `--all` means "prune all categories", not "skip all
+        # confirmations"; `-y` is how a user says the latter.
+        entries = handler.manager._list_hosts_entries()
+        if not entries:
+            UI.detail("No LDM-managed hosts entries found.")
+        elif is_dry_run:
+            UI.info(
+                f"{UI.BYELLOW}[Dry Run] Would remove {len(entries)} LDM-managed "
+                f"hosts entr{'y' if len(entries) == 1 else 'ies'}:{UI.COLOR_OFF}"
             )
-        elif prune_all or (
-            not handler.manager.non_interactive
-            and UI.confirm("Remove ALL LDM-managed entries from your hosts file?", "N")
-        ):
-            handler.manager._remove_hosts_entries(all_ldm=True)
+            for host in entries:
+                UI.raw(f"    {host}")
+        else:
+            # Shown before the sudo prompt appears: an unexplained `Password:`
+            # from a cleanup command gives the user no chance to judge it.
+            UI.warning(
+                f"About to remove {len(entries)} LDM-managed entr"
+                f"{'y' if len(entries) == 1 else 'ies'} from your hosts file. "
+                "This needs sudo, and reclaims no disk space."
+            )
+            for host in entries:
+                UI.raw(f"    {host}")
+            UI.raw("")
+            UI.detail(
+                "These are how you reach a project by hostname; they are needed "
+                "again if a project is re-cloned or restored."
+            )
+            if handler.manager.non_interactive or UI.confirm(
+                "Remove ALL LDM-managed entries from your hosts file?", "N"
+            ):
+                handler.manager._remove_hosts_entries(all_ldm=True)
+            else:
+                UI.detail("Left the hosts file untouched.")
 
     UI.detail("Prune complete.")

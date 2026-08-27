@@ -316,6 +316,38 @@ fi
 "$LDM_CMD" -y rm "${PROJECT_NAME}" --delete --infra >/dev/null 2>&1 || true
 export LDM_WORKSPACE
 
+# LDM-#1419: clear leftovers from a PREVIOUS run before starting.
+#
+# The port holder is named per-run (ldm-e2e-port-holder-<port>), and only that
+# run's cleanup removes it. A run killed mid-flight -- which happened repeatedly
+# while chasing the restore hang (#1410) -- leaves a container publishing 5601
+# that no later run will ever touch, so the next run sees "Port 5601 is already
+# in use" during work that has nothing to do with the port-conflict check.
+#
+# Sweeping by prefix rather than exact name is the point: this run cannot know
+# what its predecessors were called.
+STALE=$(docker ps -aq --filter "name=^ldm-e2e-port-holder-" 2>/dev/null || true)
+if [ -n "$STALE" ]; then
+    echo "ℹ  Removing $(echo "$STALE" | wc -l | tr -d ' ') leftover port holder(s) from a previous run..."
+    echo "$STALE" | xargs -r docker rm -f >/dev/null 2>&1 || true
+fi
+
+# Likewise any kibana container left by an interrupted port-conflict check -- it
+# publishes 5601 and would fail the next run for the wrong reason.
+STALE_KIBANA=$(docker ps -aq --filter "name=portconflict-" 2>/dev/null || true)
+if [ -n "$STALE_KIBANA" ]; then
+    echo "$STALE_KIBANA" | xargs -r docker rm -f >/dev/null 2>&1 || true
+fi
+
+# LDM-#1419: record whether the global database pre-existed, so the #1400 check
+# can put the machine back as it found it. `ldm db start` PROVISIONS the
+# container when absent, and only stops it afterwards -- so a machine that never
+# had one is left with a stopped liferay-db-global it did not ask for.
+DB_GLOBAL_PREEXISTED=false
+if docker ps -aq --filter "name=^liferay-db-global$" 2>/dev/null | grep -q .; then
+    DB_GLOBAL_PREEXISTED=true
+fi
+
 # LDM-#1406: refuse to start without room to finish.
 #
 # A run that exhausts the disk fails somewhere in the middle, and surfaces as
@@ -1515,6 +1547,15 @@ if [ "$DB_CMD_OK" = true ]; then
     fi
 fi
 
+# LDM-#1419: leave the machine as we found it. If this check provisioned the
+# global database, remove it -- including its volume, which would otherwise
+# survive as an orphan (see #1414).
+if [ "$DB_GLOBAL_PREEXISTED" = false ]; then
+    echo "ℹ  Removing the global database this check provisioned..."
+    docker rm -f "$DB_GLOBAL" >/dev/null 2>&1 || true
+    docker volume rm liferay-db-global-data >/dev/null 2>&1 || true
+fi
+
 if [ "$DB_CMD_OK" = true ]; then
     report_ok "✅ 'ldm db start'/'db stop' drive the real global container, idempotently (LDM-#1400)."
 else
@@ -1620,14 +1661,50 @@ assert meta.get('search_mode') == 'shared', (
     % (meta.get('search_mode'),)
 )
 
-configs = list((root / 'osgi' / 'configs').glob('*ElasticsearchConfiguration.config'))
+configs_dir = root / 'osgi' / 'configs'
+configs = sorted(configs_dir.glob('*ElasticsearchConfiguration.config'))
 assert configs, (
     'no ElasticsearchConfiguration.config written; the LIFERAY_ELASTICSEARCH* '
     'env vars alone do not configure Liferay (#1353)'
 )
-body = configs[0].read_text(encoding='utf-8')
+
+# LDM-#1418: there can be BOTH an elasticsearch7 and an elasticsearch8 config.
+# The common/ baseline ships one per major version, and LDM writes the one
+# matching the project's tag. This used to read configs[0] -- alphabetically the
+# es7 file -- which for a modern (ES8) project is the inert baseline copy, so the
+# assertion tested a file the project never uses. It passed only on machines with
+# no common/ folder, where LDM's own file was the sole match.
+#
+# Take the highest major version present: that is the one a current tag uses.
+def _major(path):
+    marker = 'elasticsearch'
+    tail = path.name.split(marker, 1)[1]
+    digits = ''
+    for ch in tail:
+        if not ch.isdigit():
+            break
+        digits += ch
+    return int(digits or 0)
+
+active = max(configs, key=_major)
+body = active.read_text(encoding='utf-8')
 assert 'productionModeEnabled=B' in body, body
-assert 'liferay-search-global:9200' in body, body
+
+# LDM-#1418: the shared cluster address is valid in EITHER shape --
+# networkHostAddresses inline in this file, or a remoteClusterConnectionId
+# pointing at a sibling ElasticsearchConnectionConfiguration that carries it.
+# Both reach the same cluster; asserting only the inline form rejected a correct
+# project.
+sibling = configs_dir / active.name.replace(
+    'ElasticsearchConfiguration', 'ElasticsearchConnectionConfiguration'
+)
+address_sources = [body]
+if sibling.exists():
+    address_sources.append(sibling.read_text(encoding='utf-8'))
+assert any('liferay-search-global:9200' in text for text in address_sources), (
+    'neither %s nor its connection config points at the shared cluster'
+    % (active.name,)
+)
 
 prefix = [l for l in body.splitlines() if l.startswith('indexNamePrefix')]
 assert prefix, body

@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.runtime import RuntimeService
+from ldm_core.tests.tmproot import TEST_TMP_ROOT
 
 
 class MockRuntime(BaseHandler):
@@ -543,6 +544,13 @@ class TestOrchestration(unittest.TestCase):
 
     def test_sync_stack_runs_compose(self):
         with (
+            # LDM-#1409: on Linux (and so on CI, but never on a macOS dev
+            # machine) pipelines/run.py takes the
+            # `elif platform.system() == "linux"` branch and calls
+            # reclaim_volume_permissions, which runs
+            # `docker run --rm -v <path> alpine chown -R ...`. Patching it
+            # matches what test_sidecar.py already does.
+            patch("ldm_core.utils.reclaim_volume_permissions"),
             patch.object(
                 self.handler, "detect_project_path", return_value=self.tmp_dir
             ),
@@ -707,7 +715,7 @@ class TestStopHintIsNotLeakedToInternalCallers(unittest.TestCase):
     def _stop(self, **kwargs):
         manager = MagicMock()
         manager.find_dxp_roots.return_value = []
-        manager.detect_project_path.return_value = Path("/tmp/proj")
+        manager.detect_project_path.return_value = Path(f"{TEST_TMP_ROOT}/proj")
         manager.read_meta.return_value = {"target": None}
         manager.run_command.return_value = ""
         from ldm_core.runtime.orchestration import OrchestrationService

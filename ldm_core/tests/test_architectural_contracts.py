@@ -3,6 +3,7 @@ import inspect
 import os
 import pkgutil
 import re
+import sys
 import tempfile
 import typing
 import unittest
@@ -75,6 +76,19 @@ class TestArchitecturalContracts(unittest.TestCase):
 
     def setUp(self):
         from unittest.mock import patch
+
+        # LDM-#1409: the shared-search branch of sync_common_assets runs
+        # `docker inspect -f {{.Config.Image}} liferay-search-global` through
+        # the module-scope run_command in handlers/config.py. The tests patch
+        # `self.manager.run_command`, a different function, so it never reached
+        # that call and a contract test about compose output was querying the
+        # developer's real daemon. None is the "no shared search container"
+        # branch these tests already assume.
+        config_run_patcher = patch(
+            "ldm_core.handlers.config.run_command", return_value=None
+        )
+        config_run_patcher.start()
+        self.addCleanup(config_run_patcher.stop)
 
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp_dir.name)
@@ -458,6 +472,95 @@ class TestArchitecturalContracts(unittest.TestCase):
             "get_actual_home() ignores HOME on macOS (see #1349), so "
             "LDM_HOME is the only lever that can redirect LDM state.",
         )
+
+    def test_the_docker_guard_can_actually_fail(self):
+        """Contract: block_real_docker must stop a Docker call (#1409).
+
+        A guard that cannot fail is worse than no guard, because it reports
+        safety it does not provide. That is not hypothetical here: the first
+        version of the #1349 home-isolation canary used a filename that did not
+        match prune's glob, so it passed against the unfixed code and proved
+        nothing.
+
+        So this drives a real Docker argv through the same boundary the guard
+        watches, and asserts it is stopped. Two properties are checked
+        together, because either alone can pass while the guard is useless:
+
+        1. A Docker argv raises.
+        2. A non-Docker argv still runs -- the guard intercepts, it does not
+           replace subprocess wholesale. If this half broke, every test that
+           legitimately shells out would fail and the guard would be reverted.
+
+        `docker version --format {{.Client.Version}}` is chosen deliberately:
+        entirely read-only, so if the guard ever *does* regress, the worst this
+        test can do to the machine is ask it a question.
+        """
+        import subprocess
+
+        with self.assertRaises(BaseException) as caught:
+            subprocess.run(
+                ["docker", "version", "--format", "{{.Client.Version}}"],
+                capture_output=True,
+                check=False,
+            )
+        self.assertIn(
+            "reached the real Docker daemon",
+            str(caught.exception),
+            "Quality Gate Violation: a Docker command ran during a test. The "
+            "block_real_docker fixture in ldm_core/tests/conftest.py is "
+            "missing or disabled; without it the suite stops and removes the "
+            "developer's own containers, contexts and volumes (see #1409).",
+        )
+
+        # The pass-through half.
+        completed = subprocess.run(
+            [sys.executable, "-c", "print('not docker')"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(0, completed.returncode)
+        self.assertIn("not docker", completed.stdout)
+
+    def test_reclaim_volume_permissions_is_neutralised(self):
+        """Contract: the alpine chown/chmod helper must not reach Docker (#1409).
+
+        `reclaim_volume_permissions()` runs
+        `docker run --rm -v <path>:/workspace alpine sh -c chown.../chmod...`.
+        Three tests reached the daemon through it while this suite reported
+        zero, because its caller at `pipelines/run.py` is gated behind
+        `platform.system() == "linux"` -- so a macOS run never took the branch
+        and CI did, on every Linux runner.
+
+        The stub lives in `stub_docker_environment_probes` rather than in those
+        three tests, because ~20 call sites reach this helper and a per-test
+        patch is a thing to forget.
+
+        This canary is platform-independent even though the bug was not: the
+        helper accepts both darwin and linux, so calling it directly here would
+        shell out on either, and the guard would stop it. Removing the stub
+        fails this test on any developer machine, not only on CI.
+        """
+        import os
+        import tempfile
+
+        self.assertNotEqual(
+            "true",
+            os.environ.get("LDM_DRY_RUN", "").lower(),
+            "LDM_DRY_RUN short-circuits the helper, which would make this "
+            "canary pass without proving anything.",
+        )
+
+        from ldm_core.utils import reclaim_volume_permissions
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertTrue(
+                reclaim_volume_permissions(tmp),
+                "Quality Gate Violation: reclaim_volume_permissions() is not "
+                "stubbed. Without it the suite runs `docker run alpine "
+                "chown/chmod` against real paths -- see the platform-gating "
+                "trap in docs/TESTING.md.",
+            )
 
 
 if __name__ == "__main__":

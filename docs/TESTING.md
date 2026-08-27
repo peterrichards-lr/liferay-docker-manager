@@ -193,8 +193,31 @@ To prevent test-runner hangs, memory exhaustion, and side-effect leakage in CI p
    * Before it existed, a full run registered pytest tempdirs as real projects — entries like `tmp58psgp9w` and `test-project` appeared in the developer's `ldm list` — overwrote `~/.ldm/last-command.log` (destroying the trace needed to diagnose whatever was last run), and *deleted* real registry entries whose paths no longer resolved.
    * `LDM_HOME` is the only lever available: `get_actual_home()` rebuilds `/Users/<user>` from `SUDO_USER`/`USER` on macOS and ignores `HOME` entirely.
    * Tests that patch `get_actual_home` themselves are unaffected — a patch replaces the function, so it never consults the environment.
-   * This isolates the **filesystem only**. `DockerService` reaches the real daemon regardless, so container operations must still be patched at the call site, or a test will stop or remove the developer's actual containers.
+   * This isolates the **filesystem only**. Docker is covered separately, by the guard below.
    * `test_suite_never_touches_the_developers_real_ldm_home` in `ldm_core/tests/test_architectural_contracts.py` enforces that the fixture is in force.
+
+6. **Never Touch the Machine's Docker** (LDM-#1409):
+   * The `block_real_docker` autouse fixture in `ldm_core/tests/conftest.py` **fails** any test that reaches the real daemon, naming the test and the offending command. The boundary is enforced, not merely documented.
+   * It was measured before it existed: **117 Docker invocations from 74 tests** in one run. Among them a unit test running `docker exec` inside the developer's own `liferay-search-global`, four doing `docker rm -f liferay-proxy-global`, one creating a real `wsl` Docker context pointing at `ssh://dev@192.168.1.10`, and the `docker run --rm -v <pytest tmpdir> alpine` calls that leaked `Created` containers holding bind mounts on deleted paths (`docker system prune` does not collect those).
+   * **The hook is at the `subprocess` boundary, not at `CommandRunner`.** Only 81 of those 117 calls went through `CommandRunner.run`; the rest come from the ~20 places in `ldm_core/{snapshot,runtime,workspace}` that call `subprocess` directly. A guard on the wrapper alone polices two thirds of the problem and reports success.
+   * It **intercepts rather than mocks** — anything that is not a Docker argv is passed straight through to the real function, so the warning above about globally replacing stdlib machinery still holds and is not violated here.
+   * Companion stubs remove the bulk of the traffic at its source: `stub_docker_environment_probes` answers `get_compose_cmd()` and `get_docker_socket_path()` without asking the machine and neutralises `reclaim_volume_permissions()` (which shells out to `alpine chown/chmod`), and `DockerService`'s module-scope `run_command` is stubbed so the whole facade (`is_running`/`exists`/`stop`/`rm`/`inspect`/…) cannot reach a daemon.
+   * A test that genuinely needs Docker marks itself `@pytest.mark.needs_docker` and is allowed through. `ldm_core/tests/test_e2e_interactive.py` is the only such suite today; it drives the real CLI as a subprocess. Run without them:
+
+     ```bash
+     pytest -m "not needs_docker"
+     ```
+
+   * Three traps this repeatedly walked into, worth knowing before adding a patch:
+     * `DockerService`'s statics call a **module-scope** `run_command` imported in `docker_service.py`, so `patch.object(self.manager, "run_command")` never reaches them. That is LDM-#1365; ten more instances of it survived in `test_infra.py` alone.
+     * Some handlers import inside the function body (`cmd_target_status` does `from ldm_core.utils import run_command`), which re-resolves the name at call time and **ignores** a patch on the handler module's attribute. `test_cmd_target_status_offline` read as fully mocked while running a real `docker info`.
+     * A class with two `setUp` definitions silently uses the second one. Adding a patcher to the first has no effect at all.
+     * **A platform-gated Docker call is invisible to a single-platform measurement.** `pipelines/run.py` calls `reclaim_volume_permissions()` only when `platform.system() == "linux"`, so a macOS run of this suite measured *zero* daemon calls through it while Linux CI hit it from three tests. The 117-call baseline above is a macOS number and the Linux one is higher. When auditing for side effects, grep for `platform.system()` around the call path before trusting a clean local run — or force the branch, as `reclaim_volume_permissions` was verified: patch `platform.system` to `"Linux"` for the offending tests, confirm the guard fires, then confirm the stub silences it.
+
+7. **Own Your Scratch Paths** (LDM-#1402):
+   * Eight suites built their `paths` fixtures from the constant `/tmp/proj`, and let the code under test write into it. Two concurrent runs on one machine therefore raced, and one deleted a file the other was about to read — a failure indistinguishable from a real regression in whatever diff was under test.
+   * They now derive from `TEST_TMP_ROOT` in `ldm_core/tests/tmproot.py`, unique per pytest process.
+   * If you patch `get_actual_home` **and** set a project path, keep the project *under* that home. `_check_global_config_and_network` does `test_path.relative_to(get_actual_home())` and silently skips its whole volume check when the two are unrelated.
 
 ---
 
