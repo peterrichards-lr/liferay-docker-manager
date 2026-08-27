@@ -99,6 +99,22 @@ class MockRuntime(BaseHandler):
 
 class TestReadiness(unittest.TestCase):
     def setUp(self):
+        # LDM-#1409: on Linux -- so on CI, and never on a macOS dev machine --
+        # pipelines/run.py takes its `elif platform.system() == "linux"` branch
+        # and calls reclaim_volume_permissions, which runs
+        # `docker run --rm -v <path> alpine chown -R ...` against the host.
+        #
+        # This is class-scope rather than per-case because more than one case
+        # in test_preflight_port_collision_check reaches ComposerStage, and a
+        # per-case patch silently covers only the one it is attached to. It
+        # cost two rounds of CI to learn that; the platform gate means a local
+        # macOS run cannot see any of it.
+        from unittest.mock import patch as _patch
+
+        reclaim_patcher = _patch("ldm_core.utils.reclaim_volume_permissions")
+        self.mock_reclaim_volume_permissions = reclaim_patcher.start()
+        self.addCleanup(reclaim_patcher.stop)
+
         from unittest.mock import MagicMock, patch
 
         self.tmp_dir_obj = tempfile.TemporaryDirectory()

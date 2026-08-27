@@ -380,6 +380,13 @@ class TestStackOrchestration(unittest.TestCase):
                 # not about provisioning.
                 patch.object(self.manager.infra, "setup_global_search"),
                 patch.object(self.manager.infra, "setup_global_database"),
+                # LDM-#1409: the same shape as the note above, and it bit in
+                # the same way. On Linux -- so on CI, never on a macOS dev
+                # machine -- pipelines/run.py takes its
+                # `elif platform.system() == "linux"` branch and calls
+                # reclaim_volume_permissions, which runs
+                # `docker run --rm -v <path> alpine chown -R ...`.
+                patch("ldm_core.utils.reclaim_volume_permissions"),
             ):
                 self.manager.runtime.cmd_run(
                     project_id="timeout-test",

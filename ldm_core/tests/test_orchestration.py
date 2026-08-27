@@ -544,6 +544,13 @@ class TestOrchestration(unittest.TestCase):
 
     def test_sync_stack_runs_compose(self):
         with (
+            # LDM-#1409: on Linux (and so on CI, but never on a macOS dev
+            # machine) pipelines/run.py takes the
+            # `elif platform.system() == "linux"` branch and calls
+            # reclaim_volume_permissions, which runs
+            # `docker run --rm -v <path> alpine chown -R ...`. Patching it
+            # matches what test_sidecar.py already does.
+            patch("ldm_core.utils.reclaim_volume_permissions"),
             patch.object(
                 self.handler, "detect_project_path", return_value=self.tmp_dir
             ),
