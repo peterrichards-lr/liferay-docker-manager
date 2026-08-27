@@ -316,6 +316,48 @@ fi
 "$LDM_CMD" -y rm "${PROJECT_NAME}" --delete --infra >/dev/null 2>&1 || true
 export LDM_WORKSPACE
 
+# LDM-#1406: refuse to start without room to finish.
+#
+# A run that exhausts the disk fails somewhere in the middle, and surfaces as
+# whatever broke first -- a PostgreSQL PANIC, an Elasticsearch write block, a
+# truncated image layer -- rather than as "you are out of disk". The report it
+# produces then reads as a defect finding, and a verification report is the
+# project's honest record of what was tested.
+#
+# Asked of DOCKER, not the host. On Docker Desktop/Colima/OrbStack the engine's
+# storage lives inside a VM with its own, far smaller disk; a host-side `df`
+# would pass on exactly the machines most likely to fail. Measured on one
+# developer machine mid-verification: host 109.2 GB free, Docker VM 12.5 GB.
+# This is the same reasoning as Doctor._check_absolute_disk_space (LDM-#1095),
+# and using `docker run alpine df` keeps the .sh and .ps1 implementations
+# identical rather than needing two host-specific ones.
+#
+# Provisional threshold: the images alone are ~7.5 GB (liferay/dxp ~5.3,
+# postgres ~0.7, elasticsearch ~1.5) before the running stack grows. Override
+# with LDM_VERIFY_MIN_DISK_GB when you know better than this default.
+MIN_DISK_GB="${LDM_VERIFY_MIN_DISK_GB:-10}"
+echo "ℹ  Checking Docker has room to finish (need ${MIN_DISK_GB} GB)..."
+DISK_FREE_KB=$(docker run --rm alpine df -P -k / 2>/dev/null | awk 'NR==2 {print $4}')
+if [ -z "$DISK_FREE_KB" ]; then
+    echo "⚠️  Could not determine Docker's free space; continuing without the check." | tee -a "$RESULTS_FILE_TMP"
+else
+    DISK_FREE_GB=$((DISK_FREE_KB / 1024 / 1024))
+    if [ "$DISK_FREE_GB" -lt "$MIN_DISK_GB" ]; then
+        echo "❌ ERROR: not enough disk space for a verification run." | tee -a "$RESULTS_FILE_TMP"
+        echo "   Docker has ${DISK_FREE_GB} GB free; this run needs about ${MIN_DISK_GB} GB." | tee -a "$RESULTS_FILE_TMP"
+        echo "   (The host may report far more -- Docker's storage is inside its own VM.)" | tee -a "$RESULTS_FILE_TMP"
+        echo "" | tee -a "$RESULTS_FILE_TMP"
+        echo "   Free some space, then re-run:" | tee -a "$RESULTS_FILE_TMP"
+        echo "     ldm prune --seeds --samples     # reclaim LDM seed and sample archives" | tee -a "$RESULTS_FILE_TMP"
+        echo "     ldm prune --all                 # also images, volumes and build cache" | tee -a "$RESULTS_FILE_TMP"
+        echo "     docker system prune -a          # everything Docker considers unused" | tee -a "$RESULTS_FILE_TMP"
+        echo "" | tee -a "$RESULTS_FILE_TMP"
+        echo "   Refusing before pulling anything, so no half-finished report is written." | tee -a "$RESULTS_FILE_TMP"
+        exit 1
+    fi
+    echo "✅ Docker has ${DISK_FREE_GB} GB free."
+fi
+
 # Pre-pull large images to avoid containerd lease timeouts during the timed E2E run
 echo "ℹ  Pre-pulling required Docker images..."
 docker pull liferay/dxp:2026.q1.7-lts --quiet

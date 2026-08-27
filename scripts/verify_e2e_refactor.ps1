@@ -331,6 +331,48 @@ try {
     # 1. Cleanup
     Invoke-Cleanup $LDM_CMD "-y rm ldm-smoke-test --delete --infra"
 
+    # LDM-#1406: refuse to start without room to finish.
+    #
+    # A run that exhausts the disk fails somewhere in the middle and surfaces as
+    # whatever broke first -- a PostgreSQL PANIC, an Elasticsearch write block,
+    # a truncated layer -- rather than as "you are out of disk". The report then
+    # reads as a defect finding, and these reports are the project's honest
+    # record of what was tested.
+    #
+    # Asked of DOCKER, not the host. On Docker Desktop the engine's storage
+    # lives in a VM with its own, far smaller disk, so Get-PSDrive would pass on
+    # exactly the machines most likely to fail. Measured on one developer
+    # machine: host 109.2 GB free, Docker VM 12.5 GB. Same reasoning as
+    # Doctor._check_absolute_disk_space (LDM-#1095); using `docker run alpine
+    # df` also keeps this identical to the .sh implementation.
+    $minDiskGb = if ($env:LDM_VERIFY_MIN_DISK_GB) { [int]$env:LDM_VERIFY_MIN_DISK_GB } else { 10 }
+    Write-Host "[INFO]  Checking Docker has room to finish (need $minDiskGb GB)..."
+    $dfOut = docker run --rm alpine df -P -k / 2>$null
+    $freeKb = $null
+    if ($dfOut) {
+        $line = ($dfOut | Select-Object -Last 1)
+        $fields = ($line -split '\s+') | Where-Object { $_ }
+        if ($fields.Count -ge 4) { $freeKb = [int64]$fields[3] }
+    }
+    if (-not $freeKb) {
+        Write-Host "[WARN]  Could not determine Docker's free space; continuing without the check." -ForegroundColor Yellow
+    } else {
+        $freeGb = [math]::Floor($freeKb / 1024 / 1024)
+        if ($freeGb -lt $minDiskGb) {
+            Write-Host "[ERROR] Not enough disk space for a verification run." -ForegroundColor Red
+            Write-Host "        Docker has $freeGb GB free; this run needs about $minDiskGb GB." -ForegroundColor Red
+            Write-Host "        (The host may report far more -- Docker's storage is inside its own VM.)" -ForegroundColor Red
+            Write-Host ""
+            Write-Host "        Free some space, then re-run:" -ForegroundColor Yellow
+            Write-Host "          ldm prune --seeds --samples     # reclaim LDM seed and sample archives"
+            Write-Host "          ldm prune --all                 # also images, volumes and build cache"
+            Write-Host "          docker system prune -a          # everything Docker considers unused"
+            Write-Host ""
+            throw "Insufficient Docker disk space: $freeGb GB free, need $minDiskGb GB. Refusing before pulling anything, so no half-finished report is written."
+        }
+        Write-Host "[SUCCESS] Docker has $freeGb GB free."
+    }
+
     # Pre-pull large images to avoid containerd lease timeouts during the timed E2E run
     Write-Host "[INFO]  Pre-pulling required Docker images..."
     & docker pull liferay/dxp:2026.q1.7-lts --quiet
