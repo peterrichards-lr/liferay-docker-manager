@@ -9,6 +9,7 @@ from ldm_core.handlers.composer import ComposerService
 from ldm_core.handlers.config import ConfigService
 from ldm_core.handlers.infra import InfraService
 from ldm_core.handlers.runtime import RuntimeService
+from ldm_core.tests.tmproot import TEST_TMP_ROOT
 
 
 class MockManager(BaseHandler):
@@ -208,7 +209,7 @@ class TestSidecarImplementation(unittest.TestCase):
             mock_glob.return_value = [es_config]
 
             # Mock paths
-            paths = self.manager.setup_paths("/tmp/proj")
+            paths = self.manager.setup_paths(f"{TEST_TMP_ROOT}/proj")
 
             with patch("ldm_core.handlers.config.atomic_copy") as mock_copy:
                 self.manager.config.sync_common_assets(paths, project_meta=project_meta)

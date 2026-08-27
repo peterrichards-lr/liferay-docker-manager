@@ -17,6 +17,7 @@ from ldm_core.handlers.license import LicenseService
 from ldm_core.handlers.runtime import RuntimeService
 from ldm_core.handlers.snapshot import SnapshotService
 from ldm_core.handlers.workspace import WorkspaceService
+from ldm_core.tests.tmproot import TEST_TMP_ROOT
 
 
 class MockManager(
@@ -271,7 +272,7 @@ class TestStackInfrastructure(unittest.TestCase):
 class TestStackScaling(unittest.TestCase):
     def setUp(self):
         self.manager = MockManager()
-        self.paths = self.manager.setup_paths("/tmp/proj")
+        self.paths = self.manager.setup_paths(f"{TEST_TMP_ROOT}/proj")
 
     @patch("ldm_core.handlers.infra.get_docker_socket_path")
     @patch("ldm_core.handlers.config.ConfigService.update_portal_ext")

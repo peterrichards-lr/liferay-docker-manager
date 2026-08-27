@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.runtime import RuntimeService
+from ldm_core.tests.tmproot import TEST_TMP_ROOT
 
 
 class MockRuntime(BaseHandler):
@@ -707,7 +708,7 @@ class TestStopHintIsNotLeakedToInternalCallers(unittest.TestCase):
     def _stop(self, **kwargs):
         manager = MagicMock()
         manager.find_dxp_roots.return_value = []
-        manager.detect_project_path.return_value = Path("/tmp/proj")
+        manager.detect_project_path.return_value = Path(f"{TEST_TMP_ROOT}/proj")
         manager.read_meta.return_value = {"target": None}
         manager.run_command.return_value = ""
         from ldm_core.runtime.orchestration import OrchestrationService

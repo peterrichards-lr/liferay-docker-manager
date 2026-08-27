@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 from ldm_core.cli import get_parser
 from ldm_core.diagnostics.info import run_info, run_list
 from ldm_core.manager import LiferayManager
+from ldm_core.tests.tmproot import TEST_TMP_ROOT
 
 
 class TestTargetCLI(unittest.TestCase):
@@ -121,7 +122,7 @@ class TestTargetCLI(unittest.TestCase):
         mock_run_command.return_value = "running"
         handler = MagicMock()
         handler.manager.find_dxp_roots.return_value = [
-            {"path": "/tmp/proj1", "version": "2024.q1.3"}
+            {"path": f"{TEST_TMP_ROOT}/proj1", "version": "2024.q1.3"}
         ]
         handler.manager.read_meta.return_value = {
             "container_name": "proj1",

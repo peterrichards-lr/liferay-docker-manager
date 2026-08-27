@@ -13,6 +13,7 @@ from ldm_core.pipelines.run import (
     RunPipelineContext,
     RuntimeValidationStage,
 )
+from ldm_core.tests.tmproot import TEST_TMP_ROOT
 
 
 class TestRunPipeline(unittest.TestCase):
@@ -197,14 +198,16 @@ class TestRunPipeline(unittest.TestCase):
 
         self.context.set("dry_run", True)
         self.context.set("no_up", True)
-        self.context.set("paths", {"root": Path("/tmp/proj")})
+        self.context.set("paths", {"root": Path(f"{TEST_TMP_ROOT}/proj")})
         self.context.set("target_context", target_ctx)
 
         with patch("ldm_core.config.sync_project_to_target") as mock_sync:
             stage = ExecutionStage()
             stage.execute(self.context)
 
-        mock_sync.assert_called_once_with(Path("/tmp/proj"), target_name="aws-2")
+        mock_sync.assert_called_once_with(
+            Path(f"{TEST_TMP_ROOT}/proj"), target_name="aws-2"
+        )
         self.context.manager.run_command.assert_not_called()
 
     def test_execution_stage_reclaims_permissions_on_remote_mapped_path(self):
@@ -221,7 +224,7 @@ class TestRunPipeline(unittest.TestCase):
             is_remote=True,
             docker_prefix=["docker", "--context", "aws-1"],
             compose_prefix=["docker", "--context", "aws-1", "compose"],
-            local_root=Path("/tmp/proj"),
+            local_root=Path(f"{TEST_TMP_ROOT}/proj"),
             remote_root="/home/ec2-user/.liferay-docker/projects/proj",
         )
 
@@ -230,11 +233,11 @@ class TestRunPipeline(unittest.TestCase):
         self.context.set(
             "paths",
             {
-                "root": Path("/tmp/proj"),
-                "deploy": Path("/tmp/proj/deploy"),
-                "logs": Path("/tmp/proj/logs"),
-                "osgi": Path("/tmp/proj/osgi"),
-                "files": Path("/tmp/proj/files"),
+                "root": Path(f"{TEST_TMP_ROOT}/proj"),
+                "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+                "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+                "osgi": Path(f"{TEST_TMP_ROOT}/proj/osgi"),
+                "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
             },
         )
         self.context.set("target_context", target_ctx)
@@ -281,7 +284,7 @@ class TestRunPipeline(unittest.TestCase):
 
         self.context.set("dry_run", True)
         self.context.set("no_up", True)
-        self.context.set("paths", {"root": Path("/tmp/proj")})
+        self.context.set("paths", {"root": Path(f"{TEST_TMP_ROOT}/proj")})
         self.context.set("target_context", target_ctx)
 
         with patch("ldm_core.config.sync_project_to_target") as mock_sync:

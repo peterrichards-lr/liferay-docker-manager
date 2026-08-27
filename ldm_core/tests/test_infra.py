@@ -45,6 +45,39 @@ class TestInfraService(unittest.TestCase):
         self.manager = MockInfraManager()
         self.infra = InfraService(self.manager)
 
+        # LDM-#1409: every DockerService static (stop/rm/start/exists/
+        # is_running/...) calls the module-scope `run_command` imported in
+        # docker_service.py. `patch.object(self.manager, "run_command")` --
+        # what most tests below use -- replaces a different function entirely
+        # and never reaches them. That is the #1365 trap, and it was still
+        # live here: measured across a full suite run, ten tests in this class
+        # issued real `docker stop liferay-proxy-global`,
+        # `docker rm -f liferay-proxy-global` and `docker start
+        # liferay-docker-proxy` against the developer's own global proxy.
+        #
+        # Patching the module-scope name once, for the whole class, closes all
+        # of them at the single point they share. Tests that need a specific
+        # DockerService answer still patch that method directly, which replaces
+        # the method and is unaffected by this.
+        docker_patcher = patch("ldm_core.docker_service.run_command", return_value="")
+        self.mock_docker_run_command = docker_patcher.start()
+        self.addCleanup(docker_patcher.stop)
+
+        # LDM-#1409: a second, separate route to the daemon. InfraService
+        # imports get_docker_socket_path (utils.py), which shells out to
+        # `docker context inspect` via subprocess directly -- not through
+        # run_command, so the patch above does not cover it, and neither would
+        # a guard hooked only at CommandRunner. It is also wrapped in a bare
+        # `except Exception`, so the call was invisible: it ran, and any
+        # failure was swallowed. Pin it to the platform default rather than
+        # asking the machine.
+        socket_patcher = patch(
+            "ldm_core.handlers.infra.get_docker_socket_path",
+            return_value="/var/run/docker.sock",
+        )
+        self.mock_docker_socket_path = socket_patcher.start()
+        self.addCleanup(socket_patcher.stop)
+
     @patch("ldm_core.ui.UI.confirm", return_value=True)
     def test_fix_cert_permissions_success(self, mock_confirm):
         with (

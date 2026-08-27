@@ -3,6 +3,7 @@ import inspect
 import os
 import pkgutil
 import re
+import sys
 import tempfile
 import typing
 import unittest
@@ -75,6 +76,19 @@ class TestArchitecturalContracts(unittest.TestCase):
 
     def setUp(self):
         from unittest.mock import patch
+
+        # LDM-#1409: the shared-search branch of sync_common_assets runs
+        # `docker inspect -f {{.Config.Image}} liferay-search-global` through
+        # the module-scope run_command in handlers/config.py. The tests patch
+        # `self.manager.run_command`, a different function, so it never reached
+        # that call and a contract test about compose output was querying the
+        # developer's real daemon. None is the "no shared search container"
+        # branch these tests already assume.
+        config_run_patcher = patch(
+            "ldm_core.handlers.config.run_command", return_value=None
+        )
+        config_run_patcher.start()
+        self.addCleanup(config_run_patcher.stop)
 
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp_dir.name)
@@ -458,6 +472,55 @@ class TestArchitecturalContracts(unittest.TestCase):
             "get_actual_home() ignores HOME on macOS (see #1349), so "
             "LDM_HOME is the only lever that can redirect LDM state.",
         )
+
+    def test_the_docker_guard_can_actually_fail(self):
+        """Contract: block_real_docker must stop a Docker call (#1409).
+
+        A guard that cannot fail is worse than no guard, because it reports
+        safety it does not provide. That is not hypothetical here: the first
+        version of the #1349 home-isolation canary used a filename that did not
+        match prune's glob, so it passed against the unfixed code and proved
+        nothing.
+
+        So this drives a real Docker argv through the same boundary the guard
+        watches, and asserts it is stopped. Two properties are checked
+        together, because either alone can pass while the guard is useless:
+
+        1. A Docker argv raises.
+        2. A non-Docker argv still runs -- the guard intercepts, it does not
+           replace subprocess wholesale. If this half broke, every test that
+           legitimately shells out would fail and the guard would be reverted.
+
+        `docker version --format {{.Client.Version}}` is chosen deliberately:
+        entirely read-only, so if the guard ever *does* regress, the worst this
+        test can do to the machine is ask it a question.
+        """
+        import subprocess
+
+        with self.assertRaises(BaseException) as caught:
+            subprocess.run(
+                ["docker", "version", "--format", "{{.Client.Version}}"],
+                capture_output=True,
+                check=False,
+            )
+        self.assertIn(
+            "reached the real Docker daemon",
+            str(caught.exception),
+            "Quality Gate Violation: a Docker command ran during a test. The "
+            "block_real_docker fixture in ldm_core/tests/conftest.py is "
+            "missing or disabled; without it the suite stops and removes the "
+            "developer's own containers, contexts and volumes (see #1409).",
+        )
+
+        # The pass-through half.
+        completed = subprocess.run(
+            [sys.executable, "-c", "print('not docker')"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(0, completed.returncode)
+        self.assertIn("not docker", completed.stdout)
 
 
 if __name__ == "__main__":

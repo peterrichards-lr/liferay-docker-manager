@@ -31,6 +31,22 @@ class MockSystemManager:
 
 class TestSystemService(unittest.TestCase):
     def setUp(self):
+        # LDM-#1409: cmd_rescue calls reclaim_volume_permissions, which runs
+        # `docker run --rm -v <path>:/workspace alpine sh -c "chown -R ..."`.
+        # That is the exact call behind the orphaned `alpine` containers the
+        # issue documented: the bind mount points at a pytest tmpdir which is
+        # deleted when the test ends, so the container never starts, and
+        # `--rm` only removes containers that did. One leaked per affected run
+        # and `docker system prune` does not collect them.
+        #
+        # Imported inside the function (handlers/system.py), so the patch has
+        # to target ldm_core.utils, not the handler module.
+        from unittest.mock import patch as _patch
+
+        reclaim_patcher = _patch("ldm_core.utils.reclaim_volume_permissions")
+        self.mock_reclaim_volume_permissions = reclaim_patcher.start()
+        self.addCleanup(reclaim_patcher.stop)
+
         self.manager = MockSystemManager()
         self.system = SystemService(self.manager)
 

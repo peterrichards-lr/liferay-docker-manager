@@ -1319,6 +1319,12 @@ services:
             ),
             patch("time.sleep"),
             patch("requests.get"),
+            # LDM-#1409: the timeout path dumps container logs with a bare
+            # `subprocess.run([... docker logs --tail 200 ...])` in
+            # runtime/readiness.py -- not run_command, so no facade stub
+            # reaches it. This test asserts how the timeout budget is divided
+            # between phases, not what a real container logged.
+            patch("subprocess.run"),
             patch("ldm_core.ui.UI.die") as mock_die,
             # Mock time.time() to return progression values that exhaust the budget
             patch(
