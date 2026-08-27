@@ -1620,14 +1620,50 @@ assert meta.get('search_mode') == 'shared', (
     % (meta.get('search_mode'),)
 )
 
-configs = list((root / 'osgi' / 'configs').glob('*ElasticsearchConfiguration.config'))
+configs_dir = root / 'osgi' / 'configs'
+configs = sorted(configs_dir.glob('*ElasticsearchConfiguration.config'))
 assert configs, (
     'no ElasticsearchConfiguration.config written; the LIFERAY_ELASTICSEARCH* '
     'env vars alone do not configure Liferay (#1353)'
 )
-body = configs[0].read_text(encoding='utf-8')
+
+# LDM-#1418: there can be BOTH an elasticsearch7 and an elasticsearch8 config.
+# The common/ baseline ships one per major version, and LDM writes the one
+# matching the project's tag. This used to read configs[0] -- alphabetically the
+# es7 file -- which for a modern (ES8) project is the inert baseline copy, so the
+# assertion tested a file the project never uses. It passed only on machines with
+# no common/ folder, where LDM's own file was the sole match.
+#
+# Take the highest major version present: that is the one a current tag uses.
+def _major(path):
+    marker = 'elasticsearch'
+    tail = path.name.split(marker, 1)[1]
+    digits = ''
+    for ch in tail:
+        if not ch.isdigit():
+            break
+        digits += ch
+    return int(digits or 0)
+
+active = max(configs, key=_major)
+body = active.read_text(encoding='utf-8')
 assert 'productionModeEnabled=B' in body, body
-assert 'liferay-search-global:9200' in body, body
+
+# LDM-#1418: the shared cluster address is valid in EITHER shape --
+# networkHostAddresses inline in this file, or a remoteClusterConnectionId
+# pointing at a sibling ElasticsearchConnectionConfiguration that carries it.
+# Both reach the same cluster; asserting only the inline form rejected a correct
+# project.
+sibling = configs_dir / active.name.replace(
+    'ElasticsearchConfiguration', 'ElasticsearchConnectionConfiguration'
+)
+address_sources = [body]
+if sibling.exists():
+    address_sources.append(sibling.read_text(encoding='utf-8'))
+assert any('liferay-search-global:9200' in text for text in address_sources), (
+    'neither %s nor its connection config points at the shared cluster'
+    % (active.name,)
+)
 
 prefix = [l for l in body.splitlines() if l.startswith('indexNamePrefix')]
 assert prefix, body

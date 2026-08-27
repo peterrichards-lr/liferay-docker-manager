@@ -1712,14 +1712,42 @@ assert meta.get('search_mode') == 'shared', (
     % (meta.get('search_mode'),)
 )
 
-configs = list((root / 'osgi' / 'configs').glob('*ElasticsearchConfiguration.config'))
+configs_dir = root / 'osgi' / 'configs'
+configs = sorted(configs_dir.glob('*ElasticsearchConfiguration.config'))
 assert configs, (
     'no ElasticsearchConfiguration.config written; the LIFERAY_ELASTICSEARCH* '
     'env vars alone do not configure Liferay (#1353)'
 )
-body = configs[0].read_text(encoding='utf-8')
+
+# LDM-#1418: both an elasticsearch7 and an elasticsearch8 config can exist -- the
+# common/ baseline ships one per major version, and LDM writes the one matching
+# the tag. Reading configs[0] took the es7 file alphabetically, which for a
+# modern ES8 project is the inert baseline copy.
+def _major(path):
+    tail = path.name.split('elasticsearch', 1)[1]
+    digits = ''
+    for ch in tail:
+        if not ch.isdigit():
+            break
+        digits += ch
+    return int(digits or 0)
+
+active = max(configs, key=_major)
+body = active.read_text(encoding='utf-8')
 assert 'productionModeEnabled=B' in body, body
-assert 'liferay-search-global:9200' in body, body
+
+# The address is valid inline here, or in a sibling connection config referenced
+# by remoteClusterConnectionId. Both reach the same cluster.
+sibling = configs_dir / active.name.replace(
+    'ElasticsearchConfiguration', 'ElasticsearchConnectionConfiguration'
+)
+address_sources = [body]
+if sibling.exists():
+    address_sources.append(sibling.read_text(encoding='utf-8'))
+assert any('liferay-search-global:9200' in text for text in address_sources), (
+    'neither %s nor its connection config points at the shared cluster'
+    % (active.name,)
+)
 
 prefix = [l for l in body.splitlines() if l.startswith('indexNamePrefix')]
 assert prefix, body
