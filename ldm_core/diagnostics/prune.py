@@ -331,12 +331,20 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
 
     roots = handler.manager.find_dxp_roots()
     active_projects = set()
+    active_uuids = set()
     active_hostnames = set()
     for r in roots:
         meta = handler.manager.read_meta(r["path"])
         # Use container_name from meta, or fall back to folder name
         name = meta.get("container_name") or r["path"].name
         active_projects.add(name)
+        # LDM-#1395: a project that has been renamed still carries its old name
+        # on its Docker labels, so name matching alone would report its live
+        # containers and volumes as orphans and offer them for pruning. The UUID
+        # is stable across renames, so it is the reliable owner check.
+        project_uuid = meta.get("uuid")
+        if project_uuid:
+            active_uuids.add(project_uuid)
         host = meta.get("host_name")
         if host and host != "localhost":
             active_hostnames.add(host)
@@ -356,7 +364,8 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
             "--filter",
             "label=com.liferay.ldm.project",
             "--format",
-            '{{.Names}}|{{.Label "com.liferay.ldm.project"}}',
+            '{{.Names}}|{{.Label "com.liferay.ldm.project"}}'
+            '|{{.Label "com.liferay.ldm.project.uuid"}}',
         ],
         check=False,
     )
@@ -370,8 +379,16 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
                 continue
 
             # Docker names can sometimes have a leading slash
-            name, project = line.split("|", 1)
+            parts = line.split("|")
+            name, project = parts[0], parts[1]
+            # Absent on resources created before LDM-#1395.
+            labelled_uuid = parts[2] if len(parts) > 2 else ""
             name = name.lstrip("/")
+
+            if labelled_uuid and labelled_uuid in active_uuids:
+                # Owned by a live project, even if it has since been renamed.
+                seen_orphan_names.add(name)
+                continue
 
             if not project or project not in active_projects:
                 if name not in seen_orphan_names:
