@@ -346,6 +346,27 @@ try {
     # Doctor._check_absolute_disk_space (LDM-#1095); using `docker run alpine
     # df` also keeps this identical to the .sh implementation.
     $minDiskGb = if ($env:LDM_VERIFY_MIN_DISK_GB) { [int]$env:LDM_VERIFY_MIN_DISK_GB } else { 10 }
+    # LDM-#1419: clear leftovers from a PREVIOUS run before starting. The port
+    # holder is named per-run, so only that run's cleanup removes it; a run
+    # killed mid-flight leaves a container publishing 5601 that no later run
+    # touches, and the next run then reports "Port 5601 is already in use"
+    # during work unrelated to the port-conflict check. Sweep by prefix, because
+    # this run cannot know what its predecessors were called.
+    $staleHolders = docker ps -aq --filter "name=^ldm-e2e-port-holder-" 2>$null
+    if ($staleHolders) {
+        Write-Host "[INFO]  Removing leftover port holder(s) from a previous run..."
+        $staleHolders | ForEach-Object { docker rm -f $_ 2>$null | Out-Null }
+    }
+    $staleConflict = docker ps -aq --filter "name=portconflict-" 2>$null
+    if ($staleConflict) {
+        $staleConflict | ForEach-Object { docker rm -f $_ 2>$null | Out-Null }
+    }
+
+    # LDM-#1419: record whether the global database pre-existed, so the #1400
+    # check can put the machine back as it found it -- `ldm db start` provisions
+    # it when absent and only stops it afterwards.
+    $dbGlobalPreexisted = [bool](docker ps -aq --filter "name=^liferay-db-global$" 2>$null)
+
     Write-Host "[INFO]  Checking Docker has room to finish (need $minDiskGb GB)..."
     $dfOut = docker run --rm alpine df -P -k / 2>$null
     $freeKb = $null
@@ -1609,6 +1630,14 @@ assert db_part == db_part.lower(), (
     }
 
     if ($dbCmdOk) {
+        # LDM-#1419: leave the machine as we found it. If this check provisioned
+        # the global database, remove it -- including its volume, which would
+        # otherwise survive as an orphan (see #1414).
+        if (-not $dbGlobalPreexisted) {
+            Write-Host "[INFO]  Removing the global database this check provisioned..."
+            docker rm -f $dbGlobal 2>$null | Out-Null
+            docker volume rm liferay-db-global-data 2>$null | Out-Null
+        }
         Write-Verdict "[SUCCESS] 'ldm db start'/'db stop' drive the real global container, idempotently (LDM-#1400)."
     } else {
         throw "Shared database start/stop verification failed."
@@ -1712,14 +1741,42 @@ assert meta.get('search_mode') == 'shared', (
     % (meta.get('search_mode'),)
 )
 
-configs = list((root / 'osgi' / 'configs').glob('*ElasticsearchConfiguration.config'))
+configs_dir = root / 'osgi' / 'configs'
+configs = sorted(configs_dir.glob('*ElasticsearchConfiguration.config'))
 assert configs, (
     'no ElasticsearchConfiguration.config written; the LIFERAY_ELASTICSEARCH* '
     'env vars alone do not configure Liferay (#1353)'
 )
-body = configs[0].read_text(encoding='utf-8')
+
+# LDM-#1418: both an elasticsearch7 and an elasticsearch8 config can exist -- the
+# common/ baseline ships one per major version, and LDM writes the one matching
+# the tag. Reading configs[0] took the es7 file alphabetically, which for a
+# modern ES8 project is the inert baseline copy.
+def _major(path):
+    tail = path.name.split('elasticsearch', 1)[1]
+    digits = ''
+    for ch in tail:
+        if not ch.isdigit():
+            break
+        digits += ch
+    return int(digits or 0)
+
+active = max(configs, key=_major)
+body = active.read_text(encoding='utf-8')
 assert 'productionModeEnabled=B' in body, body
-assert 'liferay-search-global:9200' in body, body
+
+# The address is valid inline here, or in a sibling connection config referenced
+# by remoteClusterConnectionId. Both reach the same cluster.
+sibling = configs_dir / active.name.replace(
+    'ElasticsearchConfiguration', 'ElasticsearchConnectionConfiguration'
+)
+address_sources = [body]
+if sibling.exists():
+    address_sources.append(sibling.read_text(encoding='utf-8'))
+assert any('liferay-search-global:9200' in text for text in address_sources), (
+    'neither %s nor its connection config points at the shared cluster'
+    % (active.name,)
+)
 
 prefix = [l for l in body.splitlines() if l.startswith('indexNamePrefix')]
 assert prefix, body
