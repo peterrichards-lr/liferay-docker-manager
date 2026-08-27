@@ -200,8 +200,24 @@ class OrchestrationService(BaseHandler):
         )
         sys.exit(1)
 
-    def cmd_stop(self, project_id=None, service=None, all_projects=False):
-        """Stops project containers."""
+    def cmd_stop(
+        self, project_id=None, service=None, all_projects=False, emit_hint=True
+    ):
+        """Stops project containers.
+
+        `emit_hint=False` suppresses the closing next-step hint, for callers that
+        stop containers as one internal step of a larger operation (LDM-#1410).
+
+        The restore path calls this mid-flight (`snapshot/database.py`). With the
+        hint always emitted, a restore printed
+
+            Next step: Run 'ldm run' to restart the container, ...
+
+        in the middle of its own work -- so when the following Docker call then
+        blocked, the last thing on screen said the command had finished. Three
+        machines sat wedged behind that line, one for 84 minutes. A misleading
+        "done" is worse than no output at all.
+        """
         targets = []
         if all_projects:
             targets = [r["path"] for r in self.manager.find_dxp_roots()]
@@ -246,9 +262,10 @@ class OrchestrationService(BaseHandler):
                 UI.warning(f"Could not stop '{root.name}'; continuing.")
                 failures.append(root.name)
         self._report_batch_failures(failures, "stop")
-        UI.hint(
-            "Run 'ldm run' to restart the container, or 'ldm status' to view environment status."
-        )
+        if emit_hint:
+            UI.hint(
+                "Run 'ldm run' to restart the container, or 'ldm status' to view environment status."
+            )
 
     def cmd_restart(
         self, project_id=None, service=None, all_projects=False, force_recreate=False
@@ -807,7 +824,8 @@ class OrchestrationService(BaseHandler):
         if target == "all":
             self.cmd_down(root.name, delete=False)
         elif is_running:
-            self.cmd_stop(root.name)
+            # LDM-#1410: internal step of a reset, which then wipes directories.
+            self.cmd_stop(root.name, emit_hint=False)
 
         # 2. Wipe directories
         paths = self.manager.setup_paths(root)

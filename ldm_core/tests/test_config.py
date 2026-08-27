@@ -1214,8 +1214,11 @@ class TestConfigService(unittest.TestCase):
             )
 
             # Check stop/start and rebuild
+            # LDM-#1410: an SSL mode switch stops the stack as an internal
+            # step, so it must not print a terminal "Next step" hint -- that is
+            # what made a mid-restore block look like a completed command.
             self.manager.runtime.cmd_stop.assert_called_once_with(
-                project_id=tmp_path.name
+                project_id=tmp_path.name, emit_hint=False
             )
             self.manager.runtime.cmd_run.assert_called_once_with(
                 project_id=tmp_path.name
@@ -1327,8 +1330,11 @@ class TestConfigService(unittest.TestCase):
             )
 
             # Check stop/start and rebuild
+            # LDM-#1410: an SSL mode switch stops the stack as an internal
+            # step, so it must not print a terminal "Next step" hint -- that is
+            # what made a mid-restore block look like a completed command.
             self.manager.runtime.cmd_stop.assert_called_once_with(
-                project_id=tmp_path.name
+                project_id=tmp_path.name, emit_hint=False
             )
             self.manager.runtime.cmd_run.assert_called_once_with(
                 project_id=tmp_path.name
