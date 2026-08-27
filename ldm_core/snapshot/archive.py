@@ -1,3 +1,4 @@
+import errno
 import json
 import os
 import tarfile
@@ -48,6 +49,15 @@ class ArchiveSnapshotService:
         safe_mkdir(snap_dir, parents=True, exist_ok=True)
         files_tar = snap_dir / "files.tar.gz"
 
+        # LDM-#1429: a snapshot that skipped its payload is not a snapshot.
+        # Previously every OSError here was caught, labelled "permission error"
+        # and skipped past. On a full Docker disk that produced five warnings
+        # naming the wrong cause, an archive containing essentially nothing, and
+        # a "Database dump completed." success line -- the user would hold a
+        # .tar.gz they believe is a backup and which cannot restore anything.
+        skipped: list[tuple[str, str]] = []
+        out_of_space = False
+
         with tarfile.open(files_tar, "w:gz") as tar:
             for f in [
                 "files",
@@ -62,11 +72,9 @@ class ArchiveSnapshotService:
             ]:
                 f_path = paths["root"] / f
                 if f_path.exists():
-                    try:
-                        UI.detail(f"Adding {f} to archive...")
-                        tar.add(f_path, arcname=f)
-                    except (PermissionError, OSError) as e:
-                        UI.warning(f"Skipping {f} due to permission error: {e}")
+                    if not self._add_to_archive(tar, f_path, f, skipped):
+                        out_of_space = True
+                        break
 
             osgi_state = paths.get("state")
             if osgi_state and osgi_state.exists() and osgi_state.is_dir():
@@ -98,7 +106,87 @@ class ArchiveSnapshotService:
                     reclaim_volume_permissions(es_infra_backup, chmod_val="777")
                     tar.add(es_infra_backup, arcname="search_backup")
 
+        # LDM-#1429: refuse to hand back an archive that is missing content.
+        # Done after the `with` closes, so the tarball is finalised before it is
+        # removed -- and removed it must be, or a truncated .tar.gz is left on
+        # disk looking exactly like a usable snapshot.
+        self._fail_incomplete_archive(files_tar, skipped, out_of_space)
+
         return files_tar
+
+    @staticmethod
+    def _add_to_archive(tar, f_path, name, skipped):
+        """Adds one entry, recording why if it could not (LDM-#1429).
+
+        Returns False when the disk is full, which is not a "skip": every
+        remaining write fails the same way, slowly.
+
+        The causes are separated deliberately. `PermissionError` is a subclass
+        of `OSError`, so the previous combined handler asserted "permission
+        error" for every OS-level failure -- ENOSPC, a stale mount, an I/O error
+        -- and sent the user to chmod when the fix was disk space.
+        """
+        try:
+            UI.detail(f"Adding {name} to archive...")
+            tar.add(f_path, arcname=name)
+            return True
+        except PermissionError as e:
+            # The original case, and the only one that message was right about.
+            UI.warning(f"Skipping {name} due to permission error: {e}")
+            skipped.append((name, f"permission error: {e}"))
+            return True
+        except OSError as e:
+            if e.errno == errno.ENOSPC:
+                UI.warning(f"Cannot add {name}: no space left on device.")
+                skipped.append((name, "no space left on device"))
+                return False
+            UI.warning(f"Skipping {name}: {e}")
+            skipped.append((name, str(e)))
+            return True
+
+    @staticmethod
+    def _fail_incomplete_archive(files_tar, skipped, out_of_space):
+        """Refuses to hand back an archive missing content (LDM-#1429).
+
+        Called after the tarfile context closes, so the file is finalised before
+        it is removed -- and removed it must be, or a truncated .tar.gz is left
+        on disk looking exactly like a usable snapshot.
+
+        Exit 3 per the contract in .agents/skills/ldm-architecture: a full disk
+        during a backup is an Infrastructure/Data error, not a validation one.
+
+        No-ops when nothing was skipped, so the caller stays a single call.
+        """
+        if not skipped:
+            return
+
+        missing = "\n".join(f"  - {name}: {why}" for name, why in skipped)
+        try:
+            files_tar.unlink()
+        except OSError:
+            pass
+
+        if out_of_space:
+            UI.die(
+                "Snapshot failed: the disk filled up while writing the archive.",
+                details=f"Could not add:\n{missing}",
+                tip=(
+                    "Free up space and re-run. Docker's disk is usually the one "
+                    "that matters, not the host's -- check it with "
+                    "'docker system df', and reclaim with 'ldm prune'."
+                ),
+                exit_code=3,
+            )
+        UI.die(
+            "Snapshot failed: content could not be added to the archive.",
+            details=f"Could not add:\n{missing}",
+            tip=(
+                "The archive was removed rather than left incomplete: a snapshot "
+                "missing these cannot restore the project. Resolve the errors "
+                "above and re-run."
+            ),
+            exit_code=3,
+        )
 
     def _extract_snapshot_archive(self, files_tar, paths):  # noqa: C901, PLR0912, PLR0915
         """Extracts a snapshot tarball into the project root with security checks."""
