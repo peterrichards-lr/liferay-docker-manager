@@ -18,6 +18,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # the compatibility table. For a tool the release runbook describes as able to
 # "discard real test data with no error", asking what it does must be safe.
 DRY_RUN = False
+# LDM-#1390: opt-in before any raw report is archived for a version mismatch.
+ARCHIVE_STALE = False
 
 
 def _mutate(description, action):
@@ -26,6 +28,41 @@ def _mutate(description, action):
         UI.info(f"[dry-run] would {description}")
         return
     action()
+
+
+def _report_mismatched_checkout(stale, fatal=True):
+    """Refuses to archive raw reports that only look stale because of the checkout.
+
+    LDM-#1390. A raw report is version-checked against this checkout's VERSION,
+    and a mismatch used to archive it with nothing but a UI.warning. That warning
+    is easy to miss in a long run, and by the time it is noticed the files have
+    moved -- while each report can represent hours of real multi-platform testing.
+
+    The mismatch almost always means the operator is standing on the wrong ref
+    (the documented case: running from `master` while syncing pre-release
+    reports), not that the report is obsolete. So stop before mutating anything
+    and say what to do. `--archive-stale` is the opt-out for genuinely clearing
+    an older cycle's reports.
+    """
+    UI.error(
+        f"Refusing to archive {len(stale)} raw report(s): their recorded version "
+        f"does not match this checkout (VERSION {VERSION})."
+    )
+    for name, reason in stale:
+        UI.raw(f"    {name}\n      {reason}")
+    UI.raw("")
+    UI.info(
+        "This usually means the checkout is on the wrong ref, not that the "
+        "reports are obsolete. Check out the ref whose VERSION matches them "
+        "(e.g. the active release/* branch) and re-run."
+    )
+    UI.info(
+        "If these reports really are from an older cycle and should be "
+        "discarded, re-run with --archive-stale."
+    )
+    if fatal:
+        sys.exit(1)
+    UI.info("[dry-run] continuing the preview; these reports were left alone.")
 
 
 # Paths that scripts/release.py's `--promote` can *only* ever touch when
@@ -521,6 +558,10 @@ def sync_reports():  # noqa: C901, PLR0912, PLR0915
         print(f"Error: {source_file} not found.")
         return
 
+    # LDM-#1390: raw reports whose version does not match this checkout are
+    # collected here and decided on after the loop, never moved during it.
+    stale_reports = []
+
     # 1. Gather and Parse all reports (excluding archive directory)
     all_txt = list(results_dir.glob("*.txt"))
     report_metas = []
@@ -594,26 +635,38 @@ def sync_reports():  # noqa: C901, PLR0912, PLR0915
                         stale_reason = f"verify script version {meta['script_version']} != {VERSION}"
 
                 if stale_reason:
-                    # Generate a unique hash for the archived filename to avoid collisions
+                    # LDM-#1390: deferred, not archived inline. Nothing is moved
+                    # until every raw report has been examined, so a mismatched
+                    # checkout can be reported and refused as a whole rather than
+                    # discovered halfway through a series of moves.
                     name_hash = hashlib.md5(
                         f"{meta['internal_slug']}{meta['timestamp']}".encode()
                     ).hexdigest()[:8]
                     archived_name = f"verify-{meta['internal_slug']}-{meta['status_slug']}-{name_hash}.txt"
-                    UI.warning(
-                        f"Archiving outdated raw report {r.name} -> {archived_name} "
-                        f"({stale_reason})."
-                    )
-                    _mutate(
-                        f"archive outdated raw report {r.name} -> {archived_name}",
-                        lambda r=r, n=archived_name: shutil.move(
-                            str(r), str(archive_dir / n)
-                        ),
-                    )
+                    stale_reports.append((r, archived_name, stale_reason))
                     continue
 
             report_metas.append(meta)
         except Exception as e:
             UI.warning(f"Failed to parse {r.name}: {e}")
+
+    if stale_reports:
+        if not ARCHIVE_STALE:
+            # --dry-run is a preview: surface the same diagnosis, but do not
+            # exit non-zero, so it stays safe to run from tooling.
+            _report_mismatched_checkout(
+                [(r.name, reason) for r, _n, reason in stale_reports],
+                fatal=not DRY_RUN,
+            )
+            stale_reports = []
+        for r, archived_name, reason in stale_reports:
+            UI.warning(
+                f"Archiving outdated raw report {r.name} -> {archived_name} ({reason})."
+            )
+            _mutate(
+                f"archive outdated raw report {r.name} -> {archived_name}",
+                lambda r=r, n=archived_name: shutil.move(str(r), str(archive_dir / n)),
+            )
 
     # 2. Standardize Filenames & Archive Old Reports
     # We only keep the LATEST report for each environment (internal_slug) in the root
@@ -792,10 +845,13 @@ def main(argv=None):
             "regenerates the compatibility table in the documentation."
         ),
         epilog=(
-            "Reports whose recorded version does not match this checkout's "
-            "VERSION are archived as stale. Run this from the branch whose "
-            "VERSION matches the reports you are syncing (e.g. the active "
-            "release branch), and preview with --dry-run first."
+            "A raw report whose recorded version does not match this checkout's "
+            "VERSION makes the script refuse and exit without moving anything, "
+            "because that usually means the checkout is on the wrong ref rather "
+            "than the report being obsolete. Check out the ref whose VERSION "
+            "matches the reports (e.g. the active release/* branch) and re-run, "
+            "or pass --archive-stale to discard them deliberately. Preview any "
+            "run with --dry-run first."
         ),
     )
     parser.add_argument(
@@ -804,12 +860,22 @@ def main(argv=None):
         action="store_true",
         help="Report every rename, archive and table edit without changing anything.",
     )
+    parser.add_argument(
+        "--archive-stale",
+        action="store_true",
+        help=(
+            "Archive raw reports whose version does not match this checkout. "
+            "Without this the script refuses and exits, because a mismatch "
+            "usually means the checkout is on the wrong ref (LDM-#1390)."
+        ),
+    )
     args = parser.parse_args(argv)
 
     # Matches the existing convention for one-shot CLI state in this codebase
     # (see ldm_core/utils.py:640, ldm_core/handlers/mcp.py).
-    global DRY_RUN  # noqa: PLW0603
+    global DRY_RUN, ARCHIVE_STALE  # noqa: PLW0603
     DRY_RUN = args.dry_run
+    ARCHIVE_STALE = args.archive_stale
 
     # The documented failure mode is a version mismatch between this checkout
     # and the reports, and it is otherwise invisible until files start moving.

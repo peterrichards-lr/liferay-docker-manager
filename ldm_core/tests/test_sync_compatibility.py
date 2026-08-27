@@ -1,4 +1,5 @@
 import sys
+import typing
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -171,3 +172,50 @@ class TestArgumentHandling:
         sync_compatibility.DRY_RUN = False
         sync_compatibility._mutate("do a thing", lambda: called.append(1))
         assert called == [1]
+
+
+class TestMismatchedCheckoutGuard:
+    """LDM-#1390: a raw report whose version does not match this checkout used to
+    be archived after nothing but a `UI.warning`. A warning is easy to miss in a
+    long run, and by then the file has moved -- while each report can represent
+    hours of real multi-platform testing. The mismatch almost always means the
+    operator is on the wrong ref, not that the report is obsolete."""
+
+    def teardown_method(self):
+        sync_compatibility.DRY_RUN = False
+        sync_compatibility.ARCHIVE_STALE = False
+
+    STALE: typing.ClassVar[list[tuple[str, str]]] = [
+        ("verify-linux-ubuntu-pass.txt", "binary version 9.9.9 != 2.18.0")
+    ]
+
+    def test_it_exits_rather_than_archiving(self):
+        sync_compatibility.DRY_RUN = False
+        with pytest.raises(SystemExit) as exc:
+            sync_compatibility._report_mismatched_checkout(self.STALE)
+        assert exc.value.code != 0, "must be a failing exit so CI/tooling notices"
+
+    def test_dry_run_reports_without_failing(self):
+        """A preview must stay safe to run from tooling."""
+        sync_compatibility.DRY_RUN = True
+        sync_compatibility._report_mismatched_checkout(self.STALE, fatal=False)
+
+    def test_the_message_names_the_report_and_both_versions(self, capsys):
+        """The whole point is that the operator can see what to fix."""
+        with pytest.raises(SystemExit):
+            sync_compatibility._report_mismatched_checkout(self.STALE)
+        out = capsys.readouterr()
+        combined = out.out + out.err
+        assert "verify-linux-ubuntu-pass.txt" in combined
+        assert "9.9.9" in combined and "2.18.0" in combined
+        assert "--archive-stale" in combined, "must name the deliberate opt-out"
+
+    @patch("sync_compatibility.sync_reports")
+    def test_archive_stale_flag_is_off_by_default(self, mock_sync):
+        sync_compatibility.main([])
+        assert sync_compatibility.ARCHIVE_STALE is False
+
+    @patch("sync_compatibility.sync_reports")
+    def test_archive_stale_flag_can_be_opted_into(self, mock_sync):
+        sync_compatibility.main(["--archive-stale"])
+        assert sync_compatibility.ARCHIVE_STALE is True
