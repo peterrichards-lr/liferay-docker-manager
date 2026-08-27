@@ -133,18 +133,23 @@ Controls whether LDM provisions a dedicated database container for the project o
 
 `isolated` supports every engine `--db` accepts -- `postgresql`, `mysql`, `hypersonic` and `external`.
 
-**`shared` is PostgreSQL only.** The global cluster (`liferay-db-global`) is provisioned as PostgreSQL, and the per-project database is created with `psql`; there is no MySQL/MariaDB equivalent of either. Combining `--database-mode shared` with `--db mysql` is refused rather than silently downgraded:
+**`shared` supports PostgreSQL and MySQL/MariaDB.** There is one global container per engine, and each is provisioned lazily -- on the first project that needs it:
 
-```console
-$ ldm run my-project --database-mode shared --db mysql
-❌  --database-mode shared is not supported with mysql: the global shared database
-   is PostgreSQL only. Use --database-mode isolated for a dedicated mysql
-   container, or --db postgresql to join the shared cluster.
-```
+| `--db` | Global container | Host port | Image |
+| :--- | :--- | :--- | :--- |
+| `postgresql` (default) | `liferay-db-global` | `5433` | `postgres:<resolved>` |
+| `mysql`, `mariadb` | `liferay-db-mysql-global` | `3307` | `mysql:<resolved>` |
 
-MySQL is fully supported in `isolated` mode -- it simply cannot share the global cluster.
+`hypersonic` cannot be shared -- it runs in-process, so LDM downgrades it to `isolated` with a warning. `external` ignores the mode entirely: LDM uses the JDBC URL you supplied and never consults a global container.
 
-In `shared` mode every project gets its own database on the one cluster, named from the project:
+> [!NOTE]
+> `--db mysql` and `--db mariadb` share **one** container. This is not a shortcut: LDM emits an identical `jdbc:mariadb://` URL and `MariaDB103Dialect` for both engines, so Liferay cannot distinguish them from the connection down. A single container also avoids a third idle global on a mixed fleet.
+
+**A mixed fleet runs both globals.** Shared mode exists to save roughly 500MB-1GB per project, and an all-PostgreSQL or all-MySQL fleet gets that saving in full. Mixing engines means both globals run and the saving erodes -- though two shared containers still beat one container per project, which is the comparison that matters.
+
+Before v2.19.0, `shared` was PostgreSQL only and `--database-mode shared --db mysql` exited `1`. That refusal was deliberate: the only global container was PostgreSQL while the MariaDB URL aimed at port 3306 of it, so the combination could never connect.
+
+In `shared` mode every project gets its own database on the one cluster for its engine, named from the project:
 
 ```text
 lportal_<project name, sanitized, lowercased, hyphens as underscores>
@@ -153,6 +158,8 @@ lportal_<project name, sanitized, lowercased, hyphens as underscores>
 **The derived name is always lowercase.** `MyProject` becomes `lportal_myproject`; `Saarbrücken` becomes `lportal_saarbruecken`.
 
 This matters when the shared cluster is **external** and you provision the database yourself: create it with the lowercase name above, because that is the only name LDM will look for. Lowercasing also matches what PostgreSQL itself does with an unquoted `CREATE DATABASE`, so a hand-provisioned database and an LDM-provisioned one end up with the same name.
+
+The same contract carries the name on MySQL, where database names are case-sensitive on Linux (`lower_case_table_names=0`). LDM's own global MySQL container runs with `--lower_case_table_names=1`, which folds names as PostgreSQL does; because LDM always derives lowercase, the name is predictable either way and on an external server too.
 
 In `isolated` mode the database is always called `lportal` and the project name is not used.
 
@@ -185,4 +192,4 @@ In `isolated` mode the database is always called `lportal` and the project name 
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*
+*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*

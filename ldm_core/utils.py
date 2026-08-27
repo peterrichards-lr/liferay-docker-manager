@@ -413,6 +413,77 @@ def shared_database_name(identifier):
     return f"lportal_{sanitize_id(identifier).replace('-', '_')}".lower()
 
 
+# The global shared-database container for each engine. There is one per
+# engine rather than one overall: `liferay-db-global` is a `postgres:<ver>`
+# image and cannot serve a MariaDB JDBC URL, which is exactly why
+# `--database-mode shared --db mysql` was refused between LDM-#1360 and
+# LDM-#1361.
+#
+# `liferay-db-mysql-global` is not a new name. It has been referenced by the
+# readiness-wait and teardown branches since the original shared-database
+# commit (#310) -- in `pipelines/run.py`, `snapshot/database.py` and
+# `runtime/orchestration.py` -- while nothing ever created it. Those branches
+# were dead code against a container that did not exist; #1361 makes them real
+# rather than renaming them, so no existing name changes and nothing scripting
+# against `liferay-db-global` breaks.
+SHARED_DB_CONTAINERS = {
+    "postgresql": "liferay-db-global",
+    "mysql": "liferay-db-mysql-global",
+    "mariadb": "liferay-db-mysql-global",
+}
+
+_DEFAULT_SHARED_DB_ENGINE = "postgresql"
+
+
+def shared_database_container(db_type=None):
+    """Returns the global shared-database container name for `db_type`.
+
+    LDM-#1361: five sites hardcoded `liferay-db-global` with no engine
+    awareness, and three others carried their own inline
+    `"liferay-db-mysql-global" if db_type in [...] else "liferay-db-global"`
+    ternary. Centralised for the reason given on `shared_database_name`:
+    that formula was duplicated at nine sites, none of them agreed, and the
+    disagreement is what broke `--database-mode shared` in LDM-#1354.
+
+    An unrecognised or absent `db_type` resolves to the PostgreSQL container.
+    PostgreSQL is LDM's default engine, so this preserves the behaviour of
+    every call site that previously hardcoded it -- notably `db_type` read
+    from a `meta` written before the key existed.
+
+    `hypersonic` is deliberately not in the map and so falls through to the
+    PostgreSQL default. Callers must not reach here for Hypersonic at all --
+    it is in-process and cannot be shared, which `_inject_liferay_db_env`
+    enforces by downgrading it to `isolated` -- so returning a container name
+    for it would be meaningless either way.
+    """
+    return SHARED_DB_CONTAINERS.get(
+        str(db_type or _DEFAULT_SHARED_DB_ENGINE).lower(),
+        SHARED_DB_CONTAINERS[_DEFAULT_SHARED_DB_ENGINE],
+    )
+
+
+def shared_database_volume(db_type=None):
+    """Returns the named data volume for the global container of `db_type`.
+
+    Derived from the container name rather than tabulated separately, so a
+    third engine cannot acquire a container without a matching volume. The
+    PostgreSQL value is `liferay-db-global-data`, which is what `ldm nuke`
+    and the E2E suite already know.
+    """
+    return f"{shared_database_container(db_type)}-data"
+
+
+def is_shared_capable_db(db_type):
+    """Whether `db_type` can join a global shared cluster.
+
+    Both engines that LDM provisions a global container for qualify.
+    `external` does not: LDM neither creates nor owns that server, so there
+    is no global container to resolve. `hypersonic` does not: it is
+    in-process.
+    """
+    return str(db_type or "").lower() in SHARED_DB_CONTAINERS
+
+
 def sanitize_id(identifier):
     """
     Sanitizes a string to be used as a safe identifier (e.g. project ID, container name, volume prefix).

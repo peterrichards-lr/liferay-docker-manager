@@ -1706,6 +1706,92 @@ class TestSharedDbModeFromCliFlag(unittest.TestCase):
         self.assertIn("MixedCase-db", service.get("depends_on") or [])
 
 
+class TestSharedDbModeWithMysql(unittest.TestCase):
+    """LDM-#1361: shared mode with MySQL/MariaDB.
+
+    Between #1360 and #1361 this combination was refused outright, because
+    `_inject_liferay_db_env` emitted `jdbc:mariadb://liferay-db-global:3306/`
+    -- the MySQL port of a PostgreSQL container -- so it could never connect
+    (#1357). The engine now resolves its own global container.
+    """
+
+    PATHS_KEYS = TestSharedDbModeFromCliFlag.PATHS_KEYS
+
+    def setUp(self):
+        self.manager = MockComposerManager()
+        from ldm_core.handlers.composer import ComposerService
+
+        self.composer = ComposerService(self.manager)
+        self.manager.defaults.get.side_effect = lambda _key, default=None: default
+        self.manager.args.database_mode = "shared"
+
+    def _paths(self):
+        root = Path("/tmp/MixedCase")
+        paths = {"root": root}
+        paths.update({k: root / k for k in self.PATHS_KEYS})
+        return paths
+
+    def _meta(self, db_type="mysql"):
+        return {
+            "tag": "2026.q1.7-lts",
+            "container_name": "MixedCase",
+            "db_type": db_type,
+        }
+
+    def _url(self, db_type="mysql"):
+        self.composer._build_liferay_service(
+            self._paths(), self._meta(db_type), "localhost", "MixedCase", False, None
+        )
+        for call in self.manager.config.update_portal_ext.call_args_list:
+            args = call[0]
+            if (
+                len(args) > 1
+                and isinstance(args[1], dict)
+                and "jdbc.default.url" in args[1]
+            ):
+                return args[1]["jdbc.default.url"]
+        return None
+
+    def test_the_url_targets_the_mysql_global_not_the_postgres_one(self):
+        """The #1357 defect, asserted directly."""
+        url = self._url("mysql")
+        self.assertIsNotNone(url)
+        assert url is not None
+        self.assertIn("liferay-db-mysql-global:3306", url)
+        self.assertNotIn("liferay-db-global:", url)
+
+    def test_mariadb_resolves_the_same_global(self):
+        url = self._url("mariadb")
+        self.assertIsNotNone(url)
+        assert url is not None
+        self.assertIn("liferay-db-mysql-global:3306", url)
+
+    def test_the_derived_database_name_is_lowercase(self):
+        """MySQL is case-sensitive on Linux, so #1354's contract matters here too."""
+        url = self._url("mysql")
+        assert url is not None
+        db_part = url.split("/")[-1].split("?")[0]
+        self.assertEqual("lportal_mixedcase", db_part)
+
+    def test_no_database_service_is_emitted_and_nothing_depends_on_one(self):
+        """The #1359 signature: compose refuses a dangling depends_on."""
+        meta = self._meta("mysql")
+        self.assertIsNone(self.composer._build_db_service(meta, "MixedCase"))
+        service = self.composer._build_liferay_service(
+            self._paths(), meta, "localhost", "MixedCase", False, None
+        )
+        for dep in service.get("depends_on") or []:
+            self.assertEqual("liferay", dep)
+
+    def test_isolated_mysql_is_untouched(self):
+        """Guard against over-reach: isolated MySQL already worked."""
+        self.manager.args.database_mode = "isolated"
+        url = self._url("mysql")
+        assert url is not None
+        self.assertIn("MixedCase-db:3306/lportal", url)
+        self.assertNotIn("global", url)
+
+
 class TestOsgiConfigsMount(unittest.TestCase):
     """LDM-#1364: <project>/osgi/configs must reach /opt/liferay/osgi/configs.
 

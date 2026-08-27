@@ -182,7 +182,9 @@ class DatabaseService(BaseHandler):
         )
         db_name = "lportal"
         if db_mode == "shared":
-            db_container = "liferay-db-global"
+            from ldm_core.utils import shared_database_container
+
+            db_container = shared_database_container(db_type)
             db_name = shared_database_name(project_path.name)
         else:
             db_container = project_meta.get("db_container_name")
@@ -372,7 +374,9 @@ class DatabaseService(BaseHandler):
         )
         db_name = "lportal"
         if db_mode == "shared":
-            db_container = "liferay-db-global"
+            from ldm_core.utils import shared_database_container
+
+            db_container = shared_database_container(db_type)
             db_name = shared_database_name(project_path.name)
         else:
             db_container = project_meta.get("db_container_name", f"{container_name}-db")

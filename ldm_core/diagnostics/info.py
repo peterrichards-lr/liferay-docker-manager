@@ -173,6 +173,7 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
     from ldm_core.utils import (
         resolve_infrastructure_mode,
         search_index_prefix,
+        shared_database_container,
         shared_database_name,
     )
 
@@ -180,8 +181,11 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
         "database_mode", meta, handler.manager.defaults
     )
     if db_mode == "shared":
+        # LDM-#1361: reporting `liferay-db-global` unconditionally sent a
+        # shared MySQL user after the wrong container -- the same class of
+        # mistake LDM-#1351 fixed here for isolated projects.
         UI.raw(
-            f"    {UI.WHITE}Database:{UI.COLOR_OFF}   {UI.CYAN}liferay-db-global{UI.COLOR_OFF} {UI.DIM}(shared){UI.COLOR_OFF}"
+            f"    {UI.WHITE}Database:{UI.COLOR_OFF}   {UI.CYAN}{shared_database_container(meta.get('db_type'))}{UI.COLOR_OFF} {UI.DIM}(shared){UI.COLOR_OFF}"
         )
         UI.raw(
             f"      {UI.WHITE}└─ Database:{UI.COLOR_OFF}    {UI.CYAN}{shared_database_name(project_name)}{UI.COLOR_OFF}"

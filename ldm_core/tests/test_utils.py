@@ -1928,6 +1928,84 @@ class TestSharedDatabaseName(unittest.TestCase):
             self.assertRegex(derived, r"^[a-z_][a-z0-9_.]*$", name)
 
 
+class TestSharedDatabaseContainer(unittest.TestCase):
+    """LDM-#1361: one resolver for "the global container for this engine".
+
+    Five sites hardcoded `liferay-db-global` and three carried their own
+    inline ternary. The point of the resolver is that they cannot disagree,
+    so these tests pin the mapping rather than any one call site.
+    """
+
+    def test_postgresql_keeps_its_existing_name(self):
+        """A rename would break anyone scripting against the container."""
+        from ldm_core.utils import shared_database_container
+
+        self.assertEqual("liferay-db-global", shared_database_container("postgresql"))
+
+    def test_mysql_and_mariadb_share_one_container(self):
+        """Both emit an identical jdbc:mariadb:// URL, so one server serves both."""
+        from ldm_core.utils import shared_database_container
+
+        self.assertEqual("liferay-db-mysql-global", shared_database_container("mysql"))
+        self.assertEqual(
+            "liferay-db-mysql-global", shared_database_container("mariadb")
+        )
+
+    def test_the_engines_do_not_collide(self):
+        """The #1357 defect was one name serving two incompatible engines."""
+        from ldm_core.utils import shared_database_container
+
+        self.assertNotEqual(
+            shared_database_container("postgresql"),
+            shared_database_container("mysql"),
+        )
+
+    def test_an_absent_or_unknown_engine_falls_back_to_postgresql(self):
+        """Preserves every pre-#1361 call site, including a meta with no db_type."""
+        from ldm_core.utils import shared_database_container
+
+        for value in (None, "", "postgres", "sqlite", "hypersonic"):
+            with self.subTest(db_type=value):
+                self.assertEqual("liferay-db-global", shared_database_container(value))
+
+    def test_the_engine_is_matched_case_insensitively(self):
+        """`db_type` reaches this from meta, CLI args and snapshot metadata."""
+        from ldm_core.utils import shared_database_container
+
+        self.assertEqual("liferay-db-mysql-global", shared_database_container("MySQL"))
+        self.assertEqual("liferay-db-global", shared_database_container("PostgreSQL"))
+
+    def test_the_volume_is_derived_from_the_container(self):
+        """Derived, not tabulated, so an engine cannot gain one without the other."""
+        from ldm_core.utils import (
+            SHARED_DB_CONTAINERS,
+            shared_database_container,
+            shared_database_volume,
+        )
+
+        # The PostgreSQL value is what `ldm nuke` and the E2E suite know.
+        self.assertEqual("liferay-db-global-data", shared_database_volume("postgresql"))
+        self.assertEqual(
+            "liferay-db-mysql-global-data", shared_database_volume("mysql")
+        )
+        for engine in SHARED_DB_CONTAINERS:
+            with self.subTest(engine=engine):
+                self.assertEqual(
+                    f"{shared_database_container(engine)}-data",
+                    shared_database_volume(engine),
+                )
+
+    def test_shared_capability_excludes_hypersonic_and_external(self):
+        from ldm_core.utils import is_shared_capable_db
+
+        for engine in ("postgresql", "mysql", "mariadb"):
+            with self.subTest(engine=engine):
+                self.assertTrue(is_shared_capable_db(engine))
+        for engine in ("hypersonic", "external", None, ""):
+            with self.subTest(engine=engine):
+                self.assertFalse(is_shared_capable_db(engine))
+
+
 class TestDnsLabel(unittest.TestCase):
     """LDM-#1356: the tunnel subdomain must be a valid DNS label."""
 

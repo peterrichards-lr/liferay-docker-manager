@@ -1071,7 +1071,12 @@ class ComposerService:
             host = f"{project_name}-db"
             db_name = "lportal"
             if db_mode == "shared":
-                host = "liferay-db-global"
+                # LDM-#1361: was hardcoded to `liferay-db-global`, i.e. this
+                # MariaDB URL named the PostgreSQL container on port 3306 and
+                # could never connect (LDM-#1357).
+                from ldm_core.utils import shared_database_container
+
+                host = shared_database_container(db_type)
                 db_name = shared_database_name(project_name)
 
             url = (
@@ -1109,8 +1114,10 @@ class ComposerService:
             )
             url = f"jdbc:postgresql://{project_name}-db:5432/lportal"
             if db_mode == "shared":
+                from ldm_core.utils import shared_database_container
+
                 db_name = shared_database_name(project_name)
-                url = f"jdbc:postgresql://liferay-db-global:5432/{db_name}"
+                url = f"jdbc:postgresql://{shared_database_container(db_type)}:5432/{db_name}"
 
             dialect = (
                 resolve_dependency_version(tag, "jdbc_dialect_postgresql")

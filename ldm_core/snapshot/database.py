@@ -22,7 +22,14 @@ class DatabaseSnapshotService:
                 "database_mode", project_meta or {}, self.manager.defaults
             )
             if db_mode == "shared":
-                db_container = "liferay-db-global"
+                # LDM-#1361: was hardcoded, so a shared MySQL project dumped
+                # from the PostgreSQL container. The restore path 160 lines
+                # below already resolved this per engine; only the snapshot
+                # path did not, which is the asymmetry the single resolver
+                # removes.
+                from ldm_core.utils import shared_database_container
+
+                db_container = shared_database_container(db_type)
 
             target_name = getattr(self.manager, "target", None) or (
                 project_meta.get("target") if isinstance(project_meta, dict) else None
@@ -180,11 +187,9 @@ class DatabaseSnapshotService:
 
             db_container = project_meta.get("db_container_name")
             if db_mode == "shared":
-                db_container = (
-                    "liferay-db-mysql-global"
-                    if db_type in ["mysql", "mariadb"]
-                    else "liferay-db-global"
-                )
+                from ldm_core.utils import shared_database_container
+
+                db_container = shared_database_container(db_type)
 
             if not db_container:
                 for suffix in ["-db", "-db-1"]:
@@ -200,7 +205,7 @@ class DatabaseSnapshotService:
             ):
                 UI.detail("  + Starting database container for restore...")
                 if db_mode == "shared":
-                    self.manager.infra.setup_global_database()
+                    self.manager.infra.setup_global_database(db_type=db_type)
                 else:
                     compose_base = DockerService.get_compose_cmd_prefix(target_name)
                     if compose_base:

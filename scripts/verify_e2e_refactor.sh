@@ -1124,7 +1124,7 @@ else
 fi
 
 
-echo ">> Verifying shared database mode (#1359 / #1354 / #1357)..."
+echo ">> Verifying shared database mode (#1359 / #1354 / #1361)..."
 # Every assertion here is derivable from `init --no-up --no-seed`, so the whole
 # block costs seconds and boots nothing.
 #
@@ -1207,24 +1207,79 @@ fi
 
 "$LDM_CMD" -y rm "$SHARED_DB_NAME" --delete >/dev/null 2>&1 || true
 
-# #1357: the global shared database is PostgreSQL only -- `liferay-db-global`
-# is provisioned as postgres and the per-project create runs psql, so a MariaDB
-# driver aimed at port 3306 of it could never connect. Refusal must be loud.
+# #1361: shared mode now supports MySQL/MariaDB, so this block asserts the
+# inverse of what it did between #1360 and #1361 -- the combination used to
+# exit 1 deliberately, because the only global container was `postgres:<ver>`
+# while the MariaDB URL aimed at port 3306 of it.
+#
+# Mirrors the PostgreSQL block above rather than merely checking exit 0: an
+# accepted flag that still emitted `liferay-db-global` in a `jdbc:mariadb://`
+# URL is exactly the #1357 defect, and would pass an exit-code-only check.
+SHARED_DB_MYSQL_NAME="${SHARED_DB_NAME}Mysql"
+"$LDM_CMD" -y rm "$SHARED_DB_MYSQL_NAME" --delete >/dev/null 2>&1 || true
 set +e
-( cd "$SHARED_DB_WORKDIR" && "$LDM_CMD" -y init "${SHARED_DB_NAME}Mysql" \
+( cd "$SHARED_DB_WORKDIR" && "$LDM_CMD" -y init "$SHARED_DB_MYSQL_NAME" \
     --no-up --no-seed --database-mode shared --db mysql ) >/dev/null 2>&1
 SHARED_DB_MYSQL_RC=$?
 set -e
-if [ "$SHARED_DB_MYSQL_RC" -eq 0 ]; then
-    echo "❌ ERROR: '--database-mode shared --db mysql' was accepted; it cannot work (#1357)." | tee -a "$RESULTS_FILE_TMP"
+SHARED_DB_MYSQL_DIR="${SHARED_DB_WORKDIR}/${SHARED_DB_MYSQL_NAME}"
+if [ "$SHARED_DB_MYSQL_RC" -ne 0 ]; then
+    echo "❌ ERROR: '--database-mode shared --db mysql' failed with exit ${SHARED_DB_MYSQL_RC}; it is supported since #1361." | tee -a "$RESULTS_FILE_TMP"
+    SHARED_DB_OK=false
+elif ! "$VENV_PYTHON" -c "
+import json, sys
+import yaml
+
+compose_path, meta_path, props_path = sys.argv[1:4]
+
+compose = yaml.safe_load(open(compose_path, encoding='utf-8')) or {}
+services = compose.get('services') or {}
+defined = set(services)
+for name, conf in services.items():
+    deps = conf.get('depends_on') or []
+    if isinstance(deps, dict):
+        deps = list(deps)
+    for dep in deps:
+        assert dep in defined, (
+            f'service {name!r} depends on undefined service {dep!r} -- '
+            'docker compose will refuse this file (#1359)'
+        )
+
+meta = json.load(open(meta_path, encoding='utf-8'))
+assert meta.get('database_mode') == 'shared', (
+    'meta database_mode is %r, expected shared (#1359)'
+    % (meta.get('database_mode'),)
+)
+
+url = ''
+for line in open(props_path, encoding='utf-8'):
+    if line.startswith('jdbc.default.url'):
+        url = line.split('=', 1)[1].strip()
+        break
+assert url, 'no jdbc.default.url written'
+assert url.startswith('jdbc:mariadb://'), (
+    f'JDBC URL {url!r} is not a MariaDB URL; --db mysql was not honoured'
+)
+assert 'liferay-db-mysql-global:3306' in url, (
+    f'JDBC URL {url!r} does not target the global MySQL container -- if it '
+    'names liferay-db-global it is aiming a MariaDB driver at the PostgreSQL '
+    'container, which is the #1357 defect (#1361)'
+)
+db_part = url.split('/')[-1].split('?')[0]
+assert db_part == db_part.lower(), (
+    f'shared database name {db_part!r} is not lowercase; MySQL is '
+    'case-sensitive on Linux, so this name may never be connectable (#1354)'
+)
+" "${SHARED_DB_MYSQL_DIR}/docker-compose.yml" "${SHARED_DB_MYSQL_DIR}/meta" "${SHARED_DB_MYSQL_DIR}/files/portal-ext.properties"; then
+    echo "❌ ERROR: shared MySQL database mode produced an inconsistent project (#1361)." | tee -a "$RESULTS_FILE_TMP"
     SHARED_DB_OK=false
 fi
-"$LDM_CMD" -y rm "${SHARED_DB_NAME}Mysql" --delete >/dev/null 2>&1 || true
+"$LDM_CMD" -y rm "$SHARED_DB_MYSQL_NAME" --delete >/dev/null 2>&1 || true
 
 rm -rf "$SHARED_DB_WORKDIR"
 
 if [ "$SHARED_DB_OK" = true ]; then
-    report_ok "✅ Shared database mode verified (valid compose, shared URL, lowercase name, MySQL refused)."
+    report_ok "✅ Shared database mode verified (valid compose, shared URL, lowercase name, PostgreSQL + MySQL)."
 else
     echo "❌ ERROR: shared database mode verification failed." | tee -a "$RESULTS_FILE_TMP"
     exit 1

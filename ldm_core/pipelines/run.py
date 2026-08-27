@@ -818,32 +818,16 @@ class ConfigResolutionStage(PipelineStage):
             getattr(manager.args, "database_mode", None),
         )
 
-        # LDM-#1357: shared mode is PostgreSQL-only. `liferay-db-global` is
-        # provisioned as `postgres:<ver>` (handlers/infra.py), and the
-        # per-project database is created with `psql` (below) -- there is no
-        # MySQL/MariaDB equivalent of either. The MariaDB branch of
-        # `_inject_liferay_db_env` nevertheless pointed at
-        # `jdbc:mariadb://liferay-db-global:3306/...`, i.e. the MySQL port of a
-        # PostgreSQL container, so the combination could never connect.
-        #
-        # Refused rather than silently downgraded to isolated, following the
-        # #1285 precedent: quietly ignoring a flag the user typed is its own
-        # surprise.
-        effective_db_type = (
-            db_type or project_meta.get("db_type") or "postgresql"
-        ).lower()
-        if db_mode_resolved == "shared" and effective_db_type in (
-            "mysql",
-            "mariadb",
-        ):
-            UI.die(
-                f"--database-mode shared is not supported with {effective_db_type}: "
-                "the global shared database is PostgreSQL only. Use "
-                "--database-mode isolated for a dedicated "
-                f"{effective_db_type} container, or --db postgresql to "
-                "join the shared cluster.",
-                exit_code=1,
-            )
+        # LDM-#1361 removed the LDM-#1360 refusal that used to sit here.
+        # `--database-mode shared --db mysql` exited 1 because the only global
+        # container was `postgres:<ver>` while `_inject_liferay_db_env` emitted
+        # `jdbc:mariadb://liferay-db-global:3306/...` -- the MySQL port of a
+        # PostgreSQL container, which could never connect. There is now a
+        # global MySQL container per `shared_database_container`, so the
+        # combination is provisioned rather than refused. Nothing replaces the
+        # guard: Hypersonic is still downgraded to isolated (with a warning) by
+        # `_inject_liferay_db_env`, and `external` never consults a global
+        # container at all.
 
         persist_osgi_arg = getattr(manager.args, "persist_osgi", None)
         if persist_osgi_arg is not None:
@@ -1301,13 +1285,20 @@ class ComposerStage(PipelineStage):
         # nesting this inside it meant the provisioning never ran for exactly
         # the case #1363 is about. Found by booting it -- the static reading
         # looked correct.
+        # LDM-#1361: the engine decides WHICH global container is provisioned,
+        # so it has to be read here and threaded through. Reads the persisted
+        # meta (ProjectInitializationStage writes `db_type`), which is the same
+        # source the compose file's JDBC URL is built from -- so the container
+        # provisioned and the container Liferay dials cannot disagree.
+        shared_db_type = project_meta.get("db_type", "postgresql")
+
         if shutil.which("docker") and not no_up:
             if use_shared_search:
                 UI.detail("Ensuring global search service is running...")
                 manager.infra.setup_global_search()
             if use_shared_db:
                 UI.detail("Ensuring global database service is running...")
-                manager.infra.setup_global_database()
+                manager.infra.setup_global_database(db_type=shared_db_type)
 
         if ssl_enabled or getattr(manager.args, "search", False) or use_shared_db:
             infra_start = time.time()
@@ -1332,6 +1323,7 @@ class ComposerStage(PipelineStage):
                     quiet=getattr(manager.args, "quiet", False),
                     use_shared_search=use_shared_search,
                     use_shared_db=use_shared_db,
+                    db_type=shared_db_type,
                 )
             project_meta["ssl_port"] = ssl_port
 
@@ -1349,30 +1341,69 @@ class ComposerStage(PipelineStage):
             # run -- so a developer's next shared-search project booted broken.
             #
             if shutil.which("docker") and use_shared_db and not no_up:
-                from ldm_core.utils import sanitize_id
+                from ldm_core.utils import shared_database_container
 
+                global_db = shared_database_container(shared_db_type)
                 db_name = shared_database_name(context.get("project_id"))
+                is_mysql_global = str(shared_db_type).lower() in ("mysql", "mariadb")
                 UI.detail(f"Ensuring global database '{db_name}' exists...")
-                check_cmd = [
-                    "docker",
-                    "exec",
-                    "liferay-db-global",
-                    "psql",
-                    "-U",
-                    "lportal",
-                    "-d",
-                    "lportal",
-                    "-tc",
-                    f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'",  # nosec B608
-                ]
-                exists_check = manager.run_command(
-                    check_cmd, check=False, capture_output=True
-                )
-                if not exists_check or "1" not in exists_check:
+
+                if is_mysql_global:
+                    # LDM-#1361: the DDL runs as `root`, not `lportal`. The
+                    # official MySQL image grants MYSQL_USER privileges on
+                    # MYSQL_DATABASE only, so `lportal` cannot CREATE DATABASE
+                    # at all -- and the GRANT below is what lets Liferay, which
+                    # connects as `lportal`, use the database once it exists.
+                    # Omitting it produces a successful create followed by an
+                    # access-denied at Liferay boot. Matches the `root`
+                    # credentials the teardown DROP in runtime/orchestration.py
+                    # already assumes.
+                    check_cmd = [
+                        "docker",
+                        "exec",
+                        global_db,
+                        "mysql",
+                        "-u",
+                        "root",
+                        "-ptest",
+                        "-N",
+                        "-B",
+                        "-e",
+                        f"SELECT 1 FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '{db_name}'",  # nosec B608
+                    ]
                     create_cmd = [
                         "docker",
                         "exec",
-                        "liferay-db-global",
+                        global_db,
+                        "mysql",
+                        "-u",
+                        "root",
+                        "-ptest",
+                        "-e",
+                        (
+                            f"CREATE DATABASE IF NOT EXISTS {db_name} "
+                            "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; "
+                            f"GRANT ALL PRIVILEGES ON {db_name}.* TO 'lportal'@'%'; "
+                            "FLUSH PRIVILEGES;"
+                        ),
+                    ]
+                else:
+                    check_cmd = [
+                        "docker",
+                        "exec",
+                        global_db,
+                        "psql",
+                        "-U",
+                        "lportal",
+                        "-d",
+                        "lportal",
+                        "-tc",
+                        f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'",  # nosec B608
+                    ]
+                    create_cmd = [
+                        "docker",
+                        "exec",
+                        global_db,
                         "psql",
                         "-U",
                         "lportal",
@@ -1381,9 +1412,15 @@ class ComposerStage(PipelineStage):
                         "-c",
                         f"CREATE DATABASE {db_name};",
                     ]
+
+                exists_check = manager.run_command(
+                    check_cmd, check=False, capture_output=True
+                )
+                if not exists_check or "1" not in exists_check:
                     manager.run_command(create_cmd, check=True)
                     UI.success(
-                        f"Created database '{db_name}' on global PostgreSQL container."
+                        f"Created database '{db_name}' on global "
+                        f"{'MySQL' if is_mysql_global else 'PostgreSQL'} container."
                     )
 
             if manager.verbose:
@@ -1748,11 +1785,9 @@ class ExecutionStage(PipelineStage):
                             return None
                         time.sleep(2)
             elif use_shared_db and db_type != "hypersonic":
-                global_db_container = (
-                    "liferay-db-mysql-global"
-                    if db_type in ["mysql", "mariadb"]
-                    else "liferay-db-global"
-                )
+                from ldm_core.utils import shared_database_container
+
+                global_db_container = shared_database_container(db_type)
                 UI.detail(
                     f"Waiting for shared database ({UI.CYAN}{global_db_container}{UI.COLOR_OFF}) to be ready..."
                 )

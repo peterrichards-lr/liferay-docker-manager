@@ -55,6 +55,7 @@ class InfraService:
             use_ssl=True,
             use_shared_db=use_shared_db,
             force_recreate=force_recreate,
+            db_type=meta.get("db_type") or getattr(self.manager.args, "db", None),
         )
         UI.success("Infrastructure setup complete.")
 
@@ -96,15 +97,21 @@ class InfraService:
         use_shared_search=True,
         use_shared_db=False,
         force_recreate=False,
+        db_type=None,
     ):
-        """Initializes global Traefik proxy and search services."""
+        """Initializes global Traefik proxy and search services.
+
+        LDM-#1361: `db_type` selects which engine's global database
+        container to provision. `None` means PostgreSQL, preserving the
+        pre-#1361 behaviour for callers that do not know the engine.
+        """
         self._ensure_network(self.target)
         # Orchestrated Global Search (ES8)
         if getattr(self.manager.args, "search", False) and use_shared_search:
             self.setup_global_search()
 
         if use_shared_db:
-            self.setup_global_database()
+            self.setup_global_database(db_type=db_type)
 
         if not use_ssl:
             return 443
@@ -544,58 +551,149 @@ tls:
                 UI.detail("Starting existing Docker socket bridge...")
                 DockerService.start(container_name)
 
-    def setup_global_database(self, force=False):
-        """Ensures the global PostgreSQL database service is running.
+    def setup_global_database(self, force=False, db_type=None):
+        """Ensures the global database service for `db_type` is running.
 
         "Shared" means shared among projects resolving to the same target,
         not a single global instance for every target -- see
         DatabaseService.cmd_start's docstring and
         docs/explanation/remote-node-architecture.md §5. Resolves
         self.manager.target exactly like any other Docker operation.
+
+        LDM-#1361: there is one global container per engine, resolved via
+        `shared_database_container`. `db_type=None` resolves to PostgreSQL,
+        which is what every pre-#1361 caller got.
+
+        A mixed fleet runs both globals. They are provisioned lazily -- on
+        the first `ldm run` that needs each -- rather than eagerly together,
+        because eager provisioning would cost an all-PostgreSQL fleet (the
+        overwhelming majority) a permanently idle MySQL container for
+        nothing. Two globals still beats a container per project, which is
+        the comparison shared mode is actually against.
         """
         from ldm_core.docker_service import DockerService
+        from ldm_core.utils import (
+            resolve_dependency_version,
+            shared_database_container,
+            shared_database_volume,
+        )
 
         target_name = getattr(self.manager, "target", None)
         docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
-        db_name = "liferay-db-global"
+        is_mysql = str(db_type or "").lower() in ("mysql", "mariadb")
+        engine_label = "MySQL" if is_mysql else "PostgreSQL"
+        db_name = shared_database_container(db_type)
+        data_volume = shared_database_volume(db_type)
         exists = DockerService.exists(db_name, target_name=target_name)
         running = DockerService.is_running(db_name, target_name=target_name)
 
         if exists and not running:
-            UI.detail("Starting existing Global Database (PostgreSQL) container...")
+            UI.detail(
+                f"Starting existing Global Database ({engine_label}) container..."
+            )
             DockerService.start(db_name, target_name=target_name)
 
         if not exists:
-            UI.detail("Initializing Global Database (PostgreSQL) container...")
+            UI.detail(f"Initializing Global Database ({engine_label}) container...")
             tag = "latest"
-            from ldm_core.utils import resolve_dependency_version
 
-            pg_ver = resolve_dependency_version(tag, "postgresql") or "16"
+            if is_mysql:
+                # A single MySQL-protocol container serves both `--db mysql`
+                # and `--db mariadb`, which is why they share one container
+                # name. That is not a shortcut: `_inject_liferay_db_env`
+                # already emits an identical `jdbc:mariadb://` URL and
+                # MariaDB103Dialect for both engines, so Liferay cannot tell
+                # them apart from the connection down. Giving `mariadb` its
+                # own global would add a third idle container to a mixed
+                # fleet for no behavioural difference -- and, worse, if one
+                # name mapped to two images then whichever project ran first
+                # would silently decide the engine for the second.
+                mysql_ver = resolve_dependency_version(tag, "mysql") or "8.4"
+                self.manager.run_command(
+                    [
+                        *docker_prefix,
+                        "run",
+                        "-d",
+                        "--name",
+                        db_name,
+                        "--network",
+                        "liferay-net",
+                        "-e",
+                        "MYSQL_ROOT_PASSWORD=test",  # nosec B105
+                        "-e",
+                        "MYSQL_USER=lportal",
+                        "-e",
+                        "MYSQL_PASSWORD=test",  # nosec B105
+                        "-e",
+                        "MYSQL_DATABASE=lportal",
+                        "-p",
+                        "3307:3306",
+                        "-v",
+                        f"{data_volume}:/var/lib/mysql",
+                        f"mysql:{mysql_ver}",
+                        "mysqld",
+                        "--character-set-server=utf8mb4",
+                        "--collation-server=utf8mb4_unicode_ci",
+                        "--character-set-filesystem=utf8mb4",
+                        # Mirrors the isolated MySQL service in
+                        # handlers/composer.py. It also makes the lowercase
+                        # `shared_database_name` contract hold on Linux,
+                        # where MySQL is otherwise case-sensitive.
+                        "--lower_case_table_names=1",
+                        "--bind-address=0.0.0.0",
+                        "--skip-name-resolve",
+                        "--mysql-native-password=ON",
+                    ]
+                )
+            else:
+                pg_ver = resolve_dependency_version(tag, "postgresql") or "16"
+                self.manager.run_command(
+                    [
+                        *docker_prefix,
+                        "run",
+                        "-d",
+                        "--name",
+                        db_name,
+                        "--network",
+                        "liferay-net",
+                        "-e",
+                        "POSTGRES_PASSWORD=test",  # nosec B105
+                        "-e",
+                        "POSTGRES_USER=lportal",
+                        "-e",
+                        "POSTGRES_DB=lportal",
+                        "-p",
+                        "5433:5432",
+                        "-v",
+                        f"{data_volume}:/var/lib/postgresql/data",
+                        f"postgres:{pg_ver}",
+                    ]
+                )
 
-            self.manager.run_command(
-                [
-                    *docker_prefix,
-                    "run",
-                    "-d",
-                    "--name",
-                    db_name,
-                    "--network",
-                    "liferay-net",
-                    "-e",
-                    "POSTGRES_PASSWORD=test",  # nosec B105
-                    "-e",
-                    "POSTGRES_USER=lportal",
-                    "-e",
-                    "POSTGRES_DB=lportal",
-                    "-p",
-                    "5433:5432",
-                    "-v",
-                    "liferay-db-global-data:/var/lib/postgresql/data",
-                    f"postgres:{pg_ver}",
-                ]
-            )
             UI.detail("Waiting for Global Database to become ready...")
             import time
+
+            if is_mysql:
+                ready_cmd = [
+                    *docker_prefix,
+                    "exec",
+                    db_name,
+                    "mysqladmin",
+                    "ping",
+                    "-h",
+                    "127.0.0.1",
+                    "-uroot",
+                    "-ptest",
+                ]
+            else:
+                ready_cmd = [
+                    *docker_prefix,
+                    "exec",
+                    db_name,
+                    "pg_isready",
+                    "-U",
+                    "lportal",
+                ]
 
             for _ in range(60):
                 status = self.manager.get_container_status(
@@ -605,7 +703,7 @@ tls:
                     UI.error("Global database container exited unexpectedly.")
                     break
                 res = self.manager.run_command(
-                    [*docker_prefix, "exec", db_name, "pg_isready", "-U", "lportal"],
+                    ready_cmd,
                     check=False,
                     capture_output=True,
                 )

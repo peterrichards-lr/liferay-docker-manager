@@ -54,7 +54,7 @@
 | :-- | :--------------------- | :---------------------------------- | :------------------------------------------ |
 | 2.1 | **Infra Setup** | `ldm infra-setup --search` | Starts Traefik and ES8. Idempotent. |
 | 2.2 | **Shared DB Mode** | `ldm init <Name> --no-up --no-seed --database-mode shared --db postgresql` | Valid compose (no `depends_on` on an undefined service), JDBC URL targets `liferay-db-global`, derived database name is lowercase, `database_mode` persisted to `meta`. |
-| 2.3 | **Shared DB Refusal** | `ldm init <Name> --no-up --no-seed --database-mode shared --db mysql` | Refused with a non-zero exit -- the shared cluster is PostgreSQL only. |
+| 2.3 | **Shared DB Mode (MySQL)** | `ldm init <Name> --no-up --no-seed --database-mode shared --db mysql` | Succeeds. JDBC URL targets `liferay-db-mysql-global:3306` -- **not** `liferay-db-global`, which would aim a MariaDB driver at the PostgreSQL container -- derived database name is lowercase, no `depends_on` on an undefined service. |
 | 2.4 | **Shared Search Mode** | `ldm init <Name> --no-up --no-seed --search-mode shared` | `search_mode` persisted to `meta`; an `ElasticsearchConfiguration.config` written under `osgi/configs` with `productionModeEnabled`, the global cluster address and a **lowercase** `indexNamePrefix`; that directory mounted into the container. |
 
 ### 🛠️ Manual
@@ -228,4 +228,4 @@ powershell -ExecutionPolicy Bypass -File scripts/verify_e2e_refactor.ps1
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*
+*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*
