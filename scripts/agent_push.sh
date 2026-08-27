@@ -180,6 +180,28 @@ if ! SKIP=bump-docs-timestamps .venv/bin/python3 -m pre_commit run --all-files; 
   fi
 fi
 
+# LDM-#1407: `pre-commit run --all-files` runs only the default `pre-commit`
+# stage. mypy and bandit are declared `stages: [pre-push, manual]`, so the block
+# above never ran them -- and skipped-by-stage hooks emit no "Skipped" line and
+# no warning, they simply do not appear. The output listed 17 hooks, all
+# "Passed", and looked exhaustive. Observed on PR #1404: 17/17 green locally,
+# then all four CI lint-and-test jobs failing at the MyPy step.
+#
+# Run them explicitly rather than switching the block above to
+# `--hook-stage pre-push`, which would also pull in the pytest hook and run the
+# ~6-minute suite twice, since this script runs pytest itself below.
+echo "=> Running MyPy (Typing Gate)..."
+if ! SKIP=bump-docs-timestamps .venv/bin/python3 -m pre_commit run --all-files --hook-stage pre-push mypy; then
+  echo "=> [ERROR] MyPy failed. This is a required CI check -- fix it before pushing."
+  exit 1
+fi
+
+echo "=> Running Bandit (Security Gate)..."
+if ! SKIP=bump-docs-timestamps .venv/bin/python3 -m pre_commit run --all-files --hook-stage pre-push bandit; then
+  echo "=> [ERROR] Bandit failed. This is a required CI check -- fix it before pushing."
+  exit 1
+fi
+
 echo "=> Running PyTest suite (Testing Gate)..."
 if ! .venv/bin/python3 -m pytest; then
   echo "=> [ERROR] PyTest suite failed. Fix the failing tests before pushing."
