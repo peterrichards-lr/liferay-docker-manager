@@ -17,6 +17,17 @@ To prevent unnecessary code churn, sweeping reformatting, and out-of-scope chang
 
 - **MANDATORY REQUIREMENT, CI-enforced**: the `issue-link-check` workflow (`.github/workflows/issue-link-check.yml`) fails any PR missing a `Closes/Fixes/Resolves #N` reference in its title or body. If a change is genuinely too trivial to warrant a tracked issue, add the `no-issue-needed` label instead of skipping the link -- do not just omit it and hope the check doesn't run.
 
+## Pull Request & Review Feedback Loop
+
+- **PR Creation**: After pushing a feature, fix or roadmap branch, confirm the `gh` CLI is available and authenticated, then open the PR against the base branch (usually `master`) with `gh pr create --title "<summary>" --body "<details>"`. The title or body MUST carry the `Closes #N` reference the `issue-link-check` gate requires (see above).
+- **Retrieve Feedback Directly**: Do not ask the user to paste review comments. Pull them yourself:
+
+  ```bash
+  gh pr view --json reviews,comments,statusCheckRollup
+  ```
+
+- **Close the Loop**: Map each comment to the specific file and line it concerns, state the plan for addressing them, then apply the fixes. After pushing, re-check the PR status and report back which comments were addressed and how -- a review comment left neither actioned nor answered is an open thread the author has to chase.
+
 ## Sub-Issue Lifecycle in Pre-Release Cycles
 
 Because release-tracking PRs stay open across multiple `--bump beta` iterations before final promotion:
@@ -27,4 +38,4 @@ Because release-tracking PRs stay open across multiple `--bump beta` iterations 
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-18* | *Last Reviewed: 2026-08-18*
+*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*
