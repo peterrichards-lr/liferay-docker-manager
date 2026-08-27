@@ -22,6 +22,13 @@ PROJECT_NAME="ldm-smoke-test-${TEST_PORT}"
 COLLISION_PROJECT="collision-test-${TEST_PORT}"
 TAG_VAL_PROJECT="tag-val-test-${TEST_PORT}"
 TARGET_TEST_NODE="e2e-target-${TEST_PORT}"
+ANNOUNCE_TEST_NODE="announce-node-${TEST_PORT}"
+ANNOUNCE_TEST_PROJ="announce-proj-${TEST_PORT}"
+PORTCONFLICT_PROJ="portconflict-${TEST_PORT}"
+PORT_HOLDER="ldm-e2e-port-holder-${TEST_PORT}"
+# Kibana publishes this host port unconditionally (composer.py
+# _build_kibana_service). It is the LDM-#1350 lever -- see that check below.
+KIBANA_HOST_PORT=5601
 
 KEEP_ARTIFACTS=false
 for arg in "$@"; do
@@ -161,6 +168,22 @@ remove_workspace_dir() {
     return 0
 }
 
+# LDM-#1383: the artefacts of the two checks below are torn down inline as
+# soon as each check finishes, and again from the exit trap. Leaving a Docker
+# context behind is not merely untidy: every later `ldm list`/`ldm status` in
+# this suite would then resolve `docker --context` against an unroutable
+# TEST-NET-1 address and block on an SSH connect timeout, turning one failed
+# check into a suite that appears to hang.
+cleanup_1383_artifacts() {
+    "$LDM_CMD" -y target rm "$ANNOUNCE_TEST_NODE" >/dev/null 2>&1 || true
+    docker context rm "$ANNOUNCE_TEST_NODE" >/dev/null 2>&1 || true
+    "$LDM_CMD" -y rm "$ANNOUNCE_TEST_PROJ" --delete >/dev/null 2>&1 || true
+    rm -rf "${LDM_WORKSPACE:?}/${ANNOUNCE_TEST_PROJ}"
+    docker rm -f "$PORT_HOLDER" >/dev/null 2>&1 || true
+    "$LDM_CMD" -y rm "$PORTCONFLICT_PROJ" --delete >/dev/null 2>&1 || true
+    rm -rf "${LDM_WORKSPACE:?}/${PORTCONFLICT_PROJ}"
+}
+
 cleanup_test_projects() {
     local EXIT_CODE=$?
     set +e
@@ -192,6 +215,8 @@ cleanup_test_projects() {
             cp "${ORIGINAL_PWD}/${final_name}" "${ORIGINAL_PWD}/references/verification-results/" 2>/dev/null || true
         fi
     fi
+
+    cleanup_1383_artifacts
 
     if [ "$KEEP_ARTIFACTS" != "true" ]; then
         # Check if other LDM project containers are running before tearing down global Traefik/proxy
@@ -454,6 +479,173 @@ else
 fi
 log_and_run "Target Status (Loopback Node)" "$LDM_CMD" target status "$LOOPBACK_TEST_NODE"
 log_and_run "Target Remove (Loopback Node)" "$LDM_CMD" target rm "$LOOPBACK_TEST_NODE"
+
+# --- LDM-#1383: E2E cover for the v2.18.0 remote-node / port-conflict UX ----
+#
+# #1341, #1345 and #1350 shipped with unit tests only, each deferred on the
+# same principle: an assertion must depend on nothing the script cannot
+# control. That principle stands. What #1383 got wrong was assuming the only
+# way to satisfy it was a real remote node and a real timing race. Two of the
+# three have a deterministic lever that touches no network at all.
+#
+# #1345 genuinely does not, and is left to its unit/integration tests. See
+# the note after the second check.
+
+echo ">> Verifying Remote Compute Node Announcement (LDM-#1341)..."
+#
+# No remote node is needed. announce_remote_targets() (ldm_core/utils.py)
+# decides remoteness via DockerService.get_docker_cmd_prefix(), which consults
+# only the LDM target registry -- name != "local" AND host outside
+# 127.0.0.0/8 -- and never checks that the Docker context actually exists.
+#
+# So: register a target on TEST-NET-1 (RFC 5737, permanently unroutable),
+# delete the Docker context that `target add` created, and point a project at
+# it. The project is classified remote and therefore announced, while
+# `docker --context` fails instantly with "context not found" rather than
+# opening an SSH connection. Measured end to end at 0s.
+#
+# Observed to fail against the unfixed code before being committed: at
+# cfcde7c9^ (the commit before #1341) announce_remote_targets does not exist
+# and `ldm list` prints no such line, so this check is not vacuous.
+mkdir -p "${LDM_WORKSPACE}/${ANNOUNCE_TEST_PROJ}/files"
+cat > "${LDM_WORKSPACE}/${ANNOUNCE_TEST_PROJ}/meta" <<EOF
+{"tag": "2026.q1.7-lts", "container_name": "${ANNOUNCE_TEST_PROJ}", "port": 8099, "db_type": "postgresql", "target": "${ANNOUNCE_TEST_NODE}"}
+EOF
+log_and_run "Target Add (TEST-NET-1 Remote Node)" "$LDM_CMD" -y target add "$ANNOUNCE_TEST_NODE" --host 192.0.2.10
+docker context rm "$ANNOUNCE_TEST_NODE" >/dev/null 2>&1 || true
+
+# Refuse to continue rather than hang: with the context still present, the
+# `ldm list` below would dial 192.0.2.10 over SSH and block.
+if docker context ls --format '{{.Name}}' 2>/dev/null | grep -qx "$ANNOUNCE_TEST_NODE"; then
+    echo "❌ ERROR: could not remove Docker context '${ANNOUNCE_TEST_NODE}'." | tee -a "$RESULTS_FILE_TMP"
+    echo "   Refusing to continue: 'ldm list' would block on an SSH connect to 192.0.2.10." | tee -a "$RESULTS_FILE_TMP"
+    cleanup_1383_artifacts
+    exit 1
+fi
+
+ANNOUNCE_OUT=$("$LDM_CMD" list 2>&1 || true)
+echo "$ANNOUNCE_OUT" | tee -a "$RESULTS_FILE_TMP"
+if echo "$ANNOUNCE_OUT" | grep -q "a remote compute node" &&
+    echo "$ANNOUNCE_OUT" | grep -q "${ANNOUNCE_TEST_PROJ} -> ${ANNOUNCE_TEST_NODE}"; then
+    report_ok "✅ Remote compute node announced up front, naming project -> node (LDM-#1341)."
+else
+    echo "❌ ERROR: 'ldm list' did not announce the remote node before resolving it." | tee -a "$RESULTS_FILE_TMP"
+    echo "   Expected a line naming '${ANNOUNCE_TEST_PROJ} -> ${ANNOUNCE_TEST_NODE}'." | tee -a "$RESULTS_FILE_TMP"
+    cleanup_1383_artifacts
+    exit 1
+fi
+
+# LDM-#1093: --json is a machine-readable contract, so the announcement is
+# deliberately suppressed there. Asserted because a future edit that moves the
+# announcement earlier would silently corrupt every --json consumer.
+ANNOUNCE_JSON_OUT=$("$LDM_CMD" list --json 2>&1 || true)
+if echo "$ANNOUNCE_JSON_OUT" | grep -q "a remote compute node"; then
+    echo "❌ ERROR: the remote-node announcement leaked into 'ldm list --json'." | tee -a "$RESULTS_FILE_TMP"
+    cleanup_1383_artifacts
+    exit 1
+fi
+report_ok "✅ Announcement correctly suppressed under --json (LDM-#1093)."
+cleanup_1383_artifacts
+
+echo ">> Verifying Late Port Conflict Guidance (LDM-#1350)..."
+#
+# The late check in ComposerStage fires when a port written into the generated
+# docker-compose.yml is taken by the time compose validation runs. #1383
+# assumed reproducing it meant racing the seed download that sits between the
+# pre-flight check and this one. It does not: the pre-flight only covers the
+# Liferay port and custom_containers, so any *other* compose-published port
+# reaches the late check with no race whatsoever.
+#
+# Kibana is the lever -- _build_kibana_service publishes a hardcoded 5601 and
+# the pre-flight never looks at it. Enabling it via meta costs nothing: the
+# run dies at the port check, several stages before anything is started, so no
+# Kibana container is ever created and no image is pulled.
+#
+# Note this cannot be done with the Liferay port instead. Under -y the
+# pre-flight calls UI.die() on a taken port (handlers/base.py) and exits 1
+# long before ComposerStage -- observed. The obvious "bind 8080 and run"
+# approach asserts the wrong check.
+#
+# Observed to fail against the unfixed code: at d5749b38^ the same conflict
+# prints "Please stop the service currently using port 5601" and no tip. The
+# exit code was already 4 before #1350 (from #996), so the tip -- not the exit
+# code -- is what makes this check non-vacuous. Both are asserted.
+docker rm -f "$PORT_HOLDER" >/dev/null 2>&1 || true
+docker run -d --name "$PORT_HOLDER" -p "${KIBANA_HOST_PORT}:80" alpine sleep 300 >/dev/null 2>&1 || true
+
+# `docker run -d` returns before the published port is necessarily accepting
+# connections, and LDM's check_port() treats a refused connect as "free". Wait
+# for the bind to actually be live rather than assuming it.
+PORT_HELD=false
+for _ in $(seq 1 30); do
+    if "$VENV_PYTHON" -c "
+import socket, sys
+s = socket.socket()
+s.settimeout(1)
+sys.exit(0 if s.connect_ex(('127.0.0.1', ${KIBANA_HOST_PORT})) == 0 else 1)
+" 2>/dev/null; then
+        PORT_HELD=true
+        break
+    fi
+    sleep 1
+done
+
+if [ "$PORT_HELD" != "true" ]; then
+    echo "❌ ERROR: could not occupy port ${KIBANA_HOST_PORT}; the LDM-#1350 check cannot run." | tee -a "$RESULTS_FILE_TMP"
+    echo "   Refusing to skip silently: an assertion that quietly stops running is worse than a red one." | tee -a "$RESULTS_FILE_TMP"
+    cleanup_1383_artifacts
+    exit 1
+fi
+
+mkdir -p "${LDM_WORKSPACE}/${PORTCONFLICT_PROJ}/files"
+cat > "${LDM_WORKSPACE}/${PORTCONFLICT_PROJ}/meta" <<EOF
+{"tag": "2026.q1.7-lts", "container_name": "${PORTCONFLICT_PROJ}", "port": 8097, "db_type": "postgresql", "search_kibana_enabled": "true"}
+EOF
+
+set +e
+PORTCONFLICT_OUT=$("$LDM_CMD" -y run "${LDM_WORKSPACE}/${PORTCONFLICT_PROJ}" --no-wait 2>&1)
+PORTCONFLICT_RC=$?
+set -e
+echo "$PORTCONFLICT_OUT" | tee -a "$RESULTS_FILE_TMP"
+
+if [ "$PORTCONFLICT_RC" -ne 4 ]; then
+    echo "❌ ERROR: late port conflict exited ${PORTCONFLICT_RC}, expected 4 (Orchestration/Deployment Error)." | tee -a "$RESULTS_FILE_TMP"
+    cleanup_1383_artifacts
+    exit 1
+fi
+if ! echo "$PORTCONFLICT_OUT" | grep -q "Port conflict detected: Port ${KIBANA_HOST_PORT}"; then
+    echo "❌ ERROR: no port-conflict message naming port ${KIBANA_HOST_PORT}." | tee -a "$RESULTS_FILE_TMP"
+    cleanup_1383_artifacts
+    exit 1
+fi
+if ! echo "$PORTCONFLICT_OUT" | grep -Eq "the pre-flight check will select port [0-9]+ instead"; then
+    echo "❌ ERROR: the port-conflict tip did not name the port a re-run would pick (LDM-#1350)." | tee -a "$RESULTS_FILE_TMP"
+    echo "   This is the regression #1350 fixed: advising the user to stop a process," | tee -a "$RESULTS_FILE_TMP"
+    echo "   which contradicts LDM's documented next-free-port behaviour." | tee -a "$RESULTS_FILE_TMP"
+    cleanup_1383_artifacts
+    exit 1
+fi
+report_ok "✅ Late port conflict exits 4 and names the port a re-run would pick (LDM-#1350)."
+cleanup_1383_artifacts
+
+# LDM-#1345 (diagnose an SSH failure instead of dumping the connect blob) is
+# deliberately NOT asserted here; the deferral stays tracked in #1398, the
+# successor issue opened when #1383 was closed.
+#
+# Unlike the two checks above, its trigger cannot be faked: the diagnosis is
+# produced from real `ssh`/`docker context` stderr, so provoking it means
+# actually attempting and failing a connection. Every honest trigger has a
+# duration this script does not own -- a TEST-NET-1 address fails via a
+# connect timeout set by the host network stack, a `.invalid` hostname depends
+# on the resolver, and "connection refused" depends on whether the machine
+# happens to run sshd. An assertion whose runtime is decided by the network is
+# the flaky release-gate check #1383 exists to avoid.
+#
+# It is covered by TestRemoteContextFailureDiagnosis in
+# ldm_core/tests/test_utils.py, which drives the real diagnosis function with
+# captured stderr from a genuine failure, plus an integration test over the
+# real CommandRunner path that was confirmed to fail against the unfixed
+# wiring.
 
 REMOTE_HOST="${LDM_TEST_REMOTE_HOST:-${LDM_REMOTE_TARGET}}"
 if [ -n "$REMOTE_HOST" ]; then
