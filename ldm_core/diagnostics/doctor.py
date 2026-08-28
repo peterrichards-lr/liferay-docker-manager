@@ -1927,6 +1927,75 @@ class DoctorRunner:
                 )
             )
 
+    # LDM-#1435: where each runtime keeps the disk image backing its VM.
+    # Checked in order; the first that exists wins. The user's home volume is
+    # the fallback because all three keep their images under it by default.
+    _ENGINE_STORAGE_PATHS = (
+        "~/.colima",
+        "~/.docker/desktop",
+        "~/.orbstack",
+        "/var/lib/docker",
+    )
+
+    def _check_host_disk_space(self, is_remote=False):
+        """Checks the HOST filesystem backing Docker's storage (LDM-#1435).
+
+        `_check_absolute_disk_space` asks Docker, deliberately: on Docker
+        Desktop, Colima and OrbStack the engine's storage lives in a VM with its
+        own, far smaller disk, so a host-side check passes on exactly the
+        machines most likely to fail. That reasoning is correct and unchanged.
+
+        It is also only half the picture. The VM's disk is typically a **sparse
+        image on the host filesystem**, so the space Docker reports is a promise
+        the host may be unable to honour. Measured on a developer machine at one
+        moment:
+
+            docker run --rm alpine df -P -h /   ->  77.9 GB free
+            df -h /System/Volumes/Data          ->   2.8 GB free, 100% capacity
+
+        The pre-flight passed at 77.9 GB and the run then died with ENOSPC
+        (LDM-#1430, LDM-#1429). Neither view is sufficient alone: Docker-only
+        misses host exhaustion, host-only misses the VM limit.
+
+        Skipped for a remote target: the engine is on another machine, so this
+        host's free space says nothing about it.
+        """
+        if is_remote:
+            return
+
+        min_free_bytes = 3 * 1024 * 1024 * 1024  # 3GB, matching the Docker check
+        try:
+            path = None
+            for candidate in self._ENGINE_STORAGE_PATHS:
+                expanded = Path(candidate).expanduser()
+                if expanded.exists():
+                    path = expanded
+                    break
+            if path is None:
+                # All three runtimes keep their images under the user's home by
+                # default, so this is the right fallback rather than "/", which
+                # on macOS is a sealed read-only volume and always looks full.
+                path = Path.home()
+
+            usage = shutil.disk_usage(path)
+        except Exception:
+            return
+
+        available_gb = usage.free / (1024**3)
+        label = "Disk Space (Host)"
+        if usage.free < min_free_bytes:
+            self.results.append((label, f"{available_gb:.1f}GB free", "warn"))
+            self.add_hint(
+                f"Only {available_gb:.1f}GB remains on the host filesystem backing "
+                f"Docker's storage ({path}). Docker may report far more free space: "
+                "its disk is usually a sparse image on this volume, so what it "
+                "reports is a promise the host cannot keep. A run that passes "
+                "Docker's own check can still fail with 'No space left on device' "
+                "(LDM-#1435)."
+            )
+        else:
+            self.results.append((label, f"{available_gb:.1f}GB free", True))
+
     def _check_dangling_and_print(self):  # noqa: C901, PLR0912, PLR0915
         # LDM-#1090/#1133: disk space/reclaimable-resources are properties
         # of whichever Docker engine you ask -- redirect both to an
@@ -1948,6 +2017,11 @@ class DoctorRunner:
 
         # 4.4 Dangling Docker Resources Check
         self._check_absolute_disk_space(docker_prefix=docker_prefix)
+        # LDM-#1435: and the host volume backing it. `docker_prefix` is only set
+        # above when an explicit target resolved to a genuinely remote host, so
+        # it doubles as the "is this another machine?" signal -- this host's free
+        # space says nothing about a remote engine's.
+        self._check_host_disk_space(is_remote=docker_prefix is not None)
         df_out = run_command(
             [*(docker_prefix or ["docker"]), "system", "df", "--format", "{{json .}}"],
             check=False,
