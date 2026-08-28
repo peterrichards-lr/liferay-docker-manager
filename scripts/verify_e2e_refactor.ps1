@@ -54,6 +54,8 @@ if ($env:LDM_TEST_PORT) { $TEST_PORT = $env:LDM_TEST_PORT }
 $TARGET_TEST_NODE = "e2e-target-${TEST_PORT}"
 $ANNOUNCE_TEST_NODE = "announce-node-${TEST_PORT}"
 $ANNOUNCE_TEST_PROJ = "announce-proj-${TEST_PORT}"
+$SSHFAIL_TEST_NODE = "sshfail-node-${TEST_PORT}"
+$SSHFAIL_TEST_PROJ = "sshfail-proj-${TEST_PORT}"
 $PORTCONFLICT_PROJ = "portconflict-${TEST_PORT}"
 $PORT_HOLDER = "ldm-e2e-port-holder-${TEST_PORT}"
 # Kibana publishes this host port unconditionally (composer.py
@@ -640,10 +642,12 @@ try {
     # same principle: an assertion must depend on nothing the script cannot
     # control. That principle stands. What #1383 got wrong was assuming the
     # only way to satisfy it was a real remote node and a real timing race.
-    # Two of the three have a deterministic lever that touches no network.
+    # All three have a deterministic lever that touches no network.
     #
-    # #1345 genuinely does not, and is left to its unit/integration tests. See
-    # the note after the second check.
+    # #1345 was the last holdout (#1398). It was thought to need a real failing
+    # connection whose duration the script does not own -- but "connection
+    # refused" on a port *this script picks and leaves closed* is refused on
+    # every machine, instantly. See the third check below.
     #
     # Kept in step with the bash twin (scripts/verify_e2e_refactor.sh) --
     # cross-platform script parity is a hard rule, see
@@ -700,6 +704,75 @@ try {
         throw "The remote-node announcement leaked into 'ldm list --json'."
     }
     Write-Verdict "[SUCCESS] Announcement correctly suppressed under --json (LDM-#1093)."
+
+    # --- LDM-#1398 / #1345: an unreachable node gets a diagnosis, not a raw blob
+    #
+    # #1383 deferred this on "needs a real remote node", and #1398 kept it
+    # tracked because every honest trigger had a duration the script does not
+    # own: a TEST-NET-1 SSH timeout is set by the host network stack, a
+    # `.invalid` hostname depends on the resolver, and "connection refused" was
+    # thought to need a host with no sshd.
+    #
+    # That last assumption was the way in. Refused-on-port-22 depends on whether
+    # the machine runs sshd -- but a port *this script picks and leaves closed*
+    # is refused on every machine, instantly, with no network dependency.
+    #
+    # The context must EXIST and point somewhere closed. That is the difference
+    # from the #1341 check above, which deletes the context so `docker --context`
+    # fails with "context not found" before any SSH is attempted. Here SSH is
+    # genuinely attempted and genuinely refused, which is the only way to
+    # exercise diagnose_remote_context_failure -- the thing under test IS the
+    # failure. A compose file must be present, or `compose stop` exits on "no
+    # configuration file provided" before it ever dials.
+    #
+    # Observed to fail against the unfixed code before being committed: at
+    # cfcde7c9^ diagnose_remote_context_failure does not exist and this path
+    # printed "Command failed (Exit 1)" plus the whole HTTP/SSH blob.
+    Write-Host ">> Verifying Unreachable Node Diagnosis (LDM-#1345)..."
+
+    $sshFailPort = [int](& $VENV_PYTHON -c "import socket; s = socket.socket(); s.bind(('127.0.0.1', 0)); print(s.getsockname()[1]); s.close()")
+
+    $sshFailDir = Join-Path $LDM_WORKSPACE $SSHFAIL_TEST_PROJ
+    New-Item -ItemType Directory -Path (Join-Path $sshFailDir "files") -Force | Out-Null
+    $sshFailMeta = '{"tag": "2026.q1.7-lts", "container_name": "' + $SSHFAIL_TEST_PROJ + '", "port": 8098, "db_type": "postgresql", "target": "' + $SSHFAIL_TEST_NODE + '"}'
+    Set-Content -Path (Join-Path $sshFailDir "meta") -Value $sshFailMeta -Encoding ASCII
+    Set-Content -Path (Join-Path $sshFailDir "docker-compose.yml") -Encoding ASCII -Value @"
+services:
+  placeholder:
+    image: alpine
+    command: sleep 1
+"@
+
+    & $LDM_CMD -y target add $SSHFAIL_TEST_NODE --host 192.0.2.11 --user nobody *> $null
+    & docker context rm -f $SSHFAIL_TEST_NODE *> $null
+    & docker context create $SSHFAIL_TEST_NODE --docker "host=ssh://nobody@127.0.0.1:$sshFailPort" *> $null
+
+    # Refuse to guess: if something is listening, the run below behaves
+    # differently and the assertion measures nothing.
+    & $VENV_PYTHON -c "import socket, sys; s = socket.socket(); s.settimeout(1); sys.exit(0 if s.connect_ex(('127.0.0.1', $sshFailPort)) == 0 else 1)" *> $null
+    if ($LASTEXITCODE -eq 0) {
+        Get-PortHolderDiagnostic -Port $sshFailPort
+        throw "Port $sshFailPort was expected to be closed but something is listening; the LDM-#1345 check cannot run."
+    }
+
+    $sshFailOut = (& $LDM_CMD -y stop $sshFailDir 2>&1) -join "`n"
+    Write-Host $sshFailOut
+    $sshFailOut | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+
+    if ($sshFailOut -notmatch "Cannot reach compute node '$SSHFAIL_TEST_NODE'") {
+        throw "No diagnosis naming the unreachable node (LDM-#1345)."
+    }
+    if ($sshFailOut -notmatch "refused the connection") {
+        throw "The diagnosis did not name the cause (LDM-#1345). A diagnosis that says only 'unreachable' is the blob it replaced."
+    }
+    if ($sshFailOut -match "docker\.example\.com") {
+        throw "The raw HTTP/SSH blob leaked through (LDM-#1345). docker.example.com is a placeholder host that looks alarming and is not real; hiding it behind --verbose is what #1345 was for."
+    }
+
+    & docker context rm -f $SSHFAIL_TEST_NODE *> $null
+    & $LDM_CMD -y target rm $SSHFAIL_TEST_NODE *> $null
+    Remove-Item -Recurse -Force $sshFailDir -ErrorAction SilentlyContinue
+    Write-Verdict "[SUCCESS] Unreachable node diagnosed by name and cause, with no raw blob (LDM-#1345)."
     Remove-Ldm1383Artifacts
 
     Write-Host ">> Verifying Late Port Conflict Guidance (LDM-#1350)..."
