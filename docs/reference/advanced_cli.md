@@ -52,6 +52,10 @@ These flags are ideal for automated testing pipelines where interactivity is imp
 
 Advanced options for memory constraints and Java-level debugging.
 
+> How LDM sizes the JVM by default, and how that compares with Liferay's
+> published guidance, is recorded in the [JVM & Database Tuning
+> reference](tuning.md).
+
 - **`--lean`**: Enables a resource-optimized JVM profile. It caps memory and limits background threading. Highly recommended for laptops with less than 16GB of RAM or CI runners.
 - **`--jvm-args="<args>"`**: Pass raw JVM arguments directly to Liferay. Example: `--jvm-args="-Xmx8g -Xms8g"`
 
