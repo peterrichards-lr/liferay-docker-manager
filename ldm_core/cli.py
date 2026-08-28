@@ -625,13 +625,19 @@ def get_parser():  # noqa: PLR0915
         action="store_true",
         help="Use internal anonymous volume for OSGi state (fixes locking issues on external drives)",
     )
+    # LDM-#1447: both are accepted and have no effect. They are retained rather
+    # than removed because AGENTS.md forbids breaking existing flags -- dropping
+    # them would fail any script that passes one. The help text says so plainly,
+    # and using either emits a warning (ldm_core/pipelines/run.py).
     run.add_argument(
         "--no-jvm-verify",
         action="store_true",
-        help="Disable JVM bytecode verification skip",
+        help="(no-op) Accepted for compatibility; has no effect. See LDM-#1446.",
     )
     run.add_argument(
-        "--no-tld-skip", action="store_true", help="Disable Tomcat TLD scanning skip"
+        "--no-tld-skip",
+        action="store_true",
+        help="(no-op) Accepted for compatibility; has no effect. See LDM-#1446.",
     )
     run.add_argument(
         "--no-seed", action="store_true", help="Disable automatic project seeding"
