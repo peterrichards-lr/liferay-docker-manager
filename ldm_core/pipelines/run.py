@@ -1364,7 +1364,41 @@ class ComposerStage(PipelineStage):
             # run -- so a developer's next shared-search project booted broken.
             #
             if shutil.which("docker") and use_shared_db and not no_up:
+                # LDM-#1401: honour the active target. These commands used the
+                # bare `docker` executable while every neighbour resolves a
+                # prefix, so for a project on a remote target the global
+                # container was created on the REMOTE engine (see
+                # infra.setup_global_database, which resolves it correctly)
+                # while this per-project CREATE DATABASE ran against the LOCAL
+                # daemon. The existence check runs with check=False, so a local
+                # daemon without that container simply returns nothing and the
+                # create proceeds -- failing, if at all, with an error naming
+                # the wrong daemon.
+                #
+                # Resolved here rather than reusing the `target_name` computed
+                # earlier in this method: that binding sits inside a different
+                # conditional and is not guaranteed to exist at this point.
+                #
+                # Shared *database* on a remote target is supported --
+                # setup_global_search's docstring records that the first-time
+                # remote limitation is specific to search, whose data dirs are
+                # host bind-mounts, and contrasts it with the database's
+                # Docker-managed named volume.
+                from ldm_core.docker_service import DockerService
                 from ldm_core.utils import shared_database_container
+
+                _shared_db_target = context.get("target_context")
+                if _shared_db_target is not None:
+                    _shared_db_target_name = _shared_db_target.target.name
+                else:
+                    _shared_db_target_name = getattr(manager, "target", None) or (
+                        project_meta.get("target")
+                        if isinstance(project_meta, dict)
+                        else None
+                    )
+                docker_prefix = DockerService.get_docker_cmd_prefix(
+                    _shared_db_target_name
+                )
 
                 global_db = shared_database_container(shared_db_type)
                 db_name = shared_database_name(context.get("project_id"))
@@ -1382,7 +1416,7 @@ class ComposerStage(PipelineStage):
                     # credentials the teardown DROP in runtime/orchestration.py
                     # already assumes.
                     check_cmd = [
-                        "docker",
+                        *docker_prefix,
                         "exec",
                         global_db,
                         "mysql",
@@ -1395,7 +1429,7 @@ class ComposerStage(PipelineStage):
                         f"SELECT 1 FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '{db_name}'",  # nosec B608
                     ]
                     create_cmd = [
-                        "docker",
+                        *docker_prefix,
                         "exec",
                         global_db,
                         "mysql",
@@ -1412,7 +1446,7 @@ class ComposerStage(PipelineStage):
                     ]
                 else:
                     check_cmd = [
-                        "docker",
+                        *docker_prefix,
                         "exec",
                         global_db,
                         "psql",
@@ -1424,7 +1458,7 @@ class ComposerStage(PipelineStage):
                         f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'",  # nosec B608
                     ]
                     create_cmd = [
-                        "docker",
+                        *docker_prefix,
                         "exec",
                         global_db,
                         "psql",
