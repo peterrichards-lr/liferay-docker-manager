@@ -219,7 +219,29 @@ function Finalize-Verification {
     }
     Remove-Ldm1383Artifacts
     Invoke-Cleanup "docker" "rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy"
-    Invoke-Cleanup $LDM_CMD "-y rm ldm-smoke-test --delete"
+
+    # LDM-#1436: this used Invoke-Cleanup, which discards stdout, stderr AND the
+    # exit code -- so a failed project removal was completely invisible here,
+    # worse than the bash twin, which at least reported that it failed. The
+    # removal has failed at the end of every run across pre.8, pre.9 and pre.10,
+    # including runs that otherwise passed, and the cause is still unknown
+    # because the output was thrown away. Capture and print it.
+    $rmOut = (& $LDM_CMD -y rm ldm-smoke-test --delete 2>&1) -join "`n"
+    $rmRc = $LASTEXITCODE
+    if ($rmRc -ne 0) {
+        Write-Verdict "[WARNING] 'ldm rm ldm-smoke-test --delete' failed (exit $rmRc); the project directory may remain."
+        if ($rmOut) {
+            Write-Verdict "          LDM said:"
+            foreach ($line in ($rmOut -split "`n")) { Write-Verdict "            $line" }
+        } else {
+            Write-Verdict "          LDM produced no output, which is itself a finding."
+        }
+        # The stack still being up is the leading hypothesis (LDM-#1436);
+        # record it either way rather than asking the reader to re-run.
+        Write-Verdict "          Containers still present for this project:"
+        $leftover = & docker ps -a --filter "name=ldm-smoke-test" --format "{{.Names}}  {{.Status}}" 2>$null
+        foreach ($line in $leftover) { Write-Verdict "            $line" }
+    }
     
     # Keep venv if in repo, otherwise clean up
     if (-not (Test-Path "pyproject.toml")) {

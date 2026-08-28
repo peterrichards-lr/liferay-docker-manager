@@ -235,8 +235,32 @@ cleanup_test_projects() {
         # `>/dev/null 2>&1 || true`, which swallowed stdout, stderr *and* the
         # exit code -- so a failed project removal was completely invisible and
         # only surfaced later as an undeletable directory.
-        if ! LDM_WORKSPACE="${LDM_WORKSPACE}" "$LDM_CMD" -y rm "${PROJECT_NAME}" --delete >/dev/null 2>&1; then
-            echo "⚠  'ldm rm ${PROJECT_NAME} --delete' failed; the project directory may remain."
+        #
+        # LDM-#1436: that recovered the exit code but still discarded *why*, via
+        # `>/dev/null 2>&1`. The removal has failed at the end of every run
+        # across pre.8, pre.9 and pre.10 -- including runs that otherwise
+        # reported ALL E2E VERIFICATIONS PASSED -- and three release cycles
+        # later nobody knows the cause, because the output was thrown away.
+        # Capture it and print it, so the next investigation does not start
+        # exactly where the last one did.
+        local rm_out rm_rc
+        set +e
+        rm_out=$(LDM_WORKSPACE="${LDM_WORKSPACE}" "$LDM_CMD" -y rm "${PROJECT_NAME}" --delete 2>&1)
+        rm_rc=$?
+        set -e
+        if [ "$rm_rc" -ne 0 ]; then
+            echo "⚠  'ldm rm ${PROJECT_NAME} --delete' failed (exit ${rm_rc}); the project directory may remain." | tee -a "$RESULTS_FILE_TMP"
+            if [ -n "$rm_out" ]; then
+                echo "   LDM said:" | tee -a "$RESULTS_FILE_TMP"
+                echo "$rm_out" | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
+            else
+                echo "   LDM produced no output, which is itself a finding." | tee -a "$RESULTS_FILE_TMP"
+            fi
+            # The stack still being up is the leading hypothesis (LDM-#1436);
+            # record it either way rather than asking the reader to re-run.
+            echo "   Containers still present for this project:" | tee -a "$RESULTS_FILE_TMP"
+            docker ps -a --filter "name=${PROJECT_NAME}" --format '     {{.Names}}  {{.Status}}' \
+                2>/dev/null | tee -a "$RESULTS_FILE_TMP" || true
         fi
 
         # Keep the venv if we are in the repository for developer convenience, otherwise delete
