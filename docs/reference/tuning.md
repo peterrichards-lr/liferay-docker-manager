@@ -91,17 +91,27 @@ jdbc.default.minimumIdle=10
 jdbc.default.registerMbeans=true
 ```
 
-LDM writes `jdbc.default.maxActive`, `minIdle` and `maxIdle` — **DBCP names**,
-which appear nowhere in those 12,085 lines and are therefore ignored. The
-`db_max_active` / `db_min_idle` / `db_max_idle` keys are settable and have no
-effect; every project runs on Liferay's built-in defaults.
+LDM used to write `jdbc.default.maxActive`, `minIdle` and `maxIdle` — **DBCP
+names**, which appear nowhere in those 12,085 lines and were therefore ignored.
+`db_max_active` and friends were settable and had no effect at all; every
+project ran on Liferay's built-in defaults.
 
-Tracked and being fixed in **LDM-#1454**. Note the fix is not a rename: giving
-those values effect for the first time changes the pool from Liferay's 180 to
-LDM's 15, so the numbers are being chosen deliberately rather than inherited.
+Fixed in **LDM-#1454**. LDM now writes:
 
-`maxIdle` has no HikariCP equivalent — Hikari has one pool size and governs idle
-connections through `idleTimeout`.
+| Config key | Liferay property | LDM default | Liferay default |
+|---|---|---|---|
+| `db_max_active` | `jdbc.default.maximumPoolSize` | **15** | 180 |
+| `db_min_idle` | `jdbc.default.minimumIdle` | **2** | 10 |
+| `db_idle_timeout` | `jdbc.default.idleTimeout` | **600000** | 600000 |
+
+The smaller pool is deliberate: 180 is sized for a production server, and LDM
+targets a laptop running a single project. This was a **behaviour change rather
+than a rename** — correcting the names gave those values effect for the first
+time, moving the pool from 180 to 15.
+
+`db_max_idle` is gone: HikariCP has one pool size and no maximum-idle setting,
+governing idle connections through `idleTimeout` instead. An existing
+`~/.ldmrc` carrying it still loads, and LDM warns once naming the replacement.
 
 ## Not exposed at all
 
