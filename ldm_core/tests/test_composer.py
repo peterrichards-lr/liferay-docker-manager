@@ -1022,9 +1022,14 @@ class TestComposerService(unittest.TestCase):
                 break
         self.assertIsNotNone(db_updates)
         assert isinstance(db_updates, dict)
-        self.assertEqual(db_updates["jdbc.default.maxActive"], "15")
-        self.assertEqual(db_updates["jdbc.default.minIdle"], "2")
-        self.assertEqual(db_updates["jdbc.default.maxIdle"], "5")
+        # LDM-#1454: HikariCP names. These used to assert maxActive/minIdle/
+        # maxIdle -- DBCP names that Liferay does not read, so the test was
+        # codifying settings that never reached the running portal.
+        self.assertEqual(db_updates["jdbc.default.maximumPoolSize"], "15")
+        self.assertEqual(db_updates["jdbc.default.minimumIdle"], "2")
+        self.assertEqual(db_updates["jdbc.default.idleTimeout"], "600000")
+        for dead in ("maxActive", "minIdle", "maxIdle"):
+            self.assertNotIn(f"jdbc.default.{dead}", db_updates)
 
     def test_composer_db_pool_limits_custom_overrides(self):
         paths = {
@@ -1068,9 +1073,11 @@ class TestComposerService(unittest.TestCase):
                 break
         self.assertIsNotNone(db_updates)
         assert isinstance(db_updates, dict)
-        self.assertEqual(db_updates["jdbc.default.maxActive"], "35")
-        self.assertEqual(db_updates["jdbc.default.minIdle"], "8")
-        self.assertEqual(db_updates["jdbc.default.maxIdle"], "12")
+        self.assertEqual(db_updates["jdbc.default.maximumPoolSize"], "35")
+        self.assertEqual(db_updates["jdbc.default.minimumIdle"], "8")
+        # `db_max_idle` is superseded; the override supplies no db_idle_timeout,
+        # so the default stands. LDM-#1454.
+        self.assertEqual(db_updates["jdbc.default.idleTimeout"], "600000")
 
     @patch("ldm_core.utils.safe_write_text")
     def test_composer_logging_limits(self, mock_write):

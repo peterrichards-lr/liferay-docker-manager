@@ -1149,24 +1149,64 @@ class ComposerService:
             liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
 
         if db_updates:
-            db_max_active = "15"
-            db_min_idle = "2"
-            db_max_idle = "5"
-            if hasattr(self.manager, "defaults") and self.manager.defaults is not None:
-                db_max_active = self.manager.defaults.get("db_max_active", "15")
-                db_min_idle = self.manager.defaults.get("db_min_idle", "2")
-                db_max_idle = self.manager.defaults.get("db_max_idle", "5")
-
-            db_updates.update(
-                {
-                    "jdbc.default.maxActive": db_max_active,
-                    "jdbc.default.minIdle": db_min_idle,
-                    "jdbc.default.maxIdle": db_max_idle,
-                }
-            )
+            # LDM-#1454: write the names Liferay actually reads.
+            #
+            # These were `jdbc.default.maxActive` / `minIdle` / `maxIdle`, which
+            # are DBCP / Tomcat-JDBC names. Liferay uses HikariCP: verified by
+            # extracting portal.properties from liferay/dxp:2026.q1.7-lts, where
+            # the documented pool block is maximumPoolSize / minimumIdle /
+            # connectionTimeout / idleTimeout / maxLifetime, and the three names
+            # LDM wrote appear nowhere in all 12,085 lines.
+            #
+            # So the settings were accepted, written to portal-ext.properties,
+            # and silently ignored -- every project ran on Liferay's built-in
+            # defaults (maximumPoolSize=180, minimumIdle=10). Correcting the
+            # names therefore gives these values effect for the FIRST time; the
+            # figures below were chosen deliberately for a laptop running one
+            # project, not inherited from keys nobody could have tested.
+            #
+            # `maxIdle` has no HikariCP equivalent -- Hikari has a single pool
+            # size and governs idle connections with `idleTimeout` -- so
+            # `db_max_idle` is superseded by `db_idle_timeout` and warned about
+            # below rather than dropped, to avoid breaking an existing ~/.ldmrc.
+            db_updates.update(self._hikari_pool_settings())
             self.manager.config.update_portal_ext(paths, db_updates)
 
         return db_type, db_mode
+
+    def _hikari_pool_settings(self):
+        """Connection-pool properties, under the names Liferay reads (LDM-#1454).
+
+        Extracted from `_inject_liferay_db_env` rather than inlined: that method
+        imports `UI` inside a conditional, which makes the name function-local,
+        so an earlier reference raises UnboundLocalError. Keeping this separate
+        also keeps that method under ruff's complexity limit.
+        """
+        db_max_active = "15"
+        db_min_idle = "2"
+        db_idle_timeout = "600000"
+
+        defaults = getattr(self.manager, "defaults", None)
+        if defaults is not None:
+            db_max_active = defaults.get("db_max_active", "15")
+            db_min_idle = defaults.get("db_min_idle", "2")
+            db_idle_timeout = defaults.get("db_idle_timeout", "600000")
+
+            # Superseded, not silently dropped: AGENTS.md forbids breaking an
+            # existing ~/.ldmrc, but a setting that quietly stops working is the
+            # defect this issue is about.
+            if defaults.get("db_max_idle") is not None:
+                UI.warning(
+                    "'db_max_idle' no longer has an effect: Liferay uses "
+                    "HikariCP, which has no maximum-idle setting. Use "
+                    "'db_idle_timeout' (milliseconds) instead (LDM-#1454)."
+                )
+
+        return {
+            "jdbc.default.maximumPoolSize": db_max_active,
+            "jdbc.default.minimumIdle": db_min_idle,
+            "jdbc.default.idleTimeout": db_idle_timeout,
+        }
 
     def _inject_liferay_share_env(
         self, paths, meta, host_name, project_name, ssl_enabled, port
