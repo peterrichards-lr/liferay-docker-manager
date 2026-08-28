@@ -189,6 +189,25 @@ cleanup_1383_artifacts() {
 cleanup_test_projects() {
     local EXIT_CODE=$?
     set +e
+
+    # LDM-#1436: leave the project directory before asking LDM to delete it.
+    #
+    # The run `cd`s into "$LDM_WORKSPACE/$PROJECT_NAME" (see the standalone
+    # project section) and never returns, so this EXIT trap fired with the shell
+    # still inside the directory it was about to remove. LDM refused, correctly:
+    #
+    #   Safety Violation: Cannot delete current working directory or its parent:
+    #   .../e2e-work-dir-59746/ldm-smoke-test-59746
+    #
+    # That guard is right and must not be worked around -- deleting the shell's
+    # own cwd leaves the caller in a directory that no longer exists. The script
+    # is what was wrong.
+    #
+    # This failed on pre.8, pre.9 and pre.10 including runs that otherwise
+    # passed, and the cause stayed unknown for three release cycles because the
+    # output was discarded (#1255 recovered the exit code, #1440 the message).
+    # The message is what identified it, on the first run that printed one.
+    cd "$ORIGINAL_PWD" 2>/dev/null || cd / || true
     local status="pass"
     if [ $EXIT_CODE -ne 0 ]; then
         status="fail"
