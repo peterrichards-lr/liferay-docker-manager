@@ -739,6 +739,20 @@ class ConfigResolutionStage(PipelineStage):
             getattr(manager.args, "internal_state", False)
             or str(project_meta.get("internal_state", "false")).lower() == "true"
         )
+        # LDM-#1447: both of these are inert. They are computed here and
+        # persisted to meta below, and nothing reads them again -- there is no
+        # `-Xverify:none` anywhere in the codebase and no TLD configuration at
+        # all, so the "defaults" the documentation described never existed.
+        #
+        # They are kept rather than removed because AGENTS.md forbids breaking
+        # existing flags: dropping them would fail any script that passes one.
+        # But a flag that silently does nothing is how this survived unnoticed,
+        # so passing one explicitly now says so.
+        #
+        # `-Xverify:none` should NOT simply be implemented: it has been
+        # deprecated since JDK 13 and these images run Java 21
+        # (compatibility.json, >=2025.q2.0), where it warns and does nothing.
+        # A real TLD skip remains worthwhile -- tracked in LDM-#1446.
         no_jvm_verify = (
             getattr(manager.args, "no_jvm_verify", False)
             or str(project_meta.get("no_jvm_verify", "false")).lower() == "true"
@@ -747,6 +761,15 @@ class ConfigResolutionStage(PipelineStage):
             getattr(manager.args, "no_tld_skip", False)
             or str(project_meta.get("no_tld_skip", "false")).lower() == "true"
         )
+        for flag_name, was_passed in (
+            ("--no-jvm-verify", getattr(manager.args, "no_jvm_verify", False)),
+            ("--no-tld-skip", getattr(manager.args, "no_tld_skip", False)),
+        ):
+            if was_passed:
+                UI.warning(
+                    f"{flag_name} has no effect and is accepted only for "
+                    "compatibility (LDM-#1446)."
+                )
 
         env_type = getattr(manager.args, "env_type", None) or project_meta.get(
             "env_type", "dev"
