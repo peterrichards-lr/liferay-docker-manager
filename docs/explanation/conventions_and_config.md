@@ -35,7 +35,7 @@ When running `ldm run` without overriding flags, LDM provisions the following ou
 | Component | Default Convention | Host Port | Description |
 | :--- | :--- | :--- | :--- |
 | **Liferay Version** | Latest **LTS** | N/A | Automatically resolves and pulls the latest verified LTS container tag. |
-| **Database** | **PostgreSQL** | `5432` | Shared Global Infrastructure container (`liferay-db-global`), reducing memory consumption across projects. |
+| **Database** | **PostgreSQL** | `5432` | Shared Global Infrastructure container (`liferay-db-global`, published on `5433`), reducing memory consumption across projects. MySQL/MariaDB shares its own global container (`liferay-db-mysql-global`, published on `3307`). |
 | **Search Engine** | **Elasticsearch 8.x** | `9200` | Shared Global Search service. Isolated sidecars are supported via `--search-mode sidecar`. |
 | **Reverse Proxy** | **Traefik** | `80`, `443` | Automated HTTP/HTTPS routing with `mkcert` zero-config SSL certificates. |
 | **Default Hostname** | `localhost` / `<project>.local` | `8080` / `443` | Auto-resolved in `/etc/hosts` to loopback (`127.0.0.1`) or target node IP. |
@@ -53,4 +53,4 @@ LDM uses a hybrid storage architecture to maximize performance while preventing 
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-18* | *Last Reviewed: 2026-08-18*
+*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*

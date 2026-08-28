@@ -1707,7 +1707,7 @@ assert expected in liferay[0], (
     }
 
 
-    Write-Host ">> Verifying shared database mode (#1359 / #1354 / #1357)..."
+    Write-Host ">> Verifying shared database mode (#1359 / #1354 / #1361)..."
     # Every assertion is derivable from `init --no-up --no-seed`, so this boots
     # nothing and costs seconds.
     #
@@ -1799,25 +1799,89 @@ assert db_part == db_part.lower(), (
 
     Invoke-Cleanup $LDM_CMD "-y rm $sharedDbName --delete"
 
-    # #1357: the global shared database is PostgreSQL only, so a MariaDB driver
-    # aimed at port 3306 of it could never connect. Refusal must be loud.
+    # #1361: shared mode now supports MySQL/MariaDB. This block asserts the
+    # inverse of what it did between #1360 and #1361, when the combination
+    # exited 1 because the only global container was postgres while the
+    # MariaDB URL aimed at port 3306 of it.
+    #
+    # Mirrors the PostgreSQL block rather than checking exit 0 alone: an
+    # accepted flag that still emitted liferay-db-global in a jdbc:mariadb://
+    # URL is the #1357 defect, and an exit-code-only check would pass it.
+    $sharedDbMysqlName = "$($sharedDbName)Mysql"
+    Invoke-Cleanup $LDM_CMD "-y rm $sharedDbMysqlName --delete"
+
     Push-Location $sharedDbWorkdir
     try {
-        & $LDM_CMD -y init "$($sharedDbName)Mysql" --no-up --no-seed --database-mode shared --db mysql *> $null
+        & $LDM_CMD -y init $sharedDbMysqlName --no-up --no-seed --database-mode shared --db mysql *> $null
         $sharedDbMysqlRc = $LASTEXITCODE
     } finally {
         Pop-Location
     }
-    if ($sharedDbMysqlRc -eq 0) {
-        Write-Host "[ERROR] '--database-mode shared --db mysql' was accepted; it cannot work (#1357)." -ForegroundColor Red
+
+    $sharedDbMysqlDir = Join-Path $sharedDbWorkdir $sharedDbMysqlName
+    if ($sharedDbMysqlRc -ne 0) {
+        Write-Host "[ERROR] '--database-mode shared --db mysql' failed with exit $sharedDbMysqlRc; it is supported since #1361." -ForegroundColor Red
         $sharedDbOk = $false
+    } else {
+        $composePathMysql = Join-Path $sharedDbMysqlDir "docker-compose.yml"
+        $metaPathMysql = Join-Path $sharedDbMysqlDir "meta"
+        $propsPathMysql = Join-Path $sharedDbMysqlDir "files/portal-ext.properties"
+
+        & $VENV_PYTHON -c @"
+import json, sys
+import yaml
+
+compose_path, meta_path, props_path = sys.argv[1:4]
+
+compose = yaml.safe_load(open(compose_path, encoding='utf-8')) or {}
+services = compose.get('services') or {}
+defined = set(services)
+for name, conf in services.items():
+    deps = conf.get('depends_on') or []
+    if isinstance(deps, dict):
+        deps = list(deps)
+    for dep in deps:
+        assert dep in defined, (
+            'service %r depends on undefined service %r -- docker compose will refuse this file (#1359)'
+            % (name, dep)
+        )
+
+meta = json.load(open(meta_path, encoding='utf-8'))
+assert meta.get('database_mode') == 'shared', (
+    'meta database_mode is %r, expected shared (#1359)' % (meta.get('database_mode'),)
+)
+
+url = ''
+for line in open(props_path, encoding='utf-8'):
+    if line.startswith('jdbc.default.url'):
+        url = line.split('=', 1)[1].strip()
+        break
+assert url, 'no jdbc.default.url written'
+assert url.startswith('jdbc:mariadb://'), (
+    'JDBC URL %r is not a MariaDB URL; --db mysql was not honoured' % (url,)
+)
+assert 'liferay-db-mysql-global:3306' in url, (
+    'JDBC URL %r does not target the global MySQL container -- if it names liferay-db-global it aims a MariaDB driver at the PostgreSQL container, the #1357 defect (#1361)'
+    % (url,)
+)
+db_part = url.split('/')[-1].split('?')[0]
+assert db_part == db_part.lower(), (
+    'shared database name %r is not lowercase; MySQL is case-sensitive on Linux (#1354)'
+    % (db_part,)
+)
+"@ $composePathMysql $metaPathMysql $propsPathMysql
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[ERROR] shared MySQL database mode produced an inconsistent project (#1361)." -ForegroundColor Red
+            $sharedDbOk = $false
+        }
     }
-    Invoke-Cleanup $LDM_CMD "-y rm $($sharedDbName)Mysql --delete"
+
+    Invoke-Cleanup $LDM_CMD "-y rm $sharedDbMysqlName --delete"
 
     Remove-Item -Recurse -Force $sharedDbWorkdir -ErrorAction SilentlyContinue
 
     if ($sharedDbOk) {
-        Write-Verdict "[SUCCESS] Shared database mode verified (valid compose, shared URL, lowercase name, MySQL refused)."
+        Write-Verdict "[SUCCESS] Shared database mode verified (valid compose, shared URL, lowercase name, PostgreSQL + MySQL)."
     } else {
         throw "Shared database mode verification failed."
     }

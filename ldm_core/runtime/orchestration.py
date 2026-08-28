@@ -678,11 +678,9 @@ class OrchestrationService(BaseHandler):
                     if db_mode == "shared" and db_type != "hypersonic":
                         project_name = meta.get("project_name", root.name)
                         db_name = shared_database_name(project_name)
-                        global_db_container = (
-                            "liferay-db-mysql-global"
-                            if db_type in ["mysql", "mariadb"]
-                            else "liferay-db-global"
-                        )
+                        from ldm_core.utils import shared_database_container
+
+                        global_db_container = shared_database_container(db_type)
 
                         if is_dry_run:
                             UI.detail(
@@ -690,6 +688,17 @@ class OrchestrationService(BaseHandler):
                             )
                         else:
                             UI.detail(f"Dropping shared database schema: {db_name}")
+                            # LDM-#1361: both credentials were wrong and both
+                            # failed silently -- the call below is
+                            # `check=False` inside a bare `except`, so a
+                            # rejected login looks exactly like a successful
+                            # drop. The global PostgreSQL container is created
+                            # with `POSTGRES_USER=lportal`, never `liferay`;
+                            # the global MySQL container's root password is
+                            # `test`, matching the isolated MySQL service in
+                            # handlers/composer.py, never `liferay`. The MySQL
+                            # arm had no way of being right before now, since
+                            # nothing created the container it names.
                             drop_cmd = []
                             if db_type == "postgresql":
                                 drop_cmd = [
@@ -698,7 +707,7 @@ class OrchestrationService(BaseHandler):
                                     global_db_container,
                                     "dropdb",
                                     "-U",
-                                    "liferay",
+                                    "lportal",
                                     "--if-exists",
                                     db_name,
                                 ]
@@ -710,7 +719,7 @@ class OrchestrationService(BaseHandler):
                                     "mysql",
                                     "-u",
                                     "root",
-                                    "-pliferay",
+                                    "-ptest",
                                     "-e",
                                     f"DROP DATABASE IF EXISTS {db_name};",
                                 ]

@@ -42,7 +42,7 @@ Swapping DXP versions (e.g., DXP 7.4 vs. DXP 2026) on the same database will tri
    ldm run demo-74
    ```
 
-3. **Shared Database Mode**: If you run many demos concurrently, configure LDM to run in **Shared Database mode** to place projects on a single global database container (`liferay-db-global`), resolving host memory issues.
+3. **Shared Database Mode**: If you run many demos concurrently, configure LDM to run in **Shared Database mode** to place projects on a global database container (`liferay-db-global` for PostgreSQL, `liferay-db-mysql-global` for MySQL/MariaDB), resolving host memory issues.
 
 ### Q: How can I run multiple LDM demo environments side-by-side without exhausting my local machine's CPU, RAM, and Disk space?
 
@@ -50,10 +50,10 @@ Running multiple Liferay DXP instances locally can quickly overwhelm standard la
 
 #### 1. Shared Database Mode (`use_shared_db`)
 
-By default, each LDM project spins up its own isolated database container (PostgreSQL, MySQL or Hypersonic). In Shared Database Mode, LDM skips launching project-specific databases and routes all projects to a single global database container (`liferay-db-global`), namespaced as `lportal_<project_id>` (always lowercase):
+By default, each LDM project spins up its own isolated database container (PostgreSQL, MySQL or Hypersonic). In Shared Database Mode, LDM skips launching project-specific databases and routes all projects to a global database container, namespaced as `lportal_<project_id>` (always lowercase):
 
 > [!NOTE]
-> Shared Database Mode is **PostgreSQL only**. The global container is provisioned as PostgreSQL, so `--database-mode shared --db mysql` is refused. Use `isolated` mode for a dedicated MySQL container.
+> There is one global container per engine -- `liferay-db-global` for PostgreSQL and `liferay-db-mysql-global` for MySQL/MariaDB -- each provisioned lazily on the first project that needs it. An all-PostgreSQL or all-MySQL fleet therefore gets the full saving below; a **mixed** fleet runs both globals, which erodes it (though two containers still beat one per project). Hypersonic cannot be shared and is downgraded to `isolated` with a warning.
 
 * **Resource Saved**: Saves **~500MB to 1GB of RAM** per running project by eliminating redundant database container overhead.
 * **Usage**: Configure it globally or toggle it for specific projects:
@@ -233,4 +233,4 @@ This maps your local Liferay HTTP port (`8080`) to a free, secure Cloudflare tun
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*
+*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*

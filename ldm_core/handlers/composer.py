@@ -1074,11 +1074,24 @@ class ComposerService:
                 resolve_dependency_version(tag, "jdbc_driver_mysql")
                 or "org.mariadb.jdbc.Driver"
             )
-            dialect = "org.hibernate.dialect.MariaDB103Dialect"
+            # LDM-#1361: resolve the dialect the same way the driver and the
+            # PostgreSQL branch already do. It was hardcoded to MariaDB103Dialect
+            # while compatibility.json maps `jdbc_dialect_mysql` per tag range
+            # and returns MySQL8Dialect for older ranges -- so an older tag was
+            # given a dialect its mapping does not specify.
+            dialect = (
+                resolve_dependency_version(tag, "jdbc_dialect_mysql")
+                or "org.hibernate.dialect.MariaDB103Dialect"
+            )
             host = f"{project_name}-db"
             db_name = "lportal"
             if db_mode == "shared":
-                host = "liferay-db-global"
+                # LDM-#1361: was hardcoded to `liferay-db-global`, i.e. this
+                # MariaDB URL named the PostgreSQL container on port 3306 and
+                # could never connect (LDM-#1357).
+                from ldm_core.utils import shared_database_container
+
+                host = shared_database_container(db_type)
                 db_name = shared_database_name(project_name)
 
             url = (
@@ -1116,8 +1129,10 @@ class ComposerService:
             )
             url = f"jdbc:postgresql://{project_name}-db:5432/lportal"
             if db_mode == "shared":
+                from ldm_core.utils import shared_database_container
+
                 db_name = shared_database_name(project_name)
-                url = f"jdbc:postgresql://liferay-db-global:5432/{db_name}"
+                url = f"jdbc:postgresql://{shared_database_container(db_type)}:5432/{db_name}"
 
             dialect = (
                 resolve_dependency_version(tag, "jdbc_dialect_postgresql")

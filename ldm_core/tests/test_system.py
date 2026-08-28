@@ -529,10 +529,13 @@ class TestSystemService(unittest.TestCase):
                 and "rm" in call.args[0]
             ):
                 self.assertNotIn("liferay-db-global-data", call.args[0])
+                self.assertNotIn("liferay-db-mysql-global-data", call.args[0])
 
         # Now confirm it
         mock_ui.confirm.return_value = True
         self.system.cmd_nuke(force=False)
+        # LDM-#1361: the MySQL global's volume must be swept too, or a
+        # "clean" host keeps its `lportal_<project>` databases.
         self.manager.run_command.assert_any_call(
             [
                 "docker",
@@ -540,6 +543,7 @@ class TestSystemService(unittest.TestCase):
                 "rm",
                 "-f",
                 "liferay-db-global-data",
+                "liferay-db-mysql-global-data",
                 "liferay-search-global-data",
             ],
             check=False,

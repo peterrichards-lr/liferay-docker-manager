@@ -70,7 +70,7 @@ ldm run my-vanilla-project --vanilla --db mysql
 You can configure database resource pooling configurations globally or per project:
 
 - **Isolated** (Default): A dedicated database container is spawned for your project.
-- **Shared**: Shares a global database container (`liferay-db-global`), creating a namespaced schema for the project to save system memory.
+- **Shared**: Shares a global database container -- `liferay-db-global` for PostgreSQL, `liferay-db-mysql-global` for MySQL/MariaDB -- creating a namespaced schema for the project to save system memory.
 
 ```bash
 ldm run my-vanilla-project --vanilla --database-mode shared
@@ -146,4 +146,4 @@ To guarantee successful headless execution:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-10*
+*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*

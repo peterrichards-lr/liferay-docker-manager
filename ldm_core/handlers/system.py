@@ -49,7 +49,8 @@ class SystemService(BaseHandler):
 
         if not force and has_shared_projects(self.manager):
             drop_global_vols = UI.confirm(
-                "Do you also want to drop global data volumes (liferay-db-global-data, liferay-search-global-data)? "
+                "Do you also want to drop global data volumes (liferay-db-global-data, "
+                "liferay-db-mysql-global-data, liferay-search-global-data)? "
                 "This deletes data for ALL shared projects.",
                 default="N",
             )
@@ -106,6 +107,11 @@ class SystemService(BaseHandler):
                         "rm",
                         "-f",
                         "liferay-db-global-data",
+                        # LDM-#1361: the MySQL global's volume, omitted here,
+                        # would have survived `ldm nuke` -- leaving stale
+                        # `lportal_<project>` databases to be inherited by the
+                        # next same-named project on a supposedly clean host.
+                        "liferay-db-mysql-global-data",
                         "liferay-search-global-data",
                     ],
                     check=False,

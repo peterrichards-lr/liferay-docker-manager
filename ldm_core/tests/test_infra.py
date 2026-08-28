@@ -170,6 +170,7 @@ class TestInfraService(unittest.TestCase):
         self.manager.args.ssl_port = 8443
         self.manager.args.force_recreate = True
         self.manager.args.database_mode = "local"
+        self.manager.args.db = None
         self.infra.cmd_infra_setup()
         mock_setup.assert_called_once_with(
             "0.0.0.0" if sys.platform == "darwin" else "127.0.0.1",
@@ -177,6 +178,7 @@ class TestInfraService(unittest.TestCase):
             use_ssl=True,
             use_shared_db=False,
             force_recreate=True,
+            db_type=None,
         )
 
     @patch("ldm_core.handlers.infra.InfraService.setup_infrastructure")
@@ -189,6 +191,7 @@ class TestInfraService(unittest.TestCase):
         self.manager.args.ssl_port = None
         self.manager.args.force_recreate = False
         self.manager.args.database_mode = "local"
+        self.manager.args.db = None
         with patch.dict(os.environ, {"LDM_SSL_PORT": "9443"}):
             self.infra.cmd_infra_setup()
             mock_setup.assert_called_once_with(
@@ -197,6 +200,7 @@ class TestInfraService(unittest.TestCase):
                 use_ssl=True,
                 use_shared_db=False,
                 force_recreate=False,
+                db_type=None,
             )
 
     def test_get_proxy_ports_not_running(self):
@@ -248,6 +252,88 @@ class TestInfraService(unittest.TestCase):
             self.assertIn("POSTGRES_DB=lportal", run_cmd)
             self.assertIn("-v", run_cmd)
             self.assertIn("liferay-db-global-data:/var/lib/postgresql/data", run_cmd)
+
+    def _global_db_run_cmd(self, mock_run, container):
+        """The `docker run` that created `container`, or None."""
+        for call in mock_run.call_args_list:
+            args = call[0][0]
+            if isinstance(args, list) and "run" in args and container in args:
+                return args
+        return None
+
+    @patch("ldm_core.docker_service.DockerService.exists", return_value=False)
+    @patch("ldm_core.ui.UI.info")
+    @patch("ldm_core.ui.UI.detail")
+    def test_setup_global_database_mysql(self, _mock_detail, _mock_info, _mock_exists):
+        """LDM-#1361: `--db mysql` must provision a MySQL global, not postgres."""
+        with (
+            patch.object(self.manager, "run_command", return_value="mysqld is alive"),
+            patch.object(self.manager, "get_container_status", return_value="running"),
+        ):
+            mock_run = self.manager.run_command
+            self.infra.setup_global_database(db_type="mysql")
+
+            run_cmd = self._global_db_run_cmd(mock_run, "liferay-db-mysql-global")
+            self.assertIsNotNone(run_cmd)
+            assert isinstance(run_cmd, list)
+
+            # The image, not just the container name -- pointing a MariaDB
+            # driver at a postgres image is the #1357 defect this fixes.
+            self.assertTrue(
+                any(str(a).startswith("mysql:") for a in run_cmd),
+                f"no mysql image in {run_cmd}",
+            )
+            self.assertFalse(any(str(a).startswith("postgres:") for a in run_cmd))
+
+            self.assertIn("MYSQL_DATABASE=lportal", run_cmd)
+            self.assertIn("MYSQL_USER=lportal", run_cmd)
+            # Liferay connects as lportal/test and the teardown DROP uses root.
+            self.assertIn("MYSQL_ROOT_PASSWORD=test", run_cmd)
+            self.assertIn("MYSQL_PASSWORD=test", run_cmd)
+            self.assertIn("liferay-db-mysql-global-data:/var/lib/mysql", run_cmd)
+            # Makes the lowercase shared_database_name contract hold on Linux.
+            self.assertIn("--lower_case_table_names=1", run_cmd)
+
+    @patch("ldm_core.docker_service.DockerService.exists", return_value=False)
+    @patch("ldm_core.ui.UI.info")
+    @patch("ldm_core.ui.UI.detail")
+    def test_setup_global_database_mariadb_joins_the_mysql_global(
+        self, _mock_detail, _mock_info, _mock_exists
+    ):
+        """One container per protocol: mariadb must not create a third global."""
+        with (
+            patch.object(self.manager, "run_command", return_value="mysqld is alive"),
+            patch.object(self.manager, "get_container_status", return_value="running"),
+        ):
+            mock_run = self.manager.run_command
+            self.infra.setup_global_database(db_type="mariadb")
+
+            self.assertIsNotNone(
+                self._global_db_run_cmd(mock_run, "liferay-db-mysql-global")
+            )
+            self.assertIsNone(self._global_db_run_cmd(mock_run, "liferay-db-global"))
+
+    @patch("ldm_core.docker_service.DockerService.exists", return_value=False)
+    @patch("ldm_core.ui.UI.info")
+    @patch("ldm_core.ui.UI.detail")
+    def test_setup_global_database_defaults_to_postgres(
+        self, _mock_detail, _mock_info, _mock_exists
+    ):
+        """No db_type is what every pre-#1361 caller passed; it must not change."""
+        with (
+            patch.object(self.manager, "run_command", return_value="accepting"),
+            patch.object(self.manager, "get_container_status", return_value="running"),
+        ):
+            mock_run = self.manager.run_command
+            self.infra.setup_global_database()
+
+            run_cmd = self._global_db_run_cmd(mock_run, "liferay-db-global")
+            self.assertIsNotNone(run_cmd)
+            assert isinstance(run_cmd, list)
+            self.assertTrue(any(str(a).startswith("postgres:") for a in run_cmd))
+            self.assertIsNone(
+                self._global_db_run_cmd(mock_run, "liferay-db-mysql-global")
+            )
 
     @patch("ldm_core.docker_service.DockerService.exists", return_value=False)
     @patch("ldm_core.handlers.infra.get_actual_home", return_value=Path("/tmp"))
@@ -511,7 +597,13 @@ class TestGlobalServiceDockerCallsAreBounded(unittest.TestCase):
             if i > start and line.startswith("    def ")
         )
         body = "\n".join(lines[start - 1 : end - 1])
-        return [c[:1200] for c in body.split("run_command(")[1:]]
+        # LDM-#1361: return the FULL call text. This used to truncate to 1200
+        # characters, which made the assertion below unreliable for long calls:
+        # the shared-MySQL provisioning argv is long enough that a `timeout=`
+        # present in the source fell past the cut, and the guard reported it as
+        # unbounded. Truncation now happens only when building the failure
+        # message, where it belongs.
+        return list(body.split("run_command(")[1:])
 
     def test_every_docker_call_in_the_global_setup_paths_is_bounded(self):
         for fn in self.BOUNDED_FUNCTIONS:
@@ -522,7 +614,8 @@ class TestGlobalServiceDockerCallsAreBounded(unittest.TestCase):
                     "timeout=",
                     call,
                     f"{fn} call #{i} has no timeout -- a stalled daemon would "
-                    "hang it indefinitely and look like LDM being slow (#1413)",
+                    "hang it indefinitely and look like LDM being slow (#1413).\n"
+                    f"call begins: {call[:400]}",
                 )
 
     def test_the_readiness_probes_are_not_bounded_so_tightly_they_flap(self):
