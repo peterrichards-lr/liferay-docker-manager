@@ -19,6 +19,156 @@ from ldm_core.utils import (
     shared_database_name,
 )
 
+# LDM-#1421: bound the Docker calls on the paths users touch most.
+#
+# `start`, `stop`, `restart` and `down` had nine unbounded `run_command` calls,
+# every one of which can contact a daemon that may never answer. LDM-#1410
+# showed the cost: a stalled socket wedged `ldm restore` for 84 minutes across
+# three machines, unkillable with Ctrl+C, because nothing bounded the call.
+#
+# The point is as much attribution as recovery. Unbounded, a stalled daemon is
+# indistinguishable from LDM being slow. Bounded, it reports
+# `Command timed out after Ns: docker ...`, naming the step and the daemon --
+# which is what turned that 84-minute mystery into a one-line diagnosis.
+#
+# Sized to the operation and deliberately generous: `compose down` on a large
+# stack legitimately takes a while, and the goal is to bound these at all, not
+# to be strict. Follows the pattern of snapshot/database.py (#1410) and
+# handlers/infra.py (#1413) -- named constants with the reasoning recorded,
+# rather than magic numbers at the call sites.
+_COMPOSE_LIFECYCLE_TIMEOUT = 300  # compose start/stop/restart/down
+_COMPOSE_DEPLOY_TIMEOUT = 600  # compose up -d <svc> -- may pull an image
+_DOCKER_PROBE_TIMEOUT = 30  # ps/volume ls -- local queries that answer or do not
+_DOCKER_REMOVE_TIMEOUT = 60  # rm -f / volume rm -f
+
+
+def _volume_sizes(manager, docker_prefix):
+    """Best-effort {volume_name: size_bytes} from `docker system df -v`.
+
+    Sizes are not available from `docker volume ls`/`inspect` -- only the `df`
+    scan knows them, and on a machine with hundreds of build-cache entries that
+    scan is not free. So this is advisory: any failure returns {} and the caller
+    reports a count without a size, rather than failing a teardown over a
+    cosmetic number.
+    """
+    try:
+        out = manager.run_command(
+            [*docker_prefix, "system", "df", "-v", "--format", "{{json .Volumes}}"],
+            check=False,
+            capture_output=True,
+            timeout=_DOCKER_PROBE_TIMEOUT,
+        )
+        if not out:
+            return {}
+        sizes = {}
+        for entry in json.loads(out.strip()):
+            name = entry.get("Name")
+            raw = entry.get("Size")
+            if not name or not raw:
+                continue
+            sizes[name] = raw
+        return sizes
+    except Exception:
+        return {}
+
+
+def _sweep_project_volumes(manager, docker_prefix, project_name, project_uuid=None):
+    """Removes the volumes belonging to a project being deleted (LDM-#1414).
+
+    Mirrors the container sweep above, and for the same reason: `compose down -v`
+    cannot run when the compose file is missing, and that is exactly when
+    volumes get stranded.
+
+    Three filters, most precise first:
+
+    - `com.liferay.ldm.project.uuid` (LDM-#1395) is exact and survives a rename,
+      because the UUID is the project's identity rather than its current name.
+    - `com.liferay.ldm.project` covers volumes stamped before the UUID existed.
+    - a `<project>-` name prefix covers volumes predating any labelling at all
+      (LDM-#1267). The container sweep already trusts the same prefix, so this
+      is not a new class of risk -- and on a machine measured for #1414, 17 of
+      32 volumes were obviously LDM's by name yet invisible to every label
+      filter.
+
+    Never raises: a teardown that fails because cleanup failed is worse than one
+    that leaves a volume behind and says so.
+
+    Bounded with the LDM-#1421 constants. A `docker volume rm` against a stalled
+    daemon hangs exactly like any other call, and #1421's guard caught these two
+    the moment this branch was rebased onto it -- which is the guard working as
+    intended rather than an inconvenience.
+    """
+    filters = []
+    if project_uuid:
+        filters.append(f"label=com.liferay.ldm.project.uuid={project_uuid}")
+    filters.append(f"label=com.liferay.ldm.project={project_name}")
+    filters.append(f"name=^{project_name}-")
+
+    found = []
+    try:
+        for flt in filters:
+            out = manager.run_command(
+                [
+                    *docker_prefix,
+                    "volume",
+                    "ls",
+                    "--filter",
+                    flt,
+                    "--format",
+                    "{{.Name}}",
+                ],
+                check=False,
+                capture_output=True,
+                timeout=_DOCKER_PROBE_TIMEOUT,
+            )
+            if not out:
+                continue
+            for line in out.splitlines():
+                name = line.strip()
+                if name and name not in found:
+                    found.append(name)
+    except Exception as e:
+        UI.debug(f"Volume sweep lookup failed for '{project_name}': {e}")
+        return
+
+    if not found:
+        return
+
+    sizes = _volume_sizes(manager, docker_prefix)
+
+    removed = []
+    for name in found:
+        try:
+            res = manager.run_command(
+                [*docker_prefix, "volume", "rm", name],
+                check=False,
+                capture_output=True,
+                timeout=_DOCKER_REMOVE_TIMEOUT,
+            )
+            if res is not None:
+                removed.append(name)
+        except Exception as e:
+            UI.debug(f"Could not remove volume '{name}': {e}")
+
+    if not removed:
+        # In use by another container, most likely. Say so: an invisible
+        # failure here is what #1414 is about.
+        UI.warning(
+            f"Could not remove {len(found)} volume(s) for '{project_name}'; "
+            "they may still be in use. Run 'ldm prune' once nothing needs them."
+        )
+        return
+
+    reclaimed = ", ".join(s for s in (sizes.get(n) for n in removed) if s)
+    if reclaimed:
+        UI.success(
+            f"Removed {len(removed)} volume(s) for '{project_name}' ({reclaimed})."
+        )
+    else:
+        UI.success(f"Removed {len(removed)} volume(s) for '{project_name}'.")
+    for name in removed:
+        UI.detail(f"  - {name}")
+
 
 class OrchestrationService(BaseHandler):
     """Orchestration service for runtime operations."""
@@ -163,6 +313,7 @@ class OrchestrationService(BaseHandler):
                     check=not all_projects,
                     capture_output=capture,
                     cwd=str(root),
+                    timeout=_COMPOSE_LIFECYCLE_TIMEOUT,
                 )
                 if all_projects and res is None:
                     UI.warning(f"Could not start '{root.name}'; continuing.")
@@ -257,6 +408,7 @@ class OrchestrationService(BaseHandler):
                 check=not all_projects,
                 capture_output=capture,
                 cwd=str(root),
+                timeout=_COMPOSE_LIFECYCLE_TIMEOUT,
             )
             if all_projects and res is None:
                 UI.warning(f"Could not stop '{root.name}'; continuing.")
@@ -325,6 +477,7 @@ class OrchestrationService(BaseHandler):
                 check=not all_projects,
                 capture_output=capture,
                 cwd=str(root),
+                timeout=_COMPOSE_LIFECYCLE_TIMEOUT,
             )
             if all_projects and res is None:
                 UI.warning(f"Could not restart '{root.name}'; continuing.")
@@ -419,6 +572,7 @@ class OrchestrationService(BaseHandler):
                         check=not all_projects,
                         capture_output=capture,
                         cwd=str(root),
+                        timeout=_COMPOSE_LIFECYCLE_TIMEOUT,
                     )
                     if all_projects and res is None:
                         # Skip the rest of THIS project's teardown -- the
@@ -430,6 +584,17 @@ class OrchestrationService(BaseHandler):
                         )
                         failures.append(root.name)
                         continue
+                elif delete or volumes:
+                    # LDM-#1414: this was UI.debug, so it needed --verbose to be
+                    # seen at all. It matters: `compose down -v` is what removes
+                    # the project's volumes, so skipping it silently orphans
+                    # every one of them, permanently. The sweep below now covers
+                    # that case, but the user should still be told the compose
+                    # file was missing.
+                    UI.warning(
+                        f"No docker-compose.yml found in {root}; falling back to "
+                        "removing this project's containers and volumes by label."
+                    )
                 else:
                     UI.debug(
                         f"No docker-compose.yml found in {root}. Skipping docker-compose down."
@@ -457,6 +622,7 @@ class OrchestrationService(BaseHandler):
                             ],
                             check=False,
                             capture_output=True,
+                            timeout=_DOCKER_PROBE_TIMEOUT,
                         )
                         if ps_output:
                             c_ids = [
@@ -467,10 +633,29 @@ class OrchestrationService(BaseHandler):
                                     [*docker_prefix, "rm", "-f", *c_ids],
                                     check=False,
                                     capture_output=True,
+                                    timeout=_DOCKER_REMOVE_TIMEOUT,
                                 )
                 except Exception as e:
                     UI.debug(
                         f"Standalone container sweeper warning for '{project_name}': {e}"
+                    )
+
+                # LDM-#1414: mirror the container sweep for VOLUMES. Containers
+                # have been swept by label since #1267; volumes never were, and
+                # were removed only as a side effect of `compose down -v`. When
+                # the compose file is absent -- deleted by hand, lost to a failed
+                # run, torn down out of order -- every volume the project owned
+                # was orphaned permanently, and silently.
+                #
+                # Only on an explicit delete/volumes request: `ldm down` on its
+                # own must keep the data, which is the whole point of stopping
+                # rather than deleting.
+                if delete or volumes:
+                    _sweep_project_volumes(
+                        self.manager,
+                        docker_prefix,
+                        project_name,
+                        (meta_disk or {}).get("uuid"),
                     )
 
             if delete:
@@ -662,6 +847,7 @@ class OrchestrationService(BaseHandler):
                     [*compose_base, "up", "-d", svc],
                     capture_output=False,
                     cwd=str(root),
+                    timeout=_COMPOSE_DEPLOY_TIMEOUT,
                 )
         else:
             UI.success("Artifact deployment complete.")
@@ -850,14 +1036,23 @@ class OrchestrationService(BaseHandler):
                             f"name=^{volume_name}$",
                         ],
                         check=False,
+                        timeout=_DOCKER_PROBE_TIMEOUT,
                     )
-                    if res.strip():
+                    # LDM-#1421: `check=False` means a timeout returns None
+                    # rather than exiting, so this must not assume a string.
+                    # Without the guard the AttributeError is swallowed by the
+                    # `except Exception` below and reported as "Warning removing
+                    # docker volume X: 'NoneType' object has no attribute
+                    # 'strip'" -- which names neither the timeout nor the daemon,
+                    # and is exactly the attribution problem this issue is about.
+                    if res and res.strip():
                         UI.detail(
                             f"  - Removing Docker volume {UI.CYAN}{volume_name}{UI.COLOR_OFF}..."
                         )
                         self.manager.run_command(
                             [*docker_prefix, "volume", "rm", "-f", volume_name],
                             check=False,
+                            timeout=_DOCKER_REMOVE_TIMEOUT,
                         )
                 except Exception as e:
                     UI.detail(f"Warning removing docker volume {volume_name}: {e}")

@@ -12,15 +12,29 @@ repos:
       - id: semgrep
         args: ['--config', '.semgrep.yaml', '--error']
 
+  # LDM-#1407: this rev MUST track `mypy==` in requirements-dev.txt, which is
+  # what CI installs and gates on. It was pinned at v1.10.0 while CI ran 2.3.1,
+  # and they disagreed on real code -- the older mypy reported three errors on
+  # master that the newer one does not, so a developer fixing "failures" locally
+  # was chasing findings CI would never raise, while CI-only failures stayed
+  # invisible until push.
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.10.0
+    rev: v2.3.1
     hooks:
       - id: mypy
         stages: [pre-push, manual]
         additional_dependencies:
           - types-requests
           - types-PyYAML
-        args: [--config-file=mypy.ini]
+        # LDM-#1407: run exactly what CI runs -- `mypy ldm_core
+        # --config-file=mypy.ini` (.github/workflows/ci.yml). By default the
+        # hook passes the changed filenames, which widened the scope to
+        # `scripts/` and reported a union-attr finding in scripts/release.py
+        # that CI does not gate on. Local being *stricter* than CI is the same
+        # defect as local being laxer: either way the two disagree, and the
+        # developer cannot tell which findings actually matter.
+        pass_filenames: false
+        args: [ldm_core, --config-file=mypy.ini]
 
   - repo: local
     hooks:

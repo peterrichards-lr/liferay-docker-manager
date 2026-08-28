@@ -24,6 +24,8 @@ TAG_VAL_PROJECT="tag-val-test-${TEST_PORT}"
 TARGET_TEST_NODE="e2e-target-${TEST_PORT}"
 ANNOUNCE_TEST_NODE="announce-node-${TEST_PORT}"
 ANNOUNCE_TEST_PROJ="announce-proj-${TEST_PORT}"
+SSHFAIL_TEST_NODE="sshfail-node-${TEST_PORT}"
+SSHFAIL_TEST_PROJ="sshfail-proj-${TEST_PORT}"
 PORTCONFLICT_PROJ="portconflict-${TEST_PORT}"
 PORT_HOLDER="ldm-e2e-port-holder-${TEST_PORT}"
 # Kibana publishes this host port unconditionally (composer.py
@@ -233,8 +235,32 @@ cleanup_test_projects() {
         # `>/dev/null 2>&1 || true`, which swallowed stdout, stderr *and* the
         # exit code -- so a failed project removal was completely invisible and
         # only surfaced later as an undeletable directory.
-        if ! LDM_WORKSPACE="${LDM_WORKSPACE}" "$LDM_CMD" -y rm "${PROJECT_NAME}" --delete >/dev/null 2>&1; then
-            echo "⚠  'ldm rm ${PROJECT_NAME} --delete' failed; the project directory may remain."
+        #
+        # LDM-#1436: that recovered the exit code but still discarded *why*, via
+        # `>/dev/null 2>&1`. The removal has failed at the end of every run
+        # across pre.8, pre.9 and pre.10 -- including runs that otherwise
+        # reported ALL E2E VERIFICATIONS PASSED -- and three release cycles
+        # later nobody knows the cause, because the output was thrown away.
+        # Capture it and print it, so the next investigation does not start
+        # exactly where the last one did.
+        local rm_out rm_rc
+        set +e
+        rm_out=$(LDM_WORKSPACE="${LDM_WORKSPACE}" "$LDM_CMD" -y rm "${PROJECT_NAME}" --delete 2>&1)
+        rm_rc=$?
+        set -e
+        if [ "$rm_rc" -ne 0 ]; then
+            echo "⚠  'ldm rm ${PROJECT_NAME} --delete' failed (exit ${rm_rc}); the project directory may remain." | tee -a "$RESULTS_FILE_TMP"
+            if [ -n "$rm_out" ]; then
+                echo "   LDM said:" | tee -a "$RESULTS_FILE_TMP"
+                echo "$rm_out" | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
+            else
+                echo "   LDM produced no output, which is itself a finding." | tee -a "$RESULTS_FILE_TMP"
+            fi
+            # The stack still being up is the leading hypothesis (LDM-#1436);
+            # record it either way rather than asking the reader to re-run.
+            echo "   Containers still present for this project:" | tee -a "$RESULTS_FILE_TMP"
+            docker ps -a --filter "name=${PROJECT_NAME}" --format '     {{.Names}}  {{.Status}}' \
+                2>/dev/null | tee -a "$RESULTS_FILE_TMP" || true
         fi
 
         # Keep the venv if we are in the repository for developer convenience, otherwise delete
@@ -645,11 +671,13 @@ log_and_run "Target Remove (Loopback Node)" "$LDM_CMD" target rm "$LOOPBACK_TEST
 # #1341, #1345 and #1350 shipped with unit tests only, each deferred on the
 # same principle: an assertion must depend on nothing the script cannot
 # control. That principle stands. What #1383 got wrong was assuming the only
-# way to satisfy it was a real remote node and a real timing race. Two of the
-# three have a deterministic lever that touches no network at all.
+# way to satisfy it was a real remote node and a real timing race. All three
+# have a deterministic lever that touches no network at all.
 #
-# #1345 genuinely does not, and is left to its unit/integration tests. See
-# the note after the second check.
+# #1345 was the last holdout (#1398). It was thought to need a real failing
+# connection whose duration the script does not own -- but "connection refused"
+# on a port *this script picks and leaves closed* is refused on every machine,
+# instantly. Measured end to end at 0.33s. See the third check below.
 
 echo ">> Verifying Remote Compute Node Announcement (LDM-#1341)..."
 #
@@ -705,6 +733,100 @@ if echo "$ANNOUNCE_JSON_OUT" | grep -q "a remote compute node"; then
     exit 1
 fi
 report_ok "✅ Announcement correctly suppressed under --json (LDM-#1093)."
+
+# --- LDM-#1398 / #1345: an unreachable node gets a diagnosis, not a raw blob ---
+#
+# #1383 deferred this one on "needs a real remote node", and #1398 kept it
+# tracked because every honest trigger had a duration the script does not own:
+# a TEST-NET-1 SSH timeout is set by the host network stack, a `.invalid`
+# hostname depends on the resolver, and "connection refused" was thought to
+# require a host with no sshd.
+#
+# That last assumption was the way in. Refused-on-port-22 depends on whether the
+# machine runs sshd -- but a port *this script picks and leaves closed* is
+# refused on every machine, instantly, with no network dependency at all.
+# Measured end to end at 0.87s on macOS/Colima.
+#
+# The context must EXIST and point somewhere closed. That is the difference from
+# the #1341 check above, which deletes the context so `docker --context` fails
+# with "context not found" before any SSH is attempted. Here SSH is genuinely
+# attempted and genuinely refused, which is the only way to exercise
+# diagnose_remote_context_failure() -- the thing under test IS the failure.
+#
+# A compose file must be present, or `compose stop` exits on "no configuration
+# file provided" before it ever dials.
+#
+# Observed to fail against the unfixed code before being committed: at
+# cfcde7c9^ diagnose_remote_context_failure does not exist, and this path printed
+# `Command failed (Exit 1)` followed by the whole HTTP/SSH blob -- the
+# docker.example.com placeholder and the URL-encoded label filter. So the
+# assertion below is not vacuous.
+echo "▶ Verifying Unreachable Node Diagnosis (LDM-#1345)..."
+
+SSHFAIL_PORT=$("$VENV_PYTHON" -c "
+import socket
+s = socket.socket()
+s.bind(('127.0.0.1', 0))
+print(s.getsockname()[1])
+s.close()
+")
+
+mkdir -p "${LDM_WORKSPACE}/${SSHFAIL_TEST_PROJ}/files"
+cat > "${LDM_WORKSPACE}/${SSHFAIL_TEST_PROJ}/meta" <<EOF
+{"tag": "2026.q1.7-lts", "container_name": "${SSHFAIL_TEST_PROJ}", "port": 8098, "db_type": "postgresql", "target": "${SSHFAIL_TEST_NODE}"}
+EOF
+# `compose stop` needs a compose file to get as far as dialling the node.
+cat > "${LDM_WORKSPACE}/${SSHFAIL_TEST_PROJ}/docker-compose.yml" <<'EOF'
+services:
+  placeholder:
+    image: alpine
+    command: sleep 1
+EOF
+
+"$LDM_CMD" -y target add "$SSHFAIL_TEST_NODE" --host 192.0.2.11 --user nobody >/dev/null 2>&1 || true
+docker context rm -f "$SSHFAIL_TEST_NODE" >/dev/null 2>&1 || true
+docker context create "$SSHFAIL_TEST_NODE" \
+    --docker "host=ssh://nobody@127.0.0.1:${SSHFAIL_PORT}" >/dev/null 2>&1 || true
+
+# Refuse to guess: if the port is not actually closed, the run below would
+# behave differently and the assertion would be measuring nothing.
+if "$VENV_PYTHON" -c "
+import socket, sys
+s = socket.socket()
+s.settimeout(1)
+sys.exit(0 if s.connect_ex(('127.0.0.1', ${SSHFAIL_PORT})) == 0 else 1)
+" 2>/dev/null; then
+    echo "❌ ERROR: port ${SSHFAIL_PORT} was expected to be closed but something is listening." | tee -a "$RESULTS_FILE_TMP"
+    diagnose_port_holder "${SSHFAIL_PORT}"
+    exit 1
+fi
+
+set +e
+SSHFAIL_OUT=$("$LDM_CMD" -y stop "${LDM_WORKSPACE}/${SSHFAIL_TEST_PROJ}" 2>&1)
+set -e
+echo "$SSHFAIL_OUT" | tee -a "$RESULTS_FILE_TMP"
+
+if ! echo "$SSHFAIL_OUT" | grep -q "Cannot reach compute node '${SSHFAIL_TEST_NODE}'"; then
+    echo "❌ ERROR: no diagnosis naming the unreachable node (LDM-#1345)." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+if ! echo "$SSHFAIL_OUT" | grep -q "refused the connection"; then
+    echo "❌ ERROR: the diagnosis did not name the cause (LDM-#1345)." | tee -a "$RESULTS_FILE_TMP"
+    echo "   A diagnosis that says only 'unreachable' is the blob it replaced." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+# The whole point is that the raw blob is NOT shown at default verbosity.
+if echo "$SSHFAIL_OUT" | grep -q "docker.example.com"; then
+    echo "❌ ERROR: the raw HTTP/SSH blob leaked through (LDM-#1345)." | tee -a "$RESULTS_FILE_TMP"
+    echo "   docker.example.com is a placeholder host that looks alarming and is" | tee -a "$RESULTS_FILE_TMP"
+    echo "   not real; hiding it behind --verbose is what #1345 was for." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+docker context rm -f "$SSHFAIL_TEST_NODE" >/dev/null 2>&1 || true
+"$LDM_CMD" -y target rm "$SSHFAIL_TEST_NODE" >/dev/null 2>&1 || true
+remove_workspace_dir "${LDM_WORKSPACE}/${SSHFAIL_TEST_PROJ}"
+report_ok "✅ Unreachable node diagnosed by name and cause, with no raw blob (LDM-#1345)."
 cleanup_1383_artifacts
 
 echo ">> Verifying Late Port Conflict Guidance (LDM-#1350)..."
