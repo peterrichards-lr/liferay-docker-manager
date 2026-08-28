@@ -46,6 +46,7 @@ nav:
     - Third-Party Tools: reference/third_party_tools.md
     - Networking: reference/networking.md
     - Advanced CLI: reference/advanced_cli.md
+    - JVM & Database Tuning: reference/tuning.md
     - Logging Strategy: reference/logging-strategy.md
   - Explanation:
     - Architecture: explanation/architecture.md
