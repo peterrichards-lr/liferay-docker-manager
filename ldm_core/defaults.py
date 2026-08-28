@@ -20,9 +20,17 @@ CONVENTION_DEFAULTS = {
     "no_color": "false",
     "no_unicode": "false",
     "ci_trigger": "release",
+    # LDM-#1454: these map to HikariCP's maximumPoolSize / minimumIdle /
+    # idleTimeout. They previously mapped to DBCP names Liferay does not read,
+    # so they had no effect at all; every project ran on Liferay's defaults of
+    # 180 / 10. 15 is deliberate for a laptop running a single project.
+    #
+    # `db_max_idle` is intentionally absent: HikariCP has one pool size and no
+    # maximum-idle setting. An existing ~/.ldmrc carrying it keeps loading -- it
+    # is simply unused, and composer.py warns once, pointing at db_idle_timeout.
     "db_max_active": "15",
     "db_min_idle": "2",
-    "db_max_idle": "5",
+    "db_idle_timeout": "600000",
     "log_max_size": "10m",
     "log_max_file": "3",
     "elasticsearch_heap_size": "512m",
