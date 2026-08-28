@@ -134,12 +134,53 @@ commitment:
 
 ## Overriding any of this
 
-Today: `--lean`, or `--jvm-args` — which **replaces** LDM's defaults entirely
-rather than adding to them, so changing one value discards the adaptive sizing.
-See [Advanced CLI](advanced_cli.md).
+**An unset value keeps the adaptive calculation.** Changing the heap does not
+discard metaspace sizing, the platform compiler decision or the reindex
+scale-up. That is the difference between these and `--jvm-args`, which replaces
+LDM's defaults entirely (LDM-#1449).
 
-Per-setting overrides through the `ldm config` cascade are tracked in
-**LDM-#1449**, with the rule that an unset key keeps the adaptive calculation.
+| Setting | CLI flag | Config key | Renders as |
+|---|---|---|---|
+| Initial heap | `--jvm-heap-min` | `jvm_heap_min` | `-Xms` |
+| Maximum heap | `--jvm-heap-max` | `jvm_heap_max` | `-Xmx` |
+| Metaspace | `--jvm-metaspace` | `jvm_metaspace` | `-XX:MetaspaceSize` / `MaxMetaspaceSize` |
+| Young generation | `--jvm-new-size` | `jvm_new_size` | `-XX:NewSize` / `MaxNewSize` |
+| Compiler level | `--jvm-tiered-stop-at-level` | `jvm_tiered_stop_at_level` | `-XX:TieredStopAtLevel=1` |
+
+Sizes accept a bare number of megabytes or a JVM suffix — `2048`, `512m`, `8g`.
+A value that cannot be read is **ignored with a warning** and the calculated
+value kept, rather than failing the container at start.
+
+### Precedence
+
+Most specific wins:
+
+```text
+--jvm-heap-max 8g        CLI flag
+project meta             per-project
+~/.ldmrc                 per-user        ) ldm config
+/etc/ldmrc               per-machine     )
+--lean                   profile
+adaptive calculation     base
+```
+
+### Profiles
+
+`--lean` is a named set of overrides rather than a fixed string, so it leaves
+anything it does not mention adaptive:
+
+```text
+lean: heap_min 1536m, heap_max 2048m, metaspace 512m,
+      no NewSize, TieredStopAtLevel=1
+```
+
+It is also applied implicitly when `GITHUB_ACTIONS=true`.
+
+### The blunt instrument
+
+`--jvm-args` still replaces everything, and is documented in
+[Advanced CLI](advanced_cli.md). Reach for it only when you want none of the
+above.
 
 <!-- markdownlint-disable MD049 -->
 ---
