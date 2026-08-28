@@ -68,6 +68,19 @@ class MockConfigManager:
 
 class TestConfigService(unittest.TestCase):
     def setUp(self):
+        # LDM-#1409: sync_common_assets resolves the shared search version with
+        # `docker inspect -f {{.Config.Image}} liferay-search-global`, through
+        # the module-scope run_command in handlers/config.py. That is not
+        # DockerService, so the facade stub in conftest.py does not reach it,
+        # and three tests in this class asked the developer's real daemon which
+        # Elasticsearch image it happens to be running. None is the
+        # "no shared search container" branch these tests already assume.
+        config_run_patcher = patch(
+            "ldm_core.handlers.config.run_command", return_value=None
+        )
+        self.mock_config_run_command = config_run_patcher.start()
+        self.addCleanup(config_run_patcher.stop)
+
         self.manager = MockConfigManager()
         self.config = ConfigService(self.manager)
 
@@ -1214,8 +1227,11 @@ class TestConfigService(unittest.TestCase):
             )
 
             # Check stop/start and rebuild
+            # LDM-#1410: an SSL mode switch stops the stack as an internal
+            # step, so it must not print a terminal "Next step" hint -- that is
+            # what made a mid-restore block look like a completed command.
             self.manager.runtime.cmd_stop.assert_called_once_with(
-                project_id=tmp_path.name
+                project_id=tmp_path.name, emit_hint=False
             )
             self.manager.runtime.cmd_run.assert_called_once_with(
                 project_id=tmp_path.name
@@ -1327,8 +1343,11 @@ class TestConfigService(unittest.TestCase):
             )
 
             # Check stop/start and rebuild
+            # LDM-#1410: an SSL mode switch stops the stack as an internal
+            # step, so it must not print a terminal "Next step" hint -- that is
+            # what made a mid-restore block look like a completed command.
             self.manager.runtime.cmd_stop.assert_called_once_with(
-                project_id=tmp_path.name
+                project_id=tmp_path.name, emit_hint=False
             )
             self.manager.runtime.cmd_run.assert_called_once_with(
                 project_id=tmp_path.name

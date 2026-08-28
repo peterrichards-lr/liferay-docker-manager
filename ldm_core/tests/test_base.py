@@ -1071,7 +1071,9 @@ class TestBasePortChecking(unittest.TestCase):
     def test_check_port_available(self, mock_socket_class):
         mock_socket = MagicMock()
         mock_socket_class.return_value.__enter__.return_value = mock_socket
-        # bind succeeds, returns True
+        # LDM-#1417: nothing listening, so the pre-connect probe declines to
+        # rule and the bind test decides. bind succeeds, returns True.
+        mock_socket.connect_ex.return_value = 61
         res = self.handler.check_port("127.0.0.1", 8080)
         self.assertTrue(res)
         mock_socket.bind.assert_called_with(("127.0.0.1", 8080))
@@ -1080,6 +1082,7 @@ class TestBasePortChecking(unittest.TestCase):
     def test_check_port_in_use(self, mock_socket_class):
         mock_socket = MagicMock()
         mock_socket_class.return_value.__enter__.return_value = mock_socket
+        mock_socket.connect_ex.return_value = 61
         mock_socket.bind.side_effect = OSError(11, "Address already in use")
         res = self.handler.check_port("127.0.0.1", 8080)
         self.assertFalse(res)
@@ -1088,8 +1091,12 @@ class TestBasePortChecking(unittest.TestCase):
     def test_check_port_permission_denied_free(self, mock_socket_class):
         mock_bind_socket = MagicMock()
         mock_conn_socket = MagicMock()
-        # The first socket created is for bind, the second is for connect_ex
+        # LDM-#1417: check_port opens a pre-connect probe socket first, so the
+        # bind socket is now the second one handed out, not the first.
+        mock_pre_socket = MagicMock()
+        mock_pre_socket.connect_ex.return_value = 61  # nothing listening
         mock_socket_class.return_value.__enter__.side_effect = [
+            mock_pre_socket,
             mock_bind_socket,
             mock_conn_socket,
         ]
@@ -1105,7 +1112,12 @@ class TestBasePortChecking(unittest.TestCase):
     def test_check_port_permission_denied_occupied(self, mock_socket_class):
         mock_bind_socket = MagicMock()
         mock_conn_socket = MagicMock()
+        # LDM-#1417: check_port opens a pre-connect probe socket first, so the
+        # bind socket is now the second one handed out, not the first.
+        mock_pre_socket = MagicMock()
+        mock_pre_socket.connect_ex.return_value = 61  # nothing listening
         mock_socket_class.return_value.__enter__.side_effect = [
+            mock_pre_socket,
             mock_bind_socket,
             mock_conn_socket,
         ]
@@ -1123,7 +1135,12 @@ class TestBasePortChecking(unittest.TestCase):
 
         mock_bind_socket = MagicMock()
         mock_conn_socket = MagicMock()
+        # LDM-#1417: check_port opens a pre-connect probe socket first, so the
+        # bind socket is now the second one handed out, not the first.
+        mock_pre_socket = MagicMock()
+        mock_pre_socket.connect_ex.return_value = 61  # nothing listening
         mock_socket_class.return_value.__enter__.side_effect = [
+            mock_pre_socket,
             mock_bind_socket,
             mock_conn_socket,
         ]
@@ -1136,6 +1153,54 @@ class TestBasePortChecking(unittest.TestCase):
 
         res = self.handler.check_port("127.0.0.1", 80)
         self.assertTrue(res)
+
+    @patch("socket.socket")
+    def test_check_port_listener_beats_a_successful_bind(self, mock_socket_class):
+        """LDM-#1417: a live listener means IN USE even if the bind would succeed.
+
+        Windows lets a bind to 127.0.0.1:P succeed while another socket holds
+        0.0.0.0:P, which is how Docker Desktop publishes a container port. The
+        bind-only check therefore reported a container-held port as free, the
+        LDM-#1350 fatal guard never fired, and the run died on Docker's own
+        "port is already allocated" with exit 1 instead of LDM's exit 4.
+        """
+        mock_socket = MagicMock()
+        mock_socket_class.return_value.__enter__.return_value = mock_socket
+        mock_socket.connect_ex.return_value = 0  # something is listening
+        mock_socket.bind.return_value = None  # ...and Windows lets us bind anyway
+
+        self.assertFalse(self.handler.check_port("127.0.0.1", 5601))
+        # The verdict must come from the listener, before any bind is tried --
+        # a bind first would leave the connect probing our own socket.
+        mock_socket.bind.assert_not_called()
+
+    @patch("socket.socket")
+    def test_check_port_out_of_range_is_unavailable(self, mock_socket_class):
+        """The pre-connect probe must not turn a bad port into an exception."""
+        mock_socket = MagicMock()
+        mock_socket_class.return_value.__enter__.return_value = mock_socket
+        mock_socket.connect_ex.side_effect = OverflowError("port out of range")
+        mock_socket.bind.side_effect = OverflowError("port out of range")
+
+        self.assertFalse(self.handler.check_port("127.0.0.1", 99999999))
+
+    def test_check_port_detects_a_real_wildcard_listener(self):
+        """LDM-#1417 on real sockets: 0.0.0.0 listener, checked via 127.0.0.1.
+
+        This is the platform-semantics guard. On Linux and macOS the bind test
+        alone already fails with EADDRINUSE, so this passes either way; on
+        Windows it fails without the connect-first probe. Keeping it unmocked
+        is the point -- the bug lived in the gap between what the mocks assumed
+        and what the OS actually does.
+        """
+        import socket
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.bind(("0.0.0.0", 0))  # nosec B104 - loopback-checked below
+            listener.listen(1)
+            port = listener.getsockname()[1]
+
+            self.assertFalse(self.handler.check_port("127.0.0.1", port))
 
 
 class TestProjectNotFoundMessage(unittest.TestCase):

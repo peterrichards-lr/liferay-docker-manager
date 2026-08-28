@@ -13,6 +13,10 @@ from ldm_core.utils import (
     shared_database_name,
 )
 
+# LDM-#1400: the global database container, created by
+# InfraService.setup_global_database with a bare `docker run`.
+GLOBAL_DB_CONTAINER = "liferay-db-global"
+
 
 class DatabaseService(BaseHandler):
     """Orchestration handler for project database querying operations."""
@@ -107,48 +111,55 @@ class DatabaseService(BaseHandler):
         this invocation," same as everything else. See
         docs/explanation/remote-node-architecture.md §5.
         """
+        # LDM-#1400: this used to run
+        # `docker compose -f infra-compose.yml start db`, but that file defines
+        # only `traefik` -- there is no `db` service, and the global database is
+        # not a compose service at all. `setup_global_database` creates it with a
+        # bare `docker run`. The command could therefore never succeed, and
+        # `cmd_reset_admin` points users straight at it.
         from ldm_core.docker_service import DockerService
 
         target_name = getattr(self.manager, "target", None)
-        infra_compose = self.manager.get_resource_path("infra-compose.yml")
-        if not infra_compose or not infra_compose.exists():
-            UI.die(
-                "Infrastructure compose file 'infra-compose.yml' not found in resources."
-            )
+        db_name = GLOBAL_DB_CONTAINER
+
+        if DockerService.is_running(db_name, target_name):
+            # UI.success, not UI.detail: the latter is gated behind
+            # --info/--verbose (LDM-#1036), so the user would see nothing at all
+            # and could not tell success from a no-op.
+            UI.success(f"Global shared database '{db_name}' is already running.")
             return
 
-        cmd = [
-            *DockerService.get_compose_cmd_prefix(target_name),
-            "-f",
-            str(infra_compose),
-        ]
-        cmd.extend(["start", "db"])
+        if DockerService.exists(db_name, target_name):
+            UI.detail(f"Starting global shared database '{db_name}'...")
+            DockerService.start(db_name, target_name)
+            UI.success(f"Global shared database '{db_name}' started.")
+            return
 
-        UI.detail("Starting global shared database (db)...")
-        self.manager.run_command(cmd, capture_output=False)
+        # Not created yet -- provision it through the same path `ldm run` uses,
+        # rather than reporting a missing container the user cannot create.
+        UI.detail("Global shared database not found; provisioning it...")
+        self.manager.infra.setup_global_database()
 
     def cmd_stop(self):
         """Stops the shared global database. See cmd_start's docstring for
         why this resolves --node/--target like any other command."""
+        # LDM-#1400: see cmd_start -- there is no `db` compose service to stop.
         from ldm_core.docker_service import DockerService
 
         target_name = getattr(self.manager, "target", None)
-        infra_compose = self.manager.get_resource_path("infra-compose.yml")
-        if not infra_compose or not infra_compose.exists():
-            UI.die(
-                "Infrastructure compose file 'infra-compose.yml' not found in resources."
-            )
+        db_name = GLOBAL_DB_CONTAINER
+
+        if not DockerService.exists(db_name, target_name):
+            UI.warning(f"Global shared database '{db_name}' does not exist.")
             return
 
-        cmd = [
-            *DockerService.get_compose_cmd_prefix(target_name),
-            "-f",
-            str(infra_compose),
-        ]
-        cmd.extend(["stop", "db"])
+        if not DockerService.is_running(db_name, target_name):
+            UI.success(f"Global shared database '{db_name}' is already stopped.")
+            return
 
-        UI.detail("Stopping global shared database (db)...")
-        self.manager.run_command(cmd, capture_output=False)
+        UI.detail(f"Stopping global shared database '{db_name}'...")
+        DockerService.stop(db_name, target_name)
+        UI.success(f"Global shared database '{db_name}' stopped.")
 
     def cmd_query(  # noqa: C901, PLR0911, PLR0912, PLR0915
         self, project_id=None, sql=None, output_format="table", allow_query=False

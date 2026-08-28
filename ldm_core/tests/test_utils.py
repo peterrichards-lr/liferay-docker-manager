@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 import requests
 
 from ldm_core.utils import (
@@ -448,6 +449,7 @@ class TestLdmHomeOverride(unittest.TestCase):
 
     @patch("ldm_core.utils.run_command")
     @patch("ldm_core.utils.platform.system")
+    @pytest.mark.exercises_docker_helper
     def test_reclaim_volume_permissions_dynamic_uid_gid(self, mock_system, mock_run):
         from ldm_core.utils import reclaim_volume_permissions
 
@@ -826,6 +828,7 @@ class TestUpdateChecks(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 safe_mkdir("/fake/path")
 
+    @pytest.mark.exercises_docker_helper
     def test_reclaim_volume_permissions(self):
         from ldm_core.utils import reclaim_volume_permissions
 
@@ -902,6 +905,7 @@ class TestUpdateChecks(unittest.TestCase):
                 any("Error Details (Safe):" in call for call in print_calls)
             )
 
+    @pytest.mark.exercises_docker_helper
     def test_reclaim_volume_permissions_timeout(self):
         import subprocess
 
@@ -2426,6 +2430,25 @@ class TestProjectUuid(unittest.TestCase):
             self.assertTrue(first, "a pre-UUID project must be backfilled")
             h.write_meta(Path(tmp), {"container_name": "legacy", "tag": "t"})
             self.assertEqual(first, self._meta(tmp)["uuid"])
+
+    def test_write_meta_makes_the_uuid_visible_to_the_caller(self):
+        """LDM-#1395 depends on this and it is easy to get wrong.
+
+        `_ensure_project_uuid` originally returned a *copy* carrying the UUID,
+        so the meta file on disk had it but the caller's dict did not. The
+        compose builder reads the caller's dict, so every ownership label was
+        silently skipped while the unit tests -- which pre-set `uuid` by hand --
+        passed. Caught only by asserting against a real `ldm init`.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            meta = {"container_name": "p"}
+            self._handler().write_meta(Path(tmp), meta)
+            self.assertIn(
+                "uuid",
+                meta,
+                "write_meta must put the UUID on the caller's dict, not only on disk",
+            )
+            self.assertEqual(meta["uuid"], self._meta(tmp)["uuid"])
 
     def test_two_projects_get_different_uuids(self):
         """The point: same name, different identity."""

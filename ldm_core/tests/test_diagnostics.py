@@ -1,4 +1,5 @@
 import json
+import typing
 import unittest
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ from ldm_core.diagnostics.doctor import (
 )
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.diagnostics import DiagnosticsService
+from ldm_core.tests.tmproot import TEST_TMP_ROOT
 
 
 class MockArgs:
@@ -278,7 +280,13 @@ class TestDiagnostics(unittest.TestCase):
         self.assertTrue(any("LDM Version" in r[0] for r in runner.results))
         self.assertTrue(any("Executable Integrity" in r[0] for r in runner.results))
 
-    @patch("ldm_core.utils.get_actual_home", return_value=Path("/tmp"))
+    # LDM-#1402: this must stay the parent of the project path set below --
+    # _check_global_config_and_network does
+    # `test_path.relative_to(get_actual_home())` and skips the whole volume
+    # check when the project is not under the home. Pinning the home to /tmp
+    # while the project moved to the per-process root silently removed the
+    # "Volume Permissions" result this test asserts on.
+    @patch("ldm_core.utils.get_actual_home", return_value=Path(TEST_TMP_ROOT))
     @patch(
         "ldm_core.diagnostics.doctor.check_mkcert",
         return_value=("OK", True, "/root"),
@@ -287,8 +295,12 @@ class TestDiagnostics(unittest.TestCase):
     def test_check_global_config_and_network(self, mock_run, mock_mkcert, mock_home):
         runner = DoctorRunner(self.manager.diagnostics)
         runner.docker_version = "24.0.0"
-        runner.project_paths = [Path("/tmp/proj1")]
-        runner._check_global_config_and_network()
+        runner.project_paths = [Path(f"{TEST_TMP_ROOT}/proj1")]
+        # LDM-#1409: the network check calls the module-scope run_command in
+        # doctor.py (`docker network inspect liferay-net`), which patching the
+        # manager's own run_command does not reach.
+        with patch("ldm_core.diagnostics.doctor.run_command", return_value=""):
+            runner._check_global_config_and_network()
         self.assertTrue(any("mkcert" in r[0] for r in runner.results))
         self.assertTrue(any("Volume Permissions" in r[0] for r in runner.results))
 
@@ -310,7 +322,7 @@ class TestDiagnostics(unittest.TestCase):
             name="local", host="localhost", is_default=True
         )
         runner = DoctorRunner(self.manager.diagnostics)
-        runner.project_paths = [Path("/tmp/proj1")]
+        runner.project_paths = [Path(f"{TEST_TMP_ROOT}/proj1")]
         runner._check_project_specific()
         self.assertTrue(any("[proj1] Metadata" in r[0] for r in runner.results))
         self.assertTrue(any("[proj1] Config" in r[0] for r in runner.results))
@@ -338,7 +350,7 @@ class TestDiagnostics(unittest.TestCase):
             return_value={"tag": "2026.q1.4-lts", "env_args": [], "target": "aws-1"},
         ):
             runner = DoctorRunner(self.manager.diagnostics)
-            runner.project_paths = [Path("/tmp/proj1")]
+            runner.project_paths = [Path(f"{TEST_TMP_ROOT}/proj1")]
             runner._check_project_specific()
 
         ps_calls = [
@@ -497,7 +509,9 @@ class TestDiagnostics(unittest.TestCase):
             patch.object(
                 self.manager,
                 "find_dxp_roots",
-                return_value=[{"path": Path("/tmp/proj1"), "version": "2024.q1.0"}],
+                return_value=[
+                    {"path": Path(f"{TEST_TMP_ROOT}/proj1"), "version": "2024.q1.0"}
+                ],
             ),
             patch.object(
                 self.manager,
@@ -548,7 +562,7 @@ class TestDiagnostics(unittest.TestCase):
                 "find_dxp_roots",
                 return_value=[
                     {
-                        "path": Path("/tmp/proj1"),
+                        "path": Path(f"{TEST_TMP_ROOT}/proj1"),
                         "version": "2024.q1.0",
                         "last_seen": None,
                     }
@@ -585,7 +599,7 @@ class TestDiagnostics(unittest.TestCase):
             self.assertEqual(entry["total_containers"], 1)
             self.assertEqual(entry["url"], "http://localhost:8080")
             self.assertTrue(entry["seeded"])
-            self.assertEqual(entry["path"], str(Path("/tmp/proj1")))
+            self.assertEqual(entry["path"], str(Path(f"{TEST_TMP_ROOT}/proj1")))
             self.assertIn("http_ready", entry)
             self.assertIn("http_status", entry)
             # No ANSI color codes should ever leak into JSON output.
@@ -611,7 +625,7 @@ class TestDiagnostics(unittest.TestCase):
                 "find_dxp_roots",
                 return_value=[
                     {
-                        "path": Path("/tmp/proj1"),
+                        "path": Path(f"{TEST_TMP_ROOT}/proj1"),
                         "version": "2024.q1.0",
                         "last_seen": None,
                     }
@@ -658,7 +672,7 @@ class TestDiagnostics(unittest.TestCase):
                 "find_dxp_roots",
                 return_value=[
                     {
-                        "path": Path("/tmp/proj1"),
+                        "path": Path(f"{TEST_TMP_ROOT}/proj1"),
                         "version": "2024.q1.0",
                         "last_seen": None,
                     }
@@ -922,12 +936,17 @@ class TestDiagnostics(unittest.TestCase):
     def test_check_global_config_and_network_ro(self):
         runner = DoctorRunner(self.manager.diagnostics)
         runner.docker_version = "24.0.0"
-        runner.project_paths = [Path("/tmp/proj1")]
+        runner.project_paths = [Path(f"{TEST_TMP_ROOT}/proj1")]
         runner.provider = "Colima"
         # Patch ldm_core.utils.get_actual_home directly
         with (
-            patch("ldm_core.utils.get_actual_home", return_value=Path("/tmp")),
+            # LDM-#1402: as above -- must be the parent of runner.project_paths
+            # or the volume check is skipped entirely.
+            patch("ldm_core.utils.get_actual_home", return_value=Path(TEST_TMP_ROOT)),
             patch.object(self.manager, "run_command", return_value="Permission denied"),
+            # LDM-#1409: as above -- the manager's run_command is a different
+            # function from the module-scope one the network check uses.
+            patch("ldm_core.diagnostics.doctor.run_command", return_value=""),
         ):
             runner._check_global_config_and_network()
             self.assertTrue(any("Read-Only" in str(r[1]) for r in runner.results))
@@ -1020,7 +1039,21 @@ class TestDiagnostics(unittest.TestCase):
         from contextlib import redirect_stdout
 
         f = io.StringIO()
-        with redirect_stdout(f), patch("sys.exit"):
+        # LDM-#1409: _check_dangling_and_print calls _check_absolute_disk_space,
+        # which runs `docker run --rm alpine df -P -k /` -- a real container, on
+        # a machine these tests only want to render a table on. It is also the
+        # call that hangs indefinitely on a stalled Docker socket (#1410), since
+        # it passes no timeout. Neither test asserts anything about disk space.
+        with (
+            redirect_stdout(f),
+            patch("sys.exit"),
+            patch.object(runner, "_check_absolute_disk_space"),
+            # ...and the dangling-resource scan itself runs
+            # `docker system df --format {{json .}}` through the module-scope
+            # run_command. Both tests only assert on which section headings the
+            # rendered table contains.
+            patch("ldm_core.diagnostics.doctor.run_command", return_value=""),
+        ):
             runner._check_dangling_and_print()
             output = f.getvalue()
             self.assertIn("System (Python, Executable, Venv)", output)
@@ -1047,7 +1080,21 @@ class TestDiagnostics(unittest.TestCase):
         from contextlib import redirect_stdout
 
         f = io.StringIO()
-        with redirect_stdout(f), patch("sys.exit"):
+        # LDM-#1409: _check_dangling_and_print calls _check_absolute_disk_space,
+        # which runs `docker run --rm alpine df -P -k /` -- a real container, on
+        # a machine these tests only want to render a table on. It is also the
+        # call that hangs indefinitely on a stalled Docker socket (#1410), since
+        # it passes no timeout. Neither test asserts anything about disk space.
+        with (
+            redirect_stdout(f),
+            patch("sys.exit"),
+            patch.object(runner, "_check_absolute_disk_space"),
+            # ...and the dangling-resource scan itself runs
+            # `docker system df --format {{json .}}` through the module-scope
+            # run_command. Both tests only assert on which section headings the
+            # rendered table contains.
+            patch("ldm_core.diagnostics.doctor.run_command", return_value=""),
+        ):
             runner._check_dangling_and_print()
             output = f.getvalue()
             self.assertIn("Python Version", output)
@@ -2013,6 +2060,12 @@ class TestPruneRespectsProjectUuid(unittest.TestCase):
         reported = []
         with (
             patch.object(prune_mod, "run_command", side_effect=fake_run),
+            # LDM-#1409: run_prune also asks DockerService whether the global
+            # search container is up. DockerService's statics call the
+            # module-scope run_command in docker_service.py, which the patch
+            # above does not reach, so this test issued a real
+            # `docker ps -f name=^liferay-search-global$` on every run.
+            patch("ldm_core.docker_service.run_command", return_value=""),
             patch.object(
                 prune_mod.UI, "detail", side_effect=lambda m: reported.append(str(m))
             ),
@@ -2038,3 +2091,129 @@ class TestPruneRespectsProjectUuid(unittest.TestCase):
         """The safeguard must not blind prune to real orphans."""
         out = self._run("gone-project", "some-other-uuid", self.UUID)
         self.assertIn("Found 1 orphaned containers", out)
+
+
+class TestInfoReportsTheProjectId(unittest.TestCase):
+    """LDM-#1393: the UUID is LDM's primary key and is deliberately hidden from
+    routine output -- users think in project names. `ldm info` is the diagnostic
+    view, and it is where the UUID earns its place: it is the value carried on
+    the Docker ownership labels (#1395), so it is what you match when working
+    out which resources belong to which project."""
+
+    UUID = "eea28136-495b-4d43-87fb-b2e84e2543ba"
+
+    def _run(self, meta_extra):
+        from pathlib import Path as _Path
+
+        from ldm_core.diagnostics.info import run_info
+
+        meta = {
+            "container_name": "InfoCheck",
+            "tag": "2026.q1.12-lts",
+        }
+        meta.update(meta_extra)
+
+        handler = MagicMock()
+        handler.manager.detect_project_path.return_value = _Path("/tmp/InfoCheck")
+        handler.manager.parse_version.return_value = (2026, 1, 12)
+        handler.manager.read_meta.return_value = meta
+        handler.manager.defaults.get.side_effect = lambda _k, default=None: default
+
+        with (
+            patch("ldm_core.ui.UI.raw") as mock_raw,
+            patch(
+                "ldm_core.docker_service.DockerService.get_status",
+                return_value="running",
+            ),
+            patch("ldm_core.config.load_targets", return_value={}),
+        ):
+            run_info(handler, "InfoCheck")
+            return "\n".join(c[0][0] for c in mock_raw.call_args_list if c[0])
+
+    def test_the_id_is_shown_when_the_project_has_one(self):
+        out = self._run({"uuid": self.UUID})
+        self.assertIn(self.UUID, out)
+        self.assertIn("ID:", out)
+
+    def test_no_empty_row_for_a_project_created_before_uuids(self):
+        """A project with no UUID is a legitimate state, not an error -- show
+        nothing rather than a blank field."""
+        out = self._run({})
+        self.assertNotIn("ID:", out)
+
+
+class TestPruneHostsGuard(unittest.TestCase):
+    """LDM-#1416: `--all` both enabled the hosts wipe and skipped its own
+    confirmation, because `prune_all or (...)` short-circuits before UI.confirm
+    is evaluated. A maintainer lost 15 entries -- hostnames for real
+    client-extension projects -- to an unexplained `Password:` prompt with no
+    list and no question.
+
+    `--all` means "prune all categories", not "skip all confirmations".
+    """
+
+    ENTRIES: typing.ClassVar[list[str]] = ["ldm.demo", "aica.local", "forge.demo"]
+
+    def _run(self, *, prune_all, confirm_answer, non_interactive=False):
+        from ldm_core.diagnostics import prune as prune_mod
+
+        handler = MagicMock()
+        handler.manager.dry_run = False
+        handler.manager.non_interactive = non_interactive
+        handler.manager.args = MagicMock(
+            all=prune_all, clean_hosts=True, seeds=False, samples=False, images=False
+        )
+        handler.manager.target = None
+        handler.manager.find_dxp_roots.return_value = []
+        handler.manager._list_hosts_entries.return_value = list(self.ENTRIES)
+
+        shown = []
+        with (
+            patch.object(prune_mod, "run_command", return_value=""),
+            patch.object(prune_mod.UI, "confirm", return_value=confirm_answer) as conf,
+            patch.object(
+                prune_mod.UI, "raw", side_effect=lambda m="": shown.append(str(m))
+            ),
+            patch.object(
+                prune_mod.UI, "warning", side_effect=lambda m: shown.append(str(m))
+            ),
+            patch.object(prune_mod.UI, "detail"),
+            patch.object(prune_mod.UI, "info"),
+            patch.object(prune_mod.UI, "heading"),
+            patch.object(prune_mod.UI, "success"),
+            patch.object(prune_mod, "_orphaned_ldm_volumes", return_value=[]),
+        ):
+            prune_mod.run_prune(handler)
+        return handler, conf, "\n".join(shown)
+
+    def test_all_no_longer_skips_the_confirmation(self):
+        """The regression: --all reached the removal without ever asking."""
+        handler, confirm, _ = self._run(prune_all=True, confirm_answer=False)
+        confirm.assert_called()
+        handler.manager._remove_hosts_entries.assert_not_called()
+
+    def test_declining_leaves_the_hosts_file_alone(self):
+        handler, _, _ = self._run(prune_all=False, confirm_answer=False)
+        handler.manager._remove_hosts_entries.assert_not_called()
+
+    def test_accepting_still_removes_them(self):
+        """Refusing by default must not remove the capability."""
+        handler, _, _ = self._run(prune_all=True, confirm_answer=True)
+        handler.manager._remove_hosts_entries.assert_called_once_with(all_ldm=True)
+
+    def test_the_entries_are_listed_before_the_sudo_prompt(self):
+        """The user cannot judge the request without seeing it -- and the sudo
+        prompt arrives with no explanation otherwise."""
+        _, _, shown = self._run(prune_all=True, confirm_answer=False)
+        for host in self.ENTRIES:
+            self.assertIn(host, shown, f"{host} was not shown before removal")
+        self.assertIn("sudo", shown.lower())
+        self.assertIn("reclaims no disk space", shown.lower())
+
+    def test_y_still_means_do_not_ask_me(self):
+        """-y is how a user opts out of prompts; --all is not."""
+        handler, confirm, _ = self._run(
+            prune_all=True, confirm_answer=False, non_interactive=True
+        )
+        confirm.assert_not_called()
+        handler.manager._remove_hosts_entries.assert_called_once_with(all_ldm=True)

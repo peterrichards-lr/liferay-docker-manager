@@ -9,8 +9,8 @@ set -e
 # by scripts/release.py on every bump) so a locally-held copy can be checked
 # against what actually shipped, rather than guessing from a file mtime -- git
 # checkout/pull doesn't preserve original commit timestamps.
-# LDM_MAGIC_VERSION: 2.17.0
-SCRIPT_VERSION="2.17.0"
+# LDM_MAGIC_VERSION: 2.18.0
+SCRIPT_VERSION="2.18.0"
 
 TEST_PORT="${LDM_TEST_PORT}"
 if [ -z "$TEST_PORT" ]; then
@@ -24,6 +24,8 @@ TAG_VAL_PROJECT="tag-val-test-${TEST_PORT}"
 TARGET_TEST_NODE="e2e-target-${TEST_PORT}"
 ANNOUNCE_TEST_NODE="announce-node-${TEST_PORT}"
 ANNOUNCE_TEST_PROJ="announce-proj-${TEST_PORT}"
+SSHFAIL_TEST_NODE="sshfail-node-${TEST_PORT}"
+SSHFAIL_TEST_PROJ="sshfail-proj-${TEST_PORT}"
 PORTCONFLICT_PROJ="portconflict-${TEST_PORT}"
 PORT_HOLDER="ldm-e2e-port-holder-${TEST_PORT}"
 # Kibana publishes this host port unconditionally (composer.py
@@ -187,6 +189,25 @@ cleanup_1383_artifacts() {
 cleanup_test_projects() {
     local EXIT_CODE=$?
     set +e
+
+    # LDM-#1436: leave the project directory before asking LDM to delete it.
+    #
+    # The run `cd`s into "$LDM_WORKSPACE/$PROJECT_NAME" (see the standalone
+    # project section) and never returns, so this EXIT trap fired with the shell
+    # still inside the directory it was about to remove. LDM refused, correctly:
+    #
+    #   Safety Violation: Cannot delete current working directory or its parent:
+    #   .../e2e-work-dir-59746/ldm-smoke-test-59746
+    #
+    # That guard is right and must not be worked around -- deleting the shell's
+    # own cwd leaves the caller in a directory that no longer exists. The script
+    # is what was wrong.
+    #
+    # This failed on pre.8, pre.9 and pre.10 including runs that otherwise
+    # passed, and the cause stayed unknown for three release cycles because the
+    # output was discarded (#1255 recovered the exit code, #1440 the message).
+    # The message is what identified it, on the first run that printed one.
+    cd "$ORIGINAL_PWD" 2>/dev/null || cd / || true
     local status="pass"
     if [ $EXIT_CODE -ne 0 ]; then
         status="fail"
@@ -233,8 +254,32 @@ cleanup_test_projects() {
         # `>/dev/null 2>&1 || true`, which swallowed stdout, stderr *and* the
         # exit code -- so a failed project removal was completely invisible and
         # only surfaced later as an undeletable directory.
-        if ! LDM_WORKSPACE="${LDM_WORKSPACE}" "$LDM_CMD" -y rm "${PROJECT_NAME}" --delete >/dev/null 2>&1; then
-            echo "⚠  'ldm rm ${PROJECT_NAME} --delete' failed; the project directory may remain."
+        #
+        # LDM-#1436: that recovered the exit code but still discarded *why*, via
+        # `>/dev/null 2>&1`. The removal has failed at the end of every run
+        # across pre.8, pre.9 and pre.10 -- including runs that otherwise
+        # reported ALL E2E VERIFICATIONS PASSED -- and three release cycles
+        # later nobody knows the cause, because the output was thrown away.
+        # Capture it and print it, so the next investigation does not start
+        # exactly where the last one did.
+        local rm_out rm_rc
+        set +e
+        rm_out=$(LDM_WORKSPACE="${LDM_WORKSPACE}" "$LDM_CMD" -y rm "${PROJECT_NAME}" --delete 2>&1)
+        rm_rc=$?
+        set -e
+        if [ "$rm_rc" -ne 0 ]; then
+            echo "⚠  'ldm rm ${PROJECT_NAME} --delete' failed (exit ${rm_rc}); the project directory may remain." | tee -a "$RESULTS_FILE_TMP"
+            if [ -n "$rm_out" ]; then
+                echo "   LDM said:" | tee -a "$RESULTS_FILE_TMP"
+                echo "$rm_out" | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
+            else
+                echo "   LDM produced no output, which is itself a finding." | tee -a "$RESULTS_FILE_TMP"
+            fi
+            # The stack still being up is the leading hypothesis (LDM-#1436);
+            # record it either way rather than asking the reader to re-run.
+            echo "   Containers still present for this project:" | tee -a "$RESULTS_FILE_TMP"
+            docker ps -a --filter "name=${PROJECT_NAME}" --format '     {{.Names}}  {{.Status}}' \
+                2>/dev/null | tee -a "$RESULTS_FILE_TMP" || true
         fi
 
         # Keep the venv if we are in the repository for developer convenience, otherwise delete
@@ -284,6 +329,68 @@ report_ok() {
     echo "$1" | tee -a "$RESULTS_FILE_TMP"
 }
 
+# LDM-#1428: name what is holding a port when a port check cannot proceed.
+#
+# Two sources are queried, and BOTH are needed, because neither can answer the
+# question alone:
+#
+#   docker ps --filter publish=  is the only thing that names a CONTAINER.
+#   lsof/ss/netstat              is the only thing that sees a NON-container
+#                                holder (a stray service, an unrelated tunnel).
+#
+# The native tool never names the container, because a published port is held
+# on the host by the runtime's forwarder. Measured on Colima: a container
+# publishing 5601 shows up as `ssh` (the Lima SSH mux), PID owned by the user.
+# Docker Desktop shows com.docker.backend, native Linux docker-proxy, WSL2
+# wslrelay. Printing that alone sends the operator chasing a process that is
+# working perfectly -- so a known forwarder is labelled as such and the reader
+# is pointed back at the Docker line.
+diagnose_port_holder() {
+    local port="$1"
+    echo "🔎 What is holding port ${port}?" | tee -a "$RESULTS_FILE_TMP"
+
+    local containers=""
+    if command -v docker >/dev/null 2>&1; then
+        containers=$(docker ps --filter "publish=${port}" \
+            --format '{{.Names}}  {{.Image}}  {{.Ports}}' 2>/dev/null || true)
+    fi
+    if [ -n "$containers" ]; then
+        echo "   Container(s) publishing ${port}:" | tee -a "$RESULTS_FILE_TMP"
+        echo "$containers" | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
+    else
+        echo "   No running container publishes ${port}." | tee -a "$RESULTS_FILE_TMP"
+    fi
+
+    local native=""
+    if command -v lsof >/dev/null 2>&1; then
+        native=$(lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | tail -n +2 || true)
+    elif command -v ss >/dev/null 2>&1; then
+        native=$(ss -lptnH "sport = :${port}" 2>/dev/null || true)
+    elif command -v netstat >/dev/null 2>&1; then
+        native=$(netstat -anv 2>/dev/null | grep -E "[.:]${port} .*LISTEN" || true)
+    fi
+
+    if [ -z "$native" ]; then
+        echo "   No host process found listening on ${port}." | tee -a "$RESULTS_FILE_TMP"
+        echo "   (No native tool available, or the holder is not visible to this user.)" | tee -a "$RESULTS_FILE_TMP"
+        return 0
+    fi
+
+    echo "   Host process(es) listening on ${port}:" | tee -a "$RESULTS_FILE_TMP"
+    echo "$native" | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
+
+    # A runtime forwarder is not the culprit -- it is how a container publishes.
+    if echo "$native" | grep -Eq '(^|[^a-zA-Z])(ssh|docker-proxy|com\.docker\.backend|vpnkit|wslrelay|qemu)'; then
+        echo "   ℹ  That is a container-runtime port forwarder, not the owner." | tee -a "$RESULTS_FILE_TMP"
+        if [ -n "$containers" ]; then
+            echo "      The container named above is what actually holds ${port}." | tee -a "$RESULTS_FILE_TMP"
+        else
+            echo "      A container in another Docker context may hold ${port};" | tee -a "$RESULTS_FILE_TMP"
+            echo "      try: docker context ls, then docker ps --filter publish=${port}" | tee -a "$RESULTS_FILE_TMP"
+        fi
+    fi
+}
+
 # --- Execution ---
 
 # 0. Dependencies & Virtual Environment
@@ -315,6 +422,104 @@ fi
 # 1. Cleanup & Setup
 "$LDM_CMD" -y rm "${PROJECT_NAME}" --delete --infra >/dev/null 2>&1 || true
 export LDM_WORKSPACE
+
+# LDM-#1419: clear leftovers from a PREVIOUS run before starting.
+#
+# The port holder is named per-run (ldm-e2e-port-holder-<port>), and only that
+# run's cleanup removes it. A run killed mid-flight -- which happened repeatedly
+# while chasing the restore hang (#1410) -- leaves a container publishing 5601
+# that no later run will ever touch, so the next run sees "Port 5601 is already
+# in use" during work that has nothing to do with the port-conflict check.
+#
+# Sweeping by prefix rather than exact name is the point: this run cannot know
+# what its predecessors were called.
+STALE=$(docker ps -aq --filter "name=^ldm-e2e-port-holder-" 2>/dev/null || true)
+if [ -n "$STALE" ]; then
+    echo "ℹ  Removing $(echo "$STALE" | wc -l | tr -d ' ') leftover port holder(s) from a previous run..."
+    echo "$STALE" | xargs -r docker rm -f >/dev/null 2>&1 || true
+fi
+
+# Likewise any kibana container left by an interrupted port-conflict check -- it
+# publishes 5601 and would fail the next run for the wrong reason.
+STALE_KIBANA=$(docker ps -aq --filter "name=portconflict-" 2>/dev/null || true)
+if [ -n "$STALE_KIBANA" ]; then
+    echo "$STALE_KIBANA" | xargs -r docker rm -f >/dev/null 2>&1 || true
+fi
+
+# LDM-#1419: record whether the global database pre-existed, so the #1400 check
+# can put the machine back as it found it. `ldm db start` PROVISIONS the
+# container when absent, and only stops it afterwards -- so a machine that never
+# had one is left with a stopped liferay-db-global it did not ask for.
+DB_GLOBAL_PREEXISTED=false
+if docker ps -aq --filter "name=^liferay-db-global$" 2>/dev/null | grep -q .; then
+    DB_GLOBAL_PREEXISTED=true
+fi
+
+# LDM-#1406: refuse to start without room to finish.
+#
+# A run that exhausts the disk fails somewhere in the middle, and surfaces as
+# whatever broke first -- a PostgreSQL PANIC, an Elasticsearch write block, a
+# truncated image layer -- rather than as "you are out of disk". The report it
+# produces then reads as a defect finding, and a verification report is the
+# project's honest record of what was tested.
+#
+# Asked of DOCKER, not the host. On Docker Desktop/Colima/OrbStack the engine's
+# storage lives inside a VM with its own, far smaller disk; a host-side `df`
+# would pass on exactly the machines most likely to fail. Measured on one
+# developer machine mid-verification: host 109.2 GB free, Docker VM 12.5 GB.
+# This is the same reasoning as Doctor._check_absolute_disk_space (LDM-#1095),
+# and using `docker run alpine df` keeps the .sh and .ps1 implementations
+# identical rather than needing two host-specific ones.
+#
+# LDM-#1430: the floor was 10 GB and the gate is `-lt`, so exactly 10 GB passed
+# -- and then the run died mid-snapshot with ENOSPC on a machine that had just
+# been pruned. The images alone are ~7.5 GB (liferay/dxp ~5.3, postgres ~0.7,
+# elasticsearch ~1.5) before the running stack grows, and the snapshot then
+# writes a database dump plus a tar of every payload directory on top of that.
+# 10 GB covered the pull and nothing after it.
+#
+# Override with LDM_VERIFY_MIN_DISK_GB when you know better than this default.
+MIN_DISK_GB="${LDM_VERIFY_MIN_DISK_GB:-15}"
+
+# LDM-#1430: a single up-front check cannot cover a run whose disk usage peaks
+# late. Between the pre-flight and the snapshot the run pulls two large images,
+# starts the stack, deploys a bundle and generates logs -- so the headroom at
+# the check says little about the headroom at peak. This is therefore a
+# function, called again before the snapshot phase.
+#
+# $1 = GB required, $2 = label for the message, $3 = "fatal" or "warn"
+check_docker_disk() {
+    local need="$1" label="$2" mode="${3:-fatal}"
+    echo "ℹ  Checking Docker has room ${label} (need ${need} GB)..."
+    local free_kb free_gb
+    free_kb=$(docker run --rm alpine df -P -k / 2>/dev/null | awk 'NR==2 {print $4}')
+    if [ -z "$free_kb" ]; then
+        echo "⚠️  Could not determine Docker's free space; continuing without the check." | tee -a "$RESULTS_FILE_TMP"
+        return 0
+    fi
+    free_gb=$((free_kb / 1024 / 1024))
+    if [ "$free_gb" -ge "$need" ]; then
+        echo "✅ Docker has ${free_gb} GB free."
+        return 0
+    fi
+
+    echo "❌ ERROR: not enough disk space ${label}." | tee -a "$RESULTS_FILE_TMP"
+    echo "   Docker has ${free_gb} GB free; this needs about ${need} GB." | tee -a "$RESULTS_FILE_TMP"
+    echo "   (The host may report far more -- Docker's storage is inside its own VM.)" | tee -a "$RESULTS_FILE_TMP"
+    echo "" | tee -a "$RESULTS_FILE_TMP"
+    echo "   Free some space, then re-run:" | tee -a "$RESULTS_FILE_TMP"
+    echo "     ldm prune --seeds --samples     # reclaim LDM seed and sample archives" | tee -a "$RESULTS_FILE_TMP"
+    echo "     ldm prune --all                 # also images, volumes and build cache" | tee -a "$RESULTS_FILE_TMP"
+    echo "     docker system prune -a          # everything Docker considers unused" | tee -a "$RESULTS_FILE_TMP"
+    echo "" | tee -a "$RESULTS_FILE_TMP"
+    if [ "$mode" = "warn" ]; then
+        return 1
+    fi
+    echo "   Refusing before pulling anything, so no half-finished report is written." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+}
+
+check_docker_disk "$MIN_DISK_GB" "to finish"
 
 # Pre-pull large images to avoid containerd lease timeouts during the timed E2E run
 echo "ℹ  Pre-pulling required Docker images..."
@@ -485,11 +690,13 @@ log_and_run "Target Remove (Loopback Node)" "$LDM_CMD" target rm "$LOOPBACK_TEST
 # #1341, #1345 and #1350 shipped with unit tests only, each deferred on the
 # same principle: an assertion must depend on nothing the script cannot
 # control. That principle stands. What #1383 got wrong was assuming the only
-# way to satisfy it was a real remote node and a real timing race. Two of the
-# three have a deterministic lever that touches no network at all.
+# way to satisfy it was a real remote node and a real timing race. All three
+# have a deterministic lever that touches no network at all.
 #
-# #1345 genuinely does not, and is left to its unit/integration tests. See
-# the note after the second check.
+# #1345 was the last holdout (#1398). It was thought to need a real failing
+# connection whose duration the script does not own -- but "connection refused"
+# on a port *this script picks and leaves closed* is refused on every machine,
+# instantly. Measured end to end at 0.33s. See the third check below.
 
 echo ">> Verifying Remote Compute Node Announcement (LDM-#1341)..."
 #
@@ -545,6 +752,100 @@ if echo "$ANNOUNCE_JSON_OUT" | grep -q "a remote compute node"; then
     exit 1
 fi
 report_ok "✅ Announcement correctly suppressed under --json (LDM-#1093)."
+
+# --- LDM-#1398 / #1345: an unreachable node gets a diagnosis, not a raw blob ---
+#
+# #1383 deferred this one on "needs a real remote node", and #1398 kept it
+# tracked because every honest trigger had a duration the script does not own:
+# a TEST-NET-1 SSH timeout is set by the host network stack, a `.invalid`
+# hostname depends on the resolver, and "connection refused" was thought to
+# require a host with no sshd.
+#
+# That last assumption was the way in. Refused-on-port-22 depends on whether the
+# machine runs sshd -- but a port *this script picks and leaves closed* is
+# refused on every machine, instantly, with no network dependency at all.
+# Measured end to end at 0.87s on macOS/Colima.
+#
+# The context must EXIST and point somewhere closed. That is the difference from
+# the #1341 check above, which deletes the context so `docker --context` fails
+# with "context not found" before any SSH is attempted. Here SSH is genuinely
+# attempted and genuinely refused, which is the only way to exercise
+# diagnose_remote_context_failure() -- the thing under test IS the failure.
+#
+# A compose file must be present, or `compose stop` exits on "no configuration
+# file provided" before it ever dials.
+#
+# Observed to fail against the unfixed code before being committed: at
+# cfcde7c9^ diagnose_remote_context_failure does not exist, and this path printed
+# `Command failed (Exit 1)` followed by the whole HTTP/SSH blob -- the
+# docker.example.com placeholder and the URL-encoded label filter. So the
+# assertion below is not vacuous.
+echo "▶ Verifying Unreachable Node Diagnosis (LDM-#1345)..."
+
+SSHFAIL_PORT=$("$VENV_PYTHON" -c "
+import socket
+s = socket.socket()
+s.bind(('127.0.0.1', 0))
+print(s.getsockname()[1])
+s.close()
+")
+
+mkdir -p "${LDM_WORKSPACE}/${SSHFAIL_TEST_PROJ}/files"
+cat > "${LDM_WORKSPACE}/${SSHFAIL_TEST_PROJ}/meta" <<EOF
+{"tag": "2026.q1.7-lts", "container_name": "${SSHFAIL_TEST_PROJ}", "port": 8098, "db_type": "postgresql", "target": "${SSHFAIL_TEST_NODE}"}
+EOF
+# `compose stop` needs a compose file to get as far as dialling the node.
+cat > "${LDM_WORKSPACE}/${SSHFAIL_TEST_PROJ}/docker-compose.yml" <<'EOF'
+services:
+  placeholder:
+    image: alpine
+    command: sleep 1
+EOF
+
+"$LDM_CMD" -y target add "$SSHFAIL_TEST_NODE" --host 192.0.2.11 --user nobody >/dev/null 2>&1 || true
+docker context rm -f "$SSHFAIL_TEST_NODE" >/dev/null 2>&1 || true
+docker context create "$SSHFAIL_TEST_NODE" \
+    --docker "host=ssh://nobody@127.0.0.1:${SSHFAIL_PORT}" >/dev/null 2>&1 || true
+
+# Refuse to guess: if the port is not actually closed, the run below would
+# behave differently and the assertion would be measuring nothing.
+if "$VENV_PYTHON" -c "
+import socket, sys
+s = socket.socket()
+s.settimeout(1)
+sys.exit(0 if s.connect_ex(('127.0.0.1', ${SSHFAIL_PORT})) == 0 else 1)
+" 2>/dev/null; then
+    echo "❌ ERROR: port ${SSHFAIL_PORT} was expected to be closed but something is listening." | tee -a "$RESULTS_FILE_TMP"
+    diagnose_port_holder "${SSHFAIL_PORT}"
+    exit 1
+fi
+
+set +e
+SSHFAIL_OUT=$("$LDM_CMD" -y stop "${LDM_WORKSPACE}/${SSHFAIL_TEST_PROJ}" 2>&1)
+set -e
+echo "$SSHFAIL_OUT" | tee -a "$RESULTS_FILE_TMP"
+
+if ! echo "$SSHFAIL_OUT" | grep -q "Cannot reach compute node '${SSHFAIL_TEST_NODE}'"; then
+    echo "❌ ERROR: no diagnosis naming the unreachable node (LDM-#1345)." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+if ! echo "$SSHFAIL_OUT" | grep -q "refused the connection"; then
+    echo "❌ ERROR: the diagnosis did not name the cause (LDM-#1345)." | tee -a "$RESULTS_FILE_TMP"
+    echo "   A diagnosis that says only 'unreachable' is the blob it replaced." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+# The whole point is that the raw blob is NOT shown at default verbosity.
+if echo "$SSHFAIL_OUT" | grep -q "docker.example.com"; then
+    echo "❌ ERROR: the raw HTTP/SSH blob leaked through (LDM-#1345)." | tee -a "$RESULTS_FILE_TMP"
+    echo "   docker.example.com is a placeholder host that looks alarming and is" | tee -a "$RESULTS_FILE_TMP"
+    echo "   not real; hiding it behind --verbose is what #1345 was for." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+docker context rm -f "$SSHFAIL_TEST_NODE" >/dev/null 2>&1 || true
+"$LDM_CMD" -y target rm "$SSHFAIL_TEST_NODE" >/dev/null 2>&1 || true
+remove_workspace_dir "${LDM_WORKSPACE}/${SSHFAIL_TEST_PROJ}"
+report_ok "✅ Unreachable node diagnosed by name and cause, with no raw blob (LDM-#1345)."
 cleanup_1383_artifacts
 
 echo ">> Verifying Late Port Conflict Guidance (LDM-#1350)..."
@@ -571,6 +872,25 @@ echo ">> Verifying Late Port Conflict Guidance (LDM-#1350)..."
 # exit code was already 4 before #1350 (from #996), so the tip -- not the exit
 # code -- is what makes this check non-vacuous. Both are asserted.
 docker rm -f "$PORT_HOLDER" >/dev/null 2>&1 || true
+
+# LDM-#1428: this check needs to be the ONLY thing holding the port. If
+# something else already has it, our holder silently fails to start, the
+# connect probe below still succeeds against the foreign listener, and the
+# assertion then passes for entirely the wrong reason. Detect that up front
+# and name the holder.
+if "$VENV_PYTHON" -c "
+import socket, sys
+s = socket.socket()
+s.settimeout(1)
+sys.exit(0 if s.connect_ex(('127.0.0.1', ${KIBANA_HOST_PORT})) == 0 else 1)
+" 2>/dev/null; then
+    echo "❌ ERROR: port ${KIBANA_HOST_PORT} is already in use before the LDM-#1350 check starts." | tee -a "$RESULTS_FILE_TMP"
+    echo "   This check must own the port; a foreign listener would make it pass for the wrong reason." | tee -a "$RESULTS_FILE_TMP"
+    diagnose_port_holder "${KIBANA_HOST_PORT}"
+    cleanup_1383_artifacts
+    exit 1
+fi
+
 docker run -d --name "$PORT_HOLDER" -p "${KIBANA_HOST_PORT}:80" alpine sleep 300 >/dev/null 2>&1 || true
 
 # `docker run -d` returns before the published port is necessarily accepting
@@ -593,6 +913,10 @@ done
 if [ "$PORT_HELD" != "true" ]; then
     echo "❌ ERROR: could not occupy port ${KIBANA_HOST_PORT}; the LDM-#1350 check cannot run." | tee -a "$RESULTS_FILE_TMP"
     echo "   Refusing to skip silently: an assertion that quietly stops running is worse than a red one." | tee -a "$RESULTS_FILE_TMP"
+    # LDM-#1428: say what holds it, rather than leaving the operator to work it
+    # out per-OS. Most often this is a leftover container from an interrupted
+    # run, but it can equally be something unrelated to LDM entirely.
+    diagnose_port_holder "${KIBANA_HOST_PORT}"
     cleanup_1383_artifacts
     exit 1
 fi
@@ -610,6 +934,12 @@ echo "$PORTCONFLICT_OUT" | tee -a "$RESULTS_FILE_TMP"
 
 if [ "$PORTCONFLICT_RC" -ne 4 ]; then
     echo "❌ ERROR: late port conflict exited ${PORTCONFLICT_RC}, expected 4 (Orchestration/Deployment Error)." | tee -a "$RESULTS_FILE_TMP"
+    # LDM-#1428: exit 1 here means LDM did not detect the conflict and Docker
+    # hit it instead. The question that decides whether that is an LDM bug or a
+    # broken fixture is "was the port actually held?" -- so answer it, in the
+    # report, at the moment of failure. Without this the report says only that
+    # the exit code was wrong.
+    diagnose_port_holder "${KIBANA_HOST_PORT}"
     cleanup_1383_artifacts
     exit 1
 fi
@@ -618,14 +948,25 @@ if ! echo "$PORTCONFLICT_OUT" | grep -q "Port conflict detected: Port ${KIBANA_H
     cleanup_1383_artifacts
     exit 1
 fi
-if ! echo "$PORTCONFLICT_OUT" | grep -Eq "the pre-flight check will select port [0-9]+ instead"; then
-    echo "❌ ERROR: the port-conflict tip did not name the port a re-run would pick (LDM-#1350)." | tee -a "$RESULTS_FILE_TMP"
-    echo "   This is the regression #1350 fixed: advising the user to stop a process," | tee -a "$RESULTS_FILE_TMP"
-    echo "   which contradicts LDM's documented next-free-port behaviour." | tee -a "$RESULTS_FILE_TMP"
+# LDM-#1397: this deliberately uses a FIXED-port service (kibana publishes a
+# literal 5601 in the compose builder), so the correct tip is *not* the
+# next-free-port promise. #1350 originally emitted that promise for every
+# service, which was false here -- a re-run regenerates the same literal and
+# fails identically. Asserting the promise would now re-enshrine that bug.
+if ! echo "$PORTCONFLICT_OUT" | grep -Eq "has a fixed port"; then
+    echo "❌ ERROR: the tip did not say the port is fixed (LDM-#1397)." | tee -a "$RESULTS_FILE_TMP"
+    echo "   kibana's port is a literal in the compose builder, so a re-run cannot" | tee -a "$RESULTS_FILE_TMP"
+    echo "   move it. Promising a re-run would send the user round a loop that" | tee -a "$RESULTS_FILE_TMP"
+    echo "   cannot terminate." | tee -a "$RESULTS_FILE_TMP"
     cleanup_1383_artifacts
     exit 1
 fi
-report_ok "✅ Late port conflict exits 4 and names the port a re-run would pick (LDM-#1350)."
+if echo "$PORTCONFLICT_OUT" | grep -Eq "the pre-flight check will select port [0-9]+ instead"; then
+    echo "❌ ERROR: the tip promised a pre-flight re-select for a fixed-port service (LDM-#1397)." | tee -a "$RESULTS_FILE_TMP"
+    cleanup_1383_artifacts
+    exit 1
+fi
+report_ok "✅ Late port conflict exits 4 and gives honest advice for a fixed-port service (LDM-#1350/#1397)."
 cleanup_1383_artifacts
 
 # LDM-#1345 (diagnose an SSH failure instead of dumping the connect blob) is
@@ -741,6 +1082,18 @@ fi
 echo ""
 
 # Integrity
+# LDM-#1430: the snapshot is the disk-hungry phase -- a database dump plus a tar
+# of every payload directory, written uncompressed-in-flight on top of two large
+# images and a running stack. This is where the OrbStack run died with ENOSPC
+# after passing the up-front check. Failing at a named check beats failing
+# inside tar; 5 GB is the headroom the snapshot itself needs, not the run total.
+if ! check_docker_disk 5 "for the snapshot" warn; then
+    echo "❌ ERROR: refusing to start the snapshot without room to finish it." | tee -a "$RESULTS_FILE_TMP"
+    echo "   Continuing would fail inside tar, and a snapshot that cannot write" | tee -a "$RESULTS_FILE_TMP"
+    echo "   its payload is not a snapshot (see LDM-#1429)." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
 log_and_run "Creating Snapshot" "$LDM_CMD" -y snapshot --name "Binary-Verify"
 LATEST_DIR=$(find snapshots -maxdepth 1 -mindepth 1 -type d -print0 | xargs -0 ls -td | head -n 1)
 SHA_FILE="${LATEST_DIR}/files.tar.gz.sha256"
@@ -1478,6 +1831,116 @@ else
 fi
 
 
+echo ">> Verifying 'ldm db start' / 'ldm db stop' (LDM-#1400)..."
+# These were dead in every release up to v2.18.0-pre.4: both built
+# `docker compose -f infra-compose.yml start db`, but that file defines only
+# `traefik` -- there is no `db` service, and the global database is created by
+# a bare `docker run`. It matters because cmd_reset_admin tells shared-DB users
+# to run `ldm db start`, so LDM directed people into a command that could not
+# work. Fully within this script's control: no boot, no timing dependency.
+DB_GLOBAL="liferay-db-global"
+DB_CMD_OK=true
+
+if ! "$LDM_CMD" -y db start >/dev/null 2>&1; then
+    echo "❌ ERROR: 'ldm db start' exited non-zero (LDM-#1400)." | tee -a "$RESULTS_FILE_TMP"
+    DB_CMD_OK=false
+elif ! docker ps --filter "name=^${DB_GLOBAL}$" --format '{{.Names}}' | grep -q "$DB_GLOBAL"; then
+    echo "❌ ERROR: 'ldm db start' returned 0 but ${DB_GLOBAL} is not running." | tee -a "$RESULTS_FILE_TMP"
+    echo "   A silent success is what made the original breakage hard to notice." | tee -a "$RESULTS_FILE_TMP"
+    DB_CMD_OK=false
+fi
+
+# Idempotence: a second start must not fail, and must say something. A command
+# that succeeds silently is indistinguishable from one that did nothing.
+if [ "$DB_CMD_OK" = true ]; then
+    DB_AGAIN_OUT=$("$LDM_CMD" -y db start 2>&1)
+    if ! echo "$DB_AGAIN_OUT" | grep -qi "already running"; then
+        echo "❌ ERROR: a second 'ldm db start' did not report the container was already running." | tee -a "$RESULTS_FILE_TMP"
+        DB_CMD_OK=false
+    fi
+fi
+
+if [ "$DB_CMD_OK" = true ]; then
+    if ! "$LDM_CMD" -y db stop >/dev/null 2>&1; then
+        echo "❌ ERROR: 'ldm db stop' exited non-zero (LDM-#1400)." | tee -a "$RESULTS_FILE_TMP"
+        DB_CMD_OK=false
+    elif docker ps --filter "name=^${DB_GLOBAL}$" --format '{{.Names}}' | grep -q "$DB_GLOBAL"; then
+        echo "❌ ERROR: 'ldm db stop' returned 0 but ${DB_GLOBAL} is still running." | tee -a "$RESULTS_FILE_TMP"
+        DB_CMD_OK=false
+    fi
+fi
+
+# LDM-#1419: leave the machine as we found it. If this check provisioned the
+# global database, remove it -- including its volume, which would otherwise
+# survive as an orphan (see #1414).
+if [ "$DB_GLOBAL_PREEXISTED" = false ]; then
+    echo "ℹ  Removing the global database this check provisioned..."
+    docker rm -f "$DB_GLOBAL" >/dev/null 2>&1 || true
+    docker volume rm liferay-db-global-data >/dev/null 2>&1 || true
+fi
+
+if [ "$DB_CMD_OK" = true ]; then
+    report_ok "✅ 'ldm db start'/'db stop' drive the real global container, idempotently (LDM-#1400)."
+else
+    echo "❌ ERROR: shared database start/stop verification failed." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+
+echo ">> Verifying project UUID ownership labels (LDM-#1393 / #1395)..."
+# Ownership was labelled by NAME, which is only as stable as the name: a renamed
+# project's volumes keep the old label and belong to nothing, so `ldm prune`
+# reports live resources as orphans. Artefact inspection only -- generated by
+# `init --no-up --no-seed`, nothing booted.
+UUID_DIR="${LDM_WORKSPACE}/uuidcheck-${TEST_PORT}"
+mkdir -p "$UUID_DIR"
+UUID_OK=true
+
+if ! ( cd "$UUID_DIR" && "$LDM_CMD" -y init UuidCheck --no-up --no-seed ) >/dev/null 2>&1; then
+    echo "❌ ERROR: 'ldm init' failed; the LDM-#1393 check cannot run." | tee -a "$RESULTS_FILE_TMP"
+    UUID_OK=false
+else
+    PROJ_META="${UUID_DIR}/UuidCheck/meta"
+    PROJ_UUID=$("$VENV_PYTHON" -c "
+import json, sys
+print(json.load(open(sys.argv[1], encoding='utf-8')).get('uuid', ''))
+" "$PROJ_META")
+    if [ -z "$PROJ_UUID" ]; then
+        echo "❌ ERROR: the project meta carries no uuid (LDM-#1393)." | tee -a "$RESULTS_FILE_TMP"
+        UUID_OK=false
+    elif ! "$VENV_PYTHON" -c "
+import sys, yaml
+compose, want = sys.argv[1], sys.argv[2]
+c = yaml.safe_load(open(compose, encoding='utf-8'))
+label = 'com.liferay.ldm.project.uuid'
+
+for name, svc in (c.get('services') or {}).items():
+    labels = [str(x) for x in (svc.get('labels') or [])]
+    assert f'{label}={want}' in labels, (
+        f'service {name!r} is not labelled with the project uuid -- prune matches '
+        'owners by name, so a renamed project would look like an orphan (#1395)'
+    )
+
+for vname, vdef in (c.get('volumes') or {}).items():
+    got = ((vdef or {}).get('labels') or {}).get(label)
+    assert got == want, (
+        f'volume {vname!r} carries {got!r}, expected the project uuid (#1395)'
+    )
+" "${UUID_DIR}/UuidCheck/docker-compose.yml" "$PROJ_UUID"; then
+        UUID_OK=false
+    fi
+fi
+
+rm -rf "$UUID_DIR"
+
+if [ "$UUID_OK" = true ]; then
+    report_ok "✅ Every service and volume carries the project UUID ownership label (LDM-#1393/#1395)."
+else
+    echo "❌ ERROR: project UUID label verification failed." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+
 echo ">> Verifying shared search mode (#1362 / #1363 / #1353)..."
 # Derivable from `init --no-up --no-seed`: no boot, nothing outside this
 # script's control. Deliberately NOT asserting that Liferay indexes into the
@@ -1521,14 +1984,50 @@ assert meta.get('search_mode') == 'shared', (
     % (meta.get('search_mode'),)
 )
 
-configs = list((root / 'osgi' / 'configs').glob('*ElasticsearchConfiguration.config'))
+configs_dir = root / 'osgi' / 'configs'
+configs = sorted(configs_dir.glob('*ElasticsearchConfiguration.config'))
 assert configs, (
     'no ElasticsearchConfiguration.config written; the LIFERAY_ELASTICSEARCH* '
     'env vars alone do not configure Liferay (#1353)'
 )
-body = configs[0].read_text(encoding='utf-8')
+
+# LDM-#1418: there can be BOTH an elasticsearch7 and an elasticsearch8 config.
+# The common/ baseline ships one per major version, and LDM writes the one
+# matching the project's tag. This used to read configs[0] -- alphabetically the
+# es7 file -- which for a modern (ES8) project is the inert baseline copy, so the
+# assertion tested a file the project never uses. It passed only on machines with
+# no common/ folder, where LDM's own file was the sole match.
+#
+# Take the highest major version present: that is the one a current tag uses.
+def _major(path):
+    marker = 'elasticsearch'
+    tail = path.name.split(marker, 1)[1]
+    digits = ''
+    for ch in tail:
+        if not ch.isdigit():
+            break
+        digits += ch
+    return int(digits or 0)
+
+active = max(configs, key=_major)
+body = active.read_text(encoding='utf-8')
 assert 'productionModeEnabled=B' in body, body
-assert 'liferay-search-global:9200' in body, body
+
+# LDM-#1418: the shared cluster address is valid in EITHER shape --
+# networkHostAddresses inline in this file, or a remoteClusterConnectionId
+# pointing at a sibling ElasticsearchConnectionConfiguration that carries it.
+# Both reach the same cluster; asserting only the inline form rejected a correct
+# project.
+sibling = configs_dir / active.name.replace(
+    'ElasticsearchConfiguration', 'ElasticsearchConnectionConfiguration'
+)
+address_sources = [body]
+if sibling.exists():
+    address_sources.append(sibling.read_text(encoding='utf-8'))
+assert any('liferay-search-global:9200' in text for text in address_sources), (
+    'neither %s nor its connection config points at the shared cluster'
+    % (active.name,)
+)
 
 prefix = [l for l in body.splitlines() if l.startswith('indexNamePrefix')]
 assert prefix, body

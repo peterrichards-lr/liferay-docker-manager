@@ -329,44 +329,67 @@ class TestSharedDatabaseCommandsResolvePerTarget(unittest.TestCase):
         self.exists_patcher.start()
         self.addCleanup(self.exists_patcher.stop)
 
-    @patch("ldm_core.docker_service.get_active_target")
-    def test_cmd_start_uses_remote_context_when_target_explicit(self, mock_target):
-        from ldm_core.config import TargetNode
-
-        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+    # LDM-#1400 changed the mechanism, not the intent. These used to assert on
+    # a `docker compose -f infra-compose.yml start db` command line, but that
+    # compose file defines only `traefik` -- there is no `db` service, so the
+    # command could never succeed. The commands now drive the container that
+    # `setup_global_database` actually creates, so the target is asserted where
+    # it is now passed: into DockerService.
+    @patch("ldm_core.docker_service.DockerService.start")
+    @patch("ldm_core.docker_service.DockerService.exists", return_value=True)
+    @patch("ldm_core.docker_service.DockerService.is_running", return_value=False)
+    def test_cmd_start_passes_the_explicit_target_through(
+        self, _mock_running, mock_exists, mock_start
+    ):
         self.manager.target = "aws-1"
         self.manager.database.cmd_start()
 
-        call_args = self.mock_run.call_args[0][0]
-        self.assertIn("--context", call_args)
-        self.assertIn("aws-1", call_args)
-        self.assertIn("start", call_args)
+        self.assertEqual("aws-1", mock_exists.call_args[0][1])
+        self.assertEqual("aws-1", mock_start.call_args[0][1])
 
-    @patch("ldm_core.docker_service.get_active_target")
-    def test_cmd_start_stays_local_without_explicit_target(self, mock_target):
-        from ldm_core.config import TargetNode
-
-        mock_target.return_value = TargetNode(
-            name="local", host="localhost", is_default=True
-        )
+    @patch("ldm_core.docker_service.DockerService.start")
+    @patch("ldm_core.docker_service.DockerService.exists", return_value=True)
+    @patch("ldm_core.docker_service.DockerService.is_running", return_value=False)
+    def test_cmd_start_stays_local_without_explicit_target(
+        self, _mock_running, mock_exists, mock_start
+    ):
         self.manager.target = None
         self.manager.database.cmd_start()
 
-        call_args = self.mock_run.call_args[0][0]
-        self.assertNotIn("--context", call_args)
+        self.assertIsNone(mock_exists.call_args[0][1])
+        self.assertIsNone(mock_start.call_args[0][1])
 
-    @patch("ldm_core.docker_service.get_active_target")
-    def test_cmd_stop_uses_remote_context_when_target_explicit(self, mock_target):
-        from ldm_core.config import TargetNode
-
-        mock_target.return_value = TargetNode(name="aws-2", host="5.6.7.8")
+    @patch("ldm_core.docker_service.DockerService.stop")
+    @patch("ldm_core.docker_service.DockerService.is_running", return_value=True)
+    @patch("ldm_core.docker_service.DockerService.exists", return_value=True)
+    def test_cmd_stop_passes_the_explicit_target_through(
+        self, _mock_exists, _mock_running, mock_stop
+    ):
         self.manager.target = "aws-2"
         self.manager.database.cmd_stop()
 
-        call_args = self.mock_run.call_args[0][0]
-        self.assertIn("--context", call_args)
-        self.assertIn("aws-2", call_args)
-        self.assertIn("stop", call_args)
+        self.assertEqual("aws-2", mock_stop.call_args[0][1])
+
+    @patch("ldm_core.docker_service.DockerService.exists", return_value=False)
+    @patch("ldm_core.docker_service.DockerService.is_running", return_value=False)
+    def test_cmd_start_provisions_when_the_container_does_not_exist(
+        self, _mock_running, _mock_exists
+    ):
+        """Previously the user was told to run a command that could not create
+        it. Now the missing case provisions through the same path `ldm run`
+        uses."""
+        infra = MagicMock()
+        self.manager.infra = infra  # type: ignore[attr-defined]
+        self.manager.database.cmd_start()
+        infra.setup_global_database.assert_called_once()
+
+    @patch("ldm_core.docker_service.DockerService.stop")
+    @patch("ldm_core.docker_service.DockerService.exists", return_value=False)
+    def test_cmd_stop_does_nothing_when_there_is_no_container(
+        self, _mock_exists, mock_stop
+    ):
+        self.manager.database.cmd_stop()
+        mock_stop.assert_not_called()
 
 
 if __name__ == "__main__":

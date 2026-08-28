@@ -8,7 +8,31 @@ description: Activate this skill whenever writing tests, running linters, or com
 ## Pre-commit & CI Verification
 
 - **Mandatory Pre-commit Installation**: The agent MUST proactively verify that `pre-commit` hooks are installed locally (i.e. `.git/hooks/pre-commit` exists). If they are missing, you MUST run `.pytest_venv/bin/pre-commit install` (or `ldm dev-setup`) before attempting to commit code. This ensures that the local git hooks will intercept `git commit` and run linters like `ruff format` automatically, preventing unformatted code from slipping through and failing the CI Quality Gate.
-- **Strict Mechanical Enforcement (Agent Push)**: As an AI agent, you are STRICTLY PROHIBITED from using `git commit --no-verify` or bypassing quality gates. You MUST ONLY use the `./scripts/agent_push.sh "<commit message>"` wrapper script, which mechanically forces the execution of `pre-commit run --all-files` and `pytest`.
+- **Strict Mechanical Enforcement (Agent Push)**: As an AI agent, you are STRICTLY PROHIBITED from using `git commit --no-verify` or bypassing quality gates. You MUST ONLY use the `./scripts/agent_push.sh "<commit message>"` wrapper script, which mechanically forces the execution of `pre-commit run --all-files`, `mypy`, `bandit` and `pytest`.
+
+  **`pre-commit run --all-files` is a subset, not the whole gate** (LDM-#1407).
+  It runs only the default `pre-commit` stage. `mypy`, `bandit` and `pytest` are
+  declared `stages: [pre-push, manual]`, so that command never ran them -- and
+  a stage-skipped hook emits **no `Skipped` line and no warning**. It simply
+  does not appear. The output listed 17 hooks, every one `Passed`, and looked
+  exhaustive. Observed on PR #1404: 17/17 green locally, then all four CI
+  `lint-and-test` jobs failing at the MyPy step.
+
+  The wrapper now runs `mypy` and `bandit` explicitly, as separate gates, after
+  the `--all-files` block. **A green hook list is still not proof of coverage**
+  -- if you invoke `pre-commit` by hand rather than through the wrapper, run
+  these too:
+
+  ```bash
+  .venv/bin/python3 -m pre_commit run --all-files --hook-stage pre-push mypy
+  .venv/bin/python3 -m pre_commit run --all-files --hook-stage pre-push bandit
+  ```
+
+  The mypy hook is pinned to the same version as `requirements-dev.txt`
+  (`mypy==2.3.1`), and scoped to `ldm_core` so it runs **exactly** what
+  `.github/workflows/ci.yml` runs. Keep all three in step: the pin drifted to
+  `v1.10.0` while CI ran `2.3.1`, and they disagreed on real code, so local
+  findings and CI findings were not the same set in either direction.
 - **You MUST `git add` before calling the wrapper — it does NOT stage for you.** `agent_push.sh` commits only what you staged. Since LDM-#1280 it *refuses* rather than misleading you: a pre-flight check runs **before** the ~10-minute gates and hard-errors when nothing is staged but the working tree has changes, listing the offending paths. A staging mistake now costs a second.
 
   Know what that guard replaced, because the shape of the bug recurs. `git add .` used to run *only inside the hook-failure branch*; the commit was guarded on staged changes, but **the push ran unconditionally**. A run where every gate passed first time therefore committed nothing, pushed an empty branch, printed `✅ Push completed successfully!` and exited `0`. The incentive was inverted — **the cleaner the work, the more likely it silently committed nothing** — because work that tripped a hook got rescued by that `git add .` while clean work fell straight through. Hit on 2026-08-22 during LDM-#1262; the sole signal was one line buried in ~600 lines of pytest output, and a PR containing zero changes was moments from being opened.

@@ -1805,3 +1805,44 @@ class TestVolumesSnapshotService(unittest.TestCase):
                 has_chown,
                 "Empty volume 1000:1000 chown initialization missing from _hydrate_named_volumes",
             )
+
+
+class TestRestoreDockerCallsAreBounded(unittest.TestCase):
+    """LDM-#1410: unbounded, a stalled Docker socket wedges `ldm restore`
+    forever -- observed at 84 minutes on three machines across two runtimes,
+    unkillable with Ctrl+C. LDM cannot recover from what it never bounds."""
+
+    def test_every_docker_call_in_the_restore_path_passes_a_timeout(self):
+        """Asserted on the source, because the failure only shows up against a
+        daemon that has actually stalled -- which no unit test can arrange."""
+        import re
+
+        from ldm_core.snapshot import database as db_mod
+
+        source = Path(db_mod.__file__).read_text(encoding="utf-8")
+        start = source.index("def _restore_database")
+        # Bound the scan to the function, not the whole module.
+        rest = source[start:]
+        end = rest.index("\n    def ", 1)
+        body = rest[:end]
+
+        calls = list(re.finditer(r"self\.manager\.run_command\(\s*\[", body))
+        self.assertTrue(calls, "expected run_command calls in the restore path")
+
+        for m in calls:
+            # Look at the call's own argument list, up to its closing paren.
+            tail = body[m.start() : m.start() + 700]
+            self.assertIn(
+                "timeout=",
+                tail,
+                "a run_command in _restore_database has no timeout; a stalled "
+                "Docker socket would wedge the restore indefinitely (#1410)",
+            )
+
+    def test_the_timeouts_are_generous_enough_for_an_image_pull(self):
+        """Bounding it at all is the point; being strict would fail honest runs
+        that have to pull the database image on a clean machine."""
+        from ldm_core.snapshot import database as db_mod
+
+        self.assertGreaterEqual(db_mod._DB_START_TIMEOUT, 120)
+        self.assertGreaterEqual(db_mod._DB_PROBE_TIMEOUT, 10)

@@ -739,6 +739,20 @@ class ConfigResolutionStage(PipelineStage):
             getattr(manager.args, "internal_state", False)
             or str(project_meta.get("internal_state", "false")).lower() == "true"
         )
+        # LDM-#1447: both of these are inert. They are computed here and
+        # persisted to meta below, and nothing reads them again -- there is no
+        # `-Xverify:none` anywhere in the codebase and no TLD configuration at
+        # all, so the "defaults" the documentation described never existed.
+        #
+        # They are kept rather than removed because AGENTS.md forbids breaking
+        # existing flags: dropping them would fail any script that passes one.
+        # But a flag that silently does nothing is how this survived unnoticed,
+        # so passing one explicitly now says so.
+        #
+        # `-Xverify:none` should NOT simply be implemented: it has been
+        # deprecated since JDK 13 and these images run Java 21
+        # (compatibility.json, >=2025.q2.0), where it warns and does nothing.
+        # A real TLD skip remains worthwhile -- tracked in LDM-#1446.
         no_jvm_verify = (
             getattr(manager.args, "no_jvm_verify", False)
             or str(project_meta.get("no_jvm_verify", "false")).lower() == "true"
@@ -747,6 +761,15 @@ class ConfigResolutionStage(PipelineStage):
             getattr(manager.args, "no_tld_skip", False)
             or str(project_meta.get("no_tld_skip", "false")).lower() == "true"
         )
+        for flag_name, was_passed in (
+            ("--no-jvm-verify", getattr(manager.args, "no_jvm_verify", False)),
+            ("--no-tld-skip", getattr(manager.args, "no_tld_skip", False)),
+        ):
+            if was_passed:
+                UI.warning(
+                    f"{flag_name} has no effect and is accepted only for "
+                    "compatibility (LDM-#1446)."
+                )
 
         env_type = getattr(manager.args, "env_type", None) or project_meta.get(
             "env_type", "dev"
@@ -1472,15 +1495,26 @@ class ComposerStage(PipelineStage):
                             published = port_entry.get("published")
                             if published:
                                 ports_to_check.append((svc_name, int(published)))
+                from ldm_core.docker_service import DockerService
+
+                # LDM-#1417: ask Docker's allocator, once, before probing any
+                # socket. `docker compose up` refuses a taken port from this
+                # table -- "port is already allocated" -- without ever
+                # attempting a host bind, and on Windows the socket probes
+                # cannot see a container-held port at all. Resolved here
+                # rather than per-service so the whole loop costs one call.
+                docker_held_ports = DockerService.published_host_ports()
+
                 for svc_name, mapped_port in ports_to_check:
                     container_name = (
                         services[svc_name].get("container_name")
                         or f"{context.get('project_id')}-{svc_name}-1"
                     )
-                    from ldm_core.docker_service import DockerService
 
                     if not DockerService.is_running(container_name):
-                        if not manager.check_port("127.0.0.1", mapped_port):
+                        if mapped_port in docker_held_ports or not manager.check_port(
+                            "127.0.0.1", mapped_port
+                        ):
                             # LDM-#996: staying fatal here is deliberate. By this
                             # point the port is written into the generated
                             # docker-compose.yml, so moving it means regenerating
@@ -1509,20 +1543,46 @@ class ComposerStage(PipelineStage):
                                         mapped_port + 1,
                                         min(mapped_port + 21, 65536),
                                     )
-                                    if manager.check_port("127.0.0.1", candidate)
+                                    if candidate not in docker_held_ports
+                                    and manager.check_port("127.0.0.1", candidate)
                                 ),
                                 None,
                             )
-                            if alternative:
+                            # LDM-#1397: the promise of a re-run picking another
+                            # port is only true for the port the pre-flight
+                            # actually governs, on an interactive run. Under -y
+                            # the pre-flight dies rather than re-selecting
+                            # (handlers/base.py), and services with a literal
+                            # port in the compose builder -- kibana's 5601,
+                            # lfr-tunnel's 4040 -- are never pre-flighted at all,
+                            # so a re-run regenerates the same port and fails
+                            # identically. Promising otherwise sends the user
+                            # round a loop that cannot terminate.
+                            preflight_governs = svc_name == "liferay"
+                            non_interactive = getattr(manager, "non_interactive", False)
+                            if (
+                                alternative
+                                and preflight_governs
+                                and not non_interactive
+                            ):
                                 tip = (
                                     f"Re-run 'ldm run' -- the pre-flight check will "
                                     f"select port {alternative} instead. Or free up "
                                     f"port {mapped_port} and re-run to keep it."
                                 )
+                            elif preflight_governs and non_interactive:
+                                tip = (
+                                    f"A re-run will fail the same way: with -y the "
+                                    f"pre-flight refuses rather than moving the port. "
+                                    f"Free up port {mapped_port}, or set an explicit "
+                                    f"one with --port, then re-run."
+                                )
                             else:
                                 tip = (
-                                    f"Free up port {mapped_port} and re-run, or set a "
-                                    f"different port for '{svc_name}'."
+                                    f"Service '{svc_name}' has a fixed port, so a "
+                                    f"re-run will produce {mapped_port} again. Free "
+                                    f"up port {mapped_port}, or disable/move that "
+                                    f"service, then re-run."
                                 )
                             UI.die(
                                 f"Port conflict detected: Port {mapped_port} is already in use on the host "

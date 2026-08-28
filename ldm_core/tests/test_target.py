@@ -106,6 +106,26 @@ class TestTargetCLIHandlers(unittest.TestCase):
     """Test suite for CLI target handlers in ConfigService."""
 
     def setUp(self) -> None:
+        # LDM-#1409: the target CRUD handlers reach the daemon through the
+        # module-scope run_command in handlers/config.py -- `docker context
+        # create`, `docker context rm`, `docker info`. Unpatched,
+        # test_cmd_target_add_and_ls really created a Docker context named
+        # `wsl` pointing at ssh://dev@192.168.1.10 on whichever machine ran
+        # the suite, and three others really removed a context named `aws`.
+        # docs/TESTING.md already flagged this as the remainder LDM_HOME could
+        # not cover.
+        #
+        # "" reads as "the CLI said nothing", which is how these tests treat an
+        # absent or offline node -- test_cmd_target_status_offline depends on
+        # exactly that.
+        from unittest.mock import patch as _patch
+
+        target_run_patcher = _patch(
+            "ldm_core.handlers.config.run_command", return_value=""
+        )
+        self.mock_target_run_command = target_run_patcher.start()
+        self.addCleanup(target_run_patcher.stop)
+
         self.temp_dir = tempfile.TemporaryDirectory()
         self.config_path = Path(self.temp_dir.name) / ".ldmrc"
         self.project_dir = Path(self.temp_dir.name) / "my_project"
@@ -162,7 +182,15 @@ class TestTargetCLIHandlers(unittest.TestCase):
 
         with (
             patch("ldm_core.config._get_config_path", return_value=self.config_path),
-            patch("ldm_core.handlers.config.run_command") as mock_run,
+            # LDM-#1409: patch ldm_core.utils, NOT ldm_core.handlers.config.
+            # cmd_target_status does a *function-local*
+            # `from ldm_core.utils import is_local_host, run_command`, which
+            # re-resolves the name from ldm_core.utils at call time and so
+            # ignores any patch applied to the handlers.config module
+            # attribute. The mock below was therefore never consulted and the
+            # test ran a real `docker info` against the machine -- while
+            # reading as though it were fully mocked.
+            patch("ldm_core.utils.run_command") as mock_run,
         ):
             mock_run.return_value = "27.0.1|8|17179869184|3"
             self.service.cmd_target_add("wsl", host="192.168.1.10")
@@ -174,7 +202,15 @@ class TestTargetCLIHandlers(unittest.TestCase):
 
         with (
             patch("ldm_core.config._get_config_path", return_value=self.config_path),
-            patch("ldm_core.handlers.config.run_command") as mock_run,
+            # LDM-#1409: patch ldm_core.utils, NOT ldm_core.handlers.config.
+            # cmd_target_status does a *function-local*
+            # `from ldm_core.utils import is_local_host, run_command`, which
+            # re-resolves the name from ldm_core.utils at call time and so
+            # ignores any patch applied to the handlers.config module
+            # attribute. The mock below was therefore never consulted and the
+            # test ran a real `docker info` against the machine -- while
+            # reading as though it were fully mocked.
+            patch("ldm_core.utils.run_command") as mock_run,
         ):
             mock_run.return_value = ""
             self.service.cmd_target_status("local")

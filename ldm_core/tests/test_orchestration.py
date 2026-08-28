@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.runtime import RuntimeService
+from ldm_core.tests.tmproot import TEST_TMP_ROOT
 
 
 class MockRuntime(BaseHandler):
@@ -543,6 +544,13 @@ class TestOrchestration(unittest.TestCase):
 
     def test_sync_stack_runs_compose(self):
         with (
+            # LDM-#1409: on Linux (and so on CI, but never on a macOS dev
+            # machine) pipelines/run.py takes the
+            # `elif platform.system() == "linux"` branch and calls
+            # reclaim_volume_permissions, which runs
+            # `docker run --rm -v <path> alpine chown -R ...`. Patching it
+            # matches what test_sidecar.py already does.
+            patch("ldm_core.utils.reclaim_volume_permissions"),
             patch.object(
                 self.handler, "detect_project_path", return_value=self.tmp_dir
             ),
@@ -691,3 +699,47 @@ class TestBatchResilience(unittest.TestCase):
         with patch("ldm_core.runtime.orchestration.UI") as mock_ui:
             OrchestrationService._report_batch_failures([], "stop")
         mock_ui.error.assert_not_called()
+
+
+class TestStopHintIsNotLeakedToInternalCallers(unittest.TestCase):
+    """LDM-#1410: `cmd_stop` ends with a terminal next-step hint. The restore
+    path calls it mid-flight, so a restore printed
+
+        Next step: Run 'ldm run' to restart the container, ...
+
+    in the middle of its own work. When the following Docker call then blocked,
+    the last thing on screen said the command had finished. Three machines sat
+    wedged behind that line, one for 84 minutes.
+    """
+
+    def _stop(self, **kwargs):
+        manager = MagicMock()
+        manager.find_dxp_roots.return_value = []
+        manager.detect_project_path.return_value = Path(f"{TEST_TMP_ROOT}/proj")
+        manager.read_meta.return_value = {"target": None}
+        manager.run_command.return_value = ""
+        from ldm_core.runtime.orchestration import OrchestrationService
+
+        svc = OrchestrationService(manager)
+
+        hints: list = []
+        with (
+            patch("ldm_core.ui.UI.hint", side_effect=hints.append),
+            patch("ldm_core.ui.UI.detail"),
+            patch("ldm_core.ui.UI.warning"),
+            patch(
+                "ldm_core.docker_service.DockerService.get_compose_cmd_prefix",
+                return_value=["docker", "compose"],
+            ),
+        ):
+            svc.cmd_stop("proj", **kwargs)
+        return hints
+
+    def test_a_user_facing_stop_still_gets_the_hint(self):
+        """The hint is useful when `ldm stop` really is what the user ran."""
+        self.assertTrue(self._stop(), "a direct stop should still suggest next steps")
+
+    def test_an_internal_caller_can_suppress_it(self):
+        self.assertEqual(
+            [], self._stop(emit_hint=False), "a mid-operation stop must stay silent"
+        )

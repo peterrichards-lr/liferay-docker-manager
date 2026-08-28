@@ -53,9 +53,33 @@ These flags are ideal for automated testing pipelines where interactivity is imp
 Advanced options for memory constraints and Java-level debugging.
 
 - **`--lean`**: Enables a resource-optimized JVM profile. It caps memory and limits background threading. Highly recommended for laptops with less than 16GB of RAM or CI runners.
-- **`--no-jvm-verify`**: Disables the JVM bytecode verification skip (`-Xverify:none`). This skip is enabled by default to shave seconds off startup time. Disable it if you are encountering weird classloader errors or testing core JVM security features.
-- **`--no-tld-skip`**: Re-enables Tomcat's aggressive TLD (Tag Library Descriptor) scanning. LDM skips scanning non-Liferay jars by default to dramatically improve Tomcat initialization speed.
-- **`--jvm-args="<args>"`**: Pass raw JVM arguments directly to Liferay, completely overriding LDM's defaults. Example: `--jvm-args="-Xmx8g -Xms8g"`
+- **`--jvm-args="<args>"`**: Pass raw JVM arguments directly to Liferay. Example: `--jvm-args="-Xmx8g -Xms8g"`
+
+  > **This replaces LDM's defaults entirely.** It is not additive: the adaptive
+  > heap and metaspace sizing, the platform-specific compiler settings and the
+  > reindex scale-up are all discarded, and only what you pass is used. To change
+  > one value while keeping the rest, see [LDM-#1446][1446].
+
+### Accepted but inert
+
+These two flags are accepted for compatibility and **have no effect**. Passing
+either prints a warning.
+
+- **`--no-jvm-verify`**
+- **`--no-tld-skip`**
+
+Earlier versions of this page described them as disabling defaults that LDM
+applied. Those defaults never existed: there is no `-Xverify:none` anywhere in
+the codebase, and no TLD configuration at all. Both values were read from the
+command line, written to project metadata, and never used ([LDM-#1447][1447]).
+
+`-Xverify:none` is also not something to reinstate — it has been deprecated
+since JDK 13, and these images run Java 21, where it emits a warning and does
+nothing. A genuine TLD scanning skip is still worth having and is tracked in
+[LDM-#1446][1446].
+
+[1446]: https://github.com/peterrichards-lr/liferay-docker-manager/issues/1446
+[1447]: https://github.com/peterrichards-lr/liferay-docker-manager/issues/1447
 
 ## System Tray GUI
 
@@ -192,4 +216,4 @@ In `isolated` mode the database is always called `lportal` and the project name 
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*
+*Last Updated: 2026-08-28* | *Last Reviewed: 2026-08-28*

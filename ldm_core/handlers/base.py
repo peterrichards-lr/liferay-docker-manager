@@ -359,6 +359,35 @@ class BaseHandler:
             UI.error(f"Failed to update hosts file: {e}")
             return False
 
+    def _list_hosts_entries(self):
+        """Returns the hostnames LDM manages in the system hosts file (#1416).
+
+        Read-only and unprivileged -- the hosts file is world-readable, so the
+        caller can show the user what is about to be removed *before* asking for
+        sudo. Previously nothing listed them, so an `ldm system prune --all`
+        surfaced only an unexplained `Password:` prompt and the entries were
+        gone with no record of what they had been.
+        """
+        hosts_path = (
+            Path(r"C:\Windows\System32\drivers\etc\hosts")
+            if platform.system().lower() == "windows"
+            else Path("/etc/hosts")
+        )
+        found = []
+        try:
+            for line in hosts_path.read_text(errors="ignore").splitlines():
+                if self.LDM_HOST_TAG not in line or line.strip().startswith("#"):
+                    continue
+                parts = line.split()
+                # `<ip> <hostname> # [LDM]` -- take the hostnames between them.
+                for token in parts[1:]:
+                    if token.startswith("#"):
+                        break
+                    found.append(token)
+        except Exception:  # nosec B110 -- an unreadable hosts file is not fatal
+            return []
+        return found
+
     def _remove_hosts_entries(self, hostnames=None, all_ldm=False):
         """Removes LDM-tagged entries from the system hosts file."""
         if not hostnames and not all_ldm:
@@ -412,12 +441,15 @@ class BaseHandler:
             try:
                 # Use sudo sed to surgically remove lines
                 sudo_prefix = ["sudo", "-n"] if self.non_interactive else ["sudo"]
-                cmd = [
-                    *sudo_prefix,
-                    "sed",
-                    "-i",
-                    ".bak" if platform.system().lower() == "darwin" else "",
-                ]
+                # LDM-#1416: BSD sed (macOS) takes the backup suffix as a
+                # separate argument; GNU sed (Linux) requires it attached, and
+                # the previous `else ""` appended an *empty* argument that GNU
+                # sed reads as the script expression. Both now write a backup,
+                # so a mistaken removal is always recoverable.
+                if platform.system().lower() == "darwin":
+                    cmd = [*sudo_prefix, "sed", "-i", ".ldm.bak"]
+                else:
+                    cmd = [*sudo_prefix, "sed", "-i.ldm.bak"]
 
                 # ... remaining cmd logic ...
                 UI.detail(f"Command: {' '.join(cmd)}")
@@ -479,6 +511,34 @@ class BaseHandler:
         """Checks if a port is available on a specific IP."""
         import errno
         import socket
+
+        # LDM-#1417: ask whether anything is *listening* before asking whether
+        # we can bind. Windows permits a bind to 127.0.0.1:P while another
+        # socket holds 0.0.0.0:P -- which is exactly how Docker Desktop
+        # publishes -- so the bind test alone reports a container-held port as
+        # free. The EADDRINUSE fallback below never runs because the bind does
+        # not raise, and LDM-#1350's fatal guard silently passes; the run then
+        # dies with Docker's own "port is already allocated" and exit 1.
+        # A successful connect proves a listener on every platform.
+        #
+        # Order matters: this must precede the bind, which would otherwise be
+        # testing against the socket this call just bound.
+        #
+        # Keep the timeout short. Measured on Windows 11 / Docker Desktop, a
+        # container-held port connects in under 25ms, but a *free* port never
+        # refuses quickly -- it burns the whole timeout -- so this is the cost
+        # of every negative answer. find_available_port() pays it once, on the
+        # port it settles on, because occupied candidates answer immediately.
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conn_s:
+            conn_s.settimeout(0.5)
+            try:
+                if conn_s.connect_ex((ip, int(port))) == 0:
+                    return False
+            except (OSError, OverflowError, ValueError):
+                # An unreachable address or an out-of-range port is not
+                # evidence of a listener. Leave the verdict to the bind test,
+                # which already classifies both.
+                pass
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(1)
@@ -848,7 +908,13 @@ class BaseHandler:
             with contextlib.suppress(Exception):
                 carried = (read_meta(target) or {}).get("uuid")
 
-        meta = dict(meta)
+        # Mutated in place, not copied. The UUID belongs to the project, and
+        # everything downstream of the write -- notably the compose builder,
+        # which stamps it onto the ownership labels (LDM-#1395) -- reads the
+        # caller's dict. Returning a copy left that dict without the key, so the
+        # labels were silently never applied even though the meta file on disk
+        # had it. Caught by asserting against a real `ldm init` rather than a
+        # meta dict with the uuid pre-set by the test.
         meta["uuid"] = carried or str(uuid.uuid4())
         return meta
 

@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ldm_core.handlers.composer import ComposerService
+from ldm_core.tests.tmproot import TEST_TMP_ROOT
 
 
 class MockComposerManager:
@@ -120,17 +121,17 @@ class TestComposerService(unittest.TestCase):
 
     def test_build_liferay_service_volumes_and_jvm(self):
         paths = {
-            "root": Path("/tmp/proj"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "data": Path("/tmp/proj/data"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/proj/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
         }
         meta = {"tag": "2026.q1.7-lts", "container_name": "proj"}
 
@@ -149,7 +150,9 @@ class TestComposerService(unittest.TestCase):
         )
         self.assertTrue(
             any(
-                v.startswith(f"{Path('/tmp/proj/routes').as_posix()}:/workspace/routes")
+                v.startswith(
+                    f"{Path(f'{TEST_TMP_ROOT}/proj/routes').as_posix()}:/workspace/routes"
+                )
                 for v in volumes
             )
         )
@@ -170,17 +173,17 @@ class TestComposerService(unittest.TestCase):
 
     def test_tag_sanitization_and_image_determination(self):
         paths = {
-            "root": Path("/tmp/proj"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "data": Path("/tmp/proj/data"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/proj/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
         }
 
         # Case 1: DXP prefix
@@ -218,7 +221,10 @@ class TestComposerService(unittest.TestCase):
         because target_name starts out falsy (self.manager has no
         `.target` attribute here, and meta has no "target" key -- exactly
         the "no explicit override, rely on the persisted default" case)."""
-        paths = {"root": Path("/tmp/proj"), "compose": Path("/tmp/proj/compose.yml")}
+        paths = {
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "compose": Path(f"{TEST_TMP_ROOT}/proj/compose.yml"),
+        }
         meta = {"container_name": "proj"}
 
         from ldm_core.config import TargetNode
@@ -258,7 +264,10 @@ class TestComposerService(unittest.TestCase):
 
     def test_explicit_volume_naming(self):
         """Verify that named volumes have an explicit 'name' property to prevent prefixing."""
-        paths = {"root": Path("/tmp/proj"), "compose": Path("/tmp/proj/compose.yml")}
+        paths = {
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "compose": Path(f"{TEST_TMP_ROOT}/proj/compose.yml"),
+        }
         meta = {"container_name": "proj"}
 
         with (
@@ -291,7 +300,10 @@ class TestComposerService(unittest.TestCase):
 
     def test_windows_drive_letter_volumes_not_named(self):
         """Verify that Windows drive letter paths are not incorrectly classified as named volume C."""
-        paths = {"root": Path("/tmp/proj"), "compose": Path("/tmp/proj/compose.yml")}
+        paths = {
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "compose": Path(f"{TEST_TMP_ROOT}/proj/compose.yml"),
+        }
         meta = {"container_name": "proj"}
 
         with (
@@ -455,18 +467,18 @@ class TestComposerService(unittest.TestCase):
     @patch("ldm_core.utils.safe_write_text")
     def test_generate_compose_with_ngrok(self, mock_write, mock_yaml):
         paths = {
-            "root": Path("/tmp/proj"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "data": Path("/tmp/proj/data"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
-            "compose": Path("/tmp/proj/docker-compose.yml"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/proj/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
+            "compose": Path(f"{TEST_TMP_ROOT}/proj/docker-compose.yml"),
         }
         meta = {"tag": "2026.q1.7-lts", "container_name": "proj", "expose": "true"}
 
@@ -493,18 +505,18 @@ class TestComposerService(unittest.TestCase):
     @patch("ldm_core.utils.safe_write_text")
     def test_generate_compose_with_ngrok_missing_token(self, mock_write, mock_yaml):
         paths = {
-            "root": Path("/tmp/proj"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "data": Path("/tmp/proj/data"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
-            "compose": Path("/tmp/proj/docker-compose.yml"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/proj/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
+            "compose": Path(f"{TEST_TMP_ROOT}/proj/docker-compose.yml"),
         }
         meta = {"tag": "2026.q1.7-lts", "container_name": "proj"}
 
@@ -530,18 +542,18 @@ class TestComposerService(unittest.TestCase):
     @patch("ldm_core.utils.safe_write_text")
     def test_generate_compose_with_lfr_tunnel_docker(self, mock_write, mock_yaml):
         paths = {
-            "root": Path("/tmp/proj"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "data": Path("/tmp/proj/data"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
-            "compose": Path("/tmp/proj/docker-compose.yml"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/proj/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
+            "compose": Path(f"{TEST_TMP_ROOT}/proj/docker-compose.yml"),
         }
         meta = {
             "tag": "2026.q1.7-lts",
@@ -582,7 +594,7 @@ class TestComposerService(unittest.TestCase):
                 self.assertEqual(tunnel_service["container_name"], "proj-lfr-tunnel")
                 self.assertEqual(
                     tunnel_service.get("volumes"),
-                    ["/tmp/proj/logs:/opt/liferay/logs"],
+                    [f"{TEST_TMP_ROOT}/proj/logs:/opt/liferay/logs"],
                 )
                 self.assertEqual(
                     tunnel_service.get("entrypoint"),
@@ -624,18 +636,18 @@ class TestComposerService(unittest.TestCase):
         self, mock_write, mock_yaml
     ):
         paths = {
-            "root": Path("/tmp/proj"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "data": Path("/tmp/proj/data"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
-            "compose": Path("/tmp/proj/docker-compose.yml"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/proj/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
+            "compose": Path(f"{TEST_TMP_ROOT}/proj/docker-compose.yml"),
         }
         meta = {
             "tag": "2026.q1.7-lts",
@@ -670,18 +682,18 @@ class TestComposerService(unittest.TestCase):
         self, mock_write, mock_yaml
     ):
         paths = {
-            "root": Path("/tmp/proj"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "data": Path("/tmp/proj/data"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
-            "compose": Path("/tmp/proj/docker-compose.yml"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/proj/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
+            "compose": Path(f"{TEST_TMP_ROOT}/proj/docker-compose.yml"),
         }
         meta = {
             "tag": "2026.q1.7-lts",
@@ -723,7 +735,7 @@ class TestComposerService(unittest.TestCase):
                 self.assertEqual(tunnel_service["container_name"], "proj-lfr-tunnel")
                 self.assertEqual(
                     tunnel_service.get("volumes"),
-                    ["/tmp/proj/logs:/opt/liferay/logs"],
+                    [f"{TEST_TMP_ROOT}/proj/logs:/opt/liferay/logs"],
                 )
                 self.assertEqual(
                     tunnel_service.get("entrypoint"),
@@ -741,17 +753,17 @@ class TestComposerService(unittest.TestCase):
 
     def test_build_liferay_service_with_share_host(self):
         paths = {
-            "root": Path("/tmp/proj"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "data": Path("/tmp/proj/data"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/proj/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
         }
         meta = {"tag": "2026.q1.7-lts", "container_name": "proj"}
 
@@ -781,17 +793,17 @@ class TestComposerService(unittest.TestCase):
 
     def test_build_liferay_service_cleanup_portal_ext(self):
         paths = {
-            "root": Path("/tmp/proj"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "data": Path("/tmp/proj/data"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/proj/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
         }
         meta = {"tag": "2026.q1.7-lts", "container_name": "proj"}
 
@@ -820,18 +832,18 @@ class TestComposerService(unittest.TestCase):
         self, mock_write, mock_yaml
     ):
         paths = {
-            "root": Path("/tmp/proj"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "data": Path("/tmp/proj/data"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
-            "compose": Path("/tmp/proj/docker-compose.yml"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/proj/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
+            "compose": Path(f"{TEST_TMP_ROOT}/proj/docker-compose.yml"),
         }
         meta = {"tag": "2026.q1.9-lts", "container_name": "proj"}
 
@@ -928,18 +940,18 @@ class TestComposerService(unittest.TestCase):
 
     def test_composer_shared_database_mode(self):
         paths = {
-            "root": Path("/tmp/proj"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "data": Path("/tmp/proj/data"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
-            "ce_dir": Path("/tmp/proj/client-extensions"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/proj/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
+            "ce_dir": Path(f"{TEST_TMP_ROOT}/proj/client-extensions"),
         }
         meta = {
             "tag": "2026.q1.7-lts",
@@ -978,18 +990,18 @@ class TestComposerService(unittest.TestCase):
 
     def test_composer_db_pool_limits(self):
         paths = {
-            "root": Path("/tmp/proj"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "data": Path("/tmp/proj/data"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
-            "ce_dir": Path("/tmp/proj/client-extensions"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/proj/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
+            "ce_dir": Path(f"{TEST_TMP_ROOT}/proj/client-extensions"),
         }
         meta = {
             "tag": "2026.q1.7-lts",
@@ -1016,18 +1028,18 @@ class TestComposerService(unittest.TestCase):
 
     def test_composer_db_pool_limits_custom_overrides(self):
         paths = {
-            "root": Path("/tmp/proj"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "data": Path("/tmp/proj/data"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
-            "ce_dir": Path("/tmp/proj/client-extensions"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/proj/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
+            "ce_dir": Path(f"{TEST_TMP_ROOT}/proj/client-extensions"),
         }
         meta = {
             "tag": "2026.q1.7-lts",
@@ -1063,19 +1075,19 @@ class TestComposerService(unittest.TestCase):
     @patch("ldm_core.utils.safe_write_text")
     def test_composer_logging_limits(self, mock_write):
         paths = {
-            "root": Path("/tmp/proj"),
-            "compose": Path("/tmp/proj/docker-compose.yml"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "data": Path("/tmp/proj/data"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
-            "ce_dir": Path("/tmp/proj/client-extensions"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "compose": Path(f"{TEST_TMP_ROOT}/proj/docker-compose.yml"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/proj/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
+            "ce_dir": Path(f"{TEST_TMP_ROOT}/proj/client-extensions"),
         }
         meta = {"container_name": "test-project", "db_type": "postgresql"}
         self.manager.defaults.get.side_effect = lambda _key, default=None: default
@@ -1098,19 +1110,19 @@ class TestComposerService(unittest.TestCase):
     @patch("ldm_core.utils.safe_write_text")
     def test_composer_logging_limits_custom_overrides(self, mock_write):
         paths = {
-            "root": Path("/tmp/proj"),
-            "compose": Path("/tmp/proj/docker-compose.yml"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "data": Path("/tmp/proj/data"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
-            "ce_dir": Path("/tmp/proj/client-extensions"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "compose": Path(f"{TEST_TMP_ROOT}/proj/docker-compose.yml"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/proj/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
+            "ce_dir": Path(f"{TEST_TMP_ROOT}/proj/client-extensions"),
         }
         meta = {"container_name": "test-project", "db_type": "postgresql"}
         with patch.object(
@@ -1141,16 +1153,16 @@ class TestComposerService(unittest.TestCase):
             "tag": "2026.q1.7-lts",
         }
         paths = {
-            "root": Path("/tmp/proj"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
-            "data": Path("/tmp/proj/data"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
         }
         project_name = "test-project"
 
@@ -1167,18 +1179,18 @@ class TestComposerService(unittest.TestCase):
     @patch("ldm_core.utils.safe_write_text")
     def test_search_kibana_enabled_isolated(self, mock_write, mock_yaml):
         paths = {
-            "root": Path("/tmp/proj"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "data": Path("/tmp/proj/data"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
-            "compose": Path("/tmp/proj/docker-compose.yml"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/proj/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
+            "compose": Path(f"{TEST_TMP_ROOT}/proj/docker-compose.yml"),
         }
         meta = {
             "tag": "2026.q1.7-lts",
@@ -1211,18 +1223,18 @@ class TestComposerService(unittest.TestCase):
     @patch("ldm_core.utils.safe_write_text")
     def test_search_kibana_enabled_shared(self, mock_write, mock_yaml):
         paths = {
-            "root": Path("/tmp/proj"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "data": Path("/tmp/proj/data"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
-            "compose": Path("/tmp/proj/docker-compose.yml"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/proj/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
+            "compose": Path(f"{TEST_TMP_ROOT}/proj/docker-compose.yml"),
         }
         meta = {
             "tag": "2026.q1.7-lts",
@@ -1253,18 +1265,18 @@ class TestComposerService(unittest.TestCase):
     @patch("ldm_core.utils.safe_write_text")
     def test_search_kibana_disabled(self, mock_write, mock_yaml):
         paths = {
-            "root": Path("/tmp/proj"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "data": Path("/tmp/proj/data"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
-            "compose": Path("/tmp/proj/docker-compose.yml"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/proj/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
+            "compose": Path(f"{TEST_TMP_ROOT}/proj/docker-compose.yml"),
         }
         meta = {
             "tag": "2026.q1.7-lts",
@@ -1287,18 +1299,18 @@ class TestComposerService(unittest.TestCase):
 
     def test_custom_env_dict_and_string_support(self):
         paths = {
-            "root": Path("/tmp/proj"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "data": Path("/tmp/proj/data"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
-            "compose": Path("/tmp/proj/docker-compose.yml"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/proj/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
+            "compose": Path(f"{TEST_TMP_ROOT}/proj/docker-compose.yml"),
         }
 
         # Test Case 1: dictionary value
@@ -1344,18 +1356,18 @@ class TestComposerService(unittest.TestCase):
         self.manager.args = MagicMock()
         self.manager.args.verbose = False
         paths = {
-            "root": Path("/tmp/proj"),
-            "deploy": Path("/tmp/proj/deploy"),
-            "files": Path("/tmp/proj/files"),
-            "data": Path("/tmp/proj/data"),
-            "configs": Path("/tmp/proj/osgi/configs"),
-            "modules": Path("/tmp/proj/osgi/modules"),
-            "cx": Path("/tmp/proj/osgi/client-extensions"),
-            "scripts": Path("/tmp/proj/scripts"),
-            "state": Path("/tmp/proj/osgi/state"),
-            "logs": Path("/tmp/proj/logs"),
-            "portal_log4j": Path("/tmp/proj/osgi/log4j"),
-            "compose": Path("/tmp/proj/docker-compose.yml"),
+            "root": Path(f"{TEST_TMP_ROOT}/proj"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/proj/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/proj/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/proj/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/proj/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/proj/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/proj/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/proj/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/proj/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/proj/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/proj/osgi/log4j"),
+            "compose": Path(f"{TEST_TMP_ROOT}/proj/docker-compose.yml"),
         }
         config = {
             "container_name": "ldm-rafa-project",
@@ -1826,7 +1838,7 @@ class TestOsgiConfigsMount(unittest.TestCase):
         self.manager.defaults.get.side_effect = lambda _key, default=None: default
 
     def _volumes(self):
-        root = Path("/tmp/proj")
+        root = Path(f"{TEST_TMP_ROOT}/proj")
         paths = {"root": root}
         paths.update({k: root / k for k in self.PATHS_KEYS})
         meta = {
@@ -1852,7 +1864,7 @@ class TestOsgiConfigsMount(unittest.TestCase):
             v for v in self._volumes() if v.split(":")[1] == "/opt/liferay/osgi/configs"
         )
         self.assertTrue(
-            mount.startswith("/tmp/proj/configs:"),
+            mount.startswith(f"{TEST_TMP_ROOT}/proj/configs:"),
             f"osgi/configs maps from {mount.split(':')[0]!r}, expected the project's configs path",
         )
 
@@ -2047,3 +2059,53 @@ class TestProjectUuidLabels(unittest.TestCase):
             self.assertNotIn(
                 "com.liferay.ldm.project.uuid", (vol or {}).get("labels", {})
             )
+
+
+class TestSharedDatabaseJdbcResolution(unittest.TestCase):
+    """Driver and dialect must both track the tag (LDM-#1361).
+
+    The PostgreSQL branch resolved both from `compatibility.json`. The MySQL
+    branch resolved the driver but hardcoded
+    `org.hibernate.dialect.MariaDB103Dialect`, while the mapping returns
+    `MySQL8Dialect` for older tag ranges -- pairing a MySQL driver with a
+    MariaDB dialect.
+
+    A project pointed at the shared database must be configured for the engine
+    actually running it, and "actually" is decided by the tag.
+    """
+
+    def test_mysql_driver_and_dialect_agree_across_tag_ranges(self):
+        from ldm_core.utils import resolve_dependency_version
+
+        cases = {
+            "2026.q1.7-lts": (
+                "org.mariadb.jdbc.Driver",
+                "org.hibernate.dialect.MariaDB103Dialect",
+            ),
+            "2024.q1.1": (
+                "com.mysql.cj.jdbc.Driver",
+                "org.hibernate.dialect.MySQL8Dialect",
+            ),
+        }
+        for tag, (want_driver, want_dialect) in cases.items():
+            self.assertEqual(
+                want_driver, resolve_dependency_version(tag, "jdbc_driver_mysql")
+            )
+            self.assertEqual(
+                want_dialect,
+                resolve_dependency_version(tag, "jdbc_dialect_mysql"),
+                f"{tag}: the mapping and the driver must describe the same engine",
+            )
+
+    def test_the_composer_reads_the_dialect_rather_than_hardcoding_it(self):
+        """Guards the fix itself, not just the mapping."""
+        from pathlib import Path
+
+        src = Path(__file__).resolve().parents[1] / "handlers" / "composer.py"
+        text = src.read_text()
+        self.assertIn(
+            'resolve_dependency_version(tag, "jdbc_dialect_mysql")',
+            text,
+            "the MySQL dialect is hardcoded again; an older tag would then be "
+            "given a MariaDB dialect alongside a MySQL driver (LDM-#1361).",
+        )

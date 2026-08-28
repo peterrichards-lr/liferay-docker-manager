@@ -1074,7 +1074,15 @@ class ComposerService:
                 resolve_dependency_version(tag, "jdbc_driver_mysql")
                 or "org.mariadb.jdbc.Driver"
             )
-            dialect = "org.hibernate.dialect.MariaDB103Dialect"
+            # LDM-#1361: resolve the dialect the same way the driver and the
+            # PostgreSQL branch already do. It was hardcoded to MariaDB103Dialect
+            # while compatibility.json maps `jdbc_dialect_mysql` per tag range
+            # and returns MySQL8Dialect for older ranges -- so an older tag was
+            # given a dialect its mapping does not specify.
+            dialect = (
+                resolve_dependency_version(tag, "jdbc_dialect_mysql")
+                or "org.hibernate.dialect.MariaDB103Dialect"
+            )
             host = f"{project_name}-db"
             db_name = "lportal"
             if db_mode == "shared":

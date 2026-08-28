@@ -45,6 +45,39 @@ class TestInfraService(unittest.TestCase):
         self.manager = MockInfraManager()
         self.infra = InfraService(self.manager)
 
+        # LDM-#1409: every DockerService static (stop/rm/start/exists/
+        # is_running/...) calls the module-scope `run_command` imported in
+        # docker_service.py. `patch.object(self.manager, "run_command")` --
+        # what most tests below use -- replaces a different function entirely
+        # and never reaches them. That is the #1365 trap, and it was still
+        # live here: measured across a full suite run, ten tests in this class
+        # issued real `docker stop liferay-proxy-global`,
+        # `docker rm -f liferay-proxy-global` and `docker start
+        # liferay-docker-proxy` against the developer's own global proxy.
+        #
+        # Patching the module-scope name once, for the whole class, closes all
+        # of them at the single point they share. Tests that need a specific
+        # DockerService answer still patch that method directly, which replaces
+        # the method and is unaffected by this.
+        docker_patcher = patch("ldm_core.docker_service.run_command", return_value="")
+        self.mock_docker_run_command = docker_patcher.start()
+        self.addCleanup(docker_patcher.stop)
+
+        # LDM-#1409: a second, separate route to the daemon. InfraService
+        # imports get_docker_socket_path (utils.py), which shells out to
+        # `docker context inspect` via subprocess directly -- not through
+        # run_command, so the patch above does not cover it, and neither would
+        # a guard hooked only at CommandRunner. It is also wrapped in a bare
+        # `except Exception`, so the call was invisible: it ran, and any
+        # failure was swallowed. Pin it to the platform default rather than
+        # asking the machine.
+        socket_patcher = patch(
+            "ldm_core.handlers.infra.get_docker_socket_path",
+            return_value="/var/run/docker.sock",
+        )
+        self.mock_docker_socket_path = socket_patcher.start()
+        self.addCleanup(socket_patcher.stop)
+
     @patch("ldm_core.ui.UI.confirm", return_value=True)
     def test_fix_cert_permissions_success(self, mock_confirm):
         with (
@@ -530,3 +563,69 @@ class TestInfraService(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGlobalServiceDockerCallsAreBounded(unittest.TestCase):
+    """LDM-#1413: these run on paths a user waits on -- `ldm run` and
+    `ldm restore` both provision global services through here -- and every one
+    contacts a daemon that may never answer.
+
+    Unbounded, a stalled socket is indistinguishable from LDM being slow. That
+    ambiguity cost 84 minutes three times over in LDM-#1410 before anyone
+    realised the restore was not merely taking a while.
+    """
+
+    BOUNDED_FUNCTIONS = (
+        "setup_global_database",
+        "setup_global_search",
+        "_ensure_network",
+    )
+
+    def _calls(self, function_name):
+        """Returns each run_command call's argument text within `function_name`."""
+        from ldm_core.handlers import infra as infra_mod
+
+        lines = Path(infra_mod.__file__).read_text(encoding="utf-8").splitlines()
+        start = next(
+            i
+            for i, line in enumerate(lines, 1)
+            if line.strip().startswith(f"def {function_name}")
+        )
+        end = next(
+            i
+            for i, line in enumerate(lines, 1)
+            if i > start and line.startswith("    def ")
+        )
+        body = "\n".join(lines[start - 1 : end - 1])
+        # LDM-#1361: return the FULL call text. This used to truncate to 1200
+        # characters, which made the assertion below unreliable for long calls:
+        # the shared-MySQL provisioning argv is long enough that a `timeout=`
+        # present in the source fell past the cut, and the guard reported it as
+        # unbounded. Truncation now happens only when building the failure
+        # message, where it belongs.
+        return list(body.split("run_command(")[1:])
+
+    def test_every_docker_call_in_the_global_setup_paths_is_bounded(self):
+        for fn in self.BOUNDED_FUNCTIONS:
+            calls = self._calls(fn)
+            self.assertTrue(calls, f"expected run_command calls in {fn}")
+            for i, call in enumerate(calls, 1):
+                self.assertIn(
+                    "timeout=",
+                    call,
+                    f"{fn} call #{i} has no timeout -- a stalled daemon would "
+                    "hang it indefinitely and look like LDM being slow (#1413).\n"
+                    f"call begins: {call[:400]}",
+                )
+
+    def test_the_readiness_probes_are_not_bounded_so_tightly_they_flap(self):
+        """A probe that has not answered in 30s is not going to, but an image
+        pull legitimately takes minutes -- so these must not share a value."""
+        from ldm_core.handlers import infra as infra_mod
+
+        self.assertGreaterEqual(infra_mod._INFRA_PROBE_TIMEOUT, 15)
+        self.assertGreater(
+            infra_mod._INFRA_CREATE_TIMEOUT,
+            infra_mod._INFRA_PROBE_TIMEOUT,
+            "creating a service may pull an image; a probe may not",
+        )

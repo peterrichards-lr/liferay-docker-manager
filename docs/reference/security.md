@@ -8,7 +8,7 @@ LDM binds certain infrastructure components to `0.0.0.0` (all interfaces) instea
 
 - **macOS Multi-IP Loopback**: On macOS (Silicon and Intel), Traefik is bound to `0.0.0.0` to ensure that custom hostnames (e.g., `mysite.local`) correctly route back to the Docker containers.
 - **Gogo Shell Exposure**: To allow telnet access to the Liferay OSGi console, the Gogo shell listener is bound to `0.0.0.0` inside the container network.
-- **Wildcard Port Verification**: When checking if a port is available on the host (in `check_port`), LDM attempts to bind socket listeners to `0.0.0.0`. This wildcard bind is required to guarantee detection of existing bindings on all local IP addresses and interfaces, preventing port allocation conflicts when starting proxy and database containers. Specifically, on Windows (WSL2/Hyper-V), port forwarding from the Linux VM requires verifying all interfaces to prevent Traefik startup failures.
+- **Wildcard Port Verification**: When checking if a port is available on the host (in `check_port`), LDM binds a test socket to the address it was asked about -- `0.0.0.0` for the shared infrastructure ports, so that a conflict on any local interface is caught rather than only the one LDM happens to probe. This prevents port allocation conflicts when starting proxy and database containers. The bind test alone is **not** sufficient, and previously this entry claimed a guarantee it does not have: Windows permits a bind to `127.0.0.1:P` to succeed while another socket holds `0.0.0.0:P`, which is exactly how Docker Desktop publishes a container port. LDM-#1417 therefore added a connect probe that runs *before* the bind and treats a reachable listener as conclusive. That probe makes an outbound connection to the port under test and closes it immediately -- it never listens, so it adds no exposure of its own.
 
 **Mitigation**: These bindings are only active while the LDM stack is running. In a standard home/office network, this exposure is limited to the local subnet. Users requiring stricter isolation should use a firewall or VPN.
 
@@ -125,4 +125,4 @@ f7e5b56e5e4e6e94fe5de5424e66fef84be863f385
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-21* | *Last Reviewed: 2026-08-21*
+*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*

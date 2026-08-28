@@ -1,3 +1,4 @@
+import contextlib
 import os
 import tempfile
 import unittest
@@ -98,6 +99,22 @@ class MockRuntime(BaseHandler):
 
 class TestReadiness(unittest.TestCase):
     def setUp(self):
+        # LDM-#1409: on Linux -- so on CI, and never on a macOS dev machine --
+        # pipelines/run.py takes its `elif platform.system() == "linux"` branch
+        # and calls reclaim_volume_permissions, which runs
+        # `docker run --rm -v <path> alpine chown -R ...` against the host.
+        #
+        # This is class-scope rather than per-case because more than one case
+        # in test_preflight_port_collision_check reaches ComposerStage, and a
+        # per-case patch silently covers only the one it is attached to. It
+        # cost two rounds of CI to learn that; the platform gate means a local
+        # macOS run cannot see any of it.
+        from unittest.mock import patch as _patch
+
+        reclaim_patcher = _patch("ldm_core.utils.reclaim_volume_permissions")
+        self.mock_reclaim_volume_permissions = reclaim_patcher.start()
+        self.addCleanup(reclaim_patcher.stop)
+
         from unittest.mock import MagicMock, patch
 
         self.tmp_dir_obj = tempfile.TemporaryDirectory()
@@ -690,6 +707,83 @@ services:
                 mock_check_port.assert_any_call("127.0.0.1", 8080)
                 mock_die.assert_not_called()
 
+    def test_late_port_conflict_fires_when_only_docker_knows(self):
+        """LDM-#1417: a container-held port must be fatal even if the socket says free.
+
+        The first fix for #1417 probed for a listener before binding, which is
+        right in principle and insufficient in practice. On Windows 11 /
+        Docker Desktop a published 5601 was measured taking 1-3 seconds to
+        accept, so the 0.5s probe timed out, fell through to the bind test --
+        which succeeds under Windows' permissive semantics -- and reported the
+        port free. LDM-#1350's guard stayed silent and the run died on
+        Docker's own "port is already allocated" with exit 1.
+
+        So this pins the case the socket cannot see: `check_port` insists the
+        port is free, and only Docker's allocator knows otherwise. If the
+        guard ever goes back to trusting the socket alone, this fails.
+        """
+        with tempfile.TemporaryDirectory() as tmp_root:
+            root = Path(tmp_root)
+            compose_file = root / "docker-compose.yml"
+            compose_file.write_text("""
+services:
+  kibana:
+    container_name: test-project-kibana
+    ports:
+      - "5601:5601"
+            """)
+            paths = self.handler.setup_paths(root)
+            paths["compose"] = compose_file
+
+            captured = {}
+
+            def capture_die(msg, details=None, tip=None, exit_code=1):
+                captured["msg"] = msg
+                captured["tip"] = tip
+                captured["exit_code"] = exit_code
+                raise SystemExit(exit_code)
+
+            self.handler.args.no_wait = True
+            self.handler.args.no_up = False
+            self.handler.non_interactive = False
+
+            with (
+                patch.object(DockerService, "is_running", return_value=False),
+                # The whole point: the socket probe is wrong here, exactly as
+                # it is on a Windows host, and Docker is the only witness.
+                patch.object(
+                    DockerService, "published_host_ports", return_value={5601}
+                ),
+                patch.object(self.handler, "check_port", return_value=True),
+                patch.object(BaseHandler, "run_command"),
+                patch.object(
+                    self.handler, "get_container_status", return_value="healthy"
+                ),
+                patch.object(self.handler.infra, "setup_global_search"),
+                patch.object(self.handler.infra, "setup_global_database"),
+                patch.object(self.handler.composer, "write_docker_compose"),
+                patch("ldm_core.ui.UI.die", side_effect=capture_die),
+            ):
+                with self.assertRaises(SystemExit):
+                    self.handler.handler.orchestration.cmd_run(
+                        project_id="test-project-kibana",
+                        no_up=False,
+                        no_wait=True,
+                        is_restart=True,
+                        paths=paths,
+                        project_meta={
+                            "container_name": "test-project-kibana",
+                            "tag": "7.4.3.132",
+                        },
+                    )
+
+            self.assertEqual(
+                4,
+                captured.get("exit_code"),
+                "a Docker-held port must still be a fatal exit 4, not Docker's exit 1",
+            )
+            self.assertIn("5601", captured["msg"])
+
     def test_late_port_conflict_names_the_port_a_rerun_would_pick(self):
         """LDM-#1350: the fatal late check must not tell you to go kill a process.
 
@@ -736,9 +830,18 @@ services:
 
             self.handler.args.no_wait = True
             self.handler.args.no_up = False
+            # LDM-#1397: this models the interactive case the tip describes.
+            # It previously ran with non_interactive=True, where the pre-flight
+            # refuses rather than re-selecting -- so the assertion passed while
+            # describing a scenario the code never reached.
+            self.handler.non_interactive = False
 
             with (
                 patch.object(DockerService, "is_running", return_value=False),
+                # LDM-#1417: the guard now asks Docker's allocator first.
+                # Empty keeps these cases socket-driven, and keeps the suite
+                # off a real daemon.
+                patch.object(DockerService, "published_host_ports", return_value=set()),
                 patch.object(self.handler, "check_port", side_effect=check_port),
                 patch.object(BaseHandler, "run_command"),
                 patch.object(
@@ -775,6 +878,90 @@ services:
             # The old advice sent the user hunting for a process to kill.
             self.assertNotIn("stop the service currently using", captured["msg"])
             self.assertNotIn("stop the service currently using", tip)
+
+    def _late_conflict_tip(self, svc_name, port, non_interactive):
+        """Drives the late compose-validation check and returns the tip (#1397)."""
+        with tempfile.TemporaryDirectory() as tmp_root:
+            root = Path(tmp_root)
+            compose_file = root / "docker-compose.yml"
+            compose_file.write_text(
+                f"services:\n"
+                f"  {svc_name}:\n"
+                f"    container_name: test-project-liferay-1\n"
+                f"    ports:\n"
+                f'      - "{port}:{port}"\n'
+            )
+            paths = self.handler.setup_paths(root)
+            paths["compose"] = compose_file
+            state = {"taken": False}
+
+            def check_port(_ip, p):
+                return True if not state["taken"] else p != port
+
+            captured = {}
+
+            def capture_die(msg, details=None, tip=None, exit_code=1):
+                captured["tip"] = tip
+                raise SystemExit(exit_code)
+
+            self.handler.args.no_wait = True
+            self.handler.args.no_up = False
+            self.handler.non_interactive = non_interactive
+
+            with (
+                patch.object(DockerService, "is_running", return_value=False),
+                # LDM-#1417: the guard now asks Docker's allocator first.
+                # Empty keeps these cases socket-driven, and keeps the suite
+                # off a real daemon.
+                patch.object(DockerService, "published_host_ports", return_value=set()),
+                patch.object(self.handler, "check_port", side_effect=check_port),
+                patch.object(BaseHandler, "run_command"),
+                patch.object(
+                    self.handler, "get_container_status", return_value="healthy"
+                ),
+                patch.object(self.handler.infra, "setup_global_search"),
+                patch.object(self.handler.infra, "setup_global_database"),
+                patch.object(
+                    self.handler.composer,
+                    "write_docker_compose",
+                    side_effect=lambda *_a, **_k: state.update(taken=True),
+                ),
+                patch("ldm_core.ui.UI.die", side_effect=capture_die),
+            ):
+                with contextlib.suppress(SystemExit):
+                    self.handler.handler.orchestration.cmd_run(
+                        project_id="test-project-liferay-1",
+                        no_up=False,
+                        no_wait=True,
+                        is_restart=True,
+                        paths=paths,
+                        project_meta={
+                            "container_name": "test-project-liferay-1",
+                            "tag": "7.4.3.132",
+                        },
+                    )
+            return captured.get("tip") or ""
+
+    def test_the_tip_only_promises_a_reselect_when_that_will_happen(self):
+        """LDM-#1350 named the port a re-run would pick. LDM-#1397: that is only
+        true for the Liferay port on an interactive run."""
+        tip = self._late_conflict_tip("liferay", 8080, non_interactive=False)
+        self.assertIn("8081", tip)
+        self.assertIn("pre-flight check will", tip)
+
+    def test_under_y_the_tip_says_a_rerun_will_fail_the_same_way(self):
+        """The pre-flight refuses rather than moving the port under -y, so the
+        old tip sent the user round a loop that could not terminate."""
+        tip = self._late_conflict_tip("liferay", 8080, non_interactive=True)
+        self.assertIn("fail the same way", tip)
+        self.assertNotIn("pre-flight check will select", tip)
+
+    def test_a_fixed_port_service_is_not_promised_a_reselect(self):
+        """kibana's 5601 is a literal in the compose builder; a re-run
+        regenerates it."""
+        tip = self._late_conflict_tip("kibana", 5601, non_interactive=False)
+        self.assertIn("fixed port", tip)
+        self.assertNotIn("pre-flight check will select", tip)
 
     def test_preflight_custom_container_port_collision_check(self):
         with tempfile.TemporaryDirectory() as tmp_root:
@@ -1233,6 +1420,12 @@ services:
             ),
             patch("time.sleep"),
             patch("requests.get"),
+            # LDM-#1409: the timeout path dumps container logs with a bare
+            # `subprocess.run([... docker logs --tail 200 ...])` in
+            # runtime/readiness.py -- not run_command, so no facade stub
+            # reaches it. This test asserts how the timeout budget is divided
+            # between phases, not what a real container logged.
+            patch("subprocess.run"),
             patch("ldm_core.ui.UI.die") as mock_die,
             # Mock time.time() to return progression values that exhaust the budget
             patch(

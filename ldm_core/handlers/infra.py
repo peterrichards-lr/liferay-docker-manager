@@ -9,6 +9,19 @@ from ldm_core.utils import (
     get_docker_socket_path,
 )
 
+# LDM-#1413: these run on paths a user waits on -- `ldm run` and `ldm restore`
+# both provision global services through here -- and every one can contact a
+# daemon that may never answer. Unbounded, a stalled socket is indistinguishable
+# from LDM being slow; that ambiguity cost 84 minutes three times over in
+# LDM-#1410 before anyone realised the restore was not merely taking a while.
+#
+# Sized to the operation rather than uniformly: creating a service may pull a
+# multi-gigabyte image, while a readiness probe that has not answered in 30
+# seconds is not going to.
+_INFRA_CREATE_TIMEOUT = 600  # `docker run` for a global service -- may pull
+_INFRA_PROBE_TIMEOUT = 30  # readiness probes and inspection
+_INFRA_LIFECYCLE_TIMEOUT = 120  # start/stop/rm/network operations
+
 
 class InfraService:
     """Service for global infrastructure management (Traefik, Global Search)."""
@@ -501,12 +514,14 @@ tls:
 
         docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
         networks = self.manager.run_command(
-            [*docker_prefix, "network", "ls", "--format", "{{.Name}}"]
+            [*docker_prefix, "network", "ls", "--format", "{{.Name}}"],
+            timeout=_INFRA_PROBE_TIMEOUT,
         )
         if "liferay-net" not in (networks or ""):
             UI.detail("Creating Docker network: liferay-net")
             self.manager.run_command(
-                [*docker_prefix, "network", "create", "liferay-net"]
+                [*docker_prefix, "network", "create", "liferay-net"],
+                timeout=_INFRA_LIFECYCLE_TIMEOUT,
             )
 
     def _ensure_docker_proxy(self):
@@ -643,7 +658,8 @@ tls:
                         "--bind-address=0.0.0.0",
                         "--skip-name-resolve",
                         "--mysql-native-password=ON",
-                    ]
+                    ],
+                    timeout=_INFRA_CREATE_TIMEOUT,
                 )
             else:
                 pg_ver = resolve_dependency_version(tag, "postgresql") or "16"
@@ -667,7 +683,8 @@ tls:
                         "-v",
                         f"{data_volume}:/var/lib/postgresql/data",
                         f"postgres:{pg_ver}",
-                    ]
+                    ],
+                    timeout=_INFRA_CREATE_TIMEOUT,
                 )
 
             UI.detail("Waiting for Global Database to become ready...")
@@ -706,6 +723,7 @@ tls:
                     ready_cmd,
                     check=False,
                     capture_output=True,
+                    timeout=_INFRA_PROBE_TIMEOUT,
                 )
                 if res is not None:
                     UI.success("Global database is ready.")
@@ -816,7 +834,8 @@ tls:
                     "-v",
                     f"{es_backup}:/usr/share/elasticsearch/backup",
                     f"elasticsearch:{ELASTICSEARCH_VERSION}",
-                ]
+                ],
+                timeout=_INFRA_CREATE_TIMEOUT,
             )
             UI.detail("Waiting for Elasticsearch to become ready...")
 
@@ -842,6 +861,7 @@ tls:
                     ],
                     check=False,
                     capture_output=True,
+                    timeout=_INFRA_PROBE_TIMEOUT,
                 )
                 if res and '"cluster_name"' in res:
                     ready = True
@@ -859,7 +879,9 @@ tls:
                 # Wiping and restarting usually fixes mapping/plugin-mismatch issues.
                 UI.warning("Attempting automatic search volume repair...")
                 self.manager.run_command(
-                    [*docker_prefix, "rm", "-f", search_name], check=False
+                    [*docker_prefix, "rm", "-f", search_name],
+                    check=False,
+                    timeout=_INFRA_LIFECYCLE_TIMEOUT,
                 )
                 if es_data.exists():
                     import shutil
@@ -893,7 +915,8 @@ tls:
                             "settings": {"location": "/usr/share/elasticsearch/backup"},
                         }
                     ),
-                ]
+                ],
+                timeout=_INFRA_PROBE_TIMEOUT,
             )
 
             # Proactive analyzer installation
@@ -907,7 +930,8 @@ tls:
                     search_name,
                     "bin/elasticsearch-plugin",
                     "list",
-                ]
+                ],
+                timeout=_INFRA_PROBE_TIMEOUT,
             )
 
             analyzers = [
@@ -928,10 +952,17 @@ tls:
                         plugin,
                     ],
                     check=False,
+                    # Downloads the plugin from the internet, so this is the one
+                    # call here most likely to stall on something outside the
+                    # daemon entirely.
+                    timeout=_INFRA_CREATE_TIMEOUT,
                 )
 
             UI.detail("Restarting Global Search to activate plugins...")
-            self.manager.run_command([*docker_prefix, "restart", search_name])
+            self.manager.run_command(
+                [*docker_prefix, "restart", search_name],
+                timeout=_INFRA_LIFECYCLE_TIMEOUT,
+            )
 
             # Wait for it to come back up
             UI.detail("Waiting for Global Search to be ready after restart...")
@@ -958,6 +989,7 @@ tls:
                     ],
                     check=False,
                     capture_output=True,
+                    timeout=_INFRA_PROBE_TIMEOUT,
                 )
                 if res and '"cluster_name"' in res:
                     ready = True
@@ -997,6 +1029,7 @@ tls:
                     ),
                 ],
                 check=False,
+                timeout=_INFRA_PROBE_TIMEOUT,
             )
         return None
 
