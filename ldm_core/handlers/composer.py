@@ -115,7 +115,7 @@ class ComposerService:
 
             new_size_mb = max(512, math.floor((max_heap_gb * 1024) * 0.33))
 
-            jvm_base = ""
+            jvm_base = " -XX:ReservedCodeCacheSize=256m"
             os_name = platform.system().lower()
             if os_name in ["darwin", "windows"]:
                 # Optimization for local dev environments (macOS/Windows Docker VM)
@@ -129,7 +129,7 @@ class ComposerService:
                 f"{jvm_base}"
             )
         except Exception:
-            return "-Xms4096m -Xmx12288m -XX:MaxMetaspaceSize=768m -XX:MetaspaceSize=768m -XX:TieredStopAtLevel=1"
+            return "-Xms4096m -Xmx12288m -XX:MaxMetaspaceSize=768m -XX:MetaspaceSize=768m -XX:ReservedCodeCacheSize=256m -XX:TieredStopAtLevel=1"
 
     def _is_ssl_active(self, host_name, meta):
         """Determines if SSL/Proxy routing should be enabled for a project."""
@@ -442,6 +442,9 @@ class ComposerService:
             # 2. Increase CodeCache (Prevent NoSuchMethodException/VirtualMachineError)
             if "-XX:ReservedCodeCacheSize" not in jvm_opts:
                 jvm_opts += " -XX:ReservedCodeCacheSize=512m"
+            elif "-XX:ReservedCodeCacheSize=256m" in jvm_opts:
+                # Upgrade default 256m to 512m during reindexing
+                jvm_opts = jvm_opts.replace("-XX:ReservedCodeCacheSize=256m", "-XX:ReservedCodeCacheSize=512m")
         elif "-Xms" in jvm_opts and "-XX:TieredStopAtLevel=1" not in jvm_opts:
             # ONLY apply these to Darwin/Windows VMs where bundle resolution is slow
             if platform.system().lower() in ["darwin", "windows"]:

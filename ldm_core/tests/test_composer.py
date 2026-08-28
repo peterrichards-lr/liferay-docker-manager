@@ -265,6 +265,46 @@ class TestComposerService(unittest.TestCase):
             f"State mapping was: {volumes}",
         )
 
+    def test_jvm_self_tuning_reindexing(self):
+        """Verify that ReservedCodeCacheSize is scaled up to 512m when reindexing is active."""
+        paths = {
+            "root": Path("/tmp/proj"),
+            "deploy": Path("/tmp/proj/deploy"),
+            "files": Path("/tmp/proj/files"),
+            "scripts": Path("/tmp/proj/scripts"),
+            "modules": Path("/tmp/proj/osgi/modules"),
+            "cx": Path("/tmp/proj/osgi/cx"),
+            "portal_log4j": Path("/tmp/proj/portal_log4j"),
+            "state": Path("/tmp/proj/state"),
+            "logs": Path("/tmp/proj/logs"),
+        }
+
+        # Scenario 1: Reindexing active with default JVM args (contains ReservedCodeCacheSize=256m)
+        meta = {
+            "reindex_required": "true",
+            "jvm_args": "-XX:ReservedCodeCacheSize=256m -Xms2048m -Xmx4096m"
+        }
+        service = self.composer._build_liferay_service(
+            paths, meta, "localhost", "proj", False, None
+        )
+        env = service["environment"]
+        jvm_opts = next((e.split("=", 1)[1] for e in env if e.startswith("LIFERAY_JVM_OPTS=")), "")
+        self.assertIn("-XX:ReservedCodeCacheSize=512m", jvm_opts)
+        self.assertNotIn("-XX:ReservedCodeCacheSize=256m", jvm_opts)
+
+        # Scenario 2: Reindexing active with custom user ReservedCodeCacheSize (should not be overridden if non-default)
+        meta_custom = {
+            "reindex_required": "true",
+            "jvm_args": "-XX:ReservedCodeCacheSize=1024m -Xms2048m -Xmx4096m"
+        }
+        service_custom = self.composer._build_liferay_service(
+            paths, meta_custom, "localhost", "proj", False, None
+        )
+        env_custom = service_custom["environment"]
+        jvm_opts_custom = next((e.split("=", 1)[1] for e in env_custom if e.startswith("LIFERAY_JVM_OPTS=")), "")
+        self.assertIn("-XX:ReservedCodeCacheSize=1024m", jvm_opts_custom)
+        self.assertNotIn("-XX:ReservedCodeCacheSize=512m", jvm_opts_custom)
+
     def test_spaces_in_container_names_are_sanitized(self):
         """Verify that Liferay, DB, and Tunnel container names with spaces are sanitized to use hyphens."""
         paths = {
@@ -788,6 +828,7 @@ class TestComposerService(unittest.TestCase):
         self.assertIn("-Xmx2048m", args)
         self.assertIn("-Xms1024m", args)
         self.assertIn("-XX:MaxMetaspaceSize=384m", args)
+        self.assertIn("-XX:ReservedCodeCacheSize=256m", args)
         self.assertNotIn("MaxMetadataSize", args)
 
     @patch("ldm_core.handlers.composer.ComposerService.get_physical_host_memory_bytes")
@@ -799,6 +840,7 @@ class TestComposerService(unittest.TestCase):
         self.assertIn("-Xmx3072m", args)
         self.assertIn("-Xms2048m", args)
         self.assertIn("-XX:MaxMetaspaceSize=512m", args)
+        self.assertIn("-XX:ReservedCodeCacheSize=256m", args)
         self.assertNotIn("MaxMetadataSize", args)
 
     @patch("ldm_core.handlers.composer.ComposerService.get_physical_host_memory_bytes")
@@ -810,6 +852,7 @@ class TestComposerService(unittest.TestCase):
         self.assertIn("-Xmx16384m", args)
         self.assertIn("-Xms4096m", args)
         self.assertIn("-XX:MaxMetaspaceSize=1024m", args)
+        self.assertIn("-XX:ReservedCodeCacheSize=256m", args)
         self.assertNotIn("MaxMetadataSize", args)
 
     @patch("ldm_core.handlers.composer.ComposerService.get_physical_host_memory_bytes")
@@ -824,6 +867,7 @@ class TestComposerService(unittest.TestCase):
         self.assertIn("-Xmx3072m", args)
         self.assertIn("-Xms2048m", args)
         self.assertIn("-XX:MaxMetaspaceSize=512m", args)
+        self.assertIn("-XX:ReservedCodeCacheSize=256m", args)
 
     def test_get_physical_host_memory_bytes_execution(self):
         mem = self.composer.get_physical_host_memory_bytes()
@@ -836,6 +880,7 @@ class TestComposerService(unittest.TestCase):
         args = self.composer.get_default_jvm_args()
         self.assertIn("-Xmx2048m", args)
         self.assertIn("-Xms1536m", args)
+        self.assertNotIn("-XX:ReservedCodeCacheSize", args)
 
         # 2. Test when GITHUB_ACTIONS env var is "true"
         self.manager.args.lean = False
@@ -843,6 +888,7 @@ class TestComposerService(unittest.TestCase):
             args_ga = self.composer.get_default_jvm_args()
             self.assertIn("-Xmx2048m", args_ga)
             self.assertIn("-Xms1536m", args_ga)
+            self.assertNotIn("-XX:ReservedCodeCacheSize", args_ga)
 
     def test_composer_shared_database_mode(self):
         paths = {
