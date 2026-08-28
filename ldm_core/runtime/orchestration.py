@@ -19,6 +19,28 @@ from ldm_core.utils import (
     shared_database_name,
 )
 
+# LDM-#1421: bound the Docker calls on the paths users touch most.
+#
+# `start`, `stop`, `restart` and `down` had nine unbounded `run_command` calls,
+# every one of which can contact a daemon that may never answer. LDM-#1410
+# showed the cost: a stalled socket wedged `ldm restore` for 84 minutes across
+# three machines, unkillable with Ctrl+C, because nothing bounded the call.
+#
+# The point is as much attribution as recovery. Unbounded, a stalled daemon is
+# indistinguishable from LDM being slow. Bounded, it reports
+# `Command timed out after Ns: docker ...`, naming the step and the daemon --
+# which is what turned that 84-minute mystery into a one-line diagnosis.
+#
+# Sized to the operation and deliberately generous: `compose down` on a large
+# stack legitimately takes a while, and the goal is to bound these at all, not
+# to be strict. Follows the pattern of snapshot/database.py (#1410) and
+# handlers/infra.py (#1413) -- named constants with the reasoning recorded,
+# rather than magic numbers at the call sites.
+_COMPOSE_LIFECYCLE_TIMEOUT = 300  # compose start/stop/restart/down
+_COMPOSE_DEPLOY_TIMEOUT = 600  # compose up -d <svc> -- may pull an image
+_DOCKER_PROBE_TIMEOUT = 30  # ps/volume ls -- local queries that answer or do not
+_DOCKER_REMOVE_TIMEOUT = 60  # rm -f / volume rm -f
+
 
 class OrchestrationService(BaseHandler):
     """Orchestration service for runtime operations."""
@@ -163,6 +185,7 @@ class OrchestrationService(BaseHandler):
                     check=not all_projects,
                     capture_output=capture,
                     cwd=str(root),
+                    timeout=_COMPOSE_LIFECYCLE_TIMEOUT,
                 )
                 if all_projects and res is None:
                     UI.warning(f"Could not start '{root.name}'; continuing.")
@@ -257,6 +280,7 @@ class OrchestrationService(BaseHandler):
                 check=not all_projects,
                 capture_output=capture,
                 cwd=str(root),
+                timeout=_COMPOSE_LIFECYCLE_TIMEOUT,
             )
             if all_projects and res is None:
                 UI.warning(f"Could not stop '{root.name}'; continuing.")
@@ -325,6 +349,7 @@ class OrchestrationService(BaseHandler):
                 check=not all_projects,
                 capture_output=capture,
                 cwd=str(root),
+                timeout=_COMPOSE_LIFECYCLE_TIMEOUT,
             )
             if all_projects and res is None:
                 UI.warning(f"Could not restart '{root.name}'; continuing.")
@@ -419,6 +444,7 @@ class OrchestrationService(BaseHandler):
                         check=not all_projects,
                         capture_output=capture,
                         cwd=str(root),
+                        timeout=_COMPOSE_LIFECYCLE_TIMEOUT,
                     )
                     if all_projects and res is None:
                         # Skip the rest of THIS project's teardown -- the
@@ -457,6 +483,7 @@ class OrchestrationService(BaseHandler):
                             ],
                             check=False,
                             capture_output=True,
+                            timeout=_DOCKER_PROBE_TIMEOUT,
                         )
                         if ps_output:
                             c_ids = [
@@ -467,6 +494,7 @@ class OrchestrationService(BaseHandler):
                                     [*docker_prefix, "rm", "-f", *c_ids],
                                     check=False,
                                     capture_output=True,
+                                    timeout=_DOCKER_REMOVE_TIMEOUT,
                                 )
                 except Exception as e:
                     UI.debug(
@@ -662,6 +690,7 @@ class OrchestrationService(BaseHandler):
                     [*compose_base, "up", "-d", svc],
                     capture_output=False,
                     cwd=str(root),
+                    timeout=_COMPOSE_DEPLOY_TIMEOUT,
                 )
         else:
             UI.success("Artifact deployment complete.")
@@ -850,14 +879,23 @@ class OrchestrationService(BaseHandler):
                             f"name=^{volume_name}$",
                         ],
                         check=False,
+                        timeout=_DOCKER_PROBE_TIMEOUT,
                     )
-                    if res.strip():
+                    # LDM-#1421: `check=False` means a timeout returns None
+                    # rather than exiting, so this must not assume a string.
+                    # Without the guard the AttributeError is swallowed by the
+                    # `except Exception` below and reported as "Warning removing
+                    # docker volume X: 'NoneType' object has no attribute
+                    # 'strip'" -- which names neither the timeout nor the daemon,
+                    # and is exactly the attribution problem this issue is about.
+                    if res and res.strip():
                         UI.detail(
                             f"  - Removing Docker volume {UI.CYAN}{volume_name}{UI.COLOR_OFF}..."
                         )
                         self.manager.run_command(
                             [*docker_prefix, "volume", "rm", "-f", volume_name],
                             check=False,
+                            timeout=_DOCKER_REMOVE_TIMEOUT,
                         )
                 except Exception as e:
                     UI.detail(f"Warning removing docker volume {volume_name}: {e}")
