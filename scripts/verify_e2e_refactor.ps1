@@ -190,6 +190,21 @@ function Remove-Ldm1383Artifacts {
 
 function Finalize-Verification {
     param($ExitCode)
+
+    # LDM-#1436: leave the project directory before asking LDM to delete it.
+    #
+    # The run does `Set-Location $projectDir` and does not return. The restore
+    # at the bottom of the script lives in the `finally` block, which runs
+    # *after* this function -- so cleanup executed with the shell still inside
+    # the directory it was about to remove, and LDM refused, correctly:
+    #
+    #   Safety Violation: Cannot delete current working directory or its parent
+    #
+    # That guard must not be worked around: deleting the shell's own location
+    # leaves the caller somewhere that no longer exists. Kept in step with the
+    # bash twin, which had the identical defect.
+    try { Set-Location $ORIGINAL_PWD -ErrorAction SilentlyContinue } catch { }
+
     $status = "fail"
     if ($ExitCode -eq 0) { $status = "pass" }
     
