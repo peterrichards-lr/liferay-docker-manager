@@ -4,6 +4,44 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def isolate_ci_environment(monkeypatch):
+    """Runs every test as if it were NOT on CI (LDM-#1468).
+
+    `GITHUB_ACTIONS` changes real behaviour in five places, and every one is
+    invisible to a test that does not think to look:
+
+    - `handlers/composer.py` applies the **lean JVM profile** -- different heap,
+      metaspace and compiler level.
+    - `cli.py` **permits running as root**, bypassing the guard.
+    - `manager.py` flags the run as CI.
+    - `utils.py` **skips the OS keyring**, on both read and write.
+
+    Each is deliberate. The consequence is not: a test that does not control the
+    variable asserts one thing locally and something else on CI, passing in both
+    while exercising different code.
+
+    Caught three times in this repository. The byte-identical golden table in
+    `test_tuning_cascade.py` compared `lean=False` rows against output that was
+    lean -- a table whose entire purpose is detecting drift in that behaviour,
+    and which could never have passed on CI. `test_tuning_provenance.py` then
+    attributed every value to `profile (lean)`, collapsing the distinctions it
+    exists to check.
+
+    Before this fixture, six test files each solved it independently in five
+    different ways: `patch.dict` to "false", clearing a set of CI variables,
+    popping it from a subprocess environment, and two local helpers. That is a
+    fixture wanting to exist.
+
+    A test that needs CI behaviour opts in explicitly -- see
+    `TestImplicitLeanOnCI` in `test_tuning_cascade.py`, which patches the
+    variable back on and asserts the lean profile is applied. Same shape as
+    `isolate_ldm_home` (#1342) and `block_real_docker` (#1409): the environment
+    must not silently change what the suite tests.
+    """
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def suppress_browser():
     """Globally suppresses browser launching during tests."""
     os.environ["LDM_TEST_MODE"] = "true"
