@@ -166,7 +166,7 @@ class ComposerService:
         """
         return self._render_jvm_args(self._resolve_tuning(target_name))
 
-    def _resolve_tuning(self, target_name=None):
+    def _resolve_tuning(self, target_name=None, origins_out=None):
         """Merges the tuning layers, most specific last (LDM-#1449).
 
             adaptive calculation   base, unchanged behaviour
@@ -180,6 +180,13 @@ class ComposerService:
         separates this from `--jvm-args`, which replaces everything.
         """
         settings = self._adaptive_tuning(target_name)
+        # LDM-#1458: record which layer supplied each value. A five-layer
+        # cascade means a value can change because of a file the user is not
+        # looking at; without attribution, "why is my heap this size?" means
+        # reading three config files and knowing the adaptive tiers. Same
+        # reasoning as LDM-#1351, which made `ldm info` report the names
+        # actually applied rather than the ones requested.
+        origins = dict.fromkeys(settings, "calculated")
 
         # LDM-385: 'Lean' profile for CI or low-memory environments.
         is_lean = (
@@ -187,7 +194,9 @@ class ComposerService:
             or os.getenv("GITHUB_ACTIONS") == "true"
         )
         if is_lean:
-            settings.update(self.TUNING_PROFILES["lean"])
+            profile = self.TUNING_PROFILES["lean"]
+            settings.update(profile)
+            origins.update(dict.fromkeys(profile, "profile (lean)"))
 
         defaults = getattr(self.manager, "defaults", None)
         meta = getattr(self.manager, "meta", None) or {}
@@ -195,16 +204,24 @@ class ComposerService:
             value = None
             if defaults is not None:
                 value = self._tuning_value(config_key, defaults.get(config_key))
+                if value is not None:
+                    origins[setting] = "ldm config"
             if isinstance(meta, dict):
-                value = self._tuning_value(config_key, meta.get(config_key)) or value
+                from_meta = self._tuning_value(config_key, meta.get(config_key))
+                if from_meta is not None:
+                    value = from_meta
+                    origins[setting] = "project meta"
             cli_value = self._tuning_value(
                 config_key, getattr(self.manager.args, config_key, None)
             )
             if cli_value is not None:
                 value = cli_value
+                origins[setting] = "command line"
             if value is not None:
                 settings[setting] = value
 
+        if origins_out is not None:
+            origins_out.update(origins)
         return settings
 
     # Sizes accept a bare number of megabytes or a JVM-style suffix, matching

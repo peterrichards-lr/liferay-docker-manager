@@ -176,6 +176,26 @@ lean: heap_min 1536m, heap_max 2048m, metaspace 512m,
 
 It is also applied implicitly when `GITHUB_ACTIONS=true`.
 
+### Seeing what is actually in effect
+
+`ldm info` shows the resolved arguments and **which layer supplied each one**
+(LDM-#1458):
+
+```text
+JVM Arguments:
+  -Xms2048m                       calculated
+  -Xmx8192m                       project meta
+  -XX:MaxMetaspaceSize=512m       calculated
+  -XX:MetaspaceSize=512m          calculated
+  -XX:NewSize=1013m               calculated
+  -XX:TieredStopAtLevel=1         calculated
+```
+
+Worth having because the cascade's strength is also its difficulty: an unset key
+stays adaptive, so a value can change because of a file you are not looking at.
+Without attribution, "why is my heap this size?" means reading three config
+files and knowing the adaptive tiers.
+
 ### The blunt instrument
 
 `--jvm-args` still replaces everything, and is documented in
