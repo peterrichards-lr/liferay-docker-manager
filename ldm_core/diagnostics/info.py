@@ -358,7 +358,60 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
                 UI.raw(
                     f"    {UI.WHITE}{k:<20}{UI.COLOR_OFF} {UI.CYAN}{v}{UI.COLOR_OFF}"
                 )
+
+    _render_jvm_tuning(handler, meta)
     UI.raw("")
+
+
+def _render_jvm_tuning(handler, meta):
+    """Shows the JVM arguments in effect, and where each value came from.
+
+    LDM-#1458. Tuning resolves through five layers (LDM-#1449), so a value can
+    change because of a file the user is not looking at -- a machine-wide
+    /etc/ldmrc, or a project's own metadata. Without attribution, answering "why
+    is my heap this size?" means reading three config files and knowing the
+    adaptive tiers.
+
+    Same reasoning as LDM-#1351, which made this command report the names
+    actually APPLIED rather than the ones requested: the difference is invisible
+    and the guess is usually wrong.
+
+    Never fatal. `ldm info` is a diagnostic; it must not fail because it could
+    not work out a heap size.
+    """
+    try:
+        composer = handler.manager.composer
+        previous_meta = getattr(handler.manager, "meta", None)
+        handler.manager.meta = meta
+        try:
+            origins: dict[str, str] = {}
+            settings = composer._resolve_tuning(origins_out=origins)
+            rendered = composer._render_jvm_args(settings)
+        finally:
+            handler.manager.meta = previous_meta
+    except Exception as exc:  # pragma: no cover - diagnostic must not break
+        UI.debug(f"Could not resolve JVM tuning for display: {exc}")
+        return
+
+    # Which setting produced which flag, so the origin can be attached to the
+    # rendered argument rather than to an internal key name.
+    flag_owner = {
+        "-Xms": "heap_min_mb",
+        "-Xmx": "heap_max_mb",
+        "-XX:MaxMetaspaceSize": "metaspace",
+        "-XX:MetaspaceSize": "metaspace",
+        "-XX:NewSize": "new_size_mb",
+        "-XX:MaxNewSize": "new_size_mb",
+        "-XX:TieredStopAtLevel": "tiered_stop_at_level",
+    }
+
+    UI.raw(f"\n  {UI.WHITE}JVM Arguments:{UI.COLOR_OFF}")
+    for arg in rendered.split():
+        key = arg.split("=", 1)[0]
+        if key.startswith("-Xm"):
+            key = arg[:4]
+        origin = origins.get(flag_owner.get(key, ""), "calculated")
+        UI.raw(f"    {UI.CYAN}{arg:<30}{UI.COLOR_OFF} {UI.DIM}{origin}{UI.COLOR_OFF}")
 
 
 def run_status(  # noqa: C901, PLR0912, PLR0915
