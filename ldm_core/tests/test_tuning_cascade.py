@@ -9,6 +9,10 @@ The load-bearing property of this refactor is that **nothing changed**.
 `--lean` is applied implicitly whenever `GITHUB_ACTIONS=true`, so a difference
 here would silently alter what CI runs. The golden table below was captured
 from the pre-refactor implementation and is compared byte-for-byte.
+
+That variable is removed for every test by `isolate_ci_environment` in
+conftest.py (LDM-#1468) -- this file's first CI run failed precisely because it
+was not. `TestImplicitLeanOnCI` opts back in to assert the behaviour directly.
 """
 
 import os
@@ -25,22 +29,6 @@ GOLDEN = """
 4|Linux|False|-Xms1024m -Xmx2048m -XX:MaxMetaspaceSize=384m -XX:MetaspaceSize=384m -XX:NewSize=675m -XX:MaxNewSize=675m
 4|Linux|True|-Xms1536m -Xmx2048m -XX:MaxMetaspaceSize=512m -XX:MetaspaceSize=512m -XX:TieredStopAtLevel=1
 """.strip()
-
-
-def _no_ci_lean():
-    """Removes GITHUB_ACTIONS from the environment for the duration of a test.
-
-    `get_default_jvm_args` applies the lean profile whenever
-    `GITHUB_ACTIONS=true`, so on CI every `lean=False` case below would silently
-    produce lean output and the golden table would compare the wrong thing. It
-    did exactly that on this file's first CI run -- the table could never have
-    passed there.
-
-    That implicit behaviour is real and deliberate, so it is asserted directly
-    in TestImplicitLeanOnCI rather than left to distort every other test.
-    """
-    env = {k: v for k, v in os.environ.items() if k != "GITHUB_ACTIONS"}
-    return patch.dict(os.environ, env, clear=True)
 
 
 def _service(mem_gb, lean=False, defaults=None, meta=None, **cli):
@@ -70,7 +58,7 @@ class TestAdaptiveOutputIsUnchanged(unittest.TestCase):
         for row in GOLDEN.splitlines():
             mem_gb, osname, lean, expected = row.split("|", 3)
             svc = _service(int(mem_gb), lean=(lean == "True"))
-            with _no_ci_lean(), patch.object(platform, "system", lambda o=osname: o):
+            with patch.object(platform, "system", lambda o=osname: o):
                 self.assertEqual(
                     expected,
                     svc.get_default_jvm_args(),
@@ -91,7 +79,7 @@ class TestProfilesAreData(unittest.TestCase):
         pins that a profile is a partial override rather than a replacement.
         """
         svc = _service(32, lean=True)
-        with _no_ci_lean(), patch.object(platform, "system", lambda: "Linux"):
+        with patch.object(platform, "system", lambda: "Linux"):
             resolved = svc._resolve_tuning()
         adaptive = _service(32)._adaptive_tuning()
         self.assertEqual(2048, resolved["heap_max_mb"])
@@ -107,7 +95,7 @@ class TestCascadePrecedence(unittest.TestCase):
             "9999" if key == "jvm_heap_max" else fallback
         )
         svc = _service(32, defaults=defaults)
-        with _no_ci_lean(), patch.object(platform, "system", lambda: "Linux"):
+        with patch.object(platform, "system", lambda: "Linux"):
             self.assertIn("-Xmx9999m", svc.get_default_jvm_args())
 
     def test_project_meta_overrides_the_config_default(self):
@@ -116,7 +104,7 @@ class TestCascadePrecedence(unittest.TestCase):
             "9999" if key == "jvm_heap_max" else fallback
         )
         svc = _service(32, defaults=defaults, meta={"jvm_heap_max": "7777"})
-        with _no_ci_lean(), patch.object(platform, "system", lambda: "Linux"):
+        with patch.object(platform, "system", lambda: "Linux"):
             self.assertIn("-Xmx7777m", svc.get_default_jvm_args())
 
     def test_cli_overrides_everything(self):
@@ -127,7 +115,7 @@ class TestCascadePrecedence(unittest.TestCase):
         svc = _service(
             32, defaults=defaults, meta={"jvm_heap_max": "7777"}, jvm_heap_max="5555"
         )
-        with _no_ci_lean(), patch.object(platform, "system", lambda: "Linux"):
+        with patch.object(platform, "system", lambda: "Linux"):
             self.assertIn("-Xmx5555m", svc.get_default_jvm_args())
 
     def test_an_override_leaves_the_other_settings_adaptive(self):
@@ -141,10 +129,10 @@ class TestCascadePrecedence(unittest.TestCase):
             "9999" if key == "jvm_heap_max" else fallback
         )
         svc = _service(32, defaults=defaults)
-        with _no_ci_lean(), patch.object(platform, "system", lambda: "Linux"):
+        with patch.object(platform, "system", lambda: "Linux"):
             out = svc.get_default_jvm_args()
         baseline = _service(32)
-        with _no_ci_lean(), patch.object(platform, "system", lambda: "Linux"):
+        with patch.object(platform, "system", lambda: "Linux"):
             base_out = baseline.get_default_jvm_args()
 
         for flag in ("-XX:MaxMetaspaceSize=", "-XX:NewSize=", "-Xms"):
@@ -211,8 +199,9 @@ class TestImplicitLeanOnCI(unittest.TestCase):
         self.assertIn("-Xmx2048m", out, "lean was not applied on CI")
 
     def test_without_the_env_var_the_adaptive_value_is_used(self):
+        """The `isolate_ci_environment` fixture (LDM-#1468) removes it for us."""
         svc = _service(32, lean=False)
-        with _no_ci_lean(), patch.object(platform, "system", lambda: "Linux"):
+        with patch.object(platform, "system", lambda: "Linux"):
             out = svc.get_default_jvm_args()
         self.assertIn("-Xmx16384m", out, "adaptive sizing was not used off CI")
 
