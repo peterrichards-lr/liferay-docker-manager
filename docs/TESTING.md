@@ -348,6 +348,41 @@ project's honest record of what was actually tested.
 
 To verify the complete container lifecycle, volume mount synchronization, and CLI options natively on local developer machines:
 
+### Fetching the script that matches your binary
+
+The script and the binary are versioned together — `SCRIPT_VERSION` is stamped
+by `scripts/release.py` on every bump — so a mismatched pair will assert against
+behaviour that is not there. Fetch the script for the version you are running.
+
+**Do not embed `ldm version` directly in the URL.** If the binary cannot
+determine its version it prints nothing, the URL becomes `.../v/scripts/...`,
+and the download returns **404** — which reads as a missing script and hides the
+real failure. That has happened: on Windows a one-file binary that could not
+unpack to a full `%TEMP%` produced exactly this (LDM-#1437).
+
+```bash
+LDM_VER="$(ldm version 2>/dev/null)"
+if [ -z "$LDM_VER" ]; then
+  echo "Could not determine the LDM version -- is 'ldm' on PATH and working?" >&2
+  echo "A binary that cannot unpack itself prints nothing here (LDM-#1437)." >&2
+  exit 1
+fi
+curl -fsSL "https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/v${LDM_VER}/scripts/verify_e2e_refactor.sh" \
+  -o verify_e2e_refactor.sh && chmod +x verify_e2e_refactor.sh
+```
+
+```powershell
+$LdmVer = (ldm version 2>$null)
+if (-not $LdmVer) {
+    Write-Error "Could not determine the LDM version -- is 'ldm' on PATH and working? A binary that cannot unpack itself prints nothing here (LDM-#1437)."
+    exit 1
+}
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/v$LdmVer/scripts/verify_e2e_refactor.ps1" -OutFile "verify_e2e_refactor.ps1"
+```
+
+Both check the version is non-empty **before** building the URL, so a broken
+binary produces a message naming the real problem instead of a 404.
+
 ### **1. macOS & Linux**
 
 Run the Bash E2E verification script:
