@@ -47,6 +47,35 @@ function Get-VersionBannerLines {
 
 $env:PYTHONUTF8 = 1
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+# LDM-#1465: also switch the CONSOLE CODE PAGE, which the two lines above do
+# not.
+#
+# They were already present in v2.18.0-pre.11 and were not enough: that run's
+# saved report contained zero non-ASCII bytes -- box borders, status glyphs and
+# project names alike had been flattened to "?".
+#
+# The distinction is the layer:
+#
+#   [Console]::OutputEncoding  how PowerShell DECODES what a child process wrote
+#   chcp                       the code page the child process WRITES INTO
+#
+# On a non-UTF-8 code page (437 and 1252 are the common defaults) the Windows
+# console can substitute unrepresentable characters at write time, before
+# PowerShell decodes anything -- so no amount of decoding configuration
+# recovers them. `chcp 65001` is the only lever for that layer.
+#
+# The previous code page is restored on exit: this changes the user's console,
+# not just this script's view of it.
+$script:PreviousCodePage = $null
+try {
+    $chcpOut = & chcp.com 2>$null
+    if ($chcpOut -match '(\d+)\s*$') { $script:PreviousCodePage = $Matches[1] }
+    & chcp.com 65001 *> $null
+} catch {
+    Write-Host "[WARNING] Could not switch the console to UTF-8 (code page 65001);"
+    Write-Host "          non-ASCII output may be recorded as '?' (LDM-#1465)."
+}
 $ErrorActionPreference = "Continue"
 $PSNativeCommandUseErrorActionPreference = $false
 $TEST_PORT = "8082"
@@ -190,6 +219,13 @@ function Remove-Ldm1383Artifacts {
 
 function Finalize-Verification {
     param($ExitCode)
+
+    # LDM-#1465: put the user's console back as we found it. `chcp 65001`
+    # changes the console itself, not just this process's view of it, so
+    # leaving it switched would outlive the run.
+    if ($script:PreviousCodePage) {
+        try { & chcp.com $script:PreviousCodePage *> $null } catch { }
+    }
 
     # LDM-#1436: leave the project directory before asking LDM to delete it.
     #
