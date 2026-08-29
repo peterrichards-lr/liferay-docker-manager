@@ -377,16 +377,32 @@ class ComposerService:
 
             new_size_mb = max(512, math.floor((max_heap_gb * 1024) * 0.33))
 
-            os_name = platform.system().lower()
-            # Optimization for local dev environments (macOS/Windows Docker VM):
-            # TieredStopAtLevel=1 speeds up bundle resolution significantly.
+            # LDM-#1464: `-XX:TieredStopAtLevel=1` is no longer applied by
+            # default on macOS/Windows.
             #
-            # LDM-#1448 measured the cost: this flag drops the JVM's ergonomic
-            # ReservedCodeCacheSize from 240 MB to 48 MB, which is the figure
-            # Liferay's tuning guidance calls out as harmful. Left as-is here --
-            # changing it is a behaviour decision, not part of this refactor --
-            # but it is now overridable via `jvm_tiered_stop_at_level`.
-            tiered = os_name in ["darwin", "windows"]
+            # It was added on the stated grounds that it "speeds up bundle
+            # resolution significantly". Measured over five full starts per arm
+            # on macOS 26.6.2 / Colima with 2026.q1.7-lts, that benefit is not
+            # reproducible -- warm median time-to-ready was **130.5s either
+            # way**, with identical means and identical spread (129-135s).
+            #
+            # The cost is real and was measured in LDM-#1448: the flag drops the
+            # JVM's ergonomic ReservedCodeCacheSize from 240 MB to **48 MB**,
+            # the figure Liferay's tuning guidance calls out as harmful. The
+            # reindex path (LDM-422/423) already had to undo the flag and raise
+            # the cache to 512m to avoid VirtualMachineError -- a symptom of
+            # this same cause.
+            #
+            # Capping at C1 is also a throughput trade that time-to-ready cannot
+            # see, so the unmeasured cost points the same way as the measured
+            # one.
+            #
+            # Anyone relying on the previous behaviour keeps it with a single
+            # config key: `jvm_tiered_stop_at_level=true`, or
+            # `--jvm-tiered-stop-at-level true` (LDM-#1449). `--lean` still sets
+            # it, unchanged: that profile deliberately trades throughput for a
+            # small footprint.
+            tiered = False
 
             return {
                 "heap_min_mb": int(min_heap_gb * 1024),
