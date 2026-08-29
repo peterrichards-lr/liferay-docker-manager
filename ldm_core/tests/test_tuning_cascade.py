@@ -23,8 +23,19 @@ from unittest.mock import MagicMock, patch
 from ldm_core.handlers.composer import ComposerService
 
 # Captured from the implementation before LDM-#1449. mem_gb | os | lean | output
+#
+# UPDATED DELIBERATELY for LDM-#1464: the Darwin/non-lean row lost
+# `-XX:TieredStopAtLevel=1`, because that default was removed. This table exists
+# to catch *unintentional* drift; an intentional change updates it with the
+# reason, and the reason here is a measurement -- five full starts per arm on
+# macOS 26.6.2/Colima gave a warm median time-to-ready of 130.5s **either way**,
+# so the flag's stated benefit ("speeds up bundle resolution significantly") was
+# not reproducible while its 240MB -> 48MB code-cache cost was.
+#
+# `lean=True` rows are unchanged: that profile still sets the flag, trading
+# throughput for footprint on purpose.
 GOLDEN = """
-4|Darwin|False|-Xms1024m -Xmx2048m -XX:MaxMetaspaceSize=384m -XX:MetaspaceSize=384m -XX:NewSize=675m -XX:MaxNewSize=675m -XX:TieredStopAtLevel=1
+4|Darwin|False|-Xms1024m -Xmx2048m -XX:MaxMetaspaceSize=384m -XX:MetaspaceSize=384m -XX:NewSize=675m -XX:MaxNewSize=675m
 4|Darwin|True|-Xms1536m -Xmx2048m -XX:MaxMetaspaceSize=512m -XX:MetaspaceSize=512m -XX:TieredStopAtLevel=1
 4|Linux|False|-Xms1024m -Xmx2048m -XX:MaxMetaspaceSize=384m -XX:MetaspaceSize=384m -XX:NewSize=675m -XX:MaxNewSize=675m
 4|Linux|True|-Xms1536m -Xmx2048m -XX:MaxMetaspaceSize=512m -XX:MetaspaceSize=512m -XX:TieredStopAtLevel=1
@@ -64,6 +75,43 @@ class TestAdaptiveOutputIsUnchanged(unittest.TestCase):
                     svc.get_default_jvm_args(),
                     f"tuning output changed for {mem_gb}GB/{osname}/lean={lean}",
                 )
+
+
+class TestTieredStopAtLevelDefault(unittest.TestCase):
+    """The flag is not applied by default any more (LDM-#1464).
+
+    It was added on the stated grounds that it "speeds up bundle resolution
+    significantly". Measured over five full starts per arm on macOS 26.6.2 /
+    Colima with 2026.q1.7-lts: warm median time-to-ready was **130.5s either
+    way**, with identical means and identical spread. The benefit was not
+    reproducible; the cost -- ReservedCodeCacheSize dropping from 240 MB to
+    48 MB (LDM-#1448) -- was.
+    """
+
+    def test_it_is_absent_on_every_platform_by_default(self):
+        for osname in ("Darwin", "Windows", "Linux"):
+            svc = _service(32, lean=False)
+            with patch.object(platform, "system", lambda o=osname: o):
+                out = svc.get_default_jvm_args()
+            self.assertNotIn(
+                "-XX:TieredStopAtLevel",
+                out,
+                f"{osname}: the flag is back as a default. It costs 5x the code "
+                "cache for no measured startup benefit (LDM-#1464); if this is "
+                "deliberate, the measurement in that issue needs revisiting.",
+            )
+
+    def test_lean_still_sets_it(self):
+        """`--lean` trades throughput for footprint on purpose."""
+        svc = _service(32, lean=True)
+        with patch.object(platform, "system", lambda: "Darwin"):
+            self.assertIn("-XX:TieredStopAtLevel=1", svc.get_default_jvm_args())
+
+    def test_it_can_be_turned_back_on_with_one_config_key(self):
+        """Anyone relying on the old behaviour keeps it (LDM-#1449)."""
+        svc = _service(32, lean=False, jvm_tiered_stop_at_level="true")
+        with patch.object(platform, "system", lambda: "Darwin"):
+            self.assertIn("-XX:TieredStopAtLevel=1", svc.get_default_jvm_args())
 
 
 class TestProfilesAreData(unittest.TestCase):

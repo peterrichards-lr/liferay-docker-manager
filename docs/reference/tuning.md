@@ -41,14 +41,17 @@ And under `--lean`, which is also applied automatically when
 | `-Xms` / `-Xmx` | **equal**, "to prevent dynamic adjustments" | min ≈25% of RAM, max ≈50% | **Deliberate.** Liferay's advice targets a dedicated server. LDM runs Liferay, a database and often Elasticsearch on one laptop; reserving half the machine at startup would starve the rest. The cost is some heap resizing, which is cheapest exactly where memory is contended. |
 | `-XX:NewSize` / `MaxNewSize` | **half** the heap | **33%** of max heap | Undocumented divergence. Liferay's figure assumes a steady production workload; a dev cycle is dominated by redeploys and OSGi churn rather than short-lived request objects. Not measured either way — see "Open questions". |
 | `-XX:MetaspaceSize` / `MaxMetaspaceSize` | 768m, both equal | equal, tiered 384m–1024m by RAM | **Matches the shape.** Both set, both equal, scaled to the machine. |
-| `-XX:ReservedCodeCacheSize` | **96m** — "too small a code cache (48m is the default) reduces performance" | unset, except 512m during reindex | **Defect.** See below. |
+| `-XX:ReservedCodeCacheSize` | **96m** — "too small a code cache (48m is the default) reduces performance" | unset; 240 MB ergonomic default now applies | **Resolved** by LDM-#1464. See below. |
 | `-XX:InitialCodeCacheSize` | 64m | unset | Follows from the above. |
 | `-XX:SurvivorRatio` / `TargetSurvivorRatio` / `MaxTenuringThreshold` | 16 / 50 / 15 | unset | Not evaluated. Generation-tuning advice written for CMS on Java 8; its applicability under G1 on Java 21 is unestablished. |
 | Garbage collector | G1 on Java 11+; CMS/ParNew deprecated | unset → G1 | **Correct.** Java 21 defaults to G1; setting it explicitly would add nothing. |
 | Maximum heap | "avoid more than 32g" | capped at 32g | **Matches.** |
 | `--add-opens=jdk.zipfs/...` | required for fragment `.zip` export | present | **Matches** (`composer.py:581`). |
 
-### The code cache is the one that matters
+### The code cache: measured, and resolved
+
+**Since LDM-#1464 the default is 240 MB on every platform.** What follows is the
+finding that led there, kept because it explains the reasoning.
 
 The JVM's default `ReservedCodeCacheSize` is **not constant** — it depends on a
 flag LDM sets itself. Measured on `eclipse-temurin:21`:
@@ -68,14 +71,26 @@ it unconditionally. So on LDM's primary developer platforms the code cache is
 | Linux | no | 240 MB |
 | `--lean`, any platform | yes | **48 MB** |
 
-This also explains LDM-422/423: the reindex path removes
+This also explained LDM-422/423: the reindex path removes
 `TieredStopAtLevel=1` *and* sets `ReservedCodeCacheSize=512m` to prevent
-`VirtualMachineError`. That treated the symptom on one code path; the cause is
-that the flag silently drops the cache everywhere it is applied.
+`VirtualMachineError`. That treated the symptom on one code path; the cause was
+that the flag silently dropped the cache everywhere it was applied.
 
-Any explicit default should be justified against the **effective** value on the
-platform in question, not against Liferay's "48m", which assumes a non-tiered
-JVM and is only coincidentally the same number.
+**What settled it.** The flag was added on the stated grounds that it "speeds up
+bundle resolution significantly". Measured over five full starts per arm on
+macOS 26.6.2 / Colima with `2026.q1.7-lts`:
+
+| | warm median | mean | spread |
+|---|---|---|---|
+| `TieredStopAtLevel=1` | **130.5s** | 131.2s | 129–135s |
+| without it | **130.5s** | 131.2s | 129–135s |
+
+Identical. The benefit was not reproducible; the cost was. The default was
+removed in LDM-#1464, so the JVM's 240 MB ergonomic value now applies.
+
+`--lean` still sets the flag — that profile trades throughput for footprint on
+purpose — and anyone who wants it back gets it with
+`jvm_tiered_stop_at_level=true`.
 
 ## Database connection pool
 
