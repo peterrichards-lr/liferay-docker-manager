@@ -223,6 +223,31 @@ To prevent test-runner hangs, memory exhaustion, and side-effect leakage in CI p
 
 ## 🚀 Local E2E Platform Verification Scripts (Multi-OS)
 
+### Console encoding and the verbatim-name check
+
+The non-ASCII naming check asserts that `ldm info` echoes the name the user
+typed. That assertion depends on the **console being able to carry the name**,
+and on Windows PowerShell 5.1 it frequently cannot (LDM-#1452).
+
+`[Console]::OutputEncoding = UTF8` and `PYTHONUTF8=1` are already set near the
+top of the PowerShell script, and they are **not sufficient**. Measured against
+`v2.18.0-pre.11`: the saved report contained **zero non-ASCII bytes** — box
+borders, status glyphs and project names alike had been flattened to `?` before
+anything could compare them.
+
+`ldm list --json` passed for the same three names in that same run, so LDM does
+store and report them correctly. The failure was the console, not the product;
+asserting against a rendering that cannot represent the value is measuring the
+terminal.
+
+Both scripts now test whether the console can round-trip the name and **skip
+visibly** when it cannot — never silently, for the same reason as the other
+"refusing to skip silently" guards here. The JSON assertion still runs and still
+proves the contract.
+
+This is why the surrounding checks parse `--json` rather than the rendered
+table: **parse the data, do not string-match a rendering of it.**
+
 ### Disk accounting
 
 Every run reports what it cost (LDM-#1438):

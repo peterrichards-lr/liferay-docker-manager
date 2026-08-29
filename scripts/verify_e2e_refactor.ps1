@@ -1739,7 +1739,37 @@ json.dump({'jira': 'LDM-1264', 'introduced_in': sys.argv[1],
         # the file-level assertions cannot see. No boot needed.
         $infoOut = (& $LDM_CMD info $raw 2>&1 | Out-String)
 
-        if ($infoOut -notmatch [regex]::Escape($raw)) {
+        # LDM-#1452: this assertion depends on the console being able to carry
+        # the name, and on Windows PowerShell 5.1 it frequently cannot.
+        #
+        # The obvious fix is already in place -- [Console]::OutputEncoding is
+        # set to UTF-8 near the top of this script, along with PYTHONUTF8=1 --
+        # and it is NOT sufficient. Measured on a real run against
+        # v2.18.0-pre.11: the saved report contained ZERO non-ASCII bytes. Box
+        # borders, status glyphs and project names alike had been flattened to
+        # "?" before anything could compare them.
+        #
+        # `ldm list --json` passed for the same three names in that same run, so
+        # LDM does store and report them correctly -- the failure was the
+        # console, not the product. Asserting against a rendering that cannot
+        # represent the value is measuring the terminal.
+        #
+        # So: detect whether this console can carry the name at all, and skip
+        # visibly if it cannot. Never silently -- an assertion that quietly
+        # stops running is what LDM-#1383 and the "refusing to skip silently"
+        # guards elsewhere in this script exist to prevent.
+        $consoleCarriesName = $true
+        try {
+            $enc = [Console]::OutputEncoding
+            if ($enc.GetString($enc.GetBytes($raw)) -cne $raw) { $consoleCarriesName = $false }
+        } catch {
+            $consoleCarriesName = $false
+        }
+
+        if (-not $consoleCarriesName) {
+            Write-Verdict "[WARNING] Skipping the verbatim-name check for '$raw': this console cannot represent it (LDM-#1452)."
+            Write-Verdict "          'ldm list --json' above already asserted the name is stored and reported correctly."
+        } elseif ($infoOut -notmatch [regex]::Escape($raw)) {
             Write-Host "[ERROR] 'ldm info $raw' does not show the verbatim project name." -ForegroundColor Red
             $namingOk = $false
             Invoke-Cleanup $LDM_CMD "-y rm $raw --delete"

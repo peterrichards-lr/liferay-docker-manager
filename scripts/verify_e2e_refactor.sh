@@ -1726,6 +1726,19 @@ assert name == expected, f'Compose project name is {name!r}, expected {expected!
     # No boot required -- these values are all resolved by `init`.
     info_out=$("$LDM_CMD" info "${raw}" 2>&1) || true
 
+    # LDM-#1452: the same console-capability guard as the PowerShell twin.
+    #
+    # This passes today only because macOS and Linux terminals are UTF-8. It is
+    # the identical assertion that cannot pass on Windows PowerShell 5.1, where
+    # the console flattens non-ASCII to "?" before anything can compare it --
+    # so guard it here too rather than leaving a latent trap for the first
+    # non-UTF-8 locale this runs in.
+    if ! printf '%s' "$raw" | iconv -f UTF-8 -t "$(locale charmap 2>/dev/null || echo UTF-8)" >/dev/null 2>&1; then
+        report_ok "⚠️  Skipping the verbatim-name check for '${raw}': this locale cannot represent it (LDM-#1452)."
+        report_ok "   'ldm list --json' above already asserted the name is stored and reported correctly."
+        return 0
+    fi
+
     # The heading keeps the verbatim name: that is what the user typed.
     if ! printf '%s' "$info_out" | grep -q -- "${raw}"; then
         echo "❌ ERROR: 'ldm info ${raw}' does not show the verbatim project name." | tee -a "$RESULTS_FILE_TMP"
