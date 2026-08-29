@@ -137,6 +137,34 @@ RELEASE_ANNOUNCEMENTS = {
             "One unreachable project no longer abandons every project after it",
         ),
     ],
+    "2.19": [
+        (
+            "ldm run --db mysql --database-mode shared",
+            "Shared MySQL/MariaDB: one database cluster serving every project, "
+            "alongside the existing PostgreSQL support",
+        ),
+        (
+            "ldm run --jvm-heap-max 8g",
+            "Tune one JVM setting without losing the rest -- heap, metaspace "
+            "and young generation are overridable per project, per user or on "
+            "the command line, and anything you leave unset stays adaptive",
+        ),
+        (
+            "ldm info",
+            "Shows the JVM arguments actually in effect and which layer each "
+            "value came from, so a surprising heap size is traceable",
+        ),
+        (
+            "ldm doctor",
+            "Checks the host filesystem as well as Docker's own: Docker can "
+            "report ample space while the disk backing it is full",
+        ),
+        (
+            "ldm rm --delete",
+            "Removes the project's volumes rather than leaving them for "
+            "'ldm prune', including when the compose file has already gone",
+        ),
+    ],
 }
 
 # --- Global Infrastructure ---
