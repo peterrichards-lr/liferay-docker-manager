@@ -848,6 +848,25 @@ try {
     # Observed to fail against the unfixed code before being committed: at
     # cfcde7c9^ diagnose_remote_context_failure does not exist and this path
     # printed "Command failed (Exit 1)" plus the whole HTTP/SSH blob.
+    # LDM-#1444: this check needs an ssh client, and some images ship none.
+    #
+    # The point is that SSH is genuinely attempted and genuinely refused -- the
+    # only way to exercise diagnose_remote_context_failure, since the thing under
+    # test IS the failure. With no ssh on PATH, Docker's connection helper fails
+    # to *invoke* it rather than failing to connect, so neither the phrase table
+    # nor the "connect to host <h> port <p>" regex matches and LDM falls back to
+    # its generic message -- correct behaviour that the assertion reads as a
+    # regression.
+    #
+    # Observed on Alpine 3.24.1 against v2.18.0-pre.11. An ssh client is a
+    # dependency this script does not control, which is the LDM-#1383 principle
+    # this check violated.
+    $sshAvailable = [bool](Get-Command ssh -ErrorAction SilentlyContinue)
+    if (-not $sshAvailable) {
+        Write-Verdict "[WARNING] Skipping the LDM-#1345 diagnosis check: no ssh client on PATH."
+        Write-Verdict "          Docker's connection helper cannot attempt a connection without"
+        Write-Verdict "          one, so the assertion would measure the wrong thing (LDM-#1444)."
+    } else {
     Write-Host ">> Verifying Unreachable Node Diagnosis (LDM-#1345)..."
 
     $sshFailPort = [int](& $VENV_PYTHON -c "import socket; s = socket.socket(); s.bind(('127.0.0.1', 0)); print(s.getsockname()[1]); s.close()")
@@ -893,6 +912,7 @@ services:
     & $LDM_CMD -y target rm $SSHFAIL_TEST_NODE *> $null
     Remove-Item -Recurse -Force $sshFailDir -ErrorAction SilentlyContinue
     Write-Verdict "[SUCCESS] Unreachable node diagnosed by name and cause, with no raw blob (LDM-#1345)."
+    }
     Remove-Ldm1383Artifacts
 
     Write-Host ">> Verifying Late Port Conflict Guidance (LDM-#1350)..."

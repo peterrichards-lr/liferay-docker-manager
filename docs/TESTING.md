@@ -274,6 +274,28 @@ re-pull, the same reasoning LDM-#1414 used to exclude them from project
 teardown. It cannot be combined with `--keep`, which preserves the artefacts it
 would remove.
 
+### The #1345 diagnosis check needs an ssh client
+
+The unreachable-node check works by genuinely attempting and genuinely failing
+an SSH connection — the only way to exercise
+`diagnose_remote_context_failure`, because the thing under test **is** the
+failure.
+
+With no `ssh` on PATH, Docker's connection helper fails to *invoke* it rather
+than failing to connect. The stderr is `executable file not found`, so neither
+the phrase table nor the `connect to host <h> port <p>` regex matches, and LDM
+falls back to its generic "could not be reached" — correct behaviour for an
+unrecognised failure, which the assertion then reads as a regression.
+
+Observed on **Alpine 3.24.1**, which ships no ssh client, against
+`v2.18.0-pre.11`. The signature is both parsers missing at once and `--user`
+absent from the tip: that is a failure which was never an SSH failure.
+
+Both scripts now skip the check **visibly** when no ssh client is present
+(LDM-#1444). An ssh client is a dependency the scripts do not control, which is
+exactly the principle LDM-#1383 set out — and the check was verified on macOS
+only, the same single-platform blind spot that produced LDM-#1425.
+
 ### Port-conflict diagnostics
 
 When a port check cannot proceed, both scripts name what holds the port
