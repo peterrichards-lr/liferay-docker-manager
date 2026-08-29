@@ -258,6 +258,26 @@ function Finalize-Verification {
         foreach ($line in $leftover) { Write-Verdict "            $line" }
     }
     
+    # LDM-#1438: report what this run cost, so growth is visible per run rather
+    # than discovered at 100% capacity three platforms later.
+    $endDocker = Get-DockerFreeGb
+    $endHost = Get-HostFreeGb
+    if ($null -ne $endDocker -and $null -ne $script:DiskStartDockerGb) {
+        $usedDocker = $script:DiskStartDockerGb - $endDocker
+        $usedHost = 0
+        if ($null -ne $endHost -and $null -ne $script:DiskStartHostGb) {
+            $usedHost = $script:DiskStartHostGb - $endHost
+        }
+        $hostText = if ($null -ne $endHost) { "$endHost GB" } else { "unknown" }
+        if ($usedDocker -lt 0) {
+            # Reclaimed more than it consumed -- the outcome to hope for. Say so
+            # rather than printing a negative.
+            Write-Verdict "[INFO] Disk: reclaimed $(-$usedDocker) GB in Docker; $endDocker GB now free (host: $hostText)."
+        } else {
+            Write-Verdict "[INFO] Disk: this run consumed $usedDocker GB in Docker and $usedHost GB on the host; $endDocker GB now free (host: $hostText)."
+        }
+    }
+
     # Keep venv if in repo, otherwise clean up
     if (-not (Test-Path "pyproject.toml")) {
         if (Test-Path $LDM_WORKSPACE) { Remove-Item -Recurse -Force $LDM_WORKSPACE -ErrorAction SilentlyContinue }
@@ -355,6 +375,37 @@ function Write-Verdict {
     $Message | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
 }
 
+function Get-HostFreeGb {
+    # LDM-#1435: the volume backing the engine, not the profile directory.
+    try {
+        $enginePath = $null
+        foreach ($candidate in @(
+            (Join-Path $env:USERPROFILE ".docker\desktop"),
+            (Join-Path $env:USERPROFILE ".colima"),
+            (Join-Path $env:USERPROFILE ".orbstack")
+        )) {
+            if (Test-Path $candidate) { $enginePath = $candidate; break }
+        }
+        if (-not $enginePath) { $enginePath = $env:USERPROFILE }
+        $qualifier = (Get-Item $enginePath).PSDrive.Name
+        return [math]::Floor((Get-PSDrive -Name $qualifier -ErrorAction Stop).Free / 1GB)
+    } catch {
+        return $null
+    }
+}
+
+function Get-DockerFreeGb {
+    try {
+        $dfOut = docker run --rm alpine df -P -k / 2>$null
+        if (-not $dfOut) { return $null }
+        $fields = (($dfOut | Select-Object -Last 1) -split '\s+') | Where-Object { $_ }
+        if ($fields.Count -lt 4) { return $null }
+        return [math]::Floor([int64]$fields[3] / 1024 / 1024)
+    } catch {
+        return $null
+    }
+}
+
 function Test-DockerDiskSpace {
     # LDM-#1430: a single up-front check cannot cover a run whose disk usage
     # peaks late. Between the pre-flight and the snapshot the run pulls two
@@ -394,21 +445,7 @@ function Test-DockerDiskSpace {
     # Measured on the volume backing the engine, not the profile directory:
     # storage is often relocated. Mirrors _ENGINE_STORAGE_PATHS in
     # diagnostics/doctor.py and the bash twin.
-    $hostFreeGb = $null
-    try {
-        $enginePath = $null
-        foreach ($candidate in @(
-            (Join-Path $env:USERPROFILE ".docker\desktop"),
-            (Join-Path $env:USERPROFILE ".colima"),
-            (Join-Path $env:USERPROFILE ".orbstack")
-        )) {
-            if (Test-Path $candidate) { $enginePath = $candidate; break }
-        }
-        if (-not $enginePath) { $enginePath = $env:USERPROFILE }
-        $qualifier = (Get-Item $enginePath).PSDrive.Name
-        $drive = Get-PSDrive -Name $qualifier -ErrorAction Stop
-        $hostFreeGb = [math]::Floor($drive.Free / 1GB)
-    } catch { }
+    $hostFreeGb = Get-HostFreeGb
 
     if ($null -ne $hostFreeGb -and $hostFreeGb -lt $NeedGb) {
         Write-Verdict "[ERROR] Not enough space on the HOST filesystem $Label."
@@ -569,6 +606,13 @@ try {
     if (-not (Test-DockerDiskSpace -NeedGb $minDiskGb -Label "to finish")) {
         throw "Insufficient Docker disk space, need $minDiskGb GB. Refusing before pulling anything, so no half-finished report is written."
     }
+
+    # LDM-#1438: record the starting figures so the run can report what it cost.
+    # Disk exhaustion broke verification on three platforms in the v2.18.0 cycle
+    # and was invisible until a run died at 100% capacity -- free space was
+    # printed once, at the start, and never mentioned again.
+    $script:DiskStartDockerGb = Get-DockerFreeGb
+    $script:DiskStartHostGb = Get-HostFreeGb
 
     # Pre-pull large images to avoid containerd lease timeouts during the timed E2E run
     Write-Host "[INFO]  Pre-pulling required Docker images..."

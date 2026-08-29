@@ -33,11 +33,25 @@ PORT_HOLDER="ldm-e2e-port-holder-${TEST_PORT}"
 KIBANA_HOST_PORT=5601
 
 KEEP_ARTIFACTS=false
+# LDM-#1438: opt-in, never the default. Images are shared between projects and
+# expensive to re-pull -- the same reasoning LDM-#1414 used to exclude them from
+# project teardown. Worth having for a machine dedicated to verification, where
+# the accumulation is the whole problem.
+PRUNE_AFTER=false
 for arg in "$@"; do
     if [ "$arg" == "-k" ] || [ "$arg" == "--keep" ]; then
         KEEP_ARTIFACTS=true
     fi
+    if [ "$arg" == "--prune-after" ]; then
+        PRUNE_AFTER=true
+    fi
 done
+if [ "$KEEP_ARTIFACTS" = true ] && [ "$PRUNE_AFTER" = true ]; then
+    echo "❌ ERROR: --keep and --prune-after contradict each other." >&2
+    echo "   --keep preserves this run's artefacts; --prune-after removes unused" >&2
+    echo "   Docker resources. Pick one." >&2
+    exit 1
+fi
 
 echo "⚡ Starting Standalone Binary Verification on Port ${TEST_PORT}..."
 
@@ -282,6 +296,34 @@ cleanup_test_projects() {
                 2>/dev/null | tee -a "$RESULTS_FILE_TMP" || true
         fi
 
+        if [ "$PRUNE_AFTER" = true ]; then
+            # Deliberately after the project removal above, so the project's own
+            # volumes are already gone and this only reclaims what nothing else
+            # owns. Reported, not silent: a prune that removes 50 GB should say
+            # so, and one that removes nothing tells you the leak is elsewhere.
+            echo "ℹ  --prune-after: reclaiming unused Docker resources..." | tee -a "$RESULTS_FILE_TMP"
+            docker system prune -af --volumes 2>&1 | tail -2 | tee -a "$RESULTS_FILE_TMP" || true
+        fi
+
+        # LDM-#1438: report what this run cost, so growth is visible per run
+        # rather than discovered at 100% capacity three platforms later.
+        local end_docker end_host
+        end_docker=$(docker_free_gb)
+        end_host=$(host_free_gb)
+        if [ -n "$end_docker" ] && [ -n "${DISK_START_DOCKER_GB:-}" ]; then
+            local used_docker=$((DISK_START_DOCKER_GB - end_docker))
+            local used_host=0
+            [ -n "$end_host" ] && [ -n "${DISK_START_HOST_GB:-}" ] &&
+                used_host=$((DISK_START_HOST_GB - end_host))
+            # Negative means the run reclaimed more than it consumed, which is
+            # the outcome to hope for -- say so rather than printing "-3 GB".
+            if [ "$used_docker" -lt 0 ]; then
+                echo "ℹ  Disk: reclaimed $((0 - used_docker)) GB in Docker; ${end_docker} GB now free (host: ${end_host:-?} GB)." | tee -a "$RESULTS_FILE_TMP"
+            else
+                echo "ℹ  Disk: this run consumed ${used_docker} GB in Docker and ${used_host} GB on the host; ${end_docker} GB now free (host: ${end_host:-?} GB)." | tee -a "$RESULTS_FILE_TMP"
+            fi
+        fi
+
         # Keep the venv if we are in the repository for developer convenience, otherwise delete
         if [ ! -f "pyproject.toml" ]; then
             remove_workspace_dir "${LDM_WORKSPACE}"
@@ -488,6 +530,34 @@ MIN_DISK_GB="${LDM_VERIFY_MIN_DISK_GB:-15}"
 # function, called again before the snapshot phase.
 #
 # $1 = GB required, $2 = label for the message, $3 = "fatal" or "warn"
+# LDM-#1435: the volume that actually backs the engine, not $HOME. Storage is
+# often relocated -- on one developer machine ~/.colima is a symlink to an
+# external drive, where the home volume showed 154 GB free and the volume Docker
+# really uses showed 480 GB. Mirrors _ENGINE_STORAGE_PATHS in
+# ldm_core/diagnostics/doctor.py.
+engine_storage_path() {
+    local candidate
+    for candidate in "$HOME/.colima" "$HOME/.docker/desktop" "$HOME/.orbstack" \
+                     /var/lib/docker; do
+        if [ -e "$candidate" ]; then
+            printf '%s' "$candidate"
+            return 0
+        fi
+    done
+    printf '%s' "$HOME"
+}
+
+host_free_gb() {
+    command -v df >/dev/null 2>&1 || return 0
+    df -Pk "$(engine_storage_path)" 2>/dev/null | awk 'NR==2 {print int($4/1024/1024)}'
+}
+
+docker_free_gb() {
+    local kb
+    kb=$(docker run --rm alpine df -P -k / 2>/dev/null | awk 'NR==2 {print $4}')
+    [ -n "$kb" ] && echo $((kb / 1024 / 1024))
+}
+
 check_docker_disk() {
     local need="$1" label="$2" mode="${3:-fatal}"
     echo "ℹ  Checking Docker has room ${label} (need ${need} GB)..."
@@ -513,18 +583,8 @@ check_docker_disk() {
     # external drive, where the home volume showed 154 GB free and the volume
     # Docker really uses showed 480 GB. Checking $HOME there would fail a run
     # that had ample space. Mirrors _ENGINE_STORAGE_PATHS in diagnostics/doctor.py.
-    local host_free_gb="" engine_path=""
-    for candidate in "$HOME/.colima" "$HOME/.docker/desktop" "$HOME/.orbstack" \
-                     /var/lib/docker; do
-        if [ -e "$candidate" ]; then
-            engine_path="$candidate"
-            break
-        fi
-    done
-    [ -z "$engine_path" ] && engine_path="$HOME"
-    if command -v df >/dev/null 2>&1; then
-        host_free_gb=$(df -Pk "$engine_path" 2>/dev/null | awk 'NR==2 {print int($4/1024/1024)}')
-    fi
+    local host_free_gb=""
+    host_free_gb=$(host_free_gb)
     if [ -n "$host_free_gb" ] && [ "$host_free_gb" -lt "$need" ]; then
         echo "❌ ERROR: not enough space on the HOST filesystem ${label}." | tee -a "$RESULTS_FILE_TMP"
         echo "   Docker reports ${free_gb} GB free, but the host has only ${host_free_gb} GB." | tee -a "$RESULTS_FILE_TMP"
@@ -563,6 +623,16 @@ check_docker_disk() {
 }
 
 check_docker_disk "$MIN_DISK_GB" "to finish"
+
+# LDM-#1438: record the starting figures so the run can report what it consumed.
+#
+# Disk exhaustion broke verification on three platforms in the v2.18.0 cycle, on
+# machines whose only workload was this script -- and it was invisible until a
+# run died at 100% capacity. The pre-flight printed free space once, at the
+# start, and never mentioned it again, so a run that consumed 4 GB and reclaimed
+# none looked identical to one that cleaned up perfectly.
+DISK_START_DOCKER_GB=$(docker_free_gb)
+DISK_START_HOST_GB=$(host_free_gb)
 
 # Pre-pull large images to avoid containerd lease timeouts during the timed E2E run
 echo "ℹ  Pre-pulling required Docker images..."

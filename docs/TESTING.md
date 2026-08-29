@@ -223,6 +223,32 @@ To prevent test-runner hangs, memory exhaustion, and side-effect leakage in CI p
 
 ## 🚀 Local E2E Platform Verification Scripts (Multi-OS)
 
+### Disk accounting
+
+Every run reports what it cost (LDM-#1438):
+
+```text
+ℹ  Disk: this run consumed 4 GB in Docker and 1 GB on the host;
+   51 GB now free (host: 479 GB).
+```
+
+Disk exhaustion broke verification on three platforms during the v2.18.0 cycle,
+on machines whose only workload was these scripts — and it was invisible until a
+run died at 100% capacity. Free space was printed once, at the start, and never
+mentioned again, so a run that consumed 4 GB and reclaimed none looked identical
+to one that cleaned up perfectly.
+
+A run that reclaims more than it consumes says so, rather than printing a
+negative.
+
+**`--prune-after`** is available for machines dedicated to verification. It runs
+`docker system prune -af --volumes` *after* the project teardown, so it only
+reclaims what nothing else owns, and reports what it freed. It is **opt-in and
+never the default**: images are shared between projects and expensive to
+re-pull, the same reasoning LDM-#1414 used to exclude them from project
+teardown. It cannot be combined with `--keep`, which preserves the artefacts it
+would remove.
+
 ### Port-conflict diagnostics
 
 When a port check cannot proceed, both scripts name what holds the port
