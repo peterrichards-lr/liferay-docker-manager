@@ -277,6 +277,43 @@ def poll_pr_merge(pr_num):
         time.sleep(15)
 
 
+def minor_series_of(version):
+    """The RELEASE_ANNOUNCEMENTS key for a version: '2.19.0-pre.1' -> '2.19'.
+
+    Any pre-release suffix is dropped first, so a cut and the stable it later
+    promotes to resolve to the same key.
+    """
+    base = version.split("-", 1)[0]
+    parts = base.split(".")
+    return ".".join(parts[:2]) if len(parts) >= 2 else base
+
+
+def check_release_announcements(version, announcements):
+    """Is a "what's new" panel registered for the series being CUT (LDM-#1477)?
+
+    Returns (ok, message). Takes the version explicitly rather than reading it,
+    because the bug this replaces was one of timing: the check ran against the
+    version read before the bump, so `--bump preminor` confirmed the series
+    that had already shipped and could never fail for the series being
+    released. Passing the target in makes the preminor case testable without a
+    live cut -- the same reasoning `classify_stable_promotion` records below.
+
+    A missing key is a warning, not an error: a release should not be blocked
+    on release-note copy.
+    """
+    series = minor_series_of(version)
+    if series in announcements:
+        count = len(announcements[series])
+        return True, (
+            f"✅ Verified release announcements key for '{series}' series "
+            f"({count} highlights registered)."
+        )
+    return False, (
+        f"⚠️  Warning: RELEASE_ANNOUNCEMENTS in constants.py is missing key for "
+        f"minor series '{series}'. Please update constants.py!"
+    )
+
+
 def classify_stable_promotion(tag_exists, master_has_version):
     """Decides what an already-stable version means during --promote (LDM-#1329).
 
@@ -744,20 +781,6 @@ def main():  # noqa: C901, PLR0912, PLR0915
     parts = current_version.split("-", 1)
     base_version = parts[0]
 
-    from ldm_core.constants import RELEASE_ANNOUNCEMENTS
-
-    v_prefix = (
-        ".".join(base_version.split(".")[:2]) if "." in base_version else base_version
-    )
-    if v_prefix in RELEASE_ANNOUNCEMENTS:
-        print(
-            f"✅ Verified release announcements key for '{v_prefix}' series ({len(RELEASE_ANNOUNCEMENTS[v_prefix])} highlights registered)."
-        )
-    else:
-        print(
-            f"⚠️  Warning: RELEASE_ANNOUNCEMENTS in constants.py is missing key for minor series '{v_prefix}'. Please update constants.py!"
-        )
-
     tag_check = run_cmd(["git", "tag", "-l", f"v{base_version}"], capture=True)
     if tag_check.stdout.strip():
         if args.bump in ["beta", "pre"]:
@@ -826,6 +849,15 @@ def main():  # noqa: C901, PLR0912, PLR0915
     )
     new_version = ver_res.stdout.strip()
     print(f"Bumped to new version: {new_version}")
+
+    # Checked here rather than before the bump: only now is the series being
+    # released actually known (LDM-#1477).
+    from ldm_core.constants import RELEASE_ANNOUNCEMENTS
+
+    _, announcements_msg = check_release_announcements(
+        new_version, RELEASE_ANNOUNCEMENTS
+    )
+    print(announcements_msg)
 
     # 6. Create the release branch for a new cycle, or stay on the existing
     # one when continuing an already-open pre-release cycle (LDM-#983: this
