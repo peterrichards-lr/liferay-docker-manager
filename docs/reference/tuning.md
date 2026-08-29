@@ -91,17 +91,27 @@ jdbc.default.minimumIdle=10
 jdbc.default.registerMbeans=true
 ```
 
-LDM writes `jdbc.default.maxActive`, `minIdle` and `maxIdle` — **DBCP names**,
-which appear nowhere in those 12,085 lines and are therefore ignored. The
-`db_max_active` / `db_min_idle` / `db_max_idle` keys are settable and have no
-effect; every project runs on Liferay's built-in defaults.
+LDM used to write `jdbc.default.maxActive`, `minIdle` and `maxIdle` — **DBCP
+names**, which appear nowhere in those 12,085 lines and were therefore ignored.
+`db_max_active` and friends were settable and had no effect at all; every
+project ran on Liferay's built-in defaults.
 
-Tracked and being fixed in **LDM-#1454**. Note the fix is not a rename: giving
-those values effect for the first time changes the pool from Liferay's 180 to
-LDM's 15, so the numbers are being chosen deliberately rather than inherited.
+Fixed in **LDM-#1454**. LDM now writes:
 
-`maxIdle` has no HikariCP equivalent — Hikari has one pool size and governs idle
-connections through `idleTimeout`.
+| Config key | Liferay property | LDM default | Liferay default |
+|---|---|---|---|
+| `db_max_active` | `jdbc.default.maximumPoolSize` | **15** | 180 |
+| `db_min_idle` | `jdbc.default.minimumIdle` | **2** | 10 |
+| `db_idle_timeout` | `jdbc.default.idleTimeout` | **600000** | 600000 |
+
+The smaller pool is deliberate: 180 is sized for a production server, and LDM
+targets a laptop running a single project. This was a **behaviour change rather
+than a rename** — correcting the names gave those values effect for the first
+time, moving the pool from 180 to 15.
+
+`db_max_idle` is gone: HikariCP has one pool size and no maximum-idle setting,
+governing idle connections through `idleTimeout` instead. An existing
+`~/.ldmrc` carrying it still loads, and LDM warns once naming the replacement.
 
 ## Not exposed at all
 
@@ -124,12 +134,53 @@ commitment:
 
 ## Overriding any of this
 
-Today: `--lean`, or `--jvm-args` — which **replaces** LDM's defaults entirely
-rather than adding to them, so changing one value discards the adaptive sizing.
-See [Advanced CLI](advanced_cli.md).
+**An unset value keeps the adaptive calculation.** Changing the heap does not
+discard metaspace sizing, the platform compiler decision or the reindex
+scale-up. That is the difference between these and `--jvm-args`, which replaces
+LDM's defaults entirely (LDM-#1449).
 
-Per-setting overrides through the `ldm config` cascade are tracked in
-**LDM-#1449**, with the rule that an unset key keeps the adaptive calculation.
+| Setting | CLI flag | Config key | Renders as |
+|---|---|---|---|
+| Initial heap | `--jvm-heap-min` | `jvm_heap_min` | `-Xms` |
+| Maximum heap | `--jvm-heap-max` | `jvm_heap_max` | `-Xmx` |
+| Metaspace | `--jvm-metaspace` | `jvm_metaspace` | `-XX:MetaspaceSize` / `MaxMetaspaceSize` |
+| Young generation | `--jvm-new-size` | `jvm_new_size` | `-XX:NewSize` / `MaxNewSize` |
+| Compiler level | `--jvm-tiered-stop-at-level` | `jvm_tiered_stop_at_level` | `-XX:TieredStopAtLevel=1` |
+
+Sizes accept a bare number of megabytes or a JVM suffix — `2048`, `512m`, `8g`.
+A value that cannot be read is **ignored with a warning** and the calculated
+value kept, rather than failing the container at start.
+
+### Precedence
+
+Most specific wins:
+
+```text
+--jvm-heap-max 8g        CLI flag
+project meta             per-project
+~/.ldmrc                 per-user        ) ldm config
+/etc/ldmrc               per-machine     )
+--lean                   profile
+adaptive calculation     base
+```
+
+### Profiles
+
+`--lean` is a named set of overrides rather than a fixed string, so it leaves
+anything it does not mention adaptive:
+
+```text
+lean: heap_min 1536m, heap_max 2048m, metaspace 512m,
+      no NewSize, TieredStopAtLevel=1
+```
+
+It is also applied implicitly when `GITHUB_ACTIONS=true`.
+
+### The blunt instrument
+
+`--jvm-args` still replaces everything, and is documented in
+[Advanced CLI](advanced_cli.md). Reach for it only when you want none of the
+above.
 
 <!-- markdownlint-disable MD049 -->
 ---

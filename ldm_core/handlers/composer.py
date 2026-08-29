@@ -2,7 +2,9 @@ import json
 import math
 import os
 import platform
+import re
 from pathlib import Path
+from typing import ClassVar
 
 from ldm_core.ui import UI
 from ldm_core.utils import (
@@ -112,21 +114,199 @@ class ComposerService:
         # Global fallback (16 GB)
         return 16 * 1024 * 1024 * 1024
 
+    # LDM-#1449: named profiles are DATA, not code.
+    #
+    # `lean` used to be an early `return` of a fixed string, which meant it
+    # bypassed the adaptive calculation entirely -- the same all-or-nothing
+    # shape as `--jvm-args`, just with better-chosen numbers. Expressed as
+    # overrides it goes through the same merge as every other layer, so a
+    # profile that sets four keys leaves the rest adaptive, and a later fix to
+    # the adaptive sizing reaches lean too.
+    #
+    # Values are ABSOLUTE, not caps. A profile key replaces the adaptive value
+    # outright, which is what `lean` needs: on a 64 GB runner it must still
+    # produce a small heap, and an absolute does that. Cap/floor semantics
+    # ("adaptive, but no more than X") would be a separate key shape and can be
+    # added later without breaking absolutes -- doing it the other way round
+    # could not.
+    #
+    # `new_size: None` means "omit the flag", which is what lean did by
+    # returning a string without it.
+    TUNING_PROFILES: ClassVar[dict] = {
+        "lean": {
+            # Optimized for 7GB GitHub Runners (2GB heap)
+            "heap_min_mb": 1536,
+            "heap_max_mb": 2048,
+            "metaspace": "512m",
+            "new_size_mb": None,
+            "tiered_stop_at_level": True,
+        },
+    }
+
+    # Config keys, in the LDM-#1449 cascade, mapped to the internal setting they
+    # override. Names follow the existing style (`db_max_active`,
+    # `elasticsearch_heap_size`).
+    _TUNING_CONFIG_KEYS: ClassVar[dict] = {
+        "jvm_heap_min": "heap_min_mb",
+        "jvm_heap_max": "heap_max_mb",
+        "jvm_metaspace": "metaspace",
+        "jvm_new_size": "new_size_mb",
+        "jvm_tiered_stop_at_level": "tiered_stop_at_level",
+    }
+
     def get_default_jvm_args(self, target_name=None):
-        """Calculates recommended JVM arguments based on available host and Docker RAM."""
-        # LDM-385: Support 'Lean' profile for CI or low-memory environments
+        """Calculates recommended JVM arguments based on available host and Docker RAM.
+
+        LDM-#1449: the calculation now produces a settings mapping which the
+        cascade layers over, rather than a string assembled in one place. The
+        rendered output is unchanged -- `test_tuning_cascade.py` pins it
+        byte-for-byte across memory tiers, platforms and `--lean`, because
+        `--lean` is applied implicitly whenever GITHUB_ACTIONS=true and a change
+        there would silently alter what CI runs.
+        """
+        return self._render_jvm_args(self._resolve_tuning(target_name))
+
+    def _resolve_tuning(self, target_name=None):
+        """Merges the tuning layers, most specific last (LDM-#1449).
+
+            adaptive calculation   base, unchanged behaviour
+            profile                --lean / TUNING_PROFILES
+            /etc/ldmrc             per-machine    ) both via the defaults
+            ~/.ldmrc               per-user       ) cascade
+            project meta           per-project
+            CLI flag               most specific
+
+        An unset key keeps the adaptive value. That single property is what
+        separates this from `--jvm-args`, which replaces everything.
+        """
+        settings = self._adaptive_tuning(target_name)
+
+        # LDM-385: 'Lean' profile for CI or low-memory environments.
         is_lean = (
             getattr(self.manager.args, "lean", False)
             or os.getenv("GITHUB_ACTIONS") == "true"
         )
-
         if is_lean:
-            # Optimized for 7GB GitHub Runners (2GB heap)
-            return (
-                "-Xms1536m -Xmx2048m -XX:MaxMetaspaceSize=512m "
-                "-XX:MetaspaceSize=512m -XX:TieredStopAtLevel=1"
-            )
+            settings.update(self.TUNING_PROFILES["lean"])
 
+        defaults = getattr(self.manager, "defaults", None)
+        meta = getattr(self.manager, "meta", None) or {}
+        for config_key, setting in self._TUNING_CONFIG_KEYS.items():
+            value = None
+            if defaults is not None:
+                value = self._tuning_value(config_key, defaults.get(config_key))
+            if isinstance(meta, dict):
+                value = self._tuning_value(config_key, meta.get(config_key)) or value
+            cli_value = self._tuning_value(
+                config_key, getattr(self.manager.args, config_key, None)
+            )
+            if cli_value is not None:
+                value = cli_value
+            if value is not None:
+                settings[setting] = value
+
+        return settings
+
+    # Sizes accept a bare number of megabytes or a JVM-style suffix, matching
+    # what a user would write in `-Xmx`.
+    _SIZE_RE = re.compile(r"^\d+[kKmMgG]?$")
+
+    @classmethod
+    def _tuning_value(cls, config_key, raw):
+        """Validates one configured tuning value, or returns None (LDM-#1449).
+
+        Two jobs, both protecting the adaptive calculation:
+
+        1. **Reject non-scalars.** Config values arrive from YAML, JSON or
+           argparse and are always scalars. Anything else -- most often a test
+           double whose `.get()` returns a Mock rather than None -- means "not
+           configured". Without this a Mock renders as `-Xmx1m` and the adaptive
+           sizing is silently discarded.
+
+        2. **Reject values that cannot mean what the setting needs.** A bad
+           value must not reach the renderer: `int("huge")` raises
+           `ValueError: invalid literal for int()` at container start, naming
+           neither the setting nor the layer it came from. Warn, ignore it, and
+           keep the adaptive value -- a project that starts on sane defaults is
+           better than one that will not start at all.
+        """
+        if raw is None:
+            return None
+        if config_key == "jvm_tiered_stop_at_level":
+            return cls._tuning_flag(config_key, raw)
+        return cls._tuning_size(config_key, raw)
+
+    @staticmethod
+    def _tuning_flag(config_key, raw):
+        """A boolean tuning setting."""
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, str) and raw.strip().lower() in ("true", "false"):
+            return raw.strip().lower() == "true"
+        if isinstance(raw, int):
+            return bool(raw)
+        UI.warning(
+            f"Ignoring '{config_key}={raw}': expected true or false (LDM-#1449)."
+        )
+        return None
+
+    @classmethod
+    def _tuning_size(cls, config_key, raw):
+        """A size setting, normalised to megabytes where the renderer needs it.
+
+        `jvm_metaspace` is rendered verbatim into `-XX:MetaspaceSize`, which
+        accepts a JVM suffix. The heap and new-size settings are rendered as
+        `...m`, so a suffixed value must be normalised here -- otherwise
+        `int("8g")` raises at container start.
+        """
+        if isinstance(raw, bool):
+            UI.warning(f"Ignoring '{config_key}={raw}': expected a size.")
+            return None
+
+        text = str(raw).strip()
+        if not cls._SIZE_RE.match(text):
+            UI.warning(
+                f"Ignoring '{config_key}={raw}': expected a size such as 2048, "
+                "512m or 8g. Keeping the value LDM calculated (LDM-#1449)."
+            )
+            return None
+
+        if config_key == "jvm_metaspace":
+            return text
+
+        unit = text[-1].lower()
+        if unit.isdigit():
+            return int(text)
+        number = int(text[:-1])
+        multipliers = {"g": 1024, "m": 1, "k": 0}
+        if unit == "k":
+            return max(1, number // 1024)
+        return number * multipliers[unit]
+
+    @staticmethod
+    def _render_jvm_args(settings):
+        """Renders the settings mapping into the JVM argument string.
+
+        Flag order is load-bearing only in that it must not change: the
+        byte-identical assertions in test_tuning_cascade.py compare against
+        output captured before this refactor.
+        """
+        parts = [
+            f"-Xms{int(settings['heap_min_mb'])}m",
+            f"-Xmx{int(settings['heap_max_mb'])}m",
+            f"-XX:MaxMetaspaceSize={settings['metaspace']}",
+            f"-XX:MetaspaceSize={settings['metaspace']}",
+        ]
+        new_size = settings.get("new_size_mb")
+        if new_size is not None:
+            parts.append(f"-XX:NewSize={int(new_size)}m")
+            parts.append(f"-XX:MaxNewSize={int(new_size)}m")
+        if settings.get("tiered_stop_at_level"):
+            parts.append("-XX:TieredStopAtLevel=1")
+        return " ".join(parts)
+
+    def _adaptive_tuning(self, target_name=None):
+        """The unchanged adaptive calculation, as a settings mapping."""
         try:
             # Get Docker memory limit if available
             docker_mem = 0
@@ -180,21 +360,33 @@ class ComposerService:
 
             new_size_mb = max(512, math.floor((max_heap_gb * 1024) * 0.33))
 
-            jvm_base = ""
             os_name = platform.system().lower()
-            if os_name in ["darwin", "windows"]:
-                # Optimization for local dev environments (macOS/Windows Docker VM)
-                # TieredStopAtLevel=1 speeds up bundle resolution significantly.
-                jvm_base += " -XX:TieredStopAtLevel=1"
+            # Optimization for local dev environments (macOS/Windows Docker VM):
+            # TieredStopAtLevel=1 speeds up bundle resolution significantly.
+            #
+            # LDM-#1448 measured the cost: this flag drops the JVM's ergonomic
+            # ReservedCodeCacheSize from 240 MB to 48 MB, which is the figure
+            # Liferay's tuning guidance calls out as harmful. Left as-is here --
+            # changing it is a behaviour decision, not part of this refactor --
+            # but it is now overridable via `jvm_tiered_stop_at_level`.
+            tiered = os_name in ["darwin", "windows"]
 
-            return (
-                f"-Xms{int(min_heap_gb * 1024)}m -Xmx{int(max_heap_gb * 1024)}m "
-                f"-XX:MaxMetaspaceSize={metaspace} -XX:MetaspaceSize={metaspace} "
-                f"-XX:NewSize={new_size_mb}m -XX:MaxNewSize={new_size_mb}m"
-                f"{jvm_base}"
-            )
+            return {
+                "heap_min_mb": int(min_heap_gb * 1024),
+                "heap_max_mb": int(max_heap_gb * 1024),
+                "metaspace": metaspace,
+                "new_size_mb": new_size_mb,
+                "tiered_stop_at_level": tiered,
+            }
         except Exception:
-            return "-Xms4096m -Xmx12288m -XX:MaxMetaspaceSize=768m -XX:MetaspaceSize=768m -XX:TieredStopAtLevel=1"
+            # Unchanged fallback, as a mapping.
+            return {
+                "heap_min_mb": 4096,
+                "heap_max_mb": 12288,
+                "metaspace": "768m",
+                "new_size_mb": None,
+                "tiered_stop_at_level": True,
+            }
 
     def _is_ssl_active(self, host_name, meta):
         """Determines if SSL/Proxy routing should be enabled for a project."""

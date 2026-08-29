@@ -191,6 +191,14 @@ RUN_ATTRS = [
     "mount_logs",
     "gogo_port",
     "jvm_args",
+    # LDM-#1449: per-setting tuning overrides. Persisted so a project keeps the
+    # tuning it was created with, rather than silently re-resolving from
+    # whatever the machine's config says on a later run.
+    "jvm_heap_min",
+    "jvm_heap_max",
+    "jvm_metaspace",
+    "jvm_new_size",
+    "jvm_tiered_stop_at_level",
     "no_vol_cache",
     "no_jvm_verify",
     "no_tld_skip",

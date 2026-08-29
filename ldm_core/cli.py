@@ -689,6 +689,29 @@ def get_parser():  # noqa: PLR0915
         action="store_true",
         help="Use a resource-optimized JVM profile (useful for CI or low-memory systems)",
     )
+    # LDM-#1449: per-setting tuning overrides.
+    #
+    # Unlike `--jvm-args`, which replaces LDM's defaults wholesale, an unset
+    # flag here keeps the adaptive calculation -- so changing the heap does not
+    # discard metaspace sizing, the platform compiler decision or the reindex
+    # scale-up. Each also has a config key of the same name usable through
+    # `ldm config` and project meta; see docs/reference/tuning.md.
+    for _flag, _help in (
+        ("--jvm-heap-min", "Initial heap, e.g. 2048, 512m or 8g (-Xms)"),
+        ("--jvm-heap-max", "Maximum heap, e.g. 2048, 512m or 8g (-Xmx)"),
+        ("--jvm-metaspace", "Metaspace size, e.g. 768m (-XX:MetaspaceSize)"),
+        ("--jvm-new-size", "Young generation size, e.g. 2048 (-XX:NewSize)"),
+    ):
+        run.add_argument(_flag, help=f"{_help}. Overrides LDM's calculated value.")
+    run.add_argument(
+        "--jvm-tiered-stop-at-level",
+        choices=["true", "false"],
+        help=(
+            "Force -XX:TieredStopAtLevel=1 on or off. LDM enables it on "
+            "macOS/Windows for faster bundle resolution; note it also reduces "
+            "the JVM code cache from 240MB to 48MB (see docs/reference/tuning.md)."
+        ),
+    )
     run.add_argument(
         "--open",
         action="store_true",

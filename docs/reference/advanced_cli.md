@@ -57,6 +57,29 @@ Advanced options for memory constraints and Java-level debugging.
 > reference](tuning.md).
 
 - **`--lean`**: Enables a resource-optimized JVM profile. It caps memory and limits background threading. Highly recommended for laptops with less than 16GB of RAM or CI runners.
+
+### Per-setting overrides
+
+Each of these overrides one value and **leaves the rest adaptive** — changing
+the heap does not discard metaspace sizing, the platform compiler decision or
+the reindex scale-up. Sizes accept `2048`, `512m` or `8g`; an unreadable value
+is ignored with a warning rather than failing the container at start.
+
+- **`--jvm-heap-min`**: Initial heap size.
+- **`--jvm-heap-max`**: Maximum heap size.
+- **`--jvm-metaspace`**: Metaspace size, initial and maximum.
+- **`--jvm-new-size`**: Young generation size.
+- **`--jvm-tiered-stop-at-level`** (`true`/`false`): Force the tiered-compiler
+  stop level on or off. LDM enables it on macOS/Windows for faster bundle
+  resolution; note it also drops the JVM code cache from 240 MB to 48 MB.
+
+The exact JVM flags each one produces are listed in the
+[tuning reference](tuning.md#overriding-any-of-this).
+
+Each has a config key of the same name (`jvm_heap_max`, …) usable through
+`ldm config` and project metadata. Precedence, profiles and the measured
+reasoning are in the [JVM & Database Tuning reference](tuning.md).
+
 - **`--jvm-args="<args>"`**: Pass raw JVM arguments directly to Liferay. Example: `--jvm-args="-Xmx8g -Xms8g"`
 
   > **This replaces LDM's defaults entirely.** It is not additive: the adaptive
