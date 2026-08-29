@@ -485,14 +485,41 @@ jobs:
       - name: Verify Compiled Binary (Smoke Test)
         shell: bash
         run: |
+          # LDM-#1437: assert the OUTPUT, not just the exit status.
+          #
+          # This used to run `--version` and accept exit 0. A one-file binary
+          # that cannot unpack itself -- to a full %TEMP%, for instance -- still
+          # exits 0 while printing nothing to stdout, so the check passed on a
+          # binary that produced no output at all.
+          #
+          # That is not hypothetical. On Windows the documented download
+          # one-liner embeds `v$(ldm version)` in a URL; with stdout empty it
+          # resolved to `.../v/scripts/...` and returned 404, which reads as a
+          # missing script and hides the real failure entirely.
+          expected="$(grep -m1 -oE '^VERSION = "[^"]+"' ldm_core/constants.py \
+                      | sed -E 's/VERSION = "([^"]+)"/\1/')"
+          assert_version() {
+            local binary="$1" out
+            out="$($binary --version 2>/dev/null || true)"
+            if [ -z "$out" ]; then
+              echo "::error::$binary --version printed nothing. The binary may have"
+              echo "::error::failed to unpack (see LDM-#1437); exit status alone would"
+              echo "::error::have passed this check."
+              return 1
+            fi
+            if ! printf '%s' "$out" | grep -qF -- "$expected"; then
+              echo "::error::$binary --version printed '$out', expected it to contain '$expected'."
+              return 1
+            fi
+            echo "  $binary --version -> $out"
+          }
+
           if [ "${{ matrix.os }}" == "macos-latest" ]; then
-            # Verify arm64 binary
-            ./${{ env.BINARY_PATH_ARM }} --version
+            assert_version "./${{ env.BINARY_PATH_ARM }}"
             ./${{ env.BINARY_PATH_ARM }} init test-project-arm -y --no-up
             # Skip running the x86_64 binary natively on the arm64 runner to avoid Rosetta / Architecture mismatch errors.
           else
-            # Verify Linux/Windows binary
-            ./${{ env.BINARY_PATH }} --version
+            assert_version "./${{ env.BINARY_PATH }}"
             ./${{ env.BINARY_PATH }} init test-project -y --no-up
           fi
 
