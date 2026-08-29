@@ -223,6 +223,30 @@ To prevent test-runner hangs, memory exhaustion, and side-effect leakage in CI p
 
 ## 🚀 Local E2E Platform Verification Scripts (Multi-OS)
 
+### Console encoding on Windows
+
+Windows PowerShell 5.1 defaults to a non-UTF-8 console code page, and that
+flattens non-ASCII output to `?` — including in the **saved report**, which is
+the project's durable record of what was tested. Measured on
+`v2.18.0-pre.11`: the Windows report contained **zero non-ASCII bytes**.
+
+Three settings are needed, at two different layers, and only the first two were
+present until LDM-#1465:
+
+| Setting | Layer |
+|---|---|
+| `$env:PYTHONUTF8 = 1` | what the child process encodes in |
+| `[Console]::OutputEncoding` | how PowerShell **decodes** what the child wrote |
+| `chcp 65001` | the console **code page the child writes into** |
+
+The third is the one that was missing. On a non-UTF-8 code page the Windows
+console can substitute unrepresentable characters *at write time*, before
+PowerShell decodes anything — so no amount of decoding configuration recovers
+them.
+
+The script restores the previous code page on exit, since `chcp` changes the
+user's console rather than just the script's view of it.
+
 ### Console encoding and the verbatim-name check
 
 The non-ASCII naming check asserts that `ldm info` echoes the name the user
