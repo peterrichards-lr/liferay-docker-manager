@@ -498,8 +498,51 @@ check_docker_disk() {
         return 0
     fi
     free_gb=$((free_kb / 1024 / 1024))
+
+    # LDM-#1435: Docker's figure is only half the picture. Its disk is usually a
+    # sparse image on the host filesystem, so what it reports is a promise the
+    # host may be unable to keep. Measured on a developer machine at one moment:
+    # Docker reported 77.9 GB free while the host volume had 2.8 GB at 100%
+    # capacity -- the pre-flight passed and the run died with ENOSPC (#1430).
+    #
+    # Neither view is sufficient alone: Docker-only misses host exhaustion,
+    # host-only misses the VM limit that #1406 was written for. So check both,
+    # and say which one is short.
+    # Measure the volume that actually backs the engine, not $HOME. Storage is
+    # often relocated: on one developer machine ~/.colima is a symlink to an
+    # external drive, where the home volume showed 154 GB free and the volume
+    # Docker really uses showed 480 GB. Checking $HOME there would fail a run
+    # that had ample space. Mirrors _ENGINE_STORAGE_PATHS in diagnostics/doctor.py.
+    local host_free_gb="" engine_path=""
+    for candidate in "$HOME/.colima" "$HOME/.docker/desktop" "$HOME/.orbstack" \
+                     /var/lib/docker; do
+        if [ -e "$candidate" ]; then
+            engine_path="$candidate"
+            break
+        fi
+    done
+    [ -z "$engine_path" ] && engine_path="$HOME"
+    if command -v df >/dev/null 2>&1; then
+        host_free_gb=$(df -Pk "$engine_path" 2>/dev/null | awk 'NR==2 {print int($4/1024/1024)}')
+    fi
+    if [ -n "$host_free_gb" ] && [ "$host_free_gb" -lt "$need" ]; then
+        echo "❌ ERROR: not enough space on the HOST filesystem ${label}." | tee -a "$RESULTS_FILE_TMP"
+        echo "   Docker reports ${free_gb} GB free, but the host has only ${host_free_gb} GB." | tee -a "$RESULTS_FILE_TMP"
+        echo "   Docker's disk is a sparse image on that volume, so its figure is a" | tee -a "$RESULTS_FILE_TMP"
+        echo "   promise the host cannot keep -- the run would die with ENOSPC." | tee -a "$RESULTS_FILE_TMP"
+        echo "" | tee -a "$RESULTS_FILE_TMP"
+        if [ "$mode" = "warn" ]; then
+            return 1
+        fi
+        exit 1
+    fi
+
     if [ "$free_gb" -ge "$need" ]; then
-        echo "✅ Docker has ${free_gb} GB free."
+        if [ -n "$host_free_gb" ]; then
+            echo "✅ Docker has ${free_gb} GB free (host: ${host_free_gb} GB)."
+        else
+            echo "✅ Docker has ${free_gb} GB free."
+        fi
         return 0
     fi
 

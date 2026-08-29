@@ -384,8 +384,47 @@ function Test-DockerDiskSpace {
     }
 
     $freeGb = [math]::Floor($freeKb / 1024 / 1024)
+
+    # LDM-#1435: Docker's figure is only half the picture. Its disk is usually a
+    # sparse image on the host filesystem, so what it reports is a promise the
+    # host may be unable to keep -- measured elsewhere as Docker reporting
+    # 77.9 GB free while the host volume had 2.8 GB at 100% capacity, after
+    # which the run died with ENOSPC (#1430). Neither view suffices alone.
+    #
+    # Measured on the volume backing the engine, not the profile directory:
+    # storage is often relocated. Mirrors _ENGINE_STORAGE_PATHS in
+    # diagnostics/doctor.py and the bash twin.
+    $hostFreeGb = $null
+    try {
+        $enginePath = $null
+        foreach ($candidate in @(
+            (Join-Path $env:USERPROFILE ".docker\desktop"),
+            (Join-Path $env:USERPROFILE ".colima"),
+            (Join-Path $env:USERPROFILE ".orbstack")
+        )) {
+            if (Test-Path $candidate) { $enginePath = $candidate; break }
+        }
+        if (-not $enginePath) { $enginePath = $env:USERPROFILE }
+        $qualifier = (Get-Item $enginePath).PSDrive.Name
+        $drive = Get-PSDrive -Name $qualifier -ErrorAction Stop
+        $hostFreeGb = [math]::Floor($drive.Free / 1GB)
+    } catch { }
+
+    if ($null -ne $hostFreeGb -and $hostFreeGb -lt $NeedGb) {
+        Write-Verdict "[ERROR] Not enough space on the HOST filesystem $Label."
+        Write-Verdict "        Docker reports $freeGb GB free, but the host has only $hostFreeGb GB."
+        Write-Verdict "        Docker's disk is a sparse image on that volume, so its figure is a"
+        Write-Verdict "        promise the host cannot keep -- the run would die with ENOSPC."
+        Write-Verdict ""
+        return $false
+    }
+
     if ($freeGb -ge $NeedGb) {
-        Write-Host "[SUCCESS] Docker has $freeGb GB free."
+        if ($null -ne $hostFreeGb) {
+            Write-Host "[SUCCESS] Docker has $freeGb GB free (host: $hostFreeGb GB)."
+        } else {
+            Write-Host "[SUCCESS] Docker has $freeGb GB free."
+        }
         return $true
     }
 

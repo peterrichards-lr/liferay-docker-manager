@@ -268,7 +268,26 @@ with exactly 10 GB passed — then died mid-snapshot with `ENOSPC`, on a run whe
 ~7.5 GB (`liferay/dxp` ~5.3, `postgres` ~0.7, `elasticsearch` ~1.5) before the
 running stack grows; 10 GB covered the pull and nothing after it.
 
-The check asks **Docker**, not the host:
+The check asks **both Docker and the host** (LDM-#1435). Neither is sufficient
+alone:
+
+| View | Catches | Misses |
+|---|---|---|
+| Docker (`docker run alpine df /`) | the VM's own smaller disk | host exhaustion |
+| Host (`df` on the engine's storage path) | a full host volume | the VM limit |
+
+Docker's disk is usually a **sparse image on the host filesystem**, so the space
+it reports is a promise the host may be unable to keep. Measured on a developer
+machine at one moment: Docker reported **77.9 GB** free while the host volume
+had **2.8 GB** at 100% capacity. The pre-flight passed and the run died with
+`ENOSPC` mid-snapshot.
+
+The host side measures the volume **backing the engine**, not `$HOME`: storage
+is often relocated. On one machine `~/.colima` is a symlink to an external
+drive, where the home volume showed 154 GB free and the volume Docker actually
+uses showed 480 GB — checking `$HOME` there would fail a run with ample space.
+
+The Docker side asks **Docker**, not the host:
 
 ```bash
 docker run --rm alpine df -P -k /
