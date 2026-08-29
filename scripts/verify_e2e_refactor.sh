@@ -895,6 +895,31 @@ report_ok "✅ Announcement correctly suppressed under --json (LDM-#1093)."
 # assertion below is not vacuous.
 echo "▶ Verifying Unreachable Node Diagnosis (LDM-#1345)..."
 
+# LDM-#1444: this check needs an ssh client, and Alpine ships none.
+#
+# The whole point is that SSH is genuinely attempted and genuinely refused --
+# that is the only way to exercise diagnose_remote_context_failure, because the
+# thing under test IS the failure. With no `ssh` on PATH, Docker's connection
+# helper fails to *invoke* it rather than failing to connect, so the stderr is
+# `executable file not found` and neither the phrase table nor the
+# `connect to host <h> port <p>` regex matches. LDM then falls back to its
+# generic "could not be reached", which is correct behaviour for an
+# unrecognised failure -- and the assertion reads it as a regression.
+#
+# Observed on Alpine 3.24.1 against v2.18.0-pre.11: both parsers missed at once,
+# and `--user` was absent from the tip. That is the signature of a failure that
+# was never an ssh failure.
+#
+# An ssh client is a dependency this script does not control, which is exactly
+# the principle LDM-#1383 set out and this check violated -- it was verified on
+# macOS only, the same single-platform blind spot that produced LDM-#1425.
+if ! command -v ssh >/dev/null 2>&1; then
+    report_ok "⚠️  Skipping the LDM-#1345 diagnosis check: no ssh client on PATH."
+    report_ok "   Docker's connection helper cannot attempt a connection without one,"
+    report_ok "   so the failure would not be an SSH failure and the assertion would"
+    report_ok "   be measuring the wrong thing (LDM-#1444)."
+else
+
 SSHFAIL_PORT=$("$VENV_PYTHON" -c "
 import socket
 s = socket.socket()
@@ -959,6 +984,7 @@ docker context rm -f "$SSHFAIL_TEST_NODE" >/dev/null 2>&1 || true
 "$LDM_CMD" -y target rm "$SSHFAIL_TEST_NODE" >/dev/null 2>&1 || true
 remove_workspace_dir "${LDM_WORKSPACE}/${SSHFAIL_TEST_PROJ}"
 report_ok "✅ Unreachable node diagnosed by name and cause, with no raw blob (LDM-#1345)."
+fi
 cleanup_1383_artifacts
 
 echo ">> Verifying Late Port Conflict Guidance (LDM-#1350)..."
