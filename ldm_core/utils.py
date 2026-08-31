@@ -19,7 +19,7 @@ try:
 except ImportError:
     keyring = None  # type: ignore[assignment]
 
-from ldm_core.constants import SCRIPT_DIR, TAG_PATTERN
+from ldm_core.constants import ASCII_TRANSCODE_MAP, SCRIPT_DIR, TAG_PATTERN
 from ldm_core.ui import UI
 
 _DRY_RUN_VFS: dict[str, str] = {}
@@ -484,6 +484,72 @@ def is_shared_capable_db(db_type):
     return str(db_type or "").lower() in SHARED_DB_CONTAINERS
 
 
+# Runtime forwarders. These hold a published port as a CONSEQUENCE of a
+# container publishing it, so naming one as "the holder" sends the reader after
+# the wrong process (LDM-#1479).
+_PORT_FORWARDERS = (
+    "docker-proxy",
+    "com.docker.backend",
+    "vpnkit",
+    "wslrelay",
+    "qemu",
+    "ssh",
+)
+
+
+def native_port_listener(port, timeout=2.0):
+    """Describe the host process listening on `port`, or None (LDM-#1479).
+
+    Only consulted when no container publishes the port, since a container is
+    the commonest holder and `docker ps` answers that authoritatively.
+
+    Best-effort by design. Returns None when no tool is available, when the
+    holder belongs to another user and is therefore invisible, or when the
+    probe times out. A port conflict must still be reported when this can add
+    nothing to it -- never let diagnosis failure become command failure.
+
+    Args:
+        port (int): the contended host port.
+        timeout (float): seconds to allow the probe.
+
+    Returns:
+        str | None: a short description, or None if nothing was identified.
+    """
+    import shutil
+
+    probes = [
+        (["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"], True),
+        (["ss", "-lptnH", f"sport = :{port}"], False),
+    ]
+    for cmd, skip_header in probes:
+        if not shutil.which(cmd[0]):
+            continue
+        try:
+            out = run_command(cmd, check=False, timeout=timeout)
+        except Exception:
+            continue
+        if not out:
+            continue
+        lines = [ln.strip() for ln in out.splitlines() if ln.strip()]
+        if skip_header and lines:
+            lines = lines[1:]
+        if not lines:
+            continue
+        first = lines[0]
+        fields = first.split()
+        name = fields[0] if fields else first
+        # lsof: COMMAND PID USER ... -- a PID is what the user acts on.
+        described = (
+            f"{name} (PID {fields[1]})"
+            if len(fields) > 1 and fields[1].isdigit()
+            else name
+        )
+        if any(f in first for f in _PORT_FORWARDERS):
+            return f"{described}, a container port forwarder rather than the owner"
+        return described
+    return None
+
+
 def sanitize_id(identifier):
     """
     Sanitizes a string to be used as a safe identifier (e.g. project ID, container name, volume prefix).
@@ -512,32 +578,7 @@ def sanitize_id(identifier):
     #    outright -- "Żółć" silently became "Zoc", losing a letter and
     #    colliding with any real project named "Zoc". Same for "Đ" (U+0110):
     #    "Được" became "uoc", losing the leading consonant entirely.
-    replacements = {
-        # German convention (NFKD would strip rather than expand these)
-        "ä": "ae",
-        "Ä": "AE",
-        "ö": "oe",
-        "Ö": "OE",
-        "ü": "ue",
-        "Ü": "UE",
-        "ß": "ss",
-        # Atomic stroked/barred letters -- NFKD cannot decompose these, so
-        # without an explicit mapping they vanish.
-        "ł": "l",
-        "Ł": "L",
-        "đ": "d",
-        "Đ": "D",
-        "ø": "o",
-        "Ø": "O",
-        "ð": "d",
-        "Ð": "D",
-        "þ": "th",
-        "Þ": "TH",
-        "ħ": "h",
-        "Ħ": "H",
-        "ŧ": "t",
-        "Ŧ": "T",
-    }
+    replacements = dict(ASCII_TRANSCODE_MAP)
     for char, repl in replacements.items():
         s = s.replace(char, repl)
 
@@ -2907,6 +2948,37 @@ def get_all_options(parser):
     return options
 
 
+def stale_man_page_options(options, project_root):
+    """Options documented in ldm.1 that no longer exist in the parser (#1482).
+
+    Only this direction is checked. The man page is a CURATED subset -- it
+    documents roughly 42 of 238 options by design -- so an undocumented flag
+    is not drift there, and requiring parity would mean documenting ~200
+    flags. An option it documents that has been REMOVED is unambiguously
+    wrong, though: ldm.1 carried `--shared`/`--dedicated` long after
+    `ldm db mode` became `ldm config database-mode`.
+
+    Args:
+        options (set): every option string the parser accepts.
+        project_root (Path): repository root.
+
+    Returns:
+        list[str]: sorted stale option strings, empty when clean.
+    """
+    import re
+
+    man_path = project_root / "ldm_core" / "resources" / "ldm.1"
+    if not man_path.exists():
+        return []
+
+    man_text = man_path.read_text(encoding="utf-8").replace("\\-", "-")
+    man_opts = set(re.findall(r"\\fB(--?[a-zA-Z0-9][a-zA-Z0-9-]*)\\fR", man_text))
+    # JVM flags named in prose, not ldm options.
+    for external in ["--add-opens", "-h", "--help", "-Xms", "-Xmx"]:
+        man_opts.discard(external)
+    return sorted(o for o in man_opts if o not in options)
+
+
 def verify_cli_drift():
     """Verify that all CLI options in cli.py are documented in the guides.
 
@@ -2961,7 +3033,9 @@ def verify_cli_drift():
         if opt not in options:
             missing_parser.append(opt)
 
-    if missing_docs or missing_parser:
+    stale_man = stale_man_page_options(options, project_root)
+
+    if missing_docs or missing_parser or stale_man:
         if missing_docs:
             print(
                 "❌ CLI Documentation Drift Detected (Undocumented options)!",
@@ -2983,6 +3057,18 @@ def verify_cli_drift():
                 file=sys.stderr,
             )
             for opt in missing_parser:
+                print(f"  - {opt}", file=sys.stderr)
+        if stale_man:
+            print(
+                "❌ Man Page Drift Detected (Stale/removed options)!",
+                file=sys.stderr,
+            )
+            print(
+                "The following options are documented in ldm_core/resources/ldm.1 "
+                "but no longer exist in the parser:",
+                file=sys.stderr,
+            )
+            for opt in stale_man:
                 print(f"  - {opt}", file=sys.stderr)
         print(
             "\nPlease sync ldm_core/cli.py and docs/reference/cli/*.md or docs/reference/advanced_cli.md.",

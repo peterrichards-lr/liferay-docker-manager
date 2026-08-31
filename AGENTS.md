@@ -67,6 +67,13 @@ determine if updates are needed:
   (with timestamp footers) unless the information can be appropriately
   added as a new section to an existing document.
 
+"The project documentation" is not only `docs/*.md`. The man page
+(`ldm_core/resources/ldm.1`) and the CLI help strings are user-facing too, and
+both ship inside the binary. See *Documentation Surfaces* in
+`.agents/skills/ldm-developer/SKILL.md` for the full list and which guard
+covers each -- the man page went four minor releases out of date because it
+has no timestamp footer and so never looked like documentation (LDM-#1482).
+
 ### Technical Debt Tracking
 
 When encountering any of the following categories of technical debt during
@@ -107,4 +114,4 @@ should not need to change as work progresses.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*
+*Last Updated: 2026-08-31* | *Last Reviewed: 2026-08-31*

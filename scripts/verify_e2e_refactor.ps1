@@ -261,7 +261,15 @@ function Finalize-Verification {
             "`n[SUCCESS] ALL E2E VERIFICATIONS PASSED!" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
         }
         Move-Item $RESULTS_FILE_TMP (Join-Path $ORIGINAL_PWD $FinalName) -Force
-        Write-Host "`n[SUCCESS] Verification Complete ($status)`n[RESULTS] Results: $FinalName"
+        # LDM-#1486: the marker must follow $status. This printed
+        # "[SUCCESS] Verification Complete (fail)" on a failing run, and the
+        # tail of the output is what a human actually reads.
+        if ($status -eq "pass") {
+            Write-Host "`n[SUCCESS] Verification Complete ($status)`n[RESULTS] Results: $FinalName"
+        } else {
+            Write-Host "`n[FAILED] Verification FAILED ($status)" -ForegroundColor Red
+            Write-Host "[RESULTS] Results: $FinalName"
+        }
         if ($status -eq "pass") {
             $archiveDir = Join-Path $ORIGINAL_PWD "references\verification-results"
             if (-not (Test-Path $archiveDir)) { New-Item -ItemType Directory -Path $archiveDir | Out-Null }
@@ -1795,29 +1803,42 @@ json.dump({'jira': 'LDM-1264', 'introduced_in': sys.argv[1],
         # the file-level assertions cannot see. No boot needed.
         $infoOut = (& $LDM_CMD info $raw 2>&1 | Out-String)
 
-        # LDM-#1452: this assertion depends on the console being able to carry
-        # the name, and on Windows PowerShell 5.1 it frequently cannot.
+        # LDM-#1452 / LDM-#1484: this assertion depends on the name surviving
+        # to the console, and it took two wrong diagnoses to find out where it
+        # was being lost.
         #
-        # The obvious fix is already in place -- [Console]::OutputEncoding is
-        # set to UTF-8 near the top of this script, along with PYTHONUTF8=1 --
-        # and it is NOT sufficient. Measured on a real run against
-        # v2.18.0-pre.11: the saved report contained ZERO non-ASCII bytes. Box
-        # borders, status glyphs and project names alike had been flattened to
-        # "?" before anything could compare them.
+        # It was first read as a console problem. [Console]::OutputEncoding and
+        # PYTHONUTF8 were already set here; LDM-#1465 added `chcp 65001` as the
+        # remaining console layer. The v2.19.0-pre.1 run had ALL THREE in effect
+        # and still flattened the names, which ruled the console out entirely.
         #
-        # `ldm list --json` passed for the same three names in that same run, so
-        # LDM does store and report them correctly -- the failure was the
-        # console, not the product. Asserting against a rendering that cannot
-        # represent the value is measuring the terminal.
+        # The cause was LDM's own stdout encoder: on Windows it defaulted to the
+        # ANSI code page, so every line took an ASCII fallback that rewrote
+        # the accented names as "????". Fixed in LDM-#1484 by reconfiguring
+        # stdout to UTF-8
+        # in cli.main(). `ldm list --json` passed throughout both runs, which is
+        # what proved the data was intact and only the rendering was broken.
         #
-        # So: detect whether this console can carry the name at all, and skip
-        # visibly if it cannot. Never silently -- an assertion that quietly
-        # stops running is what LDM-#1383 and the "refusing to skip silently"
-        # guards elsewhere in this script exist to prevent.
+        # The guard below therefore probes what `ldm` EMITS, not what PowerShell
+        # decodes -- see LDM-#1486. It still skips visibly rather than silently:
+        # an assertion that quietly stops running is what LDM-#1383 and the
+        # "refusing to skip silently" guards elsewhere here exist to prevent.
+        # LDM-#1486: this used to round-trip $raw through
+        # [Console]::OutputEncoding, which the script sets to UTF-8 at the top.
+        # It therefore always succeeded and reported "this console can carry
+        # the name" no matter what `ldm` could emit -- so it could never fire
+        # for the failure it was written to guard, and gave false reassurance
+        # that a passing run proved something about encoding.
+        #
+        # LDM-#1484 established where the flattening actually happens: in what
+        # the child process ENCODES, not what PowerShell decodes. So ask the
+        # child. `ldm list --json` is asserted above to contain the verbatim
+        # name, and it is a separate code path from the rendered table, so a
+        # mismatch here isolates the console rather than the product.
         $consoleCarriesName = $true
         try {
-            $enc = [Console]::OutputEncoding
-            if ($enc.GetString($enc.GetBytes($raw)) -cne $raw) { $consoleCarriesName = $false }
+            $probe = (& $LDM_CMD list --json 2>$null | Out-String)
+            if ($probe -notmatch [regex]::Escape($raw)) { $consoleCarriesName = $false }
         } catch {
             $consoleCarriesName = $false
         }

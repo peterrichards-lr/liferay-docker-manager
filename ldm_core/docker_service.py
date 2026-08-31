@@ -145,6 +145,41 @@ class DockerService:
         return ports
 
     @staticmethod
+    def container_publishing_port(
+        port: int, target_name: str | None = None
+    ) -> str | None:
+        """Name of the container publishing `port`, if any (LDM-#1479).
+
+        A port conflict tells the user which service NEEDS the port but not
+        what is holding it, leaving them to work that out per-OS. By far the
+        commonest holder is another container -- a leftover stack, or another
+        LDM project -- and `docker ps` already answers that.
+
+        Best-effort: returns None when Docker is unreachable or nothing
+        publishes the port. A conflict must still be reported if this cannot
+        add detail to it.
+        """
+        cmd = [
+            *DockerService.get_docker_cmd_prefix(target_name),
+            "ps",
+            "--format",
+            "{{.Names}}\t{{.Ports}}",
+        ]
+        res = run_command(cmd, check=False)
+        if not res:
+            return None
+
+        for line in res.splitlines():
+            name, _, ports = line.partition("\t")
+            if not name or not ports:
+                continue
+            # Same shape published_host_ports parses: only the published host
+            # port, left of "->", counts.
+            if port in {int(m) for m in re.findall(r":(\d{1,5})->", ports)}:
+                return name.strip()
+        return None
+
+    @staticmethod
     def get_status(container_name: str, target_name: str | None = None) -> str:
         """Gets the state status (e.g. 'running', 'exited') of a container."""
         cmd = [

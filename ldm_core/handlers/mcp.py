@@ -468,7 +468,10 @@ def get_mcp_server():
 
         server = MCPServer("LDM Diagnostics Server")
     except ImportError:
-        from mcp.server.fastmcp import FastMCP
+        # mcp 2.x replaced this module with a stub that raises on import,
+        # so mypy resolves it and finds no FastMCP. The branch is only
+        # reachable on mcp v1, where the symbol does exist (LDM-#1483).
+        from mcp.server.fastmcp import FastMCP  # type: ignore[attr-defined]
 
         server = FastMCP("LDM Diagnostics Server")
 

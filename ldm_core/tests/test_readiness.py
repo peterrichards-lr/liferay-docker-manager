@@ -879,6 +879,99 @@ services:
             self.assertNotIn("stop the service currently using", captured["msg"])
             self.assertNotIn("stop the service currently using", tip)
 
+    def test_late_port_conflict_names_the_container_holding_the_port(self):
+        """LDM-#1479: the message must say WHAT is holding the port.
+
+        It named the service that needed the port and advised freeing it, but
+        never what occupied it -- leaving the user to work that out per-OS,
+        which is the slow part. The verify script had this since LDM-#1428;
+        the shipped product did not.
+        """
+        with tempfile.TemporaryDirectory() as tmp_root:
+            root = Path(tmp_root)
+            compose_file = root / "docker-compose.yml"
+            compose_file.write_text("""
+services:
+  liferay:
+    container_name: test-project-liferay-1
+    ports:
+      - "8080:8080"
+            """)
+            paths = self.handler.setup_paths(root)
+            paths["compose"] = compose_file
+
+            # Models the real timeline: free during pre-flight, taken by the
+            # time compose validation runs. 8081 stays free throughout.
+            state = {"taken": False}
+
+            def check_port(_ip, port):
+                if not state["taken"]:
+                    return True
+                return port != 8080
+
+            def take_the_port(*_a, **_k):
+                state["taken"] = True
+
+            captured = {}
+
+            def capture_die(msg, details=None, tip=None, exit_code=1):
+                captured["msg"] = msg
+                captured["tip"] = tip
+                captured["exit_code"] = exit_code
+                raise SystemExit(exit_code)
+
+            self.handler.args.no_wait = True
+            self.handler.args.no_up = False
+            # LDM-#1397: this models the interactive case the tip describes.
+            # It previously ran with non_interactive=True, where the pre-flight
+            # refuses rather than re-selecting -- so the assertion passed while
+            # describing a scenario the code never reached.
+            self.handler.non_interactive = False
+
+            with (
+                patch.object(DockerService, "is_running", return_value=False),
+                # LDM-#1417: the guard now asks Docker's allocator first.
+                # Empty keeps these cases socket-driven, and keeps the suite
+                # off a real daemon.
+                patch.object(DockerService, "published_host_ports", return_value=set()),
+                patch.object(
+                    DockerService,
+                    "container_publishing_port",
+                    return_value="other-proj-kibana-1",
+                ),
+                patch.object(self.handler, "check_port", side_effect=check_port),
+                patch.object(BaseHandler, "run_command"),
+                patch.object(
+                    self.handler, "get_container_status", return_value="healthy"
+                ),
+                patch.object(self.handler.infra, "setup_global_search"),
+                patch.object(self.handler.infra, "setup_global_database"),
+                patch.object(
+                    self.handler.composer,
+                    "write_docker_compose",
+                    side_effect=take_the_port,
+                ),
+                patch("ldm_core.ui.UI.die", side_effect=capture_die),
+            ):
+                with self.assertRaises(SystemExit):
+                    self.handler.handler.orchestration.cmd_run(
+                        project_id="test-project-liferay-1",
+                        no_up=False,
+                        no_wait=True,
+                        is_restart=True,
+                        paths=paths,
+                        project_meta={
+                            "container_name": "test-project-liferay-1",
+                            "tag": "7.4.3.132",
+                        },
+                    )
+
+            self.assertEqual(4, captured.get("exit_code"), "still a fatal exit 4")
+            self.assertIn("Port conflict detected", captured["msg"])
+            # The point of the change.
+            self.assertIn("other-proj-kibana-1", captured["msg"])
+            self.assertIn("held by", captured["msg"])
+
     def _late_conflict_tip(self, svc_name, port, non_interactive):
         """Drives the late compose-validation check and returns the tip (#1397)."""
         with tempfile.TemporaryDirectory() as tmp_root:

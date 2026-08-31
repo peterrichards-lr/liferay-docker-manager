@@ -1618,9 +1618,35 @@ class ComposerStage(PipelineStage):
                                     f"up port {mapped_port}, or disable/move that "
                                     f"service, then re-run."
                                 )
+                            # LDM-#1479: say what is HOLDING the port, not just
+                            # what needs it. Working that out is per-OS and is
+                            # the slow part of resolving a conflict. Diagnosis
+                            # is best-effort and must never change the outcome:
+                            # this is still exit 4 with the same advice if
+                            # nothing can be identified.
+                            holder = None
+                            try:
+                                from ldm_core.utils import native_port_listener
+
+                                container = DockerService.container_publishing_port(
+                                    mapped_port
+                                )
+                                if container:
+                                    holder = f"container '{container}'"
+                                else:
+                                    listener = native_port_listener(mapped_port)
+                                    if listener:
+                                        holder = listener
+                            except Exception as diag_err:  # pragma: no cover
+                                UI.debug(f"Port holder lookup failed: {diag_err}")
+
+                            held_by = (
+                                f" It is currently held by {holder}." if holder else ""
+                            )
                             UI.die(
                                 f"Port conflict detected: Port {mapped_port} is already in use on the host "
-                                f"and is required by service '{svc_name}' in your compose configuration.",
+                                f"and is required by service '{svc_name}' in your compose configuration."
+                                f"{held_by}",
                                 tip=tip,
                                 exit_code=4,
                             )

@@ -1,4 +1,4 @@
-.TH LDM 1 "July 2026" "2.15.22" "Liferay Docker Manager Manual"
+.TH LDM 1 "August 2026" "2.19.0-pre.1" "Liferay Docker Manager Manual"
 .SH NAME
 ldm \- Liferay Docker Manager orchestrator (Hardened Edition)
 .SH SYNOPSIS
@@ -147,8 +147,10 @@ Sync an existing local project directly with a live Liferay Cloud environment. (
 \fBldm db query\fR [\fIPROJECT\fR] \fISQL_QUERY\fR
 Execute a safe, SELECT-only read query against the project database container with formatted table/json output.
 .TP
-\fBldm db mode\fR [\fB--shared\fR|\fB--dedicated\fR]
-Inspect or set the global database topology mode.
+\fBldm config database\-mode\fR [\fIisolated\fR|\fIshared\fR] [\fB\-\-global\fR]
+Inspect or set the database topology mode. With no argument the current mode is
+printed. \fBshared\fR points projects at the global database container rather
+than giving each project its own.
 .TP
 \fBldm db start\fR / \fBldm db stop\fR
 Start or stop the shared global database infrastructure.
@@ -255,6 +257,34 @@ Set virtual hostname (defaults to localhost).
 .TP
 \fB\-\-db\fR \fI{mysql|postgresql|hypersonic}\fR
 Select database type.
+.TP
+\fB\-\-database\-mode\fR \fI{isolated|shared}\fR
+Give this project its own database container, or point it at the shared global
+one. Overrides the configured default for a single run.
+.TP
+\fB\-\-search\-mode\fR \fI{sidecar|shared}\fR
+Run Elasticsearch alongside the project, or use the global search container.
+.TP
+\fB\-\-jvm\-heap\-min\fR \fISIZE\fR, \fB\-\-jvm\-heap\-max\fR \fISIZE\fR
+Set the JVM heap floor and ceiling (\fB\-Xms\fR / \fB\-Xmx\fR). Accepts a
+bare number of megabytes, or a suffixed size such as \fB512m\fR or \fB8g\fR.
+.TP
+\fB\-\-jvm\-metaspace\fR \fISIZE\fR
+Set \fB\-XX:MaxMetaspaceSize\fR.
+.TP
+\fB\-\-jvm\-new\-size\fR \fISIZE\fR
+Set the young generation size (\fB\-XX:NewSize\fR).
+.TP
+\fB\-\-jvm\-tiered\-stop\-at\-level\fR \fILEVEL\fR
+Cap JIT tiered compilation. \fB1\fR trades peak throughput for faster startup
+and a much smaller code cache.
+.TP
+\fB\-\-jvm\-args\fR \fIARGS\fR
+Replace the computed JVM arguments wholesale. Prefer the individual flags
+above, which layer over the adaptive defaults instead of discarding them.
+.TP
+\fB\-\-no\-jvm\-verify\fR
+Skip the start-up check that the JVM accepted the arguments given.
 
 .SH BACKWARD COMPATIBILITY
 All legacy flat commands are automatically translated to their namespaced equivalents by the \fBpreprocess_args\fR layer and remain fully supported indefinitely. For example:
