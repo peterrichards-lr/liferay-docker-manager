@@ -244,7 +244,14 @@ cleanup_test_projects() {
 
     if [ -f "$RESULTS_FILE_TMP" ]; then
         mv "$RESULTS_FILE_TMP" "${ORIGINAL_PWD}/${final_name}"
-        echo -e "\n✅ Verification Complete ($status)\n📊 Results: $final_name"
+        # LDM-#1486: the marker must follow $status. This printed a green
+        # tick on a FAILING run -- "✅ Verification Complete (fail)" -- and the
+        # tail of the output is what a human actually reads.
+        if [ "$status" == "pass" ]; then
+            echo -e "\n✅ Verification Complete ($status)\n📊 Results: $final_name"
+        else
+            echo -e "\n\033[0;31m❌ Verification FAILED ($status)\033[0m\n📊 Results: $final_name"
+        fi
         if [ "$status" == "pass" ]; then
             mkdir -p "${ORIGINAL_PWD}/references/verification-results"
             cp "${ORIGINAL_PWD}/${final_name}" "${ORIGINAL_PWD}/references/verification-results/" 2>/dev/null || true
