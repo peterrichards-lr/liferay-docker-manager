@@ -146,6 +146,39 @@ Do not manually bump versions or tag releases. Instead, use the automated releas
 
 8. Checks out master locally, pulls changes, tags the release (`v2.11.43`), and pushes the tag to trigger the final GitHub release workflows.
 
+---
+
+## 5. Documentation Surfaces
+
+`AGENTS.md` says to review "the project documentation" after a code change.
+That reads as `docs/*.md` -- the files with timestamp footers -- and two
+user-facing surfaces sit outside it. Both shipped stale for four minor
+releases before anyone looked (LDM-#1482).
+
+| Surface | Path | Guarded by |
+|---------|------|-----------|
+| Reference docs | `docs/**/*.md` | `sync-docs`, `check-docs-review` |
+| CLI reference | `docs/reference/cli/*.md`, `docs/reference/advanced_cli.md` | `check-cli-drift` (both directions) |
+| **Man page** | `ldm_core/resources/ldm.1` | `check-cli-drift` (stale flags), `check-version-sync` (`.TH` version) |
+| **CLI help text** | `help=` strings in `ldm_core/cli.py` | `check-cli-drift`, indirectly |
+
+The man page is **not** a mirror of the CLI reference. It documents roughly 42
+of 238 options by design, so an undocumented flag is not drift there -- which
+is why the guard only checks the reverse direction, that everything it *does*
+document still exists.
+
+When adding or renaming a command or a flag that a user would reasonably look
+up:
+
+- add it to `docs/reference/cli/*.md` (enforced -- `check-cli-drift` fails on
+  any parser option missing from the docs)
+- consider `ldm_core/resources/ldm.1` if it belongs in a curated overview.
+  It ships inside the binary and `ldm system setup-completion` installs it
+  into the user's `man` directory, so `man ldm` is a real surface, not a
+  vestigial file
+- never hand-edit the `.TH` version: `ldm system version --bump` stamps it,
+  the same way it stamps the two verify scripts
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*
+*Last Updated: 2026-08-31* | *Last Reviewed: 2026-08-31*

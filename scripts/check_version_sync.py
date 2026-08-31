@@ -67,6 +67,12 @@ def main():
     v_ps1, v_ps1_magic = get_script_version(
         "scripts/verify_e2e_refactor.ps1", r'\$SCRIPT_VERSION = "([^"]+)"'
     )
+    # LDM-#1482: the man page carries its own version in the .TH macro. It
+    # ships in the binary and is installed into the user's man directory, so a
+    # stale stamp is user-facing -- it read 2.15.22 for four minor releases.
+    v_man, _ = get_script_version(
+        "ldm_core/resources/ldm.1", r'^\.TH LDM 1 "[^"]*" "([^"]+)"'
+    )
 
     if not v_pyproject or not v_constants:
         print(
@@ -111,6 +117,13 @@ def main():
     if v_ps1_magic and v_ps1_magic != v_ps1:
         errors.append(
             f"Mismatch: scripts/verify_e2e_refactor.ps1 SCRIPT_VERSION ({v_ps1}) != magic comment ({v_ps1_magic})"
+        )
+
+    # Check 6: man page .TH version (LDM-#1482)
+    if v_man and v_man != v_constants:
+        errors.append(
+            f"Mismatch: ldm_core/constants.py ({v_constants}) != "
+            f"ldm_core/resources/ldm.1 .TH version ({v_man})"
         )
 
     if errors:
