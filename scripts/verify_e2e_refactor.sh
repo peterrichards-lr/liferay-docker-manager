@@ -1990,6 +1990,98 @@ else
 fi
 
 
+# LDM-#1494: everything above is derivable from the GENERATED CONFIG. It proves
+# the compose file is valid and the JDBC URL points at the right container, and
+# nothing more -- no shared MySQL had ever been STARTED, on any platform, in CI
+# or on real hardware. The headline feature of 2.19 was verified only as far as
+# "the configuration looks right".
+#
+# This boots one for real. It is gated to CI deliberately: it costs minutes,
+# and the manual round runs on six platforms where that would be paid six times
+# over. CI has a Docker daemon, runs on every tag, and can absorb it.
+#
+# Not silent when skipped -- an assertion that quietly stops running is what
+# LDM-#1383 and the guards elsewhere in this script exist to prevent.
+echo ">> Verifying a shared MySQL stack actually boots (LDM-#1494)..."
+if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
+    report_ok "⚠️  Skipped: CI-only. Booting a shared stack costs minutes, and the"
+    report_ok "    config-level assertions above already ran on this platform."
+else
+    SHARED_BOOT_PROJ="sharedboot-${TEST_PORT}"
+    SHARED_BOOT_DIR="${LDM_WORKSPACE}/${SHARED_BOOT_PROJ}"
+    SHARED_BOOT_PORT=$((TEST_PORT + 3))
+    # The MySQL global is a DIFFERENT container from the PostgreSQL one
+    # (LDM-#1361): one global per engine, provisioned lazily by the first run
+    # that needs it.
+    MYSQL_GLOBAL="liferay-db-mysql-global"
+    SHARED_BOOT_OK=true
+
+    "$LDM_CMD" -y rm "$SHARED_BOOT_PROJ" --delete >/dev/null 2>&1 || true
+    rm -rf "$SHARED_BOOT_DIR"
+    mkdir -p "$SHARED_BOOT_DIR"
+
+    set +e
+    ( cd "$SHARED_BOOT_DIR" && "$LDM_CMD" -y run "$SHARED_BOOT_PROJ" \
+        --db mysql --database-mode shared --port "$SHARED_BOOT_PORT" ) \
+        > "${SHARED_BOOT_DIR}/boot.log" 2>&1
+    SHARED_BOOT_RC=$?
+    set -e
+
+    if [ "$SHARED_BOOT_RC" -ne 0 ]; then
+        echo "❌ ERROR: 'ldm run --db mysql --database-mode shared' exited ${SHARED_BOOT_RC}." | tee -a "$RESULTS_FILE_TMP"
+        tail -40 "${SHARED_BOOT_DIR}/boot.log" | tee -a "$RESULTS_FILE_TMP"
+        SHARED_BOOT_OK=false
+    fi
+
+    # 1. The global MySQL container exists and is running. Provisioned lazily,
+    #    so its absence means the run never reached the shared path at all.
+    if [ "$SHARED_BOOT_OK" = true ]; then
+        if ! docker ps --filter "name=^${MYSQL_GLOBAL}$" --format '{{.Names}}' | grep -q .; then
+            echo "❌ ERROR: ${MYSQL_GLOBAL} is not running after a shared MySQL run." | tee -a "$RESULTS_FILE_TMP"
+            docker ps -a --filter "name=${MYSQL_GLOBAL}" | tee -a "$RESULTS_FILE_TMP"
+            SHARED_BOOT_OK=false
+        fi
+    fi
+
+    # 2. The per-project database was created INSIDE the global container.
+    #    This is the assertion the config-level checks cannot make: it proves
+    #    the CREATE DATABASE actually ran against the shared instance.
+    if [ "$SHARED_BOOT_OK" = true ]; then
+        EXPECTED_DB=$(echo "$SHARED_BOOT_PROJ" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_' '_')
+        DB_LIST=$(docker exec "$MYSQL_GLOBAL" mysql -uroot -ptest -N -e 'SHOW DATABASES;' 2>/dev/null || true)
+        if ! echo "$DB_LIST" | grep -qiE "^${EXPECTED_DB}$|lportal"; then
+            echo "❌ ERROR: no per-project database inside ${MYSQL_GLOBAL}." | tee -a "$RESULTS_FILE_TMP"
+            echo "   expected something matching '${EXPECTED_DB}'; found:" | tee -a "$RESULTS_FILE_TMP"
+            echo "$DB_LIST" | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
+            SHARED_BOOT_OK=false
+        fi
+    fi
+
+    # 3. Liferay reached ready and serves HTTP -- i.e. it CONNECTED to the
+    #    shared MySQL. A wrong dialect or driver fails here, not earlier.
+    if [ "$SHARED_BOOT_OK" = true ]; then
+        if ! grep -qE "Liferay ready|is responding to HTTP" "${SHARED_BOOT_DIR}/boot.log"; then
+            HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${SHARED_BOOT_PORT}" || echo "000")
+            if [ "$HTTP_CODE" != "200" ]; then
+                echo "❌ ERROR: Liferay did not come up against the shared MySQL (HTTP ${HTTP_CODE})." | tee -a "$RESULTS_FILE_TMP"
+                tail -40 "${SHARED_BOOT_DIR}/boot.log" | tee -a "$RESULTS_FILE_TMP"
+                SHARED_BOOT_OK=false
+            fi
+        fi
+    fi
+
+    "$LDM_CMD" -y rm "$SHARED_BOOT_PROJ" --delete >/dev/null 2>&1 || true
+    rm -rf "$SHARED_BOOT_DIR"
+
+    if [ "$SHARED_BOOT_OK" = true ]; then
+        report_ok "✅ A shared MySQL stack boots: global container up, project database created inside it, Liferay connected."
+    else
+        echo "❌ ERROR: shared MySQL boot verification failed." | tee -a "$RESULTS_FILE_TMP"
+        exit 1
+    fi
+fi
+
+
 echo ">> Verifying 'ldm db start' / 'ldm db stop' (LDM-#1400)..."
 # These were dead in every release up to v2.18.0-pre.4: both built
 # `docker compose -f infra-compose.yml start db`, but that file defines only
