@@ -2002,83 +2002,118 @@ fi
 #
 # Not silent when skipped -- an assertion that quietly stops running is what
 # LDM-#1383 and the guards elsewhere in this script exist to prevent.
-echo ">> Verifying a shared MySQL stack actually boots (LDM-#1494)..."
-if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
-    report_ok "⚠️  Skipped: CI-only. Booting a shared stack costs minutes, and the"
-    report_ok "    config-level assertions above already ran on this platform."
-else
-    SHARED_BOOT_PROJ="sharedboot-${TEST_PORT}"
-    SHARED_BOOT_DIR="${LDM_WORKSPACE}/${SHARED_BOOT_PROJ}"
-    SHARED_BOOT_PORT=$((TEST_PORT + 3))
-    # The MySQL global is a DIFFERENT container from the PostgreSQL one
-    # (LDM-#1361): one global per engine, provisioned lazily by the first run
-    # that needs it.
-    MYSQL_GLOBAL="liferay-db-mysql-global"
-    SHARED_BOOT_OK=true
+# LDM-#1494 / LDM-#1499: everything above is derivable from the GENERATED
+# CONFIG. It proves the compose file is valid and the JDBC URL points at the
+# right container, and nothing more -- no shared stack had ever been STARTED,
+# on any platform, in CI or on real hardware.
+#
+# This boots one for real, per engine. It is gated to CI deliberately: it costs
+# minutes, and the manual round runs on six platforms where that would be paid
+# six times over. CI has a Docker daemon, runs on every tag, and can absorb it.
+#
+# Not silent when skipped -- an assertion that quietly stops running is what
+# LDM-#1383 and the guards elsewhere in this script exist to prevent.
+#
+# Both engines run, sequentially in one job. PostgreSQL matters at least as
+# much as MySQL: setup_global_database resolves db_type=None to PostgreSQL, so
+# it is the DEFAULT shared engine and the path most shared-mode users are on.
+# MySQL got a boot test for being new and visibly unproven; Postgres escaped
+# the same scrutiny by being older, which is not evidence (LDM-#1499).
+#
+# Sequential, not parallel, and deliberately so: a mixed fleet provisions both
+# globals (see setup_global_database's docstring), so running one after the
+# other also covers them coexisting without interfering.
+verify_shared_db_boots() {
+    local engine="$1" global_container="$2" label="$3"
+    shift 3
+    local list_cmd=("$@")
 
-    "$LDM_CMD" -y rm "$SHARED_BOOT_PROJ" --delete >/dev/null 2>&1 || true
-    rm -rf "$SHARED_BOOT_DIR"
-    mkdir -p "$SHARED_BOOT_DIR"
+    local proj="sharedboot-${engine}-${TEST_PORT}"
+    local dir="${LDM_WORKSPACE}/${proj}"
+    local port
+    case "$engine" in
+        mysql) port=$((TEST_PORT + 3)) ;;
+        *)     port=$((TEST_PORT + 4)) ;;
+    esac
+    local ok=true
+
+    "$LDM_CMD" -y rm "$proj" --delete >/dev/null 2>&1 || true
+    rm -rf "$dir"
+    mkdir -p "$dir"
 
     set +e
-    ( cd "$SHARED_BOOT_DIR" && "$LDM_CMD" -y run "$SHARED_BOOT_PROJ" \
-        --db mysql --database-mode shared --port "$SHARED_BOOT_PORT" ) \
-        > "${SHARED_BOOT_DIR}/boot.log" 2>&1
-    SHARED_BOOT_RC=$?
+    ( cd "$dir" && "$LDM_CMD" -y run "$proj" \
+        --db "$engine" --database-mode shared --port "$port" ) \
+        > "${dir}/boot.log" 2>&1
+    local rc=$?
     set -e
 
-    if [ "$SHARED_BOOT_RC" -ne 0 ]; then
-        echo "❌ ERROR: 'ldm run --db mysql --database-mode shared' exited ${SHARED_BOOT_RC}." | tee -a "$RESULTS_FILE_TMP"
-        tail -40 "${SHARED_BOOT_DIR}/boot.log" | tee -a "$RESULTS_FILE_TMP"
-        SHARED_BOOT_OK=false
+    if [ "$rc" -ne 0 ]; then
+        echo "❌ ERROR: 'ldm run --db ${engine} --database-mode shared' exited ${rc}." | tee -a "$RESULTS_FILE_TMP"
+        tail -40 "${dir}/boot.log" | tee -a "$RESULTS_FILE_TMP"
+        ok=false
     fi
 
-    # 1. The global MySQL container exists and is running. Provisioned lazily,
-    #    so its absence means the run never reached the shared path at all.
-    if [ "$SHARED_BOOT_OK" = true ]; then
-        if ! docker ps --filter "name=^${MYSQL_GLOBAL}$" --format '{{.Names}}' | grep -q .; then
-            echo "❌ ERROR: ${MYSQL_GLOBAL} is not running after a shared MySQL run." | tee -a "$RESULTS_FILE_TMP"
-            docker ps -a --filter "name=${MYSQL_GLOBAL}" | tee -a "$RESULTS_FILE_TMP"
-            SHARED_BOOT_OK=false
+    # 1. The global container for THIS engine is running. One global per engine
+    #    (LDM-#1361), provisioned lazily, so its absence means the run never
+    #    reached the shared path at all.
+    if [ "$ok" = true ]; then
+        if ! docker ps --filter "name=^${global_container}$" --format '{{.Names}}' | grep -q .; then
+            echo "❌ ERROR: ${global_container} is not running after a shared ${label} run." | tee -a "$RESULTS_FILE_TMP"
+            docker ps -a --filter "name=${global_container}" | tee -a "$RESULTS_FILE_TMP"
+            ok=false
         fi
     fi
 
-    # 2. The per-project database was created INSIDE the global container.
-    #    This is the assertion the config-level checks cannot make: it proves
-    #    the CREATE DATABASE actually ran against the shared instance.
-    if [ "$SHARED_BOOT_OK" = true ]; then
-        EXPECTED_DB=$(echo "$SHARED_BOOT_PROJ" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_' '_')
-        DB_LIST=$(docker exec "$MYSQL_GLOBAL" mysql -uroot -ptest -N -e 'SHOW DATABASES;' 2>/dev/null || true)
-        if ! echo "$DB_LIST" | grep -qiE "^${EXPECTED_DB}$|lportal"; then
-            echo "❌ ERROR: no per-project database inside ${MYSQL_GLOBAL}." | tee -a "$RESULTS_FILE_TMP"
-            echo "   expected something matching '${EXPECTED_DB}'; found:" | tee -a "$RESULTS_FILE_TMP"
-            echo "$DB_LIST" | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
-            SHARED_BOOT_OK=false
+    # 2. The per-project database was created INSIDE the global container. This
+    #    is the assertion the config-level checks cannot make: it proves the
+    #    CREATE DATABASE ran against the shared instance.
+    if [ "$ok" = true ]; then
+        local expected db_list
+        expected=$(echo "$proj" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_' '_')
+        db_list=$(docker exec "$global_container" "${list_cmd[@]}" 2>/dev/null || true)
+        if ! echo "$db_list" | grep -qiE "${expected}|lportal"; then
+            echo "❌ ERROR: no per-project database inside ${global_container}." | tee -a "$RESULTS_FILE_TMP"
+            echo "   expected something matching '${expected}'; found:" | tee -a "$RESULTS_FILE_TMP"
+            echo "$db_list" | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
+            ok=false
         fi
     fi
 
-    # 3. Liferay reached ready and serves HTTP -- i.e. it CONNECTED to the
-    #    shared MySQL. A wrong dialect or driver fails here, not earlier.
-    if [ "$SHARED_BOOT_OK" = true ]; then
-        if ! grep -qE "Liferay ready|is responding to HTTP" "${SHARED_BOOT_DIR}/boot.log"; then
-            HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${SHARED_BOOT_PORT}" || echo "000")
-            if [ "$HTTP_CODE" != "200" ]; then
-                echo "❌ ERROR: Liferay did not come up against the shared MySQL (HTTP ${HTTP_CODE})." | tee -a "$RESULTS_FILE_TMP"
-                tail -40 "${SHARED_BOOT_DIR}/boot.log" | tee -a "$RESULTS_FILE_TMP"
-                SHARED_BOOT_OK=false
+    # 3. Liferay reached ready and serves HTTP -- i.e. it CONNECTED. A wrong
+    #    dialect or driver fails here, and nowhere earlier.
+    if [ "$ok" = true ]; then
+        if ! grep -qE "Liferay ready|is responding to HTTP" "${dir}/boot.log"; then
+            local code
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${port}" || echo "000")
+            if [ "$code" != "200" ]; then
+                echo "❌ ERROR: Liferay did not come up against the shared ${label} (HTTP ${code})." | tee -a "$RESULTS_FILE_TMP"
+                tail -40 "${dir}/boot.log" | tee -a "$RESULTS_FILE_TMP"
+                ok=false
             fi
         fi
     fi
 
-    "$LDM_CMD" -y rm "$SHARED_BOOT_PROJ" --delete >/dev/null 2>&1 || true
-    rm -rf "$SHARED_BOOT_DIR"
+    "$LDM_CMD" -y rm "$proj" --delete >/dev/null 2>&1 || true
+    rm -rf "$dir"
 
-    if [ "$SHARED_BOOT_OK" = true ]; then
-        report_ok "✅ A shared MySQL stack boots: global container up, project database created inside it, Liferay connected."
-    else
-        echo "❌ ERROR: shared MySQL boot verification failed." | tee -a "$RESULTS_FILE_TMP"
-        exit 1
+    if [ "$ok" = true ]; then
+        report_ok "✅ A shared ${label} stack boots: global container up, project database created inside it, Liferay connected."
+        return 0
     fi
+    echo "❌ ERROR: shared ${label} boot verification failed." | tee -a "$RESULTS_FILE_TMP"
+    return 1
+}
+
+echo ">> Verifying shared database stacks actually boot (LDM-#1494 / LDM-#1499)..."
+if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
+    report_ok "⚠️  Skipped: CI-only. Booting shared stacks costs minutes, and the"
+    report_ok "    config-level assertions above already ran on this platform."
+else
+    verify_shared_db_boots mysql "liferay-db-mysql-global" "MySQL" \
+        mysql -uroot -ptest -N -e 'SHOW DATABASES;' || exit 1
+    verify_shared_db_boots postgresql "liferay-db-global" "PostgreSQL" \
+        psql -U lportal -d lportal -tAc 'SELECT datname FROM pg_database;' || exit 1
 fi
 
 
