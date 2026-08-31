@@ -19,7 +19,7 @@ try:
 except ImportError:
     keyring = None  # type: ignore[assignment]
 
-from ldm_core.constants import SCRIPT_DIR, TAG_PATTERN
+from ldm_core.constants import ASCII_TRANSCODE_MAP, SCRIPT_DIR, TAG_PATTERN
 from ldm_core.ui import UI
 
 _DRY_RUN_VFS: dict[str, str] = {}
@@ -512,32 +512,7 @@ def sanitize_id(identifier):
     #    outright -- "Żółć" silently became "Zoc", losing a letter and
     #    colliding with any real project named "Zoc". Same for "Đ" (U+0110):
     #    "Được" became "uoc", losing the leading consonant entirely.
-    replacements = {
-        # German convention (NFKD would strip rather than expand these)
-        "ä": "ae",
-        "Ä": "AE",
-        "ö": "oe",
-        "Ö": "OE",
-        "ü": "ue",
-        "Ü": "UE",
-        "ß": "ss",
-        # Atomic stroked/barred letters -- NFKD cannot decompose these, so
-        # without an explicit mapping they vanish.
-        "ł": "l",
-        "Ł": "L",
-        "đ": "d",
-        "Đ": "D",
-        "ø": "o",
-        "Ø": "O",
-        "ð": "d",
-        "Ð": "D",
-        "þ": "th",
-        "Þ": "TH",
-        "ħ": "h",
-        "Ħ": "H",
-        "ŧ": "t",
-        "Ŧ": "T",
-    }
+    replacements = dict(ASCII_TRANSCODE_MAP)
     for char, repl in replacements.items():
         s = s.replace(char, repl)
 

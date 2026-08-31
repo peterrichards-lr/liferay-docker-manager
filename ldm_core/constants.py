@@ -282,3 +282,41 @@ SAMPLE_HASHES: dict[str, dict[str, str]] = {
         # Reserved for pre-configured demonstration states
     },
 }
+
+
+# Characters NFKD cannot transcode correctly, shared by `sanitize_id` (Docker
+# names) and `UI.to_ascii_readable` (console fallback) so the two agree on what
+# a name degrades to (LDM-#1308, LDM-#1484).
+#
+# Two groups, two reasons:
+#  1. German umlauts and Eszett DO decompose under NFKD, but to the wrong thing
+#     for German -- NFKD gives "u" for "ü" where the convention is "ue".
+#  2. Stroked and barred letters do NOT decompose at all. "ł" (U+0142) is an
+#     atomic codepoint, so NFKD leaves it and an ASCII step then drops it --
+#     "Żółć" silently became "Zoc", losing a letter.
+ASCII_TRANSCODE_MAP = {
+    # German convention (NFKD would strip rather than expand these)
+    "ä": "ae",
+    "Ä": "AE",
+    "ö": "oe",
+    "Ö": "OE",
+    "ü": "ue",
+    "Ü": "UE",
+    "ß": "ss",
+    # Atomic stroked/barred letters -- NFKD cannot decompose these, so
+    # without an explicit mapping they vanish.
+    "ł": "l",
+    "Ł": "L",
+    "đ": "d",
+    "Đ": "D",
+    "ø": "o",
+    "Ø": "O",
+    "ð": "d",
+    "Ð": "D",
+    "þ": "th",
+    "Þ": "TH",
+    "ħ": "h",
+    "Ħ": "H",
+    "ŧ": "t",
+    "Ŧ": "T",
+}
