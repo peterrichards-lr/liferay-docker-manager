@@ -3258,6 +3258,11 @@ def main():
 
     import sys
 
+    # Before anything prints. On Windows sys.stdout defaults to the ANSI code
+    # page, which makes UI._print fall back to ASCII for every line and
+    # flatten project names to "?" (LDM-#1484).
+    UI.configure_stream_encoding()
+
     _setup_sigpipe_handler()
 
     sys.argv = preprocess_args(sys.argv)

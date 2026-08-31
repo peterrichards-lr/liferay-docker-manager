@@ -169,6 +169,74 @@ class UI:
         return re.sub(p_pattern, r"\1[REDACTED]", text)
 
     @staticmethod
+    def to_ascii_readable(text):
+        """Degrade text to ASCII without destroying names (LDM-#1484).
+
+        The previous `encode("ascii", "replace")` turned every non-ASCII
+        character into "?", which is fine for a box-drawing border and wrong
+        for content: a project deliberately named `Żółć` rendered as `????`,
+        making `ldm list` useless for identifying it.
+
+        NFKD decomposition strips diacritics instead, so `Żółć` degrades to
+        `Zolc` -- the same shape `sanitize_id` already produces for Docker
+        names, so the two halves of the output agree. Anything with no ASCII
+        decomposition still becomes "?", which is the honest answer for it.
+        """
+        import unicodedata
+
+        from ldm_core.constants import ASCII_TRANSCODE_MAP
+
+        # NFKD alone is not enough: stroked letters like "ł" are atomic and do
+        # not decompose, so "Żółć" would still lose a character. The shared map
+        # is the same one Docker names go through, so both halves of the output
+        # degrade a name identically.
+        for char, replacement in ASCII_TRANSCODE_MAP.items():
+            text = text.replace(char, replacement)
+
+        decomposed = unicodedata.normalize("NFKD", text)
+        stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
+        return stripped.encode("ascii", "replace").decode("ascii")
+
+    @staticmethod
+    def configure_stream_encoding():
+        """Force UTF-8 on stdout/stderr where the platform default cannot carry
+        our output (LDM-#1484).
+
+        On Windows `sys.stdout.encoding` is the ANSI code page, so the encode
+        probe in `_print` raises and EVERY line takes the ASCII fallback --
+        including project names, which are data rather than decoration. A
+        project deliberately named `Żółć` was displayed as `????` by both
+        `ldm list` and `ldm info`.
+
+        `PYTHONUTF8=1` does not reach us reliably in the PyInstaller build,
+        which is why the verify script setting it (and `chcp 65001`, and
+        `[Console]::OutputEncoding`) did not fix the flattening: those govern
+        what the CONSOLE decodes, not what this process encodes.
+
+        `errors="replace"` is deliberate. Reconfiguring must never turn a
+        display problem into a crash on a stream that genuinely cannot take
+        the bytes -- the fallback in `_print` still handles that case.
+
+        Safe to call more than once, and a no-op where the stream is already
+        UTF-8 or is not reconfigurable (a pipe under test, a captured buffer).
+        """
+        for stream in (sys.stdout, sys.stderr):
+            reconfigure = getattr(stream, "reconfigure", None)
+            if reconfigure is None:
+                continue
+            encoding = getattr(stream, "encoding", None)
+            if isinstance(encoding, str) and encoding.lower().replace("-", "") in (
+                "utf8",
+                "utf8mb4",
+            ):
+                continue
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                # Not reconfigurable. _print's fallback still applies.
+                continue
+
+    @staticmethod
     def _print(msg, color=None, icon=None, file=None):
         """Internal print helper with Unicode safety and automatic redaction."""
         if file is None:
@@ -205,8 +273,9 @@ class UI:
                 .replace("❓", "[?]")
                 .replace("▶", ">")
             )
-            # Final safety wash
-            safe_out = safe_out.encode("ascii", "replace").decode("ascii")
+            # Final safety wash. Transliterates rather than blanking to "?",
+            # so project names survive it readably (LDM-#1484).
+            safe_out = UI.to_ascii_readable(safe_out)
             out_msg = safe_out
             print(out_msg, file=file, flush=True)
             return
@@ -236,8 +305,9 @@ class UI:
                 .replace("└─", "  +-")
                 .replace("❓", "[?]")
             )
-            # Final safety wash
-            safe_out = safe_out.encode("ascii", "replace").decode("ascii")
+            # Final safety wash. Transliterates rather than blanking to "?",
+            # so project names survive it readably (LDM-#1484).
+            safe_out = UI.to_ascii_readable(safe_out)
             out_msg = safe_out
             print(out_msg, file=file, flush=True)
 
