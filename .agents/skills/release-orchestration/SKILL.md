@@ -71,6 +71,8 @@ description: Activate this skill whenever preparing a release, bumping versions,
 
   Hit on 2026-08-25 promoting v2.17.0: PR #1320 turned `DIRTY` with both verification scripts conflicting, master having taken #1323 as squash `f2654d07` while the release branch carried cherry-pick `64796652`.
 
+  The same merge is also a **routine precondition of every `--bump beta`**, not only a promotion-time remedy -- see the Backport Gate under Pre-Release Strategy. Framing it solely as conflict resolution is what let LDM-#1490 happen.
+
   Resolve it **before** running `--promote`, not during:
 
   1. `git merge origin/master` on the release branch
@@ -102,6 +104,20 @@ To prevent "version fatigue" and ensure the stability of the main release channe
 
 - **Release Orchestration**: All version updates, pre-releases, and stable promotions MUST be performed using the automated orchestrator script. Manual git tagging or direct version modifications are strictly prohibited.
 - **Experimental Features**: All brand new or complex functionality (specifically **Liferay Cloud Golden Path** integrations) MUST be released as **Pre-Releases** (e.g. `v2.10.x-pre.y`) first.
+- **Backport Gate (the release branch is not `master`)**: BEFORE running `python3 scripts/release.py --bump beta`, verify the release branch actually contains the commits the pre-release is meant to carry.
+
+  `--bump beta` pulls **only the release branch** (`scripts/release.py`, the `is_continuing_release` branch) and never merges `master`. Everything merged to `master` since the last `-pre.N` is therefore absent -- which is the normal case, because the "fix on `master` first, then backport" rule above sends every fix to `master`. Cutting regardless produces a `-pre.N` byte-identical to its predecessor plus a version bump: a pre-release containing none of the fixes it exists to verify, with the number burnt by the time verification reveals it.
+
+  ```bash
+  git log --oneline origin/release/vX.Y.Z..origin/master   # MUST be empty
+  ```
+
+  Not empty? Merge `master` into the release branch first, using the procedure under *Fix on `master` first* below, then re-run the check. `scripts/agent_push.sh` cannot express a merge commit, so run `pre-commit run --all-files`, `mypy ldm_core --config-file=mypy.ini` and the full `pytest` by hand before pushing.
+
+  Two things that will not save you here. The tracking PR shows the release branch against `master`, so it looks healthy whether or not the backport happened. And CI passes either way -- it tests the branch as it is, not as it was meant to be. Nothing but this check distinguishes a correct `-pre.N` from an empty one.
+
+  Nearly hit on 2026-08-31 cutting `v2.19.0-pre.2`: six commits sat on `master` and none on the release branch, including all four fixes the pre-release existed to verify (LDM-#1490).
+
 - **Feature Verification Script Gate**: BEFORE running `python3 scripts/release.py --bump beta`, the agent MUST verify that all feature assertions for the issue being released are written and committed in `scripts/verify_e2e_refactor.sh` and `scripts/verify_e2e_refactor.ps1`. Never cut a pre-release for a feature whose E2E verification script checks have been deferred without a tracked issue or committed assertions.
 - **Pre-Flight Quality Gate (Mandatory Local Verification)**: BEFORE running `python3 scripts/release.py --bump beta`, the agent MUST run `.venv/bin/python3 -m pre_commit run --all-files` locally and verify it passes with 0 errors. Never push a release bump without running local lint verification first.
   - **`./lint.sh` is NOT an equivalent substitute.** It does not run `check-version-sync`, `gitleaks`, `mypy`, `check-cli-drift`, `validate-compose`, `deptry` or `shellcheck`, and by default it *auto-fixes* rather than validates (use `./lint.sh --check` if you run it at all). `check-version-sync` is the most release-relevant hook in the set, so a release verified only by `lint.sh` is not verified. `scripts/release.py` refuses to fall back to it for this reason (LDM-#1244).
@@ -130,4 +146,4 @@ To ensure clarity and prevent title drift across multi-commit pre-release iterat
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*
+*Last Updated: 2026-08-31* | *Last Reviewed: 2026-08-31*

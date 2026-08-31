@@ -442,6 +442,7 @@ def run_preview(issue, project_root):
                 "pyproject.toml",
                 "scripts/verify_e2e_refactor.sh",
                 "scripts/verify_e2e_refactor.ps1",
+                "ldm_core/resources/ldm.1",
             ]
         )
         run_cmd(
@@ -658,8 +659,17 @@ def main():  # noqa: C901, PLR0912, PLR0915
                 # perpetually uncommitted/unstaged after every promote run,
                 # silently drifting out of sync with the version it just
                 # promoted to (caught before it ever bit a real promote).
+                #
+                # LDM-#1491: ldm.1 joined that same stamping table in LDM-#1482
+                # and was omitted from these lists, reproducing the identical
+                # bug one file along -- v2.19.0-pre.2 shipped a man page
+                # reading 2.19.0-pre.1. ANYTHING added to files_to_update in
+                # _apply_version_update must be added to all THREE git-add
+                # lists here (preview, promote, standard) or it is written to
+                # the working tree and never committed.
                 "scripts/verify_e2e_refactor.sh",
                 "scripts/verify_e2e_refactor.ps1",
+                "ldm_core/resources/ldm.1",
                 # Compatibility table regenerated above.
                 "docs/reference/compatibility.md",
                 "docs/TESTING.md",
@@ -888,6 +898,7 @@ def main():  # noqa: C901, PLR0912, PLR0915
             # above -- see the comment there.
             "scripts/verify_e2e_refactor.sh",
             "scripts/verify_e2e_refactor.ps1",
+            "ldm_core/resources/ldm.1",
         ]
     )
 
