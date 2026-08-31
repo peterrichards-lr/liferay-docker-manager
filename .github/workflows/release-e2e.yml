@@ -72,8 +72,13 @@ jobs:
 
   e2e-verification:
     needs: validate-tag
-    # Run on all version tags (v2.5.0, v2.5.0-pre.1, etc.)
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Run on all version tags (v2.5.0, v2.5.0-pre.1, etc.), and on any manual
+    # dispatch. LDM-#1494: the dispatch trigger existed but this condition
+    # skipped the job for anything that was not a tag, so "manual trigger for
+    # ad-hoc verification" could not actually verify anything. That matters
+    # because it is the only way to exercise a branch in CI without burning a
+    # -pre.N tag under the Burn Rule.
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     
     steps:
