@@ -5,6 +5,11 @@ import sys
 from ldm_core.constants import PIP_INSTALL_TIMEOUT
 from ldm_core.utils import get_actual_home
 
+# Must match the `mcp` pin in requirements.txt / pyproject.toml. Dependabot
+# updates those two and not this one, so #1480 would have shipped a binary
+# installing a different mcp than the source declared (LDM-#1483).
+MCP_PIN = "mcp==2.1.1"
+
 
 def ensure_mcp_installed():
     """
@@ -27,7 +32,7 @@ def ensure_mcp_installed():
             "-m",
             "pip",
             "install",
-            "mcp==2.0.0",
+            MCP_PIN,
             "--target",
             plugins_dir_str,
             "--upgrade",
