@@ -1,14 +1,47 @@
 #!/usr/bin/env python3
+import argparse
 import re
+import subprocess  # nosec B404 - fixed argv, no shell
 import sys
 from pathlib import Path
 
+# Set by main() when --ref is given. None means "read the working tree".
+_REF = None
+
+
+def _read(path):
+    """File contents from the working tree, or from _REF if one is set.
+
+    LDM-#1498: reading the working tree cannot catch the failure this guard
+    exists for. When v2.19.0-pre.2 was tagged, the working tree was entirely
+    consistent -- ldm.1 had been rewritten to pre.2 -- and only the COMMIT was
+    missing it, because the file was never staged (#1491). A working-tree check
+    at any point in that run would have passed, and did.
+
+    So the release path checks the committed tree with `--ref HEAD`: what gets
+    tagged, rather than what happens to be lying on disk.
+
+    Returns None when the file does not exist at that ref, matching the
+    Path.exists() behaviour the callers already handle.
+    """
+    if _REF is None:
+        p = Path(path)
+        return p.read_text() if p.exists() else None
+    try:
+        return subprocess.run(  # nosec B603 - fixed argv, no shell
+            ["git", "show", f"{_REF}:{path}"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    except (subprocess.CalledProcessError, OSError):
+        return None
+
 
 def get_version_from_pyproject():
-    path = Path("pyproject.toml")
-    if not path.exists():
+    content = _read("pyproject.toml")
+    if content is None:
         return None, None
-    content = path.read_text()
 
     match = re.search(r'version\s*=\s*"([^"]+)"', content)
     version_val = match.group(1) if match else None
@@ -20,10 +53,9 @@ def get_version_from_pyproject():
 
 
 def get_version_from_constants():
-    path = Path("ldm_core/constants.py")
-    if not path.exists():
+    content = _read("ldm_core/constants.py")
+    if content is None:
         return None, None
-    content = path.read_text()
 
     # 1. Get variable
     var_match = re.search(r'VERSION\s*=\s*"([^"]+)"', content)
@@ -44,10 +76,9 @@ def get_script_version(path, version_pattern):
     Returns (version_value, magic_comment_value), either possibly None if the
     file or the corresponding marker doesn't exist.
     """
-    p = Path(path)
-    if not p.exists():
+    content = _read(path)
+    if content is None:
         return None, None
-    content = p.read_text()
 
     version_match = re.search(version_pattern, content)
     version_val = version_match.group(1) if version_match else None
@@ -59,6 +90,24 @@ def get_script_version(path, version_pattern):
 
 
 def main():
+    global _REF  # noqa: PLW0603
+    parser = argparse.ArgumentParser(
+        description="Verify every file carrying the version agrees.",
+    )
+    parser.add_argument(
+        "--ref",
+        default=None,
+        metavar="REF",
+        help=(
+            "Check the files as committed at REF (e.g. HEAD) rather than the "
+            "working tree. The release path uses this: a working-tree check "
+            "cannot see a file rewritten but never staged (LDM-#1498)."
+        ),
+    )
+    args = parser.parse_args()
+    _REF = args.ref
+    where = f"at {args.ref}" if args.ref else "in the working tree"
+
     v_pyproject, v_pyproject_magic = get_version_from_pyproject()
     v_constants, v_magic = get_version_from_constants()
     v_sh, v_sh_magic = get_script_version(
@@ -127,13 +176,13 @@ def main():
         )
 
     if errors:
-        print("❌ Version Synchronization Error(s) detected!")
+        print(f"❌ Version Synchronization Error(s) detected {where}!")
         for err in errors:
             print(f"   - {err}")
         print("\nPlease synchronize them before committing.")
         sys.exit(1)
 
-    print(f"✅ Versions are in sync (v{v_constants})")
+    print(f"✅ Versions are in sync {where} (v{v_constants})")
     sys.exit(0)
 
 

@@ -340,12 +340,57 @@ def classify_stable_promotion(tag_exists, master_has_version):
     return "not_promotable"
 
 
+def assert_versions_consistent_at(ref, tag_name):
+    """Refuse to tag a commit whose version files disagree (LDM-#1498).
+
+    The quality gate runs BEFORE the bump, so it validates the files as they
+    were, not as they will be tagged. Nothing re-checked between the rewrite
+    and `git tag` on any path.
+
+    That is how v2.19.0-pre.2 was tagged with constants.py at pre.2 and
+    ldm_core/resources/ldm.1 at pre.1: the man page was rewritten but never
+    staged (#1491). CI caught it, but only after the tag existed -- build and
+    release were skipped, the tag shipped with no binaries, and under the Burn
+    Rule the number was spent.
+
+    Checks `ref`, not the working tree, and that distinction is the whole
+    point: in that run the working tree was entirely consistent. Only the
+    commit was wrong.
+
+    Exits non-zero rather than raising, matching the script's other gates.
+    """
+    print(f"Verifying version consistency at {ref} before tagging {tag_name}...")
+    res = run_cmd(
+        [
+            sys.executable,
+            str(project_root / "scripts" / "check_version_sync.py"),
+            "--ref",
+            ref,
+        ],
+        check=False,
+        capture=True,
+    )
+    output = (res.stdout or "") + (res.stderr or "")
+    print(output.rstrip())
+    if res.returncode != 0:
+        print(
+            f"\n\u274c Refusing to create {tag_name}: the commit being tagged has "
+            "inconsistent version files."
+        )
+        print(
+            "   Fix and re-commit before tagging -- a tag cannot be moved or "
+            "deleted (the Burn Rule)."
+        )
+        sys.exit(1)
+
+
 def create_and_push_tag(version):
     print("\nChecking out master locally and pulling latest changes...")
     run_cmd(["git", "checkout", "master"])
     run_cmd(["git", "pull", "origin", "master"])
 
     tag_name = f"v{version}"
+    assert_versions_consistent_at("HEAD", tag_name)
     print(f"Creating release tag: {tag_name}...")
     run_cmd(["git", "tag", "-d", tag_name], check=False)
     run_cmd(["git", "tag", "-a", tag_name, "-m", f"Release {tag_name}"])
@@ -448,6 +493,7 @@ def run_preview(issue, project_root):
         run_cmd(
             ["git", "commit", "-m", f"chore(preview): {tag_name} for issue #{issue}"]
         )
+        assert_versions_consistent_at("HEAD", tag_name)
         run_cmd(["git", "tag", "-a", tag_name, "-m", f"Preview build for #{issue}"])
         run_cmd(["git", "push", "origin", tag_name])
     finally:
@@ -1019,6 +1065,8 @@ def main():  # noqa: C901, PLR0912, PLR0915
         print(
             f"Pre-release detected. Tagging directly on the release branch: {tag_name}..."
         )
+        # LDM-#1498: this is the path that burnt v2.19.0-pre.2.
+        assert_versions_consistent_at("HEAD", tag_name)
         run_cmd(["git", "tag", "-d", tag_name], check=False)
         run_cmd(["git", "tag", "-a", tag_name, "-m", f"Release {tag_name}"])
         print("Pushing release tag to remote origin...")
