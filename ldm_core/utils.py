@@ -484,6 +484,72 @@ def is_shared_capable_db(db_type):
     return str(db_type or "").lower() in SHARED_DB_CONTAINERS
 
 
+# Runtime forwarders. These hold a published port as a CONSEQUENCE of a
+# container publishing it, so naming one as "the holder" sends the reader after
+# the wrong process (LDM-#1479).
+_PORT_FORWARDERS = (
+    "docker-proxy",
+    "com.docker.backend",
+    "vpnkit",
+    "wslrelay",
+    "qemu",
+    "ssh",
+)
+
+
+def native_port_listener(port, timeout=2.0):
+    """Describe the host process listening on `port`, or None (LDM-#1479).
+
+    Only consulted when no container publishes the port, since a container is
+    the commonest holder and `docker ps` answers that authoritatively.
+
+    Best-effort by design. Returns None when no tool is available, when the
+    holder belongs to another user and is therefore invisible, or when the
+    probe times out. A port conflict must still be reported when this can add
+    nothing to it -- never let diagnosis failure become command failure.
+
+    Args:
+        port (int): the contended host port.
+        timeout (float): seconds to allow the probe.
+
+    Returns:
+        str | None: a short description, or None if nothing was identified.
+    """
+    import shutil
+
+    probes = [
+        (["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"], True),
+        (["ss", "-lptnH", f"sport = :{port}"], False),
+    ]
+    for cmd, skip_header in probes:
+        if not shutil.which(cmd[0]):
+            continue
+        try:
+            out = run_command(cmd, check=False, timeout=timeout)
+        except Exception:
+            continue
+        if not out:
+            continue
+        lines = [ln.strip() for ln in out.splitlines() if ln.strip()]
+        if skip_header and lines:
+            lines = lines[1:]
+        if not lines:
+            continue
+        first = lines[0]
+        fields = first.split()
+        name = fields[0] if fields else first
+        # lsof: COMMAND PID USER ... -- a PID is what the user acts on.
+        described = (
+            f"{name} (PID {fields[1]})"
+            if len(fields) > 1 and fields[1].isdigit()
+            else name
+        )
+        if any(f in first for f in _PORT_FORWARDERS):
+            return f"{described}, a container port forwarder rather than the owner"
+        return described
+    return None
+
+
 def sanitize_id(identifier):
     """
     Sanitizes a string to be used as a safe identifier (e.g. project ID, container name, volume prefix).
