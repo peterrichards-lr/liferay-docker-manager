@@ -1,0 +1,161 @@
+=== LDM BINARY VERIFICATION REPORT ===
+Timestamp:    Tue Aug 25 17:41:40 UTC 2026
+Hostname:  [ANONYMIZED]
+Platform:     Fedora Linux 44 (Container Image)
+Binary:    [ANONYMIZED]
+Version:      ldm 2.17.0
+Script Ver:   2.17.0
+Docker:    28.0.4
+Compose:   5.4.0
+
+>> Initializing Infrastructure
+✅  Infrastructure setup complete.
+>> Custom SSL Port Setup
+✅  Infrastructure setup complete.
+✅ Custom SSL Port & Recreate verified.
+✅ Dev Guardrails verified.
+✅ Project Collision verified.
+✅ Tag Validation Guardrail verified.
+✅ --nightly flag resolution verified.
+✅ --master flag alias verified.
+>> Target List
+=== Registered Target Compute Nodes ===
+╭─────────────┬─────────────────┬──────────┬────────────────╮
+│ TARGET NAME │ HOST / ENDPOINT │ SSH USER │ ACTIVE DEFAULT │
+├─────────────┼─────────────────┼──────────┼────────────────┤
+│ local       │ localhost       │ -        │ YES [DEFAULT]  │
+╰─────────────┴─────────────────┴──────────┴────────────────╯
+>> Target Status (Local)
+=== Target Compute Nodes Status & Connectivity Probe ===
+╭────────┬─────────────────┬────────┬────────────────┬──────────────────┬────────────────────╮
+│ TARGET │ HOST / ENDPOINT │ STATUS │ ENGINE VERSION │ CPUs / MEMORY    │ RUNNING CONTAINERS │
+├────────┼─────────────────┼────────┼────────────────┼──────────────────┼────────────────────┤
+│ local  │ localhost       │ ONLINE │ v28.0.4        │ 4 CPUs / 15.6 GB │ 4                  │
+╰────────┴─────────────────┴────────┴────────────────┴──────────────────┴────────────────────╯
+>> Target Add (Mock Node)
+✅  Target node 'e2e-target-54029' (127.0.0.1) registered successfully.
+✅ Target registration verified.
+>> Target Remove (Mock Node)
+✅  Target node 'e2e-target-54029' removed.
+>> Target Add (127.0.0.2 Loopback)
+✅  Target node 'loopback-node-54029' (127.0.0.2) registered successfully.
+✅ Loopback target registration verified.
+>> Target Status (Loopback Node)
+=== Target Compute Nodes Status & Connectivity Probe ===
+╭─────────────────────┬─────────────────┬────────┬────────────────┬──────────────────┬────────────────────╮
+│ TARGET              │ HOST / ENDPOINT │ STATUS │ ENGINE VERSION │ CPUs / MEMORY    │ RUNNING CONTAINERS │
+├─────────────────────┼─────────────────┼────────┼────────────────┼──────────────────┼────────────────────┤
+│ loopback-node-54029 │ 127.0.0.2       │ ONLINE │ v28.0.4        │ 4 CPUs / 15.6 GB │ 4                  │
+╰─────────────────────┴─────────────────┴────────┴────────────────┴──────────────────┴────────────────────╯
+>> Target Remove (Loopback Node)
+✅  Target node 'loopback-node-54029' removed.
+>> Running LDM Project
+ℹ  The LDM project 'ldm-smoke-test-54029' already exists and this command will reconfigure it.
+▶  Synchronizing Assets
+ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
+⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
+▶  Starting Container Stack
+✅  Project 'ldm-smoke-test-54029' started in background.
+💡  Next step: Run 'ldm link <path-to-cx>' to attach client extensions, or 'ldm logs -f' to tail logs.
+>> Deploying artifact
+✅  Artifact deployment complete.
+✅ Hot Deploy verified.
+✅ Hot Deploy verified.
+>> Creating Snapshot
+ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
+✅  Database dump completed.
+ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
+✅  Snapshot saved: [HOME]/work/liferay-docker-manager/liferay-docker-manager/e2e-work-dir-54029/ldm-smoke-test-54029/snapshots/20260825_174852
+✅ Integrity check verified.
+>> Bypassing Integrity
+=== Snapshots for ldm-smoke-test-54029 ===
+[1] 20260825_174852 - Binary-Verify (1.0 GB) [DB,VOL,MOD]
+⚠️  Resetting ldm-smoke-test-54029 (all)...
+⚠️  Tearing down stack: ldm-smoke-test-54029
+✅  Project ldm-smoke-test-54029 reset successful.
+⚠️  Integrity verification disabled via --no-verify.
+▶  Restoring Workspace Data
+▶  Finalizing Metadata
+▶  Synchronizing Assets
+⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
+▶  Starting Container Stack
+▶  Restoring Database Components
+💡  Next step: Run 'ldm run' to restart the container, or 'ldm status' to view environment status.
+✅  + Database restored successfully.
+✅  Restore complete.
+✅ Legacy command translation verified.
+✅ Share command layout verified.
+✅ Set User Default verified.
+✅ Remove User Default verified.
+>> Scaling Liferay
+✅  Updated scale factors for project ldm-smoke-test-54029
+✅ logs --instance routing verified.
+✅ Trace Log (last-command.log) verified.
+>> Scaling Liferay back to 1 for logs export check
+✅  Updated scale factors for project ldm-smoke-test-54029
+>> Starting project for logs export check
+ℹ  The LDM project 'ldm-smoke-test-54029' already exists and this command will reconfigure it.
+▶  Synchronizing Assets
+ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
+⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
+▶  Starting Container Stack
+✅  Project 'ldm-smoke-test-54029' started in background.
+💡  Next step: Run 'ldm link <path-to-cx>' to attach client extensions, or 'ldm logs -f' to tail logs.
+>> Exporting project logs
+✅ Logs Export verified (ldm-smoke-test-54029-ldm-smoke-test-54029_20260825_175059.log).
+✅ ldm start fast-fail verified.
+✅ ldm run reconfigure UX message verified.
+✅ Safe SELECT SQL Query verified.
+>> Stopping project to release file locks
+💡  Next step: Run 'ldm run' to restart the container, or 'ldm status' to view environment status.
+>> Rebuilding properties
+ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
+=== Rebuilding Properties for project: ldm-smoke-test-54029 ===
+✅  Properties successfully rebuilt.
+✅ Properties Override Cascade verified (rebuild).
+>> Resetting properties
+ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
+=== Resetting Properties for project: ldm-smoke-test-54029 ===
+✅  Properties successfully reset.
+✅ Properties Override Reset verified.
+✅ ldm list --json schema verified.
+✅ ldm status --json schema verified.
+>> Starting project for idempotency check
+ℹ  The LDM project 'ldm-smoke-test-54029' already exists and this command will reconfigure it.
+▶  Synchronizing Assets
+ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
+⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
+▶  Starting Container Stack
+▶  Awaiting Liferay Readiness
+⚠️  LDM detected 1 new error(s) in the logs.
+✅  Liferay ready: http://localhost:54029  (1m 5s)
+✅ Idempotent Exit Code 5 verified.
+>> Deploying Synthetic CX
+✅  Artifact deployment complete.
+✅ Client Extension deploy & staging verified.
+>> Applying portal patch
+⚠️  ldm-verify-noop-patch.jar does not exist in /opt/liferay/osgi/portal for this image -- it may have been renamed or removed upstream; copying anyway (--force-portal-patches).
+✅  Applied 1 portal patch(es) to /opt/liferay/osgi/portal.
+>> Re-creating with patches
+⚠️  ldm-verify-noop-patch.jar does not exist in /opt/liferay/osgi/portal for this image -- it may have been renamed or removed upstream; copying anyway (--force-portal-patches).
+✅  Applied 1 portal patch(es) to /opt/liferay/osgi/portal.
+✅ Portal patch overlay verified (refused without --force, applied and readable with it, survives --force-recreate).
+   ✅ test-naming-Żółć -> test-naming-Zolc
+   ✅ test-naming-Käsespätzle -> test-naming-Kaesespaetzle
+   ✅ test-naming-Được -> test-naming-Duoc
+✅ Non-ASCII project naming verified (metadata verbatim, Docker transcoded).
+>> Checking Status
+=== LDM Service Status ===
+Global Infrastructure:
+╭───────────────────────┬─────────┬───────────────────────────────╮
+│ ● SSL Proxy (Traefik) │ Running │ traefik:v3.6.1                │
+│ ● Search (ES)         │ Running │ elasticsearch:8.19.1          │
+│ ● macOS Socket Bridge │ Running │ tecnativa/docker-socket-proxy │
+╰───────────────────────┴─────────┴───────────────────────────────╯
+
+Active Projects:
+╭────────────────────────┬───────────────┬────────────────────────┬───────╮
+│ ● ldm-smoke-test-54029 │ 2026.q1.7-lts │ http://localhost:54029 │ local │
+╰────────────────────────┴───────────────┴────────────────────────┴───────╯
+
+🎯 ALL E2E VERIFICATIONS PASSED!
