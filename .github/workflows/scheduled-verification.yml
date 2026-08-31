@@ -152,8 +152,29 @@ jobs:
 
   verify-windows:
     needs: validate-tag
-    name: Verify Windows Native
+    # LDM-#1500: both shells, on the same runner. windows-latest carries
+    # Windows PowerShell 5.1 as `powershell` and PowerShell 7 as `pwsh`.
+    #
+    # 5.1 stays the PRIMARY target because it is what ships with Windows and
+    # what users run by default. Verifying only on 7 would stop testing the
+    # configuration most Windows users actually have -- on the platform that
+    # produced a real failure in each of the last two cycles (#1465, #1484,
+    # #1486 all came from it).
+    #
+    # 7 is added, not substituted. It differs in the ways that matter here:
+    # UTF-8 defaults, and no ANSI-code-page parse limits on the script itself.
+    # Note it would NOT have caught #1484 -- that flattening was in LDM's own
+    # stdout encoder, and once a child process has replaced the characters no
+    # shell can recover them.
+    name: Verify Windows Native (${{ matrix.shell }})
     runs-on: windows-latest
+    strategy:
+      # Both arms run even if one fails: which shell broke is the finding.
+      fail-fast: false
+      matrix:
+        include:
+          - shell: powershell   # Windows PowerShell 5.1 -- the default install
+          - shell: pwsh         # PowerShell 7
     steps:
       - name: Checkout Code
         uses: actions/checkout@v7
@@ -168,17 +189,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install .
 
-      - name: Run E2E Verification Suite (Windows)
+      - name: Run E2E Verification Suite (Windows, ${{ matrix.shell }})
         env:
           GITHUB_ACTIONS: "true"
         run: |
-          powershell scripts/verify_e2e_refactor.ps1
+          ${{ matrix.shell }} scripts/verify_e2e_refactor.ps1
 
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: verification-results-windows
+          name: verification-results-windows-${{ matrix.shell }}
           path: verify-*.txt
           retention-days: 7
 
