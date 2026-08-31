@@ -252,6 +252,11 @@ class DevService:
 
     def _apply_version_update(self, new_version, build_info=None):
         """Atomicly updates all files containing the version string."""
+        from datetime import datetime
+
+        # roff convention for .TH is a month-and-year, not an ISO date.
+        man_date = datetime.now().strftime("%B %Y")
+
         files_to_update = {
             "ldm_core/constants.py": [
                 (r'^VERSION = ".*?"', f'VERSION = "{new_version}"'),
@@ -271,6 +276,16 @@ class DevService:
                     f'$SCRIPT_VERSION = "{new_version}"',
                 ),
                 (r"LDM_MAGIC_VERSION: .*", f"LDM_MAGIC_VERSION: {new_version}"),
+            ],
+            # LDM-#1482: the man page ships inside the binary and is installed
+            # into the user's man directory, but nothing stamped it -- it sat
+            # at 2.15.22 while we shipped 2.19, because no guard knew it
+            # existed.
+            "ldm_core/resources/ldm.1": [
+                (
+                    r'^\.TH LDM 1 "[^"]*" "[^"]*"',
+                    f'.TH LDM 1 "{man_date}" "{new_version}"',
+                ),
             ],
         }
 

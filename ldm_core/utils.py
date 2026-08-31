@@ -2882,6 +2882,37 @@ def get_all_options(parser):
     return options
 
 
+def stale_man_page_options(options, project_root):
+    """Options documented in ldm.1 that no longer exist in the parser (#1482).
+
+    Only this direction is checked. The man page is a CURATED subset -- it
+    documents roughly 42 of 238 options by design -- so an undocumented flag
+    is not drift there, and requiring parity would mean documenting ~200
+    flags. An option it documents that has been REMOVED is unambiguously
+    wrong, though: ldm.1 carried `--shared`/`--dedicated` long after
+    `ldm db mode` became `ldm config database-mode`.
+
+    Args:
+        options (set): every option string the parser accepts.
+        project_root (Path): repository root.
+
+    Returns:
+        list[str]: sorted stale option strings, empty when clean.
+    """
+    import re
+
+    man_path = project_root / "ldm_core" / "resources" / "ldm.1"
+    if not man_path.exists():
+        return []
+
+    man_text = man_path.read_text(encoding="utf-8").replace("\\-", "-")
+    man_opts = set(re.findall(r"\\fB(--?[a-zA-Z0-9][a-zA-Z0-9-]*)\\fR", man_text))
+    # JVM flags named in prose, not ldm options.
+    for external in ["--add-opens", "-h", "--help", "-Xms", "-Xmx"]:
+        man_opts.discard(external)
+    return sorted(o for o in man_opts if o not in options)
+
+
 def verify_cli_drift():
     """Verify that all CLI options in cli.py are documented in the guides.
 
@@ -2936,7 +2967,9 @@ def verify_cli_drift():
         if opt not in options:
             missing_parser.append(opt)
 
-    if missing_docs or missing_parser:
+    stale_man = stale_man_page_options(options, project_root)
+
+    if missing_docs or missing_parser or stale_man:
         if missing_docs:
             print(
                 "❌ CLI Documentation Drift Detected (Undocumented options)!",
@@ -2958,6 +2991,18 @@ def verify_cli_drift():
                 file=sys.stderr,
             )
             for opt in missing_parser:
+                print(f"  - {opt}", file=sys.stderr)
+        if stale_man:
+            print(
+                "❌ Man Page Drift Detected (Stale/removed options)!",
+                file=sys.stderr,
+            )
+            print(
+                "The following options are documented in ldm_core/resources/ldm.1 "
+                "but no longer exist in the parser:",
+                file=sys.stderr,
+            )
+            for opt in stale_man:
                 print(f"  - {opt}", file=sys.stderr)
         print(
             "\nPlease sync ldm_core/cli.py and docs/reference/cli/*.md or docs/reference/advanced_cli.md.",
