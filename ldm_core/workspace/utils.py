@@ -10,6 +10,7 @@ import yaml
 if TYPE_CHECKING:
     pass
 from ldm_core.ui import UI
+from ldm_core.utils import sanitize_id
 
 
 def cmd_init(self, project_id=None):
@@ -26,7 +27,9 @@ def _ensure_stopped(self, project_name, project_path=None):
     c_name = project_name
     if project_path and hasattr(project_path, "exists") and project_path.exists():
         meta = self.manager.read_meta(project_path)
-        c_name = meta.get("container_name") or project_name
+        # LDM-#1512: this is passed to DockerService.stop()/is_running(),
+        # so it must be the transcoded name the daemon actually holds.
+        c_name = sanitize_id(meta.get("container_name") or project_name)
 
     def stop_container():
         if project_path and hasattr(project_path, "exists") and project_path.exists():
