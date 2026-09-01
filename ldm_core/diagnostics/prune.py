@@ -51,6 +51,54 @@ def _list_ldm_volumes(docker_prefix):
     return volumes
 
 
+def _stray_helper_containers(handler, docker_prefix):
+    """LDM helper containers that are not running (LDM-#1506).
+
+    LDM starts short-lived alpine containers to chown volumes, probe
+    writability and measure disk. They carry `--rm`, which removes them when
+    they EXIT -- but a container that never STARTS never exits, so `--rm`
+    cannot fire and it is orphaned. One was found sitting in `created` state
+    for two days.
+
+    Before LDM-#1506 they were anonymous, so nothing could tell an LDM
+    leftover from a container the user ran. They now carry
+    `com.liferay.ldm.helper`, which is what makes this sweep possible at all.
+
+    Only non-running containers are returned. A helper that is running is
+    doing its job, and a chown midway through a large volume must not be
+    killed by a maintenance command.
+
+    Returns:
+        list[tuple[str, str, str]]: (id, name, status) for each stray.
+    """
+    res = handler.manager.run_command(
+        [
+            *docker_prefix,
+            "ps",
+            "-a",
+            "--filter",
+            "label=com.liferay.ldm.helper",
+            "--format",
+            "{{.ID}}\t{{.Names}}\t{{.State}}",
+        ],
+        check=False,
+        capture_output=True,
+    )
+    if not res:
+        return []
+
+    strays = []
+    for line in str(res).splitlines():
+        parts = line.strip().split("\t")
+        if len(parts) != 3:
+            continue
+        cid, name, state = parts
+        if state.strip().lower() == "running":
+            continue
+        strays.append((cid.strip(), name.strip(), state.strip()))
+    return strays
+
+
 def _orphaned_ldm_volumes(handler, docker_prefix):
     """Splits LDM-owned volumes into those whose project still exists and those without.
 
@@ -643,6 +691,26 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
                 "No anonymous volumes to reclaim. "
                 "LDM's own volumes are named and are handled separately below."
             )
+
+    # 7. Stray helper containers (LDM-#1506). `--rm` cannot reclaim a helper
+    # that never started, and until they were labelled nothing could identify
+    # one afterwards. Removing a stopped throwaway destroys nothing: it holds
+    # no state, and its whole purpose was a one-shot chown or probe.
+    strays = _stray_helper_containers(handler, docker_prefix)
+    if strays:
+        UI.info(f"Found {len(strays)} stray LDM helper container(s):")
+        for cid, name, state in strays:
+            UI.detail(f"  {name} ({cid[:12]}) - {state}")
+        if is_dry_run:
+            UI.info("[Dry Run] Would remove the helper container(s) above.")
+        else:
+            for cid, _name, _state in strays:
+                handler.manager.run_command(
+                    [*docker_prefix, "rm", "-f", cid],
+                    check=False,
+                    capture_output=True,
+                )
+            UI.success(f"Removed {len(strays)} stray helper container(s).")
 
     # 7a. LDM-owned volumes whose project no longer exists (LDM-#1266/#1267).
     # Selected by ownership label, never by a blanket `-a`, and split by role

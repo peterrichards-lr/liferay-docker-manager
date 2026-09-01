@@ -25,6 +25,7 @@ from ldm_core.ui import UI
 from ldm_core.utils import (
     check_for_updates,
     get_actual_home,
+    helper_container_flags,
     is_continuation_line,
     is_local_host,
     resolve_dependency_version,
@@ -648,7 +649,7 @@ class DoctorRunner:
                     [
                         "docker",
                         "run",
-                        "--rm",
+                        *helper_container_flags("write-probe"),
                         "-v",
                         f"{test_path}:/test-mount",
                         "alpine",
@@ -1886,7 +1887,16 @@ class DoctorRunner:
         docker_prefix = docker_prefix or ["docker"]
         try:
             df_out = run_command(
-                [*docker_prefix, "run", "--rm", "alpine", "df", "-P", "-k", "/"],
+                [
+                    *docker_prefix,
+                    "run",
+                    *helper_container_flags("disk-probe"),
+                    "alpine",
+                    "df",
+                    "-P",
+                    "-k",
+                    "/",
+                ],
                 check=False,
             )
             if not df_out:
