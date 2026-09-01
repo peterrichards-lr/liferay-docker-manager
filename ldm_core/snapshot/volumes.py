@@ -3,6 +3,7 @@ from pathlib import Path
 
 from ldm_core.docker_service import DockerService
 from ldm_core.ui import UI
+from ldm_core.utils import helper_container_flags
 
 
 class VolumesSnapshotService:
@@ -38,7 +39,7 @@ class VolumesSnapshotService:
         cmd = [
             *docker_prefix,
             "run",
-            "--rm",
+            *helper_container_flags("volume-copy"),
             "-v",
             f"{host_path_abs.as_posix()}:/host",
             "-v",
@@ -135,7 +136,7 @@ class VolumesSnapshotService:
                 chown_cmd = [
                     *docker_prefix,
                     "run",
-                    "--rm",
+                    *helper_container_flags("chown"),
                     "-v",
                     f"{volume_name}:/vol",
                     "alpine",

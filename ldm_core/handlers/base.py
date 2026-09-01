@@ -17,7 +17,7 @@ import contextlib
 
 from ldm_core.constants import SCRIPT_DIR
 from ldm_core.ui import UI
-from ldm_core.utils import get_actual_home, safe_cwd
+from ldm_core.utils import get_actual_home, helper_container_flags, safe_cwd
 
 
 class BaseHandler:
@@ -1807,7 +1807,7 @@ class BaseHandler:
                     [
                         "docker",
                         "run",
-                        "--rm",
+                        *helper_container_flags("chown"),
                         "-v",
                         f"{root.as_posix()}:/workspace",
                         "alpine",

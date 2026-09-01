@@ -2859,6 +2859,40 @@ def safe_rmtree(path):
             raise e
 
 
+def helper_container_flags(purpose):
+    """`docker run` flags marking a container as an LDM throwaway (LDM-#1506).
+
+    LDM runs short-lived alpine containers to chown volumes, probe writability
+    and measure disk. They were started anonymously, so a stray was
+    indistinguishable from anything the user ran -- one was found sitting in
+    `created` state for two days under the Docker-generated name
+    `affectionate_hofstadter`.
+
+    That matters because `--rm` only fires when a container EXITS. One that
+    never starts is never reclaimed, and without a label nothing can identify
+    it afterwards: `ldm prune` reclaims orphaned volumes by label (LDM-#1393 /
+    LDM-#1395) but had no way to recognise LDM's own containers.
+
+    Follows the existing vocabulary rather than inventing one:
+    `com.liferay.ldm.managed=true` is already stamped on archetype services.
+
+    Args:
+        purpose (str): short slug for what the helper does, e.g. "chown".
+            Surfaces in `docker ps --filter label=...` so a stray explains
+            itself.
+
+    Returns:
+        list[str]: flags to splice in after "run".
+    """
+    return [
+        "--rm",
+        "--label",
+        "com.liferay.ldm.managed=true",
+        "--label",
+        f"com.liferay.ldm.helper={purpose}",
+    ]
+
+
 def reclaim_volume_permissions(
     path, uid=None, gid=None, chmod_val="750", docker_prefix=None
 ):
@@ -2915,7 +2949,7 @@ def reclaim_volume_permissions(
             [
                 *(docker_prefix or ["docker"]),
                 "run",
-                "--rm",
+                *helper_container_flags("chown"),
                 "-v",
                 f"{mount_source}:/workspace",
                 "alpine",
