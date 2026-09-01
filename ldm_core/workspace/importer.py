@@ -239,18 +239,45 @@ def _extract_ldm_package(self, ldmp_path, temp_extract_dir, temp_pkg_dir):
         UI.die(f"Failed to extract LDM package: {e}")
 
 
+def _discard_package_temp(temp_pkg_dir, temp_extract_dir):
+    """Remove both scratch directories used while verifying a package.
+
+    LDM-#1522: this pair was repeated verbatim at every rejection point in
+    _verify_ldm_package_manifest. Extracted when adding the parse-failure
+    rejection pushed that function past the complexity limit -- five copies of
+    a cleanup is also five chances to forget one on a new failure path, which
+    would leave an extracted archive behind on a rejected package.
+    """
+    for scratch in (temp_pkg_dir, temp_extract_dir):
+        if scratch.exists():
+            shutil.rmtree(scratch)
+
+
 def _verify_ldm_package_manifest(self, temp_extract_dir, temp_pkg_dir, owner, repo):
-    from ldm_core.utils import UI
+    from ldm_core.utils import UI, MetaReadError
 
     manifest_file = temp_extract_dir / "meta"
     if not manifest_file.exists():
-        if temp_pkg_dir.exists():
-            shutil.rmtree(temp_pkg_dir)
-        if temp_extract_dir.exists():
-            shutil.rmtree(temp_extract_dir)
+        _discard_package_temp(temp_pkg_dir, temp_extract_dir)
         UI.die("Invalid LDM Package: Missing manifest 'meta' file.")
 
-    manifest = self.manager.read_meta(temp_extract_dir) or {}
+    # LDM-#1522: read strictly. read_meta degrades an unparseable file to {},
+    # which is right for a project directory -- a missing meta there is normal
+    # -- and wrong here. Every check below is a control on an untrusted archive,
+    # and an empty dict satisfies the db_type check vacuously (`if db_type and
+    # ...` is false when the key is missing). The origin check does still die on
+    # the absent value, so the path failed closed, but by accident of ordering
+    # rather than because anything distinguished "says nothing" from "could not
+    # be read". Reported against a real .ldmp whose manifest was valid JSON with
+    # trailing lines after the closing brace: tag, db_type and github_repository
+    # were all present in the file and all silently discarded.
+    try:
+        manifest = self.manager.read_meta(temp_extract_dir, strict=True) or {}
+    except MetaReadError as e:
+        _discard_package_temp(temp_pkg_dir, temp_extract_dir)
+        UI.die(f"Invalid LDM Package: manifest 'meta' could not be parsed. {e}")
+        return {}  # unreachable; UI.die exits, but keeps the type honest
+
     db_type = manifest.get("db_type")
     if db_type and db_type not in [
         "postgresql",
@@ -258,25 +285,16 @@ def _verify_ldm_package_manifest(self, temp_extract_dir, temp_pkg_dir, owner, re
         "mariadb",
         "hypersonic",
     ]:
-        if temp_pkg_dir.exists():
-            shutil.rmtree(temp_pkg_dir)
-        if temp_extract_dir.exists():
-            shutil.rmtree(temp_extract_dir)
+        _discard_package_temp(temp_pkg_dir, temp_extract_dir)
         UI.die(f"Unsupported database type '{db_type}' in LDM package manifest.")
 
     github_repo_manifest = manifest.get("github_repository")
     if not github_repo_manifest:
-        if temp_pkg_dir.exists():
-            shutil.rmtree(temp_pkg_dir)
-        if temp_extract_dir.exists():
-            shutil.rmtree(temp_extract_dir)
+        _discard_package_temp(temp_pkg_dir, temp_extract_dir)
         UI.die("Security Violation: Manifest is missing 'github_repository' attribute.")
 
     if github_repo_manifest.lower() != f"{owner}/{repo}".lower():  # type: ignore[union-attr]
-        if temp_pkg_dir.exists():
-            shutil.rmtree(temp_pkg_dir)
-        if temp_extract_dir.exists():
-            shutil.rmtree(temp_extract_dir)
+        _discard_package_temp(temp_pkg_dir, temp_extract_dir)
         UI.die("Security Violation: Repository origin mismatch.")
 
     return manifest

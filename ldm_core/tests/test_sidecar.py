@@ -64,7 +64,7 @@ class MockManager(BaseHandler):
             "log4j": root / "osgi" / "log4j",
         }
 
-    def read_meta(self, path):
+    def read_meta(self, path, strict=False):
         return getattr(self, "meta", {})
 
     def write_meta(self, path, meta):
