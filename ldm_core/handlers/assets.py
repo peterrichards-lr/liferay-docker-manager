@@ -47,6 +47,21 @@ class AssetService:
             UI.detail(f"Using cached seed: {seed_filename}")
             tmp_path = cached_seed
         else:
+            # LDM-#1534: establish that a seed EXISTS before asking whether to
+            # download it. The prompt used to come first and the HEAD/API
+            # lookup after, so a tag with no published seed produced a question
+            # whose answer could not change anything -- "y" and "n" both ended
+            # at "No seed found for tag", one of them after a pointless round
+            # trip. Same reasoning as LDM-#1074 in _ensure_seeded below, which
+            # skips the lookup for nightly/master rather than prompting for a
+            # seed that can never exist.
+            resolved_url = self._resolve_seed_url(
+                download_url, tag, tag_name, seed_filename, headers
+            )
+            if not resolved_url:
+                return False
+            download_url = resolved_url
+
             if not UI.confirm(
                 f"Project seed not found in cache. Download pre-warmed {tag} seed?",
                 "Y",
@@ -54,51 +69,6 @@ class AssetService:
                 return False
 
             try:
-                head_res = requests.head(download_url, allow_redirects=True, timeout=10)
-
-                if head_res.status_code != 200:
-                    api_url = f"{GITHUB_API_URL}/releases/tags/{tag_name}"
-                    api_res = requests.get(api_url, headers=headers, timeout=10)
-
-                    if api_res.status_code != 200:
-                        api_url = f"{GITHUB_API_URL}/releases"
-                        api_res = requests.get(api_url, headers=headers, timeout=10)
-
-                    if api_res.status_code == 200:
-                        data = api_res.json()
-                        releases = data if isinstance(data, list) else [data]
-                        target_release = next(
-                            (
-                                r
-                                for r in releases
-                                if r.get("tag_name") == tag_name
-                                or r.get("name") == tag_name
-                            ),
-                            None,
-                        )
-                        if target_release:
-                            asset = next(
-                                (
-                                    a
-                                    for a in target_release.get("assets", [])
-                                    if a.get("name") == seed_filename
-                                ),
-                                None,
-                            )
-                            if asset:
-                                download_url = asset.get("browser_download_url")
-                            else:
-                                UI.warning(f"No seed found for tag: {tag}")
-                                return False
-                        else:
-                            UI.warning(f"Release not found for tag: {tag_name}")
-                            return False
-                    else:
-                        UI.warning(
-                            f"Failed to fetch release info: HTTP {api_res.status_code}"
-                        )
-                        return False
-
                 temp_download = cache_dir / f"{seed_filename}.download"
                 try:
                     response = requests.get(
@@ -185,6 +155,69 @@ class AssetService:
             # continues -- the caller simply skips the seeded bookkeeping, and
             # the warning above already told the user what happened.
             return False
+
+    def _resolve_seed_url(self, download_url, tag, tag_name, seed_filename, headers):
+        """Return a usable download URL for the seed, or None if there is none.
+
+        LDM-#1534: split out of _fetch_seed so that availability is settled
+        BEFORE the user is asked to approve a download. Every failure path
+        warns and returns None, and the caller does not prompt -- asking about
+        a seed that cannot be fetched makes "y" and "n" reach the same place.
+
+        Network failure returns None too: unreachable is indistinguishable from
+        absent for the purpose of the question, and the caller has nothing to
+        offer either way.
+        """
+        try:
+            head_res = requests.head(download_url, allow_redirects=True, timeout=10)
+
+            if head_res.status_code != 200:
+                api_url = f"{GITHUB_API_URL}/releases/tags/{tag_name}"
+                api_res = requests.get(api_url, headers=headers, timeout=10)
+
+                if api_res.status_code != 200:
+                    api_url = f"{GITHUB_API_URL}/releases"
+                    api_res = requests.get(api_url, headers=headers, timeout=10)
+
+                if api_res.status_code == 200:
+                    data = api_res.json()
+                    releases = data if isinstance(data, list) else [data]
+                    target_release = next(
+                        (
+                            r
+                            for r in releases
+                            if r.get("tag_name") == tag_name
+                            or r.get("name") == tag_name
+                        ),
+                        None,
+                    )
+                    if target_release:
+                        asset = next(
+                            (
+                                a
+                                for a in target_release.get("assets", [])
+                                if a.get("name") == seed_filename
+                            ),
+                            None,
+                        )
+                        if asset:
+                            download_url = asset.get("browser_download_url")
+                        else:
+                            UI.warning(f"No seed found for tag: {tag}")
+                            return None
+                    else:
+                        UI.warning(f"Release not found for tag: {tag_name}")
+                        return None
+                else:
+                    UI.warning(
+                        f"Failed to fetch release info: HTTP {api_res.status_code}"
+                    )
+                    return None
+        except Exception as e:
+            UI.warning(f"LDM is working offline or seed is unreachable ({e})")
+            return None
+
+        return download_url
 
     def _ensure_seeded(self, tag, db_type, paths):
         """Helper to ensure a project is bootstrapped from a seed if available and appropriate."""

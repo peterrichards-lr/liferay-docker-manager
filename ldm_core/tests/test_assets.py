@@ -179,3 +179,92 @@ class TestAssetService(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSeedAvailabilityCheckedBeforePrompting(unittest.TestCase):
+    """LDM-#1534: do not ask about a download that cannot happen.
+
+    The prompt used to fire first and the HEAD/API lookup after it, so a tag
+    with no published seed produced a question whose answer changed nothing --
+    'y' and 'n' both ended at 'No seed found for tag'.
+
+    These assert the ORDERING, not the prompt text. A test that only checked
+    the wording would pass against the unfixed code, which is the failure shape
+    #1516 exists to catch.
+    """
+
+    def setUp(self):
+        self.manager = MockAssetManager()
+        self.assets = AssetService(self.manager)
+
+    @patch("ldm_core.handlers.assets.get_actual_home")
+    @patch("ldm_core.handlers.assets.UI.confirm")
+    @patch("requests.get")
+    @patch("requests.head")
+    def test_no_published_seed_is_never_offered(
+        self, mock_head, mock_get, mock_confirm, mock_home
+    ):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mock_home.return_value = Path(tmp_dir)
+
+            # No seed at the direct URL...
+            mock_head.return_value = MagicMock(status_code=404)
+            # ...and the release carries no matching asset either.
+            mock_get.return_value = MagicMock(
+                status_code=200,
+                json=MagicMock(
+                    return_value={"tag_name": "seeded-states", "assets": []}
+                ),
+            )
+
+            result = self.assets._fetch_seed(
+                "2026.q1.7-lts", "postgresql", "shared", {}
+            )
+
+        self.assertFalse(result)
+        mock_confirm.assert_not_called()
+
+    @patch("ldm_core.handlers.assets.get_actual_home")
+    @patch("ldm_core.handlers.assets.UI.confirm")
+    @patch("requests.head")
+    def test_an_available_seed_is_still_offered(
+        self, mock_head, mock_confirm, mock_home
+    ):
+        # The guard must not swallow the prompt when a seed genuinely exists --
+        # declining stays the user's call.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mock_home.return_value = Path(tmp_dir)
+            mock_head.return_value = MagicMock(status_code=200)
+            mock_confirm.return_value = False
+
+            result = self.assets._fetch_seed(
+                "2026.q1.7-lts", "postgresql", "shared", {}
+            )
+
+        self.assertFalse(result)
+        mock_confirm.assert_called_once()
+
+    @patch("ldm_core.handlers.assets.get_actual_home")
+    @patch("ldm_core.handlers.assets.UI.confirm")
+    @patch("requests.head")
+    def test_unreachable_network_is_not_a_question(
+        self, mock_head, mock_confirm, mock_home
+    ):
+        # Unreachable is indistinguishable from absent for the purpose of the
+        # question; there is nothing to offer either way.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mock_home.return_value = Path(tmp_dir)
+            mock_head.side_effect = OSError("network down")
+
+            result = self.assets._fetch_seed(
+                "2026.q1.7-lts", "postgresql", "shared", {}
+            )
+
+        self.assertFalse(result)
+        mock_confirm.assert_not_called()
