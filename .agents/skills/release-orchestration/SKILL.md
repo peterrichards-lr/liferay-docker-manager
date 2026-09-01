@@ -119,6 +119,38 @@ To prevent "version fatigue" and ensure the stability of the main release channe
   Nearly hit on 2026-08-31 cutting `v2.19.0-pre.2`: six commits sat on `master` and none on the release branch, including all four fixes the pre-release existed to verify (LDM-#1490).
 
 - **Feature Verification Script Gate**: BEFORE running `python3 scripts/release.py --bump beta`, the agent MUST verify that all feature assertions for the issue being released are written and committed in `scripts/verify_e2e_refactor.sh` and `scripts/verify_e2e_refactor.ps1`. Never cut a pre-release for a feature whose E2E verification script checks have been deferred without a tracked issue or committed assertions.
+- **Behaviour Coverage Gate (does a test EXERCISE it, or only assert its config?)**: BEFORE running `python3 scripts/release.py --bump beta`, for **every issue closed in the cycle**, answer out loud: *is there a test that exercises this, or only one that asserts its configuration?*
+
+  A config-level assertion is legitimate and often the right cost. It must be a **deliberate choice, recorded** -- not the default nobody noticed. For each closed issue, one of:
+
+  - **exercised** -- a test runs the feature and asserts the outcome
+  - **config-only, deliberately** -- say why, and what would catch a failure downstream (e.g. "the boot is covered in CI by LDM-#1494")
+  - **not covered** -- raise it *before* the cut, not after
+
+  Where the answer is config-only, ask the specific question: **what would a user hit that this cannot see?** For LDM-#1512 the answer was "the volume is never written", and that was the bug.
+
+  **The shape this catches.** Six instances across two cycles, all the same:
+
+  | | asserted | never done |
+  |---|---|---|
+  | LDM-#1494 | shared MySQL compose is valid | nobody booted one |
+  | LDM-#1499 | shared PostgreSQL compose is valid | same |
+  | LDM-#1512 | non-ASCII names stored and transcoded correctly | nobody hydrated a volume with one |
+  | LDM-#1529 | the refusal message appears in the script | nobody checked the script exits |
+  | `test_gate_reads_both_flags` | `"no_seed"` appears in the function source | nobody called it with the flag set |
+  | LDM-#1522 | `db_type` is rejected when invalid | the check cannot fail once its input silently becomes `{}` |
+
+  The first three shipped and were found by a user running the software. The fourth was caught only because the gate's own tests were re-run against a deliberately neutered gate -- **all three of them passed** with every refusal message intact and the `exit` removed.
+
+  **Coverage percentage does not detect this.** `snapshot/volumes.py` was at 83% when it shipped LDM-#1512; `pipelines/run.py` was well covered when it shipped LDM-#1509. The lines executed; the outcome was never asserted. Raising `fail_under` would not have moved either -- that is LDM-#1515, and it is about erosion, not detection.
+
+  **Two tells, both cheap to spot in review:**
+
+  - the test reads the **source** rather than running it -- `inspect.getsource`, or asserting a string appears in a file. It passes whenever the text survives, including when the behaviour is gone. (It is also fragile: `inspect.getsource` resolves a method by its recorded line number and re-reads the file, so an unrelated edit above it can silently slice the wrong function.)
+  - the assertion is written `if x and <condition>` -- it cannot reject anything when `x` is absent, so any path that silently empties the input disables the check without failing a test
+
+  **The one technique that settles it:** break the behaviour deliberately, leaving every message and symbol in place, and confirm the test fails. A test that has never failed has not been shown to test anything -- see LDM-#1529, where three tests survived the gate being neutered.
+
 - **Pre-Flight Quality Gate (Mandatory Local Verification)**: BEFORE running `python3 scripts/release.py --bump beta`, the agent MUST run `.venv/bin/python3 -m pre_commit run --all-files` locally and verify it passes with 0 errors. Never push a release bump without running local lint verification first.
   - **`./lint.sh` is NOT an equivalent substitute.** It does not run `check-version-sync`, `gitleaks`, `mypy`, `check-cli-drift`, `validate-compose`, `deptry` or `shellcheck`, and by default it *auto-fixes* rather than validates (use `./lint.sh --check` if you run it at all). `check-version-sync` is the most release-relevant hook in the set, so a release verified only by `lint.sh` is not verified. `scripts/release.py` refuses to fall back to it for this reason (LDM-#1244).
 - **Post-Push Release Asset Verification Gate**: AFTER running `python3 scripts/release.py --bump beta`, the agent MUST execute `gh run list --workflow=ci.yml` and actively monitor the pushed tag run until the `release` job completes with status `success`. If CI fails at any step (e.g. `markdownlint`, `mypy`, `check-cli-drift`, or `detect-secrets`), immediately extract logs (`gh run view --log-failed`), run `pre-commit run --all-files` locally to quickly reproduce and resolve all quality gate failures in a single local iteration, re-verify with `./lint.sh`, and bump to the next candidate. Never assume pushing a tag automatically created the GitHub Release entity without verifying CI run completion.
@@ -146,4 +178,4 @@ To ensure clarity and prevent title drift across multi-commit pre-release iterat
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-31* | *Last Reviewed: 2026-08-31*
+*Last Updated: 2026-09-01* | *Last Reviewed: 2026-09-01*
