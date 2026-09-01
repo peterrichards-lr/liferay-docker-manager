@@ -1192,18 +1192,22 @@ services:
     # afterwards, which is why nothing noticed.
     #
     # Costs one command: the project is already booted here.
-    Write-Host ">> Verifying the seeded flag survives the run (LDM-#1509)..."
-    $seededOut = (& $LDM_CMD system doctor ldm-smoke-test 2>&1 | Out-String)
-    if ($seededOut -match "Vanilla \(Not Seeded\)") {
-        Write-Host "[ERROR] doctor reports the project as vanilla, but it was seeded." -ForegroundColor Red
-        ($seededOut -split "`n" | Select-String -SimpleMatch "Project Initialization") | ForEach-Object { Write-Host $_ }
-        exit 1
-    }
-    if ($seededOut -notmatch "Seeded") {
-        Write-Host "[ERROR] doctor reported no seeding state at all for ldm-smoke-test." -ForegroundColor Red
-        exit 1
-    }
-    Write-Verdict "[SUCCESS] Seeded flag survives the full run (LDM-#1509)."
+    # This assertion could never pass here, and failed every run from
+    # v2.20.0-pre.1 onward. The project above is created by hand-writing `meta`,
+    # so `ldm run` reconfigures an existing project and is_new_project is False.
+    # pipelines/run.py gates seeding on exactly that, so nothing ever seeds and
+    # doctor correctly reports "Vanilla (Not Seeded)".
+    #
+    # Pre-writing "seeded": "true" into the meta would make it green while
+    # proving nothing: the pipeline reads meta BEFORE seeding, so a flag already
+    # present survives without exercising the rebind that broke.
+    #
+    # LDM-#1516 answer: config-only here, deliberately. The regression is caught
+    # by ldm_core/tests/test_seeded_flag_survives_behaviour.py, which runs
+    # EnvironmentSetupStage against a real temp project and writes the context
+    # back as the later stages do.
+    Write-Host "[INFO] Seeded-flag survival (LDM-#1509) is covered by test_seeded_flag_survives_behaviour.py --"
+    Write-Host "       it cannot be exercised here without a real first-boot seed download."
 
     # Hot Deploy
     Write-Host ">> Deploying Test OSGi Bundle..."
