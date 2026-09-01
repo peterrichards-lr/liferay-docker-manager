@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     pass
-from ldm_core.constants import GIT_CLONE_TIMEOUT, VERSION
+from ldm_core.constants import FALLBACK_LIFERAY_TAG, GIT_CLONE_TIMEOUT, VERSION
 from ldm_core.utils import (
     calculate_sha256,
     is_within_root,
@@ -42,7 +42,7 @@ def _handle_dry_run(self, source_path, should_project_name):
         "port": "8080",
         "ssl": "false",
         "host_name": "localhost",
-        "tag": "2026.q1.4-lts",
+        "tag": FALLBACK_LIFERAY_TAG,
         "db_type": "postgresql",
         "ldm_version": VERSION,
     }
@@ -370,6 +370,49 @@ def _hydrate_ldm_package_to_project(
     UI.success(f"Project created at: {project_path}")
 
 
+def _apply_package_tag(self, manifest, is_quickstart):
+    """Settle the Liferay tag from the package, before anything can ask for it.
+
+    LDM-#1514: quickstart carried a fallback for a package that declares no tag
+    -- warn, default, pause briefly so the user can cancel -- and it was dead
+    code. The prompt that pre-empted it is ConfigResolutionStage._resolve_tag
+    (pipelines/run.py), which runs inside cmd_import well before quickstart
+    reaches its own `if not tag:` at workspace/quickstart.py.
+
+    _resolve_tag reads `manager.args.tag or project_meta.get("tag") or
+    manager.defaults.get("tag")` and only prompts when all three are empty, so
+    settling one here is enough to keep it quiet. It cannot simply be told not
+    to ask: every ordinary `ldm run` shares that code, and there the question is
+    the right one.
+
+    An explicit --tag still wins; this only fills a vacuum.
+    """
+    from ldm_core.utils import UI
+
+    if getattr(self.manager.args, "tag", None):
+        return
+
+    manifest_tag = manifest.get("tag")
+    if manifest_tag:
+        self.manager.args.tag = manifest_tag
+        UI.detail(f"Using Liferay tag declared by the package: {manifest_tag}")
+        return
+
+    # No tag in the manifest. For quickstart the whole contract is one command,
+    # so warn and carry on rather than stopping to ask. For a plain import the
+    # prompt is left alone: an interactive user may well want to choose, and
+    # removing a question is not something to do to them silently.
+    if not is_quickstart:
+        return
+
+    self.manager.args.tag = FALLBACK_LIFERAY_TAG
+    UI.warning(
+        f"Package manifest declares no 'tag'. Falling back to {FALLBACK_LIFERAY_TAG}."
+    )
+    UI.detail("Pass --tag to choose a different Liferay version.")
+    UI.interruptible_pause(3, "Press CTRL+C to cancel ")
+
+
 def _import_ldm_package(
     self,
     ldmp_asset,
@@ -415,6 +458,14 @@ def _import_ldm_package(
             _extract_ldm_package(self, ldmp_path, temp_extract_dir, temp_pkg_dir)
             manifest = _verify_ldm_package_manifest(
                 self, temp_extract_dir, temp_pkg_dir, owner, repo
+            )
+
+            # LDM-#1514: settle the tag here, where the manifest has just been
+            # parsed and validated, and before any pipeline stage can ask.
+            _apply_package_tag(
+                self,
+                manifest,
+                getattr(self.manager.args, "command", "") == "quickstart",
             )
             _hydrate_ldm_package_to_project(
                 self, project_path, project_name, manifest, temp_extract_dir

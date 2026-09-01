@@ -101,7 +101,12 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
         )
 
     if not tag:
-        tag = "2026.q1.4-lts"  # sensible fallback version
+        # LDM-#1514: this is now a second-chance guard. The tag is settled
+        # during package verification, so a packaged import should never
+        # reach here -- but a project with no manifest at all still can.
+        from ldm_core.constants import FALLBACK_LIFERAY_TAG
+
+        tag = FALLBACK_LIFERAY_TAG
         project_meta["tag"] = tag
         self.manager.write_meta(project_path, project_meta)
         UI.warning(
