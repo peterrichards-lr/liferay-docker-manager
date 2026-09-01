@@ -815,8 +815,15 @@ class ReadinessService(BaseHandler):
                             if desc:
                                 UI.raw(f"      {desc}")
 
+                        # LDM-#1508: name the project. Without it the tip
+                        # sends the user into the project-selection prompt,
+                        # and the generated name (ldm-1788250086) has to be
+                        # scrolled back for and retyped. project_id is the
+                        # same value the `Next:` hints above already use.
                         UI.raw(
-                            f"      {UI.DIM}(password masked -- use 'ldm info --credentials' to reveal it){UI.COLOR_OFF}"
+                            f"      {UI.DIM}(password masked -- use "
+                            f"'ldm info {project_id} --credentials' to reveal it)"
+                            f"{UI.COLOR_OFF}"
                         )
                         UI.raw("")
 
