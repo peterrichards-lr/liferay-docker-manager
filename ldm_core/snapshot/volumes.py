@@ -3,7 +3,7 @@ from pathlib import Path
 
 from ldm_core.docker_service import DockerService
 from ldm_core.ui import UI
-from ldm_core.utils import helper_container_flags
+from ldm_core.utils import helper_container_flags, sanitize_id
 
 
 class VolumesSnapshotService:
@@ -72,7 +72,12 @@ class VolumesSnapshotService:
             return
 
         meta = self.manager.read_meta(paths["root"])
-        c_name = meta.get("container_name") or paths["root"].name
+        # LDM-#1512: sanitize_id, because this becomes a DOCKER volume
+        # name. LDM-#1307 keeps metadata verbatim and transcodes only for
+        # Docker, so `Saarbrücken` in meta is `Saarbruecken` in the daemon.
+        # Using the raw value addressed a volume that does not exist,
+        # created an empty one, and left the seed stranded on the host.
+        c_name = sanitize_id(meta.get("container_name") or paths["root"].name)
 
         for target in ["data", "state"]:
             volume_name = f"{c_name}-{target}"
@@ -105,7 +110,12 @@ class VolumesSnapshotService:
             return
 
         meta = self.manager.read_meta(paths["root"])
-        c_name = meta.get("container_name") or paths["root"].name
+        # LDM-#1512: sanitize_id, because this becomes a DOCKER volume
+        # name. LDM-#1307 keeps metadata verbatim and transcodes only for
+        # Docker, so `Saarbrücken` in meta is `Saarbruecken` in the daemon.
+        # Using the raw value addressed a volume that does not exist,
+        # created an empty one, and left the seed stranded on the host.
+        c_name = sanitize_id(meta.get("container_name") or paths["root"].name)
         target_name = getattr(self.manager, "target", None) or getattr(
             self.args, "node", None
         )
