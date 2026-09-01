@@ -54,7 +54,7 @@ class MockBaseManager(BaseHandler):
     def check_registry_collisions(self, *args, **kwargs):
         pass
 
-    def read_meta(self, path):
+    def read_meta(self, path, strict=False):
         # We need to return a dict with project_name matching the ID for discovery tests
         p = Path(path)
         if p.name == "p_match":

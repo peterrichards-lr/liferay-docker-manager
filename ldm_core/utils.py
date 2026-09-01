@@ -1739,7 +1739,21 @@ def try_parse_json(val_str: str) -> Any:
     return val_str
 
 
-def read_meta(path):  # noqa: C901, PLR0912, PLR0915
+class MetaReadError(Exception):
+    """A metadata file exists but could not be parsed.
+
+    LDM-#1522: read_meta returns {} for an unreadable file, which is correct
+    for a project directory -- a missing meta there is a normal state. It is
+    wrong for a signed package manifest, where "says nothing" and "could not
+    be read" must not look alike: the checks downstream are security controls,
+    and one of them (db_type) is written `if db_type and ...`, so an empty dict
+    satisfies it vacuously.
+
+    Callers verifying a manifest pass strict=True and handle this.
+    """
+
+
+def read_meta(path, strict=False):  # noqa: C901, PLR0912, PLR0915
     """Reads LDM project metadata from a file (supports JSON and Flat formats)."""
     meta: dict[str, Any] = {}
     path = Path(path)
@@ -1771,10 +1785,14 @@ def read_meta(path):  # noqa: C901, PLR0912, PLR0915
                     meta[k] = dry_val
             return meta
         except Exception as e:
+            if strict:
+                raise MetaReadError(f"Could not read dry-run metadata: {e}") from e
             UI.warning(f"Could not read dry-run metadata: {e}")
             return meta
 
     if not path.exists():
+        if strict:
+            raise MetaReadError(f"No metadata file at {path}")
         return meta
 
     try:
@@ -1811,6 +1829,8 @@ def read_meta(path):  # noqa: C901, PLR0912, PLR0915
                 except Exception:
                     pass
     except Exception as e:
+        if strict:
+            raise MetaReadError(f"Could not read metadata at {path}: {e}") from e
         UI.warning(f"Could not read metadata at {path}: {e}")
 
     # Schema Validation (Hardening)
