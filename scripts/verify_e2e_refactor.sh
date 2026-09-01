@@ -1190,6 +1190,32 @@ if ! "$LDM_CMD" -y wait . --timeout 600; then
     exit 1
 fi
 
+# LDM-#1509: the project above was seeded -- it is provisioned without
+# --no-seed and the run reports "Project bootstrapped from seed". Assert LDM
+# still SAYS so afterwards.
+#
+# It did not. The seeding stage rebound project_meta locally, the pipeline
+# context kept the pre-seed dict, and three later write_meta calls dropped
+# `seeded` and `seed_version` again -- so `ldm doctor` reported a genuinely
+# seeded project as "Vanilla (Not Seeded)" while the same run had printed
+# "saved you 14m 0s". The write to disk was always correct and was overwritten
+# afterwards, which is why nothing noticed.
+#
+# Costs one command: the project is already booted here.
+echo ">> Verifying the seeded flag survives the run (LDM-#1509)..."
+SEEDED_OUT=$("$LDM_CMD" system doctor "${PROJECT_NAME}" 2>&1 || true)
+if echo "$SEEDED_OUT" | grep -qiE "Vanilla \(Not Seeded\)"; then
+    echo "❌ ERROR: doctor reports the project as vanilla, but it was seeded." | tee -a "$RESULTS_FILE_TMP"
+    echo "$SEEDED_OUT" | grep -iE "Project Initialization" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+if ! echo "$SEEDED_OUT" | grep -qiE "Seeded"; then
+    echo "❌ ERROR: doctor reported no seeding state at all for ${PROJECT_NAME}." | tee -a "$RESULTS_FILE_TMP"
+    echo "$SEEDED_OUT" | grep -iE "Project Initialization" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+report_ok "✅ Seeded flag survives the full run (LDM-#1509)."
+
 # Hot Deploy
 echo ">> Deploying Test OSGi Bundle..."
 mkdir -p "delayed-deploy"
@@ -2114,6 +2140,97 @@ else
         mysql -uroot -ptest -N -e 'SHOW DATABASES;' || exit 1
     verify_shared_db_boots postgresql "liferay-db-global" "PostgreSQL" \
         psql -U lportal -d lportal -tAc 'SELECT datname FROM pg_database;' || exit 1
+fi
+
+# LDM-#1513: the non-ASCII naming check above runs `init --no-up --no-seed` and
+# says so -- "the name is resolved long before either matters". True for what it
+# proves, and it is why LDM-#1512 shipped: the bug only appears once a VOLUME is
+# written.
+#
+# meta keeps the name VERBATIM and Docker gets the transcoded one (#1307/#1308),
+# so `Saarbrücken` in meta is `Saarbruecken` in the daemon. snapshot/volumes.py
+# used the metadata value directly, addressed a volume that does not exist,
+# created an empty one, and the seed never reached the volume Liferay mounts --
+# a readiness timeout twenty lines after the real warning.
+#
+# One name, not three: the transcoding rules are already covered above. This is
+# about the boot path. Żółć is the sharpest case -- "ł" is the atomic codepoint
+# NFKD cannot decompose.
+echo ">> Verifying a non-ASCII project actually boots (LDM-#1513)..."
+if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
+    report_ok "⚠️  Skipped: CI-only. Booting costs minutes, and the config-level"
+    report_ok "    naming assertions above already ran on this platform."
+else
+    NA_RAW="naming-boot-Żółć"
+    NA_SAFE="naming-boot-Zolc"
+    NA_DIR="${LDM_WORKSPACE}/${NA_RAW}"
+    NA_PORT=$((TEST_PORT + 5))
+    NA_OK=true
+
+    "$LDM_CMD" -y rm "$NA_RAW" --delete >/dev/null 2>&1 || true
+    rm -rf "$NA_DIR"
+    mkdir -p "$NA_DIR"
+
+    set +e
+    ( cd "$NA_DIR" && "$LDM_CMD" -y run "$NA_RAW" --port "$NA_PORT" ) \
+        > "${NA_DIR}/boot.log" 2>&1
+    NA_RC=$?
+    set -e
+
+    if [ "$NA_RC" -ne 0 ]; then
+        echo "❌ ERROR: booting '${NA_RAW}' exited ${NA_RC}." | tee -a "$RESULTS_FILE_TMP"
+        tail -40 "${NA_DIR}/boot.log" | tee -a "$RESULTS_FILE_TMP"
+        NA_OK=false
+    fi
+
+    # 1. The volume sync must not have failed. This is the LDM-#1512 signature:
+    #    a warning that is the real cause, twenty lines before the timeout.
+    if [ "$NA_OK" = true ] && grep -q "Failed to sync volume" "${NA_DIR}/boot.log"; then
+        echo "❌ ERROR: volume sync failed for a non-ASCII project (LDM-#1512)." | tee -a "$RESULTS_FILE_TMP"
+        grep "Failed to sync volume" "${NA_DIR}/boot.log" | tee -a "$RESULTS_FILE_TMP"
+        NA_OK=false
+    fi
+
+    # 2. Docker holds the TRANSCODED volumes, and they are not empty. An empty
+    #    one is what addressing the wrong name produced.
+    if [ "$NA_OK" = true ]; then
+        for suffix in data state; do
+            if ! docker volume ls --format '{{.Name}}' | grep -qx "${NA_SAFE}-${suffix}"; then
+                echo "❌ ERROR: expected volume ${NA_SAFE}-${suffix} does not exist." | tee -a "$RESULTS_FILE_TMP"
+                docker volume ls --format '  {{.Name}}' | grep -i "naming-boot" | tee -a "$RESULTS_FILE_TMP"
+                NA_OK=false
+            fi
+        done
+    fi
+
+    # 3. Liferay reached ready -- what actually failed when the seed was
+    #    stranded on the host.
+    if [ "$NA_OK" = true ] && ! grep -qE "Liferay ready|is responding to HTTP" "${NA_DIR}/boot.log"; then
+        echo "❌ ERROR: Liferay did not come up for a non-ASCII project." | tee -a "$RESULTS_FILE_TMP"
+        tail -40 "${NA_DIR}/boot.log" | tee -a "$RESULTS_FILE_TMP"
+        NA_OK=false
+    fi
+
+    # 4. `ldm stop` must find the container. workspace/utils.py had the same
+    #    bug: it looked up the verbatim name the daemon does not hold.
+    if [ "$NA_OK" = true ]; then
+        "$LDM_CMD" -y stop "$NA_RAW" > "${NA_DIR}/stop.log" 2>&1 || true
+        if docker ps --format '{{.Names}}' | grep -qx "$NA_SAFE"; then
+            echo "❌ ERROR: 'ldm stop ${NA_RAW}' left the container running (LDM-#1512)." | tee -a "$RESULTS_FILE_TMP"
+            tail -20 "${NA_DIR}/stop.log" | tee -a "$RESULTS_FILE_TMP"
+            NA_OK=false
+        fi
+    fi
+
+    "$LDM_CMD" -y rm "$NA_RAW" --delete >/dev/null 2>&1 || true
+    rm -rf "$NA_DIR"
+
+    if [ "$NA_OK" = true ]; then
+        report_ok "✅ A non-ASCII project boots: transcoded volumes populated, Liferay ready, stop resolves the container."
+    else
+        echo "❌ ERROR: non-ASCII boot verification failed." | tee -a "$RESULTS_FILE_TMP"
+        exit 1
+    fi
 fi
 
 
