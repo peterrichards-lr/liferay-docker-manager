@@ -19,7 +19,7 @@ class AssetService:
     def __init__(self, manager=None):
         self.manager = manager
 
-    def _fetch_seed(self, tag, db_type, search_mode, paths):  # noqa: C901, PLR0911, PLR0912, PLR0915
+    def _fetch_seed(self, tag, db_type, search_mode, paths, assume_yes=False):  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Discovers and downloads a pre-warmed seed from GitHub Releases with Offline-First logic."""
         from ldm_core.constants import SEED_VERSION
 
@@ -62,7 +62,16 @@ class AssetService:
                 return False
             download_url = resolved_url
 
-            if not UI.confirm(
+            # LDM-#1535: quickstart declares the answer rather than asking it.
+            # Bootstrapping a known accelerator with one command is the whole
+            # contract; a seed for a project that has no database is not a
+            # decision the user is being asked to weigh in on.
+            #
+            # Ordered after the #1534 resolution deliberately: assume_yes
+            # declares the ANSWER, it does not assert the seed exists. A
+            # declared yes for a seed that was never published must still stop
+            # here rather than proceed to a download that cannot happen.
+            if not assume_yes and not UI.confirm(
                 f"Project seed not found in cache. Download pre-warmed {tag} seed?",
                 "Y",
             ):
