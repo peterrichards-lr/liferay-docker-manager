@@ -137,6 +137,36 @@ RELEASE_ANNOUNCEMENTS = {
             "One unreachable project no longer abandons every project after it",
         ),
     ],
+    "2.20": [
+        (
+            "ldm ai",
+            "Opens an interactive troubleshooting session when given no "
+            "question, keeping context between follow-ups instead of starting "
+            "fresh each time",
+        ),
+        (
+            "ldm run <project>",
+            "Projects named with non-ASCII characters now boot: their volumes "
+            "were addressed by the verbatim name while Docker held the "
+            "transcoded one, so the seed never reached the container",
+        ),
+        (
+            "ldm doctor",
+            "Reports a seeded project as seeded -- the flag was written and "
+            "then overwritten later in the same run, so a freshly seeded "
+            "project showed as vanilla",
+        ),
+        (
+            "ldm completion",
+            "Explains what to add to your shell profile, and where: anything "
+            "that re-runs compinit afterwards discards the registration",
+        ),
+        (
+            "ldm prune",
+            "Reclaims LDM's own throwaway helper containers, which are now "
+            "labelled and so can be told apart from anything you started",
+        ),
+    ],
     "2.19": [
         (
             "ldm run --db mysql --database-mode shared",
