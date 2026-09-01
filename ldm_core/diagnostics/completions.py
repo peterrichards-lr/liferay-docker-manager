@@ -149,12 +149,19 @@ def run_completion(handler, target_shell=None):
     UI.heading("LDM Shell Completion")
     shell = active_shell
     if shell not in ["bash", "zsh", "fish", "powershell"]:
-        UI.detail(
+        # LDM-#1504: UI.info, not UI.detail. This is the command's entire
+        # output on an unsupported shell -- suppressing it left the user with
+        # a heading and silence.
+        UI.info(
             f"Completion is currently optimized for bash, zsh, fish, and powershell. (Found: {shell})"
         )
         return
 
-    UI.detail(
+    # LDM-#1504: these lines ARE the payload of `ldm completion`, not
+    # diagnostic colour. UI.detail only prints under --info/--verbose, so by
+    # default the command emitted bare snippets with nothing explaining them
+    # and a dangling "for the changes to take effect."
+    UI.info(
         f"To enable tab-completion for {UI.BYELLOW}{shell}{UI.COLOR_OFF}, add this to your startup profile:"
     )
 
@@ -171,15 +178,28 @@ def run_completion(handler, target_shell=None):
         print("\n    ldm completion powershell | Out-String | Invoke-Expression\n")
         profile = "Microsoft.PowerShell_profile.ps1"
 
-    UI.detail(
+    UI.info(
         f"To support native {UI.BOLD}man ldm{UI.COLOR_OFF}, add this to the same file:"
     )
     print('\n    export MANPATH="$MANPATH:$HOME/.ldm/man"\n')
 
-    UI.detail(
-        f"You may need to restart your terminal or source your profile ({UI.CYAN}~/{profile}{UI.COLOR_OFF})"
+    UI.info(
+        f"Restart your terminal or source your profile ({UI.CYAN}~/{profile}{UI.COLOR_OFF}) "
+        "for the changes to take effect."
     )
-    print("for the changes to take effect.")
+
+    # LDM-#1504: position matters, and "add this to your startup profile" does
+    # not say so. nvm's bash_completion, the gcloud SDK's completion.zsh.inc
+    # and several plugin managers all re-run `compinit`, which rebuilds the
+    # completion table and silently discards compdef registrations made
+    # earlier in the file -- including this one. Being after the FIRST
+    # compinit is not sufficient.
+    if shell in ("zsh", "bash"):
+        UI.info(
+            "Place it near the END of the file: anything that re-runs "
+            f"{UI.BOLD}compinit{UI.COLOR_OFF} afterwards (nvm, gcloud, some "
+            "plugin managers) will discard this registration."
+        )
 
 
 def run_man(handler):
@@ -244,7 +264,8 @@ def run_setup_completion(handler, target_shell=None):  # noqa: C901, PLR0912, PL
             UI.success("Successfully installed 'argcomplete'!")
         except Exception as e:
             UI.warning(f"Could not auto-install 'argcomplete': {e}")
-            UI.detail("Please install it manually with: pip install argcomplete")
+            # LDM-#1504: the remedy must not be quieter than the problem.
+            UI.info("Please install it manually with: pip install argcomplete")
 
     # 2. Shell detection
     shell = target_shell
@@ -369,9 +390,9 @@ def run_setup_completion(handler, target_shell=None):  # noqa: C901, PLR0912, PL
 
         profile_path.write_text(new_content, encoding="utf-8")
         UI.success(f"Autocomplete setup complete for {shell}!")
-        UI.detail(
-            f"Please source your profile or restart your terminal: source {profile_path}"
-        )
+        # LDM-#1504: this is the step that makes the setup take effect. Hiding
+        # it behind --info left "complete!" followed by nothing working.
+        UI.info(f"Source your profile or restart your terminal: source {profile_path}")
 
     except Exception as e:
         UI.die(f"Failed to setup completion in {profile_path}: {e}")
