@@ -129,15 +129,14 @@ print_version_banner() {
         else
             echo "❌ ERROR: this script (v$SCRIPT_VERSION) does not match the installed ldm binary (v$installed_version)."
             echo "   Refusing to run: the report would claim to verify one version while exercising another."
-        # LDM-#1049: the real verification workflow copies this script onto
-        # plain test rigs with no git checkout at all (upgrade the target
-        # machine via `ldm system upgrade --beta`, copy the script over, run
-        # it) -- `git checkout` is useless advice there. A raw-file download
-        # keyed to the installed binary's own tag needs no git and resolves
-        # correctly whether that binary is stable or pre-release.
+            # LDM-#1049: the real verification workflow copies this script onto
+            # plain test rigs with no git checkout at all (upgrade the target
+            # machine via `ldm system upgrade --beta`, copy the script over, run
+            # it) -- `git checkout` is useless advice there. A raw-file download
+            # keyed to the installed binary's own tag needs no git and resolves
+            # correctly whether that binary is stable or pre-release.
             echo "   re-pull this script: curl -fsSL \"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/v$installed_version/scripts/verify_e2e_refactor.sh\" -o scripts/verify_e2e_refactor.sh"
             echo "   or, if the mismatch is deliberate, re-run with --allow-version-mismatch"
-            return 1
         fi
     fi
 }

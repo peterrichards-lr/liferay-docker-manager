@@ -43,9 +43,9 @@ function Get-VersionBannerLines {
             # git and resolves correctly whether that binary is stable or
             # pre-release.
             $lines += @(
-                "WARNING: this script (v$ScriptVersion) does not match the installed ldm binary (v$installedVersion)."
-                "  This may be intentional (verifying a specific older/newer binary), but if not,"
-                "  re-pull this script: Invoke-WebRequest -Uri `"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/v$installedVersion/scripts/verify_e2e_refactor.ps1`" -OutFile `"scripts\verify_e2e_refactor.ps1`""
+                "ERROR: this script (v$ScriptVersion) does not match the installed ldm binary (v$installedVersion)."
+                "  Refusing to run: the report would claim to verify one version while exercising another."
+                "  Re-pull this script: Invoke-WebRequest -Uri `"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/v$installedVersion/scripts/verify_e2e_refactor.ps1`" -OutFile `"scripts\verify_e2e_refactor.ps1`""
             )
         }
     }

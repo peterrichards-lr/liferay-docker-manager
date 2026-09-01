@@ -20,6 +20,7 @@ fail for a reason that no longer applies.
 """
 
 import re
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -97,6 +98,64 @@ class TestPowerShellParamPlacement(unittest.TestCase):
                 f"(line {param_at + 1}): {stripped[:60]!r} -- PowerShell "
                 "rejects this at runtime even though it parses"
             )
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+def _run_sh_gate(script_version, installed_raw, allow="false"):
+    """Execute the real gate block in isolation and return its exit status.
+
+    LDM-#1529 follow-up: the assertions above are source greps -- they prove the
+    refusal *string* is present, not that the script refuses. That is the same
+    "config asserted, behaviour never exercised" shape as LDM-#1494/#1499/#1512,
+    and a gate whose `if` never fires would sail straight through them.
+
+    The block is extracted rather than the whole script run, for the same reason
+    print_version_banner is: everything after it boots Docker.
+    """
+    src = _SH.read_text(encoding="utf-8")
+    match = re.search(r"^_installed_for_gate=.*?^fi$", src, re.M | re.S)
+    assert match, "gate block not found in verify_e2e_refactor.sh"
+    script = (
+        f'SCRIPT_VERSION="{script_version}"\n'
+        f"ALLOW_VERSION_MISMATCH={allow}\n"
+        f'INSTALLED_VERSION_RAW="{installed_raw}"\n'
+        f"{match.group(0)}\n"
+        'echo "REACHED_THE_SUITE"\n'
+    )
+    return subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, check=False
+    )
+
+
+class TestShGateActuallyStopsTheRun(unittest.TestCase):
+    """Exit status, not source text -- see _run_sh_gate's docstring."""
+
+    def test_mismatch_exits_nonzero_and_never_reaches_the_suite(self):
+        res = _run_sh_gate("2.19.0", "ldm 2.20.0-pre.1")
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("Refusing to run", res.stderr)
+        self.assertNotIn("REACHED_THE_SUITE", res.stdout)
+
+    def test_declared_opt_out_proceeds(self):
+        # Verifying a deliberately older/newer binary must stay possible.
+        res = _run_sh_gate("2.19.0", "ldm 2.20.0-pre.1", allow="true")
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn("REACHED_THE_SUITE", res.stdout)
+
+    def test_matching_versions_proceed(self):
+        res = _run_sh_gate("2.20.0-pre.1", "ldm 2.20.0-pre.1")
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn("REACHED_THE_SUITE", res.stdout)
+
+    def test_unqueryable_binary_does_not_block_the_run(self):
+        # If `ldm --version` yields nothing parseable there is no mismatch to
+        # assert -- refusing here would strand anyone whose binary is missing.
+        res = _run_sh_gate("2.20.0-pre.1", "unknown")
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn("REACHED_THE_SUITE", res.stdout)
 
 
 if __name__ == "__main__":
