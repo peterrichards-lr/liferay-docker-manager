@@ -294,6 +294,11 @@ RUN_ATTRS = [
 # --- Seeded State Configuration ---
 # Increment this version whenever the logic for generating seeds changes
 # (e.g. DB schema changes, driver updates, or hardening logic).
+# LDM-#1514: the tag used when a package does not declare one and there is
+# nothing to ask. Previously spelled literally in importer.py, quickstart.py
+# and assets.py, which is three places to update and two to forget.
+FALLBACK_LIFERAY_TAG = "2026.q1.4-lts"
+
 SEED_VERSION = "2"
 
 # --- Sample Extension Hashes (SHA-256) ---

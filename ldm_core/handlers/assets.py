@@ -5,7 +5,12 @@ import time
 
 import requests
 
-from ldm_core.constants import CX_SAMPLES_REPO_URL, GITHUB_API_URL, GITHUB_REPO_URL
+from ldm_core.constants import (
+    CX_SAMPLES_REPO_URL,
+    FALLBACK_LIFERAY_TAG,
+    GITHUB_API_URL,
+    GITHUB_REPO_URL,
+)
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, safe_extract
 
@@ -370,7 +375,7 @@ class AssetService:
                 release_type="lts",
                 verbose=self.manager.verbose if self.manager else False,
             )
-            or "2026.q1.4-lts"
+            or FALLBACK_LIFERAY_TAG
         )
 
         ans = UI.ask(
