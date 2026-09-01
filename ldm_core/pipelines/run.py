@@ -949,6 +949,14 @@ class EnvironmentSetupStage(PipelineStage):
             project_meta["seeded"] = "true"
             project_meta["seed_version"] = str(SEED_VERSION)
             manager.write_meta(paths["root"], project_meta)
+            # LDM-#1509: this rebinds a LOCAL name. Without putting it back,
+            # context["project_meta"] still holds the pre-seed dict, and the
+            # later stages re-read that and write it straight back over the
+            # file -- three times -- dropping `seeded` and `seed_version`.
+            # `ldm doctor` then reported a genuinely seeded project as
+            # "Vanilla (Not Seeded)" while the same run had printed
+            # "Project bootstrapped from seed".
+            context.set("project_meta", project_meta)
             if hasattr(manager, "config") and hasattr(manager.config, "track_roi"):
                 manager.config.track_roi(840, "first-boot seeding")
 
