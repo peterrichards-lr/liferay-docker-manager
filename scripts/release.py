@@ -314,6 +314,61 @@ def check_release_announcements(version, announcements):
     )
 
 
+def print_behaviour_coverage_gate(previous_tag):
+    """Print the LDM-#1516 gate: exercised, or only its config asserted?
+
+    Every other automatable gate is enforced in this script -- pre-commit for
+    the Pre-Flight gate, check_release_announcements, assert_versions_consistent_at.
+    This one cannot be automated, because it is a judgement about whether a test
+    means what it appears to mean. What CAN be automated is asking it out loud at
+    the moment it matters, so it does not depend on somebody remembering to open
+    the skill file -- which is the same failure mode it exists to prevent
+    (see AGENTS.md on LDM-#1288).
+
+    Deliberately non-blocking: an unattended run must not hang waiting for input.
+    """
+    changes = []
+    if previous_tag:
+        log = run_cmd(
+            ["git", "log", "--oneline", f"{previous_tag}..HEAD"],
+            capture=True,
+            check=False,
+        )
+        if log and log.returncode == 0:
+            changes = [
+                line
+                for line in log.stdout.strip().splitlines()
+                if line and "[release]" not in line
+            ]
+
+    print("")
+    print("=" * 72)
+    print("  Behaviour Coverage Gate -- LDM-#1516")
+    print("")
+    if changes:
+        print(f"  Landed since {previous_tag}:")
+        for line in changes[:20]:
+            print(f"    {line}")
+        if len(changes) > 20:
+            print(f"    ... and {len(changes) - 20} more")
+    else:
+        print(
+            f"  (no non-release commits found since {previous_tag or 'the last tag'})"
+        )
+    print("")
+    print("  For each: is there a test that EXERCISES it, or only one")
+    print("  asserting its configuration?")
+    print("")
+    print("    exercised            -- a test runs it and asserts the outcome")
+    print("    config-only          -- say why, and what catches it downstream")
+    print("    not covered          -- raise it BEFORE the cut, not after")
+    print("")
+    print("  Config-only is often right. It has to be a recorded choice,")
+    print("  not the default nobody noticed. Six shipped bugs had that shape.")
+    print("=" * 72)
+    print("")
+
+
 def classify_stable_promotion(tag_exists, master_has_version):
     """Decides what an already-stable version means during --promote (LDM-#1329).
 
@@ -914,6 +969,11 @@ def main():  # noqa: C901, PLR0912, PLR0915
         new_version, RELEASE_ANNOUNCEMENTS
     )
     print(announcements_msg)
+
+    # LDM-#1516: ask the behaviour-coverage question here, while the cut can
+    # still be abandoned cheaply -- after this point the branch and tag exist,
+    # and the Burn Rule makes the version number unrecoverable.
+    print_behaviour_coverage_gate(f"v{current_version}")
 
     # 6. Create the release branch for a new cycle, or stay on the existing
     # one when continuing an already-open pre-release cycle (LDM-#983: this

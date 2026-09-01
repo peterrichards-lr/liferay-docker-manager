@@ -79,6 +79,27 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
     tag = project_meta.get("tag")
     db_type = project_meta.get("db_type", "postgresql")
 
+    # LDM-#1535: settle /etc/hosts here, not at "Starting Services Stack".
+    # Declining is a legitimate answer, and it used to arrive after the seed
+    # download and the stack boot -- everything expensive already spent on a
+    # demo that cannot resolve its own hostname.
+    #
+    # This is still after the download and restore, because host_name comes
+    # from the manifest the import writes. It is as early as the fact exists,
+    # not as early as one would like. What it does buy: the seed fetch and the
+    # compose boot have not happened yet, and the project on disk is complete,
+    # so `ldm doctor --fix-hosts` + `ldm run` finishes the job later.
+    #
+    # The sudo prompt stays deliberately: it is the only step reaching outside
+    # LDM's own directories, and sudo will ask for a password anyway -- so
+    # removing the question would not remove the interruption, only the
+    # explanation for it.
+    quickstart_host = project_meta.get("host_name")
+    if quickstart_host:
+        self.manager.ensure_hostnames_resolve(
+            project_path, quickstart_host, project_id=project_name
+        )
+
     if not tag:
         tag = "2026.q1.4-lts"  # sensible fallback version
         project_meta["tag"] = tag
@@ -109,14 +130,21 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
 
     # Phase 3: Infrastructure (Database Seeding)
     UI.phase(3, 4, "Setting up Infrastructure")
-    if restored_from_pkg and pkg_has_db:
+    if getattr(self.manager.args, "no_seed", False):
+        # LDM-#1535: the reused opt-out. Same flag name and meaning as on run,
+        # import, init-from, link and clone.
+        UI.detail("Skipping database seeding (--no-seed).")
+    elif restored_from_pkg and pkg_has_db:
         UI.detail(
             "Project was restored from LDM package snapshot. Skipping database seeding."
         )
     else:
         UI.detail(f"Seeding database for {tag} ({db_type}/{search_mode})...")
         paths = self.manager.setup_paths(project_path)
-        if not self.manager.assets._fetch_seed(tag, db_type, search_mode, paths):
+        # assume_yes: quickstart declares the answer rather than asking it.
+        if not self.manager.assets._fetch_seed(
+            tag, db_type, search_mode, paths, assume_yes=True
+        ):
             UI.detail(
                 "No pre-warmed seed applied. Liferay will initialize the database schema on first boot (this may take several minutes)."
             )
