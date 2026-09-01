@@ -1242,20 +1242,30 @@ fi
 # "saved you 14m 0s". The write to disk was always correct and was overwritten
 # afterwards, which is why nothing noticed.
 #
-# Costs one command: the project is already booted here.
-echo ">> Verifying the seeded flag survives the run (LDM-#1509)..."
-SEEDED_OUT=$("$LDM_CMD" system doctor "${PROJECT_NAME}" 2>&1 || true)
-if echo "$SEEDED_OUT" | grep -qiE "Vanilla \(Not Seeded\)"; then
-    echo "❌ ERROR: doctor reports the project as vanilla, but it was seeded." | tee -a "$RESULTS_FILE_TMP"
-    echo "$SEEDED_OUT" | grep -iE "Project Initialization" | tee -a "$RESULTS_FILE_TMP"
-    exit 1
-fi
-if ! echo "$SEEDED_OUT" | grep -qiE "Seeded"; then
-    echo "❌ ERROR: doctor reported no seeding state at all for ${PROJECT_NAME}." | tee -a "$RESULTS_FILE_TMP"
-    echo "$SEEDED_OUT" | grep -iE "Project Initialization" | tee -a "$RESULTS_FILE_TMP"
-    exit 1
-fi
-report_ok "✅ Seeded flag survives the full run (LDM-#1509)."
+# This assertion could never pass here, and failed every run from v2.20.0-pre.1
+# onward. The project a few lines above is created by hand-writing `meta`, so
+# `ldm run` reports "already exists and this command will reconfigure it" and
+# `is_new_project` is False. pipelines/run.py gates seeding on exactly that:
+#
+#     if is_new_project and manager.assets._ensure_seeded(tag, db_type, paths):
+#
+# so nothing ever seeds, `doctor` correctly says "Vanilla (Not Seeded)", and the
+# check calls that a failure. There was no seeding activity anywhere in the logs.
+#
+# Making it pass here would mean a genuine first-boot seed -- a ~1GB download on
+# five distros per release -- and the cheap alternative of pre-writing
+# `"seeded": "true"` into the meta above proves nothing: the pipeline reads meta
+# BEFORE seeding, so a flag already present survives trivially without ever
+# exercising the rebind that broke.
+#
+# LDM-#1516 answer for this feature: config-only here, deliberately. What
+# catches a regression downstream is
+# ldm_core/tests/test_seeded_flag_survives_behaviour.py, which runs
+# EnvironmentSetupStage against a real temp project, then writes the context
+# back three times exactly as the later stages do, and asserts the flag is still
+# on disk. Removing the LDM-#1509 refresh fails it.
+echo "ℹ  Seeded-flag survival (LDM-#1509) is covered by test_seeded_flag_survives_behaviour.py --"
+echo "   it cannot be exercised here without a real first-boot seed download."
 
 # Hot Deploy
 echo ">> Deploying Test OSGi Bundle..."
