@@ -1247,6 +1247,12 @@ class TestWorkspaceQuickstart(unittest.TestCase):
     def setUp(self):
         self.manager = MockWorkspaceManager()
         self.manager.share = MagicMock()
+        # LDM-#1535: quickstart consults --no-seed directly, because it calls
+        # _fetch_seed rather than _ensure_seeded (where the existing gate
+        # lives). On a bare MagicMock every attribute is truthy, so without a
+        # real False here the flag reads as set and seeding is skipped. Same
+        # trap test_vanilla_flag.py's fixture already documents.
+        self.manager.args.no_seed = False
         import tempfile
 
         self.temp_dir = tempfile.TemporaryDirectory()

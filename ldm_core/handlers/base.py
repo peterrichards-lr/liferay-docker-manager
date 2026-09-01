@@ -137,7 +137,16 @@ class BaseHandler:
                 UI.detail("LDM can try to fix this by adding entries to /etc/hosts.")
                 if UI.confirm("Add host entries? (Requires sudo)", "Y"):
                     return self._apply_hosts_fix(unresolved)
-                UI.die("Aborted. Hostnames must resolve to continue.")
+                # LDM-#1535: "Aborted." alone reads as though the work was
+                # lost. It is not -- the project is on disk and only DNS is
+                # missing -- so name the two commands that finish the job.
+                UI.die(
+                    "Aborted: hostnames must resolve before the stack can start.\n"
+                    "   The project itself is intact. Add the entries and run it "
+                    "when ready:\n"
+                    "       ldm doctor --fix-hosts\n"
+                    f"       ldm run {project_id or '<project>'}"
+                )
 
         return True
 

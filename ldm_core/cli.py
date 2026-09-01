@@ -1687,6 +1687,11 @@ def get_parser():  # noqa: PLR0915
         dest="ssl",
         help="Force disable HTTPS (SSL) for the bootstrap stack",
     )
+    quickstart_cmd.add_argument(
+        "--no-seed",
+        action="store_true",
+        help="Disable automatic project seeding",
+    )
     # Command: set-version
     set_version_cmd = subparsers.add_parser(
         "set-version",
