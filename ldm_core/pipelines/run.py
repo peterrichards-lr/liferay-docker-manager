@@ -2014,8 +2014,11 @@ class ExecutionStage(PipelineStage):
                     == "true",
                 )
             UI.success(f"Project '{project_id}' started in background.")
+            # LDM-#1508: the line above just printed project_id; a tip that
+            # omits it makes the user supply it again.
             UI.hint(
-                "Run 'ldm link <path-to-cx>' to attach client extensions, or 'ldm logs -f' to tail logs."
+                f"Run 'ldm link <path-to-cx>' to attach client extensions, "
+                f"or 'ldm logs -f {project_id}' to tail logs."
             )
 
         return None
