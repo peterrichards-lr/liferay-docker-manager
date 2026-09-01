@@ -1146,6 +1146,31 @@ services:
     # Wait for Health
     Log-AndRun "Waiting for Liferay health" $LDM_CMD "-y wait . --timeout 600"
 
+    # LDM-#1509: the project above was seeded -- provisioned without --no-seed,
+    # and the run reports "Project bootstrapped from seed". Assert LDM still
+    # SAYS so afterwards.
+    #
+    # It did not. The seeding stage rebound project_meta locally, the pipeline
+    # context kept the pre-seed dict, and three later write_meta calls dropped
+    # `seeded` and `seed_version` again -- so `ldm doctor` reported a genuinely
+    # seeded project as "Vanilla (Not Seeded)" while the same run had printed
+    # "saved you 14m 0s". The disk write was always correct and was overwritten
+    # afterwards, which is why nothing noticed.
+    #
+    # Costs one command: the project is already booted here.
+    Write-Host ">> Verifying the seeded flag survives the run (LDM-#1509)..."
+    $seededOut = (& $LDM_CMD system doctor ldm-smoke-test 2>&1 | Out-String)
+    if ($seededOut -match "Vanilla \(Not Seeded\)") {
+        Write-Host "[ERROR] doctor reports the project as vanilla, but it was seeded." -ForegroundColor Red
+        ($seededOut -split "`n" | Select-String -SimpleMatch "Project Initialization") | ForEach-Object { Write-Host $_ }
+        exit 1
+    }
+    if ($seededOut -notmatch "Seeded") {
+        Write-Host "[ERROR] doctor reported no seeding state at all for ldm-smoke-test." -ForegroundColor Red
+        exit 1
+    }
+    Write-Verdict "[SUCCESS] Seeded flag survives the full run (LDM-#1509)."
+
     # Hot Deploy
     Write-Host ">> Deploying Test OSGi Bundle..."
     New-Item -ItemType Directory -Path "delayed-deploy" -Force | Out-Null
@@ -1894,6 +1919,102 @@ assert expected in liferay[0], (
         Write-Verdict "[SUCCESS] Non-ASCII project naming verified (metadata verbatim, Docker transcoded)."
     } else {
         throw "Non-ASCII project naming verification failed."
+    }
+
+    # LDM-#1513: everything above runs `init --no-up --no-seed` -- the block
+    # says so itself, "the name is resolved long before either matters". True
+    # for what it proves, and it is exactly why LDM-#1512 shipped: the bug only
+    # appears once a VOLUME is written.
+    #
+    # meta keeps the name VERBATIM and Docker gets the transcoded one
+    # (#1307/#1308), so the raw name in meta is the transcoded one in the
+    # daemon. snapshot/volumes.py used the metadata value directly, addressed a
+    # volume that does not exist, created an empty one, and the seed never
+    # reached the volume Liferay mounts -- a readiness timeout twenty lines
+    # after the real warning.
+    #
+    # The name is built from codepoints, not written literally: this file must
+    # stay pure ASCII for Windows PowerShell 5.1 (check-powershell-ascii). Same
+    # idiom as $namingCases above. Zolc is the sharpest case -- U+0142 is the
+    # atomic codepoint NFKD cannot decompose.
+    #
+    # CI-only: it costs minutes, and the manual round pays that per platform.
+    # Never skipped silently.
+    Write-Host ">> Verifying a non-ASCII project actually boots (LDM-#1513)..."
+    if ($env:GITHUB_ACTIONS -ne "true") {
+        Write-Verdict "[WARNING] Skipped: CI-only. Booting costs minutes, and the config-level"
+        Write-Verdict "          naming assertions above already ran on this platform."
+    } else {
+        $naRaw  = "naming-boot-" + [string]::Join('', [char]0x017B, [char]0x00F3, [char]0x0142, [char]0x0107)
+        $naSafe = "naming-boot-Zolc"
+        $naDir  = Join-Path $LDM_WORKSPACE $naRaw
+        $naPort = $TEST_PORT + 5
+        $naOk   = $true
+
+        Invoke-Cleanup $LDM_CMD "-y rm $naRaw --delete"
+        Remove-Item -Recurse -Force $naDir -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Force -Path $naDir | Out-Null
+
+        $naLog = Join-Path $naDir "boot.log"
+        Push-Location $naDir
+        & $LDM_CMD -y run "$naRaw" --port $naPort *> $naLog
+        $naRc = $LASTEXITCODE
+        Pop-Location
+
+        if ($naRc -ne 0) {
+            Write-Host "[ERROR] booting the non-ASCII project exited $naRc." -ForegroundColor Red
+            Get-Content $naLog -Tail 40 | ForEach-Object { Write-Host $_ }
+            $naOk = $false
+        }
+
+        # 1. The LDM-#1512 signature: a sync warning that is the real cause,
+        #    twenty lines before the timeout that looks unrelated.
+        if ($naOk -and (Select-String -Path $naLog -SimpleMatch "Failed to sync volume" -Quiet)) {
+            Write-Host "[ERROR] volume sync failed for a non-ASCII project (LDM-#1512)." -ForegroundColor Red
+            Select-String -Path $naLog -SimpleMatch "Failed to sync volume" | ForEach-Object { Write-Host $_ }
+            $naOk = $false
+        }
+
+        # 2. Docker holds the TRANSCODED volumes. An empty or absent one is
+        #    what addressing the wrong name produced.
+        if ($naOk) {
+            foreach ($suffix in @("data", "state")) {
+                $vol = "$naSafe-$suffix"
+                $found = & docker volume ls --format "{{.Name}}" 2>$null | Where-Object { $_ -eq $vol }
+                if (-not $found) {
+                    Write-Host "[ERROR] expected volume $vol does not exist." -ForegroundColor Red
+                    $naOk = $false
+                }
+            }
+        }
+
+        # 3. Liferay reached ready -- what actually failed when the seed was
+        #    stranded on the host.
+        if ($naOk -and -not (Select-String -Path $naLog -Pattern "Liferay ready|is responding to HTTP" -Quiet)) {
+            Write-Host "[ERROR] Liferay did not come up for a non-ASCII project." -ForegroundColor Red
+            Get-Content $naLog -Tail 40 | ForEach-Object { Write-Host $_ }
+            $naOk = $false
+        }
+
+        # 4. `ldm stop` must resolve the container. workspace/utils.py had the
+        #    same bug: it looked up the verbatim name the daemon does not hold.
+        if ($naOk) {
+            & $LDM_CMD -y stop "$naRaw" *> $null
+            $stillUp = & docker ps --format "{{.Names}}" 2>$null | Where-Object { $_ -eq $naSafe }
+            if ($stillUp) {
+                Write-Host "[ERROR] 'ldm stop' left the non-ASCII container running (LDM-#1512)." -ForegroundColor Red
+                $naOk = $false
+            }
+        }
+
+        Invoke-Cleanup $LDM_CMD "-y rm $naRaw --delete"
+        Remove-Item -Recurse -Force $naDir -ErrorAction SilentlyContinue
+
+        if ($naOk) {
+            Write-Verdict "[SUCCESS] A non-ASCII project boots: transcoded volumes present, Liferay ready, stop resolves the container."
+        } else {
+            throw "Non-ASCII boot verification failed."
+        }
     }
 
 
