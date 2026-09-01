@@ -1,4 +1,11 @@
 # Comprehensive E2E Binary Verification for LDM (Windows Native PowerShell)
+#
+# LDM-#1529: `param` MUST be the first statement -- comments may precede it,
+# code may not. PowerShell's PARSER accepts a later param block (and so does
+# PSScriptAnalyzer), but the runtime rejects it, so a misplacement is invisible
+# until the script is actually run on Windows.
+param([switch]$AllowVersionMismatch)
+
 # Target: Verifies the INSTALLED binary, not the source code.
 # Optimized for Windows Native.
 
@@ -36,9 +43,9 @@ function Get-VersionBannerLines {
             # git and resolves correctly whether that binary is stable or
             # pre-release.
             $lines += @(
-                "WARNING: this script (v$ScriptVersion) does not match the installed ldm binary (v$installedVersion)."
-                "  This may be intentional (verifying a specific older/newer binary), but if not,"
-                "  re-pull this script: Invoke-WebRequest -Uri `"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/v$installedVersion/scripts/verify_e2e_refactor.ps1`" -OutFile `"scripts\verify_e2e_refactor.ps1`""
+                "ERROR: this script (v$ScriptVersion) does not match the installed ldm binary (v$installedVersion)."
+                "  Refusing to run: the report would claim to verify one version while exercising another."
+                "  Re-pull this script: Invoke-WebRequest -Uri `"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/v$installedVersion/scripts/verify_e2e_refactor.ps1`" -OutFile `"scripts\verify_e2e_refactor.ps1`""
             )
         }
     }
@@ -159,6 +166,33 @@ if (-not (Test-Path $VENV_PYTEST)) {
     (Get-VersionBannerLines -ScriptVersion $SCRIPT_VERSION -LdmVer $ldmVer) | ForEach-Object {
         Write-Output $_
         Write-Host $_
+    }
+
+    # LDM-#1529: a mismatched run answers a question nobody asked -- it
+    # exercises THIS binary with THAT version's assertions, so a check added
+    # for the new version is absent while the report looks complete, and a
+    # check removed in it still runs and can fail for a reason that no longer
+    # applies. The report is then committed as a permanent record under the
+    # Honesty Rule, and a warning far up the scroll does not survive into the
+    # file the way the version headers do.
+    #
+    # Same regex Get-VersionBannerLines uses, deliberately -- the gate and the
+    # version it prints must never disagree.
+    if ($ldmVer -match '(\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?)') {
+        $installedForGate = $Matches[1]
+        if ($installedForGate -ne $SCRIPT_VERSION -and -not $AllowVersionMismatch) {
+            Write-Host ""
+            Write-Host "[ERROR] Refusing to run: script v$SCRIPT_VERSION vs installed ldm v$installedForGate." -ForegroundColor Red
+            Write-Host "        A report from a mismatched run claims to verify one version while"
+            Write-Host "        exercising another, and it is committed as a permanent record."
+            Write-Host "        Re-pull the script for the installed binary, or pass"
+            Write-Host "        -AllowVersionMismatch if the difference is deliberate."
+            exit 1
+        }
+        if ($installedForGate -ne $SCRIPT_VERSION) {
+            Write-Host "[WARNING] Version mismatch ACCEPTED via -AllowVersionMismatch:" -ForegroundColor Yellow
+            Write-Host "          script v$SCRIPT_VERSION vs installed ldm v$installedForGate."
+        }
     }
 
 

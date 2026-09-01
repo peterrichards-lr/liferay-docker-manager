@@ -38,12 +38,16 @@ KEEP_ARTIFACTS=false
 # project teardown. Worth having for a machine dedicated to verification, where
 # the accumulation is the whole problem.
 PRUNE_AFTER=false
+ALLOW_VERSION_MISMATCH=false
 for arg in "$@"; do
     if [ "$arg" == "-k" ] || [ "$arg" == "--keep" ]; then
         KEEP_ARTIFACTS=true
     fi
     if [ "$arg" == "--prune-after" ]; then
         PRUNE_AFTER=true
+    fi
+    if [ "$arg" == "--allow-version-mismatch" ]; then
+        ALLOW_VERSION_MISMATCH=true
     fi
 done
 if [ "$KEEP_ARTIFACTS" = true ] && [ "$PRUNE_AFTER" = true ]; then
@@ -108,15 +112,32 @@ print_version_banner() {
     echo "Script Ver:   $SCRIPT_VERSION"
 
     if [ -n "$installed_version" ] && [ "$installed_version" != "$SCRIPT_VERSION" ]; then
-        echo "⚠️  WARNING: this script (v$SCRIPT_VERSION) does not match the installed ldm binary (v$installed_version)."
-        echo "   This may be intentional (verifying a specific older/newer binary), but if not,"
-        # LDM-#1049: the real verification workflow copies this script onto
-        # plain test rigs with no git checkout at all (upgrade the target
-        # machine via `ldm system upgrade --beta`, copy the script over, run
-        # it) -- `git checkout` is useless advice there. A raw-file download
-        # keyed to the installed binary's own tag needs no git and resolves
-        # correctly whether that binary is stable or pre-release.
-        echo "   re-pull this script: curl -fsSL \"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/v$installed_version/scripts/verify_e2e_refactor.sh\" -o scripts/verify_e2e_refactor.sh"
+        # LDM-#1529: a mismatched run answers a question nobody asked. It
+        # exercises THIS binary with THAT version's assertions, so a check
+        # added for the new version is absent while the report looks complete,
+        # and a check removed in it still runs and can fail for a reason that
+        # no longer applies. The report is then committed as a permanent
+        # record under the Honesty Rule, and a warning 200 lines up the scroll
+        # does not survive into the file the way the version headers do.
+        #
+        # Verifying a deliberately older or newer binary remains possible --
+        # it just has to be declared rather than assumed from silence.
+        if [ "$ALLOW_VERSION_MISMATCH" = true ]; then
+            echo "⚠️  Version mismatch ACCEPTED via --allow-version-mismatch:"
+            echo "   script v$SCRIPT_VERSION vs installed ldm v$installed_version."
+            echo "   This report deliberately verifies a different binary than the script targets."
+        else
+            echo "❌ ERROR: this script (v$SCRIPT_VERSION) does not match the installed ldm binary (v$installed_version)."
+            echo "   Refusing to run: the report would claim to verify one version while exercising another."
+            # LDM-#1049: the real verification workflow copies this script onto
+            # plain test rigs with no git checkout at all (upgrade the target
+            # machine via `ldm system upgrade --beta`, copy the script over, run
+            # it) -- `git checkout` is useless advice there. A raw-file download
+            # keyed to the installed binary's own tag needs no git and resolves
+            # correctly whether that binary is stable or pre-release.
+            echo "   re-pull this script: curl -fsSL \"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/v$installed_version/scripts/verify_e2e_refactor.sh\" -o scripts/verify_e2e_refactor.sh"
+            echo "   or, if the mismatch is deliberate, re-run with --allow-version-mismatch"
+        fi
     fi
 }
 
@@ -124,6 +145,26 @@ print_version_banner() {
 # installed binary version and this script's own SCRIPT_VERSION are visible
 # on the console as the run starts, not only inside the report afterward.
 print_version_banner "$INSTALLED_VERSION_RAW" | tee -a "$RESULTS_FILE_TMP"
+
+# LDM-#1529: the banner is piped to `tee`, so its exit status is tee's and a
+# `return 1` inside it would be silently discarded -- the same pipeline trap
+# that hides a failing command behind a successful `| tail`. The decision is
+# therefore made here, outside the pipeline, using the same comparison.
+# Same extraction the banner uses at line ~109 -- deliberately identical, so
+# the gate and the version it prints can never disagree.
+_installed_for_gate=$(echo "$INSTALLED_VERSION_RAW" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?' | head -1)
+if [ -n "$_installed_for_gate" ] \
+   && [ "$_installed_for_gate" != "unknown" ] \
+   && [ "$_installed_for_gate" != "$SCRIPT_VERSION" ] \
+   && [ "$ALLOW_VERSION_MISMATCH" != true ]; then
+    echo "" >&2
+    echo "❌ Refusing to run: script v$SCRIPT_VERSION vs installed ldm v$_installed_for_gate." >&2
+    echo "   A report from a mismatched run claims to verify one version while" >&2
+    echo "   exercising another, and it is committed as a permanent record." >&2
+    echo "   Re-pull the script for the installed binary, or pass" >&2
+    echo "   --allow-version-mismatch if the difference is deliberate." >&2
+    exit 1
+fi
 
 {
     if command -v docker &>/dev/null; then

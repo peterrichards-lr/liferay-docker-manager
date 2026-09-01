@@ -258,8 +258,13 @@ class TestBashVersionBanner(unittest.TestCase):
         # binary's own version, not master -- this is the exact regression
         # this test suite exists to catch.
         out = _run_bash_banner("2.15.26", "ldm 2.15.27-pre.3")
-        self.assertIn("WARNING: this script (v2.15.26)", out)
+        # LDM-#1529: this is now an ERROR, not a WARNING -- the run refuses
+        # rather than producing a report that claims to verify one version
+        # while exercising another. The #1049 and #1047 assertions below are
+        # unchanged and remain the point of this test.
+        self.assertIn("ERROR: this script (v2.15.26)", out)
         self.assertIn("does not match the installed ldm binary (v2.15.27-pre.3)", out)
+        self.assertIn("Refusing to run", out)
         self.assertIn(
             "curl -fsSL "
             '"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/'
@@ -303,8 +308,11 @@ class TestPowerShellVersionBanner(unittest.TestCase):
 
     def test_mismatched_version_warns_with_matching_tag_url(self):
         out = _run_powershell_banner("2.15.26", "ldm 2.15.27-pre.3")
-        self.assertIn("WARNING: this script (v2.15.26)", out)
+        # LDM-#1529: ERROR, not WARNING -- the run now refuses. The #1049 and
+        # #1047 assertions below are unchanged and remain the point of this test.
+        self.assertIn("ERROR: this script (v2.15.26)", out)
         self.assertIn("does not match the installed ldm binary (v2.15.27-pre.3)", out)
+        self.assertIn("Refusing to run", out)
         self.assertIn(
             "Invoke-WebRequest -Uri "
             '"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/'
