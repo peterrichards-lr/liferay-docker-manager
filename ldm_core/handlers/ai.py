@@ -108,38 +108,19 @@ class AiService(BaseHandler):
                     content.text for content in result.content if content.type == "text"
                 )
 
-    async def _chat_loop(self, query):
-        """The main execution loop for the Gemini REST API."""
-        g_val = self._get_gemini_val()
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
-        headers = {"Content-Type": "application/json", "x-goog-api-key": g_val}
+    async def _run_turn(self, messages, url, headers, system_instruction, tools):
+        """Answer one question, running the tool-call loop to completion.
 
-        import platform
+        `messages` is mutated in place: the model's turns and the tool results
+        are appended, and so is the FINAL answer. That last append is what
+        makes a follow-up question meaningful -- without it the model would be
+        asked "and what about the other one?" having been told nothing about
+        the first (LDM-#1505).
 
-        host_os = platform.system()
-        os_release = platform.release()
-
-        system_instruction = {
-            "parts": [
-                {
-                    "text": (
-                        "You are LDM AI, a senior technical support engineer embedded within the Liferay Docker Manager (LDM) CLI. "
-                        "Your job is to help the user troubleshoot their local Liferay Docker environments or write configuration files. "
-                        f"The host operating system is {host_os} (release: {os_release}). You MUST tailor any suggested paths, shell commands, "
-                        "and file directory formats to this specific OS (e.g. Windows paths vs macOS/Linux paths). "
-                        "To prevent flag and command option hallucinations, you MUST validate any LDM CLI command you recommend by querying the "
-                        "`get_cli_help` tool first. Do not recommend flags or commands unless they are explicitly shown in the tool's help response. "
-                        "For complex tasks, output a structured plan before taking action, and perform a self-reflection critique before ending your turn. "
-                        "You have access to other local tools to read project lists, logs, and configuration files. Do not ask for logs if you can fetch them yourself."
-                    )
-                }
-            ]
-        }
-
-        messages = [{"role": "user", "parts": [{"text": query}]}]
-        tools = self._get_mcp_tools_schema()
-
-        # Initial request
+        The iteration budget is per question, not per session. A budget shared
+        across a conversation would exhaust itself on the third or fourth
+        question and report a tool-call ceiling for the wrong reason.
+        """
         payload = {
             "systemInstruction": system_instruction,
             "contents": messages,
@@ -202,7 +183,10 @@ class AiService(BaseHandler):
                 "tools": tools,
             }
 
-            UI.detail("🤖 AI is analyzing the diagnostic data...")
+            # LDM-#1504/#1505: UI.info, not UI.detail. A tool-calling turn can
+            # take many seconds; suppressed by default it reads as a hang, and
+            # in an interactive session that is far more noticeable.
+            UI.info("🤖 AI is analyzing the diagnostic data...")
             response = requests.post(url, headers=headers, json=payload, timeout=60)
             response.raise_for_status()
             data = response.json()
@@ -211,6 +195,9 @@ class AiService(BaseHandler):
         if iterations >= max_iterations:
             UI.warning("🤖 AI reached the maximum iteration threshold.")
 
+        # Keep the answer in history so follow-ups have it.
+        messages.append(message)
+
         # Print final response
         for part in message.get("parts", []):
             if "text" in part:
@@ -218,9 +205,96 @@ class AiService(BaseHandler):
                 # codeql[py/clear-text-logging-sensitive-data]
                 print(UI.redact(part["text"]))  # fmt: skip
 
-    def cmd_ai(self, query):
-        """Entry point for the ldm ai command."""
+    async def _chat_loop(self, query=None):
+        """One-shot when `query` is given, otherwise an interactive session.
+
+        `ldm ai` has always advertised "Start an interactive troubleshooting
+        session", but `query` was a required positional, so the bare form --
+        the most natural way to reach for it -- was the one that failed
+        (LDM-#1505).
+
+        Conversation state lives in `messages` and is shared across questions,
+        so a follow-up does not need context the model already has.
+        """
+        g_val = self._get_gemini_val()
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+        headers = {"Content-Type": "application/json", "x-goog-api-key": g_val}
+
+        import platform
+
+        host_os = platform.system()
+        os_release = platform.release()
+
+        system_instruction = {
+            "parts": [
+                {
+                    "text": (
+                        "You are LDM AI, a senior technical support engineer embedded within the Liferay Docker Manager (LDM) CLI. "
+                        "Your job is to help the user troubleshoot their local Liferay Docker environments or write configuration files. "
+                        f"The host operating system is {host_os} (release: {os_release}). You MUST tailor any suggested paths, shell commands, "
+                        "and file directory formats to this specific OS (e.g. Windows paths vs macOS/Linux paths). "
+                        "To prevent flag and command option hallucinations, you MUST validate any LDM CLI command you recommend by querying the "
+                        "`get_cli_help` tool first. Do not recommend flags or commands unless they are explicitly shown in the tool's help response. "
+                        "For complex tasks, output a structured plan before taking action, and perform a self-reflection critique before ending your turn. "
+                        "You have access to other local tools to read project lists, logs, and configuration files. Do not ask for logs if you can fetch them yourself."
+                    )
+                }
+            ]
+        }
+
+        messages = []
+        tools = self._get_mcp_tools_schema()
+
+        if query:
+            messages.append({"role": "user", "parts": [{"text": query}]})
+            await self._run_turn(messages, url, headers, system_instruction, tools)
+            return
+
+        UI.info("Interactive session. Type 'exit' or press Ctrl-D to finish.")
+        while True:
+            try:
+                line = input(f"\n{UI.BOLD}{UI.CYAN}you>{UI.COLOR_OFF} ").strip()
+            except (EOFError, KeyboardInterrupt):
+                # Ctrl-D / Ctrl-C is how people leave a REPL; it is not an
+                # error and must not look like one.
+                print()
+                break
+
+            if not line:
+                continue
+            if line.lower() in ("exit", "quit", ":q"):
+                break
+
+            messages.append({"role": "user", "parts": [{"text": line}]})
+            try:
+                await self._run_turn(messages, url, headers, system_instruction, tools)
+            except requests.exceptions.HTTPError as e:
+                # One bad request must not end the session -- the user may
+                # simply have hit a rate limit mid-conversation.
+                status = e.response.status_code if e.response is not None else "?"
+                UI.error(f"API Error: {status}. The session is still open.")
+            except Exception as e:
+                UI.error(f"Request failed: {e}. The session is still open.")
+
+    def cmd_ai(self, query=None):
+        """Entry point for the ldm ai command.
+
+        With no query this opens an interactive session (LDM-#1505).
+        """
         import asyncio
+        import sys
+
+        if not query:
+            # A REPL that blocks on stdin inside a pipeline or a CI job is
+            # worse than the argparse error it replaces: the caller gets a
+            # hang instead of a message. Refuse where there is nobody to
+            # prompt.
+            non_interactive = getattr(UI, "NON_INTERACTIVE", False)
+            if non_interactive or not sys.stdin.isatty():
+                UI.die(
+                    "'ldm ai' needs a question when it cannot prompt.",
+                    tip='Pass one directly, e.g. ldm ai "why will my project not start".',
+                )
 
         # We run the async chat loop synchronously for the CLI
         try:

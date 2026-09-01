@@ -1628,7 +1628,15 @@ def get_parser():  # noqa: PLR0915
         parents=[base_sub_parent],
         help="Start an interactive troubleshooting session with LDM AI",
     )
-    ai.add_argument("query", help="What do you want to ask LDM AI?")
+    # LDM-#1505: optional. The parser's own help has always promised an
+    # "interactive troubleshooting session", but a required positional made
+    # the bare `ldm ai` the one form that could not work.
+    ai.add_argument(
+        "query",
+        nargs="?",
+        default=None,
+        help="What do you want to ask LDM AI? Omit it for an interactive session.",
+    )
 
     # Command: guide
     subparsers.add_parser(
