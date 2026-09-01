@@ -1196,6 +1196,11 @@ class TestBasePortChecking(unittest.TestCase):
         import socket
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            # The wildcard bind is the point of the test, not an oversight:
+            # LDM-#1417 was check_port missing a 0.0.0.0 listener when probing
+            # 127.0.0.1 on Windows, so binding loopback here would delete the
+            # thing under test. Port 0 (ephemeral), closed by the with-block.
+            # codeql[py/bind-socket-all-network-interfaces]
             listener.bind(("0.0.0.0", 0))  # nosec B104 - loopback-checked below
             listener.listen(1)
             port = listener.getsockname()[1]

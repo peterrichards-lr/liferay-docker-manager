@@ -30,6 +30,21 @@ The LDM CI pipeline runs Bandit security scans. We explicitly ignore the followi
 | **B605** | Start process with a shell. Used in `cmd_log_level` to pipe Gogo shell commands via `nc` for dynamic log adjustment. **Mitigation**: The command string is hardcoded and only sanitized level/category strings are interpolated. |
 | **CVE-2026-4539** | Pygments vulnerability. Ignored as LDM only uses Pygments for local console highlighting, posing no remote risk. |
 
+### CodeQL Disclosures (GitHub code scanning)
+
+CodeQL runs on GitHub's **default setup**, so there is no workflow or config
+file in this repository to carry path exclusions. Alerts that are correct as
+rules but wrong in context are dismissed with a reason, and recorded here so
+the dismissal is reviewable rather than invisible.
+
+| Alert | Rule | Location | Disclosure |
+| :--- | :--- | :--- | :--- |
+| **58** | `py/bind-socket-all-network-interfaces` | `ldm_core/tests/test_base.py` | A test binds a real `0.0.0.0` listener on an ephemeral port (`0`) inside a `with` block that closes it. **The wildcard bind is the assertion, not an oversight**: LDM-#1417 was `check_port` failing to see a `0.0.0.0` listener while probing `127.0.0.1` on Windows, so binding loopback here would delete the behaviour under test. The docstring records why it is deliberately unmocked -- "the bug lived in the gap between what the mocks assumed and what the OS actually does". |
+
+Suppressions are also marked inline with `# codeql[<rule-id>]` next to the
+code, so the justification travels with the line rather than living only in a
+dismissal on GitHub.
+
 ## 3. Hardened Command & Data Processing
 
 Following our commitment to local security, the following hardening measures are implemented:
@@ -125,4 +140,4 @@ f7e5b56e5e4e6e94fe5de5424e66fef84be863f385
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*
+*Last Updated: 2026-09-01* | *Last Reviewed: 2026-09-01*
