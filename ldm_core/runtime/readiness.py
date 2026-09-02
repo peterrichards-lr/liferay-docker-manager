@@ -7,7 +7,7 @@ from ldm_core.config import resolve_target_context
 from ldm_core.docker_service import DockerService
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
-from ldm_core.utils import open_browser
+from ldm_core.utils import liferay_container_of, open_browser
 
 
 class ReadinessService(BaseHandler):
@@ -59,11 +59,7 @@ class ReadinessService(BaseHandler):
         overall_start = time.time()
         overall_timeout = timeout
 
-        container_name = (
-            meta.get("liferay_container_name")
-            or meta.get("container_name")
-            or root.name
-        )
+        container_name = liferay_container_of(meta) or root.name
 
         log_proc = None
         if stream_logs:
@@ -191,11 +187,7 @@ class ReadinessService(BaseHandler):
             UI.detail(
                 f"Waiting for {len(expected_targets)} deployable targets to be fully active..."
             )
-            container_name = (
-                meta.get("liferay_container_name")
-                or meta.get("container_name")
-                or root.name
-            )
+            container_name = liferay_container_of(meta) or root.name
 
             # Wait for deploy directory inside container to clear
             UI.detail("Checking deploy directory queue status...")
@@ -337,7 +329,7 @@ class ReadinessService(BaseHandler):
                         "--no-stream",
                         "--format",
                         "{{.CPUPerc}}",
-                        meta.get("container_name"),
+                        liferay_container_of(meta),
                     ],
                     capture_output=True,
                     check=False,
@@ -382,7 +374,9 @@ class ReadinessService(BaseHandler):
         fragment_patch_timeout=None,
     ):
         """Wait for Liferay to become healthy and provide access information."""
-        container_name = project_meta.get("container_name")
+        # LDM-#1564: must be the name compose CREATED, not the verbatim
+        # project id -- see liferay_container_of.
+        container_name = liferay_container_of(project_meta)
         project_id = project_meta.get("project_name") or container_name
         target_name = getattr(self.manager, "target", None) or project_meta.get(
             "target"
