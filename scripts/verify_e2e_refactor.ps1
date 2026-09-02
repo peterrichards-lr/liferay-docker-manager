@@ -128,6 +128,13 @@ if (-not (Test-Path $VENV_PYTEST)) {
     Write-Output "=== LDM BINARY VERIFICATION REPORT ==="
     Write-Output "Timestamp: $(Get-Date)"
     Write-Output "Platform:  $($PSVersionTable.OS)"
+    # $PSVersionTable.OS does not exist on Windows PowerShell 5.1 -- it arrived
+    # in PowerShell 6 -- so the line above renders empty there and a 5.1 report
+    # was distinguishable from a 7 report only by that absence, which reads as a
+    # bug rather than a data point. These reports are committed and feed the
+    # compatibility matrix, so the edition has to be stated. PSVersion and
+    # PSEdition both exist on 5.1 (5.1.x / Desktop) and on 7 (7.x / Core).
+    Write-Output "PowerShell: $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))"
     
     $binaryPath = "Not Found"
     try {
