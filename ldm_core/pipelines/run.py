@@ -83,6 +83,23 @@ def _resolve_pipeline_target_context(manager, project_meta, root):
     )
 
 
+def project_has_own_db_service(db_type, use_shared_db):
+    """Whether compose defines a `<project>-db` service for this project.
+
+    Must agree with composer._build_db_service, which returns early for
+    `db_type == "external" or db_mode == "shared"`. When they disagreed, the
+    pipeline named `<project>-db` as a startup dependency for an `external`
+    project and ran `docker compose up -d <project>-db` against a service the
+    compose file never defined -- with check=True, so it raised. `--db external`
+    could not work in the default isolated mode.
+
+    Extracted so the rule can be asserted directly. Inline, the only way to test
+    it was to restate it in the test, which would then pass no matter what the
+    pipeline actually did.
+    """
+    return db_type not in ("hypersonic", "external") and not use_shared_db
+
+
 class ProjectInitializationStage(PipelineStage):
     """Handles project selection, discovery, and path setup."""
 
@@ -1899,7 +1916,7 @@ class ExecutionStage(PipelineStage):
                 UI.debug(f"Time to orchestration start: {duration_str}")
 
             deps = []
-            if db_type != "hypersonic" and not use_shared_db:
+            if project_has_own_db_service(db_type, use_shared_db):
                 deps.append(f"{safe_project_id}-db")
 
             if deps:
