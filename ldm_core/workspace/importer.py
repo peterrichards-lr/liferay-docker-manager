@@ -278,6 +278,35 @@ def _verify_ldm_package_manifest(self, temp_extract_dir, temp_pkg_dir, owner, re
         UI.die(f"Invalid LDM Package: manifest 'meta' could not be parsed. {e}")
         return {}  # unreachable; UI.die exits, but keeps the type honest
 
+    # LDM-#1568: a manifest that claims to include something and then lists
+    # nothing is not a package we can honour. Importing it produced a project
+    # that looked installed and was not -- the AICA package shipped six client
+    # extensions under osgi/client-extensions/ and listed zero, so the
+    # site-level setup silently did nothing.
+    #
+    # Refuse rather than half-install. The generator that produced the
+    # contradiction is fixed in the same change (snapshot/archive.py), so a
+    # package rebuilt with this version cannot trip this.
+    for flag, listing, label in (
+        ("includes_client_extensions", "client_extensions", "client extensions"),
+        ("includes_osgi_modules", "osgi_modules", "OSGi modules"),
+    ):
+        claims = str(manifest.get(flag, "false")).lower() == "true"
+        listed = str(manifest.get(listing, "") or "").strip()
+        if claims and not listed:
+            _discard_package_temp(temp_pkg_dir, temp_extract_dir)
+            UI.die(
+                "Invalid LDM package: the manifest is self-contradictory.",
+                details=(
+                    f"Caused by: '{flag}' is true but '{listing}' is empty, "
+                    f"so LDM cannot tell which {label} to install."
+                ),
+                tip=(
+                    "Rebuild the package with 'ldm snapshot' on this version "
+                    "of LDM, which derives both fields from one scan."
+                ),
+            )
+
     db_type = manifest.get("db_type")
     if db_type and db_type not in [
         "postgresql",
