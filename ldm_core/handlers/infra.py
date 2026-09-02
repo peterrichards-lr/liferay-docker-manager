@@ -837,8 +837,22 @@ tls:
             es_data.mkdir(parents=True, exist_ok=True)
             es_backup.mkdir(parents=True, exist_ok=True)
 
-            # Fix permissions for Linux/CI (ES runs as UID 1000, we ensure world-writable or chowned)
-            # Reclamation via Docker container ensures it works even if files are owned by root
+            # Reclamation via Docker container ensures it works even if files
+            # are owned by root.
+            #
+            # LDM-#1507: `777` is required here, not inherited.
+            # `reclaim_volume_permissions` chowns to the *host* uid, and both
+            # of these are bind-mounted into `liferay-search-global` -- the
+            # official `elasticsearch:8.x` image, started below with no
+            # `--user`, so uid 1000. On native Linux a bind mount does not
+            # translate uids, so at the `750` default ES gets no access to
+            # either tree: it cannot open `/usr/share/elasticsearch/data` and
+            # dies on boot, and it cannot write the `path.repo` snapshot
+            # repository in `backup`. `770`/`775` do not help either -- uid
+            # 1000 is not in the host user's group, so "other" is the only
+            # class that covers both. This is the LDM-#599 -> LDM-#645
+            # regression: `c618419f` moved the default to `750`, `6861e26e`
+            # ("restore native linux cross-container mapping") put these back.
             from ldm_core.utils import reclaim_volume_permissions
 
             reclaim_volume_permissions(es_data, chmod_val="777")
@@ -934,6 +948,10 @@ tls:
                     es_data.mkdir(parents=True, exist_ok=True)
                     from ldm_core.utils import reclaim_volume_permissions
 
+                    # Same tree, same uid-1000 Elasticsearch container as the
+                    # provisioning path above, so the same `777` applies -- the
+                    # directory was just recreated empty and root/host-owned,
+                    # and the restart below would fail identically at `750`.
                     reclaim_volume_permissions(es_data, chmod_val="777")
 
                 UI.detail("Restarting Global Search with clean slate...")

@@ -363,6 +363,14 @@ class SystemService(BaseHandler):
 
             try:
                 paths = self.setup_paths(root)
+                # LDM-#1507: `777` required -- same four bind-mounted trees,
+                # same uid-1000 Liferay container, as the run pipeline's
+                # pre-`up` reclaim (`pipelines/run.py`, ExecutionStage). This
+                # is the repair path: it exists to hand a wedged project back
+                # to a container that must be able to write `logs/`, `deploy/`
+                # and `osgi/state`, and the helper's chown targets the host
+                # uid, so at `750` the repair would leave the container worse
+                # off than it found it (LDM-#645, `6861e26e`).
                 for p_key in ["deploy", "logs", "osgi", "files"]:
                     if p_key in paths and paths[p_key].exists():
                         reclaim_volume_permissions(paths[p_key], chmod_val="777")

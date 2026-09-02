@@ -1074,6 +1074,25 @@ class EnvironmentSetupStage(PipelineStage):
             if platform.system().lower() != "windows":
                 from ldm_core.utils import run_command
 
+                # LDM-369 / LDM-#1507: `777` required, and this one is host-side
+                # on purpose. `es_data` is the *sidecar* Elasticsearch index
+                # directory, bind-mounted (this branch only runs when
+                # `not use_volumes`) into the Liferay container, whose sidecar
+                # ES process runs as uid 1000. The host owns the tree, so
+                # without the world bits the sidecar fails its writes with
+                # `access_denied_exception` and leaves the index read-only --
+                # fragment indexing then fails silently (`d1677e84`).
+                #
+                # UNVERIFIED (LDM-#1507): why this is a plain host-side `chmod`
+                # rather than `reclaim_volume_permissions` is not recorded
+                # anywhere -- `d1677e84` introduced it without saying. It does
+                # differ in two observable ways: it changes no ownership, and
+                # it needs no helper container, so it still works when the
+                # files are host-owned and costs no Docker round trip on a
+                # path that runs immediately before every boot. It cannot
+                # repair root-owned files, which the helper can. Do not
+                # collapse the two without establishing which property the
+                # sidecar actually depends on.
                 run_command(["chmod", "-R", "777", str(es_data)], check=False)
 
         is_samples = context.get("is_samples")
@@ -1942,6 +1961,19 @@ class ExecutionStage(PipelineStage):
             # docker_prefix/map_path the rest of this stage already uses
             # for a remote target; otherwise keep the existing local-only
             # gating unchanged.
+            #
+            # LDM-#1507: `777` required in both branches below, for the same
+            # reason and on the same four trees. These are bind-mounted into
+            # the Liferay container, whose Tomcat/Equinox runs as uid 1000; the
+            # helper chowns them to the host uid, which is 1001 on Linux CI and
+            # never 1000. At `750` the container cannot write `logs/`, cannot
+            # pick up a hot deploy from `deploy/`, and cannot manage its own
+            # `osgi/state` -- which is precisely the native-Linux breakage
+            # LDM-#645 (`6861e26e`) was raised to undo. The remote branch is a
+            # deliberate mirror of the local one (LDM-#1090/#1133, `0695db27`)
+            # and if anything needs it more: remote targets are Linux by this
+            # project's conventions, so no Docker Desktop uid translation
+            # papers over a narrower mode there.
             target_context = context.get("target_context")
             if target_context is not None and target_context.is_remote:
                 from ldm_core.utils import reclaim_volume_permissions

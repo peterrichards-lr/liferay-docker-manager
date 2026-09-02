@@ -1,8 +1,19 @@
+import inspect
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ldm_core.handlers.infra import InfraService
+from ldm_core.utils import reclaim_volume_permissions as _reclaim_impl
+
+# Captured at import time on purpose (LDM-#1507). conftest replaces
+# `ldm_core.utils.reclaim_volume_permissions` with a permissive
+# `lambda *_a, **_k: True` for every test not marked
+# `exercises_docker_helper` (LDM-#1409), and that substitution happens
+# before a test's own `@patch(..., autospec=True)` does -- so autospec
+# would spec the lambda and lose the real parameter names and defaults.
+# Module import runs at collection, before any of that.
+_RECLAIM_SIGNATURE = inspect.signature(_reclaim_impl)
 
 
 class MockInfraManager:
@@ -405,6 +416,76 @@ class TestInfraService(unittest.TestCase):
             assert isinstance(run_cmd, list)
             self.assertIn("ES_JAVA_OPTS=-Xms256m -Xmx256m", run_cmd)
             self.assertIn("processors=1", run_cmd)
+
+    @patch("ldm_core.docker_service.DockerService.exists", return_value=False)
+    @patch("ldm_core.handlers.infra.get_actual_home", return_value=Path("/tmp"))
+    @patch("ldm_core.utils.reclaim_volume_permissions")
+    @patch("ldm_core.ui.UI.info")
+    @patch("ldm_core.ui.UI.detail")
+    def test_setup_global_search_keeps_es_bind_mounts_writable_by_uid_1000(
+        self, _mock_detail, _mock_info, mock_reclaim, _mock_home, _mock_exists
+    ):
+        """LDM-#1507: the ES bind mounts must stay writable by the container.
+
+        `liferay-search-global` is the stock `elasticsearch:8.x` image started
+        with no `--user`, so uid 1000. `reclaim_volume_permissions` chowns to
+        the *host* uid (1001 on Linux CI, 501 on macOS) and a bind mount does
+        no uid translation on native Linux, so the "other" class is the only
+        one uid 1000 falls into. Provisioning must therefore leave both the
+        data directory and the `path.repo` backup directory world-writable --
+        anything narrower and ES cannot open its data path on boot or write a
+        snapshot repository.
+
+        This is the LDM-#599 -> LDM-#645 regression pinned: `c618419f` moved
+        the helper default to `750` and broke native Linux; `6861e26e`
+        restored `777` here. Asserted on the resolved mode bits rather than
+        the literal string so it fails for *any* mode that closes the door on
+        uid 1000, not only for a change back to `750`.
+        """
+        # Binding through the real signature scores an omitted `chmod_val`
+        # as the helper's actual default -- dropping the kwarg is precisely
+        # the regression, and it must not read here as "no opinion".
+        requested: dict[str, str] = {}
+
+        def _record(*args, **kwargs):
+            bound = _RECLAIM_SIGNATURE.bind(*args, **kwargs)
+            bound.apply_defaults()
+            tree = Path(str(bound.arguments["path"])).name
+            requested[tree] = str(bound.arguments["chmod_val"])
+            return True
+
+        mock_reclaim.side_effect = _record
+
+        self.manager.defaults.get.side_effect = lambda _key, default=None: default
+        with (
+            patch.object(
+                self.manager,
+                "run_command",
+                return_value='{"cluster_name": "liferay-cluster"}',
+            ),
+            patch.object(self.manager, "get_container_status", return_value="running"),
+        ):
+            self.infra.setup_global_search(force=True)
+
+        self.assertEqual(
+            {"data", "backup"},
+            set(requested),
+            f"Provisioning must reclaim both ES bind mounts; saw {sorted(requested)}",
+        )
+
+        for tree, mode in requested.items():
+            other = int(mode[-1])
+            self.assertTrue(
+                other & 0o2,
+                f"ES bind mount '{tree}' reclaimed as {mode}: uid 1000 cannot "
+                "write it. ES runs as 1000, the chown targets the host uid, "
+                "and they share no group -- this reintroduces LDM-#645.",
+            )
+            self.assertTrue(
+                other & 0o1,
+                f"ES bind mount '{tree}' reclaimed as {mode}: uid 1000 cannot "
+                "traverse it (LDM-#645).",
+            )
 
     @patch("ldm_core.handlers.infra.UI")
     @patch("ldm_core.utils.has_shared_projects")

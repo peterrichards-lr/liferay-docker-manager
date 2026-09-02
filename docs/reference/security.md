@@ -18,7 +18,7 @@ The LDM CI pipeline runs Bandit security scans. We explicitly ignore the followi
 
 | Code | Intent & Disclosure |
 | :--- | :--- |
-| **B103** | Permissive 777 permissions. Used in `migrate_layout` for legacy projects and `cmd_upgrade` to ensure the newly downloaded binary is executable. **Mitigation**: All calls are wrapped in `try...except` and LDM prioritizes standard user ownership. |
+| **B103** | Permissive permissions. Used in `migrate_layout` for legacy projects and `cmd_upgrade` to ensure the newly downloaded binary is executable, and -- separately and more broadly -- to make container-shared bind mounts writable by the uid the container runs as. See *Bind-Mount Permissions* below for why the latter is `777` and where. **Mitigation**: All calls are wrapped in `try...except` and LDM prioritizes standard user ownership. |
 | **B104** | Hardcoded bind to all interfaces. Required for macOS loopback, Gogo shell access, host port availability checks (especially on Windows WSL2/Hyper-V), and infrastructure setup. |
 | **B105** | Hardcoded passwords or tokens. Used for default local development database passwords (e.g., `test`) and transient mount verification tokens. **Mitigation**: These are only used in isolated sandbox environments and are not intended for production secrets. |
 | **B108** | Hardcoded /tmp directory. Used only for transient mount verification tokens. |
@@ -45,7 +45,48 @@ Suppressions are also marked inline with `# codeql[<rule-id>]` next to the
 code, so the justification travels with the line rather than living only in a
 dismissal on GitHub.
 
-## 3. Hardened Command & Data Processing
+## 3. Bind-Mount Permissions on Container-Shared Trees
+
+LDM applies `chmod 777` to the project and infrastructure directories it
+bind-mounts into containers. This is deliberate, it is not a leftover, and
+LDM-#1507 audited every site that does it. The reasoning is recorded in full
+on `reclaim_volume_permissions()` in `ldm_core/utils.py` and restated in a
+comment at each call site; the summary is:
+
+- The containers LDM runs write to these trees as **uid 1000** -- the official
+  `elasticsearch:8.x` image (`liferay-search-global`, started with no
+  `--user`), and the Liferay image's Tomcat/Equinox process.
+- The host user is not uid 1000. It is 501 on macOS and typically 1001 on
+  Linux CI.
+- A bind mount performs **no uid translation on native Linux**. LDM's
+  permission reclamation chowns to the host uid, so at `750` the container is
+  locked out of a tree it must read *and* write. `770` and `775` do not help
+  either: the container uid is not in the host user's group, so the "other"
+  class is the only one both parties fall into.
+
+This was established the hard way. LDM-#599 hardened the reclamation default
+from `777` to `750`; that broke Elasticsearch and Liferay on native Linux, and
+LDM-#645 ("restore native linux cross-container mapping") re-widened the
+affected sites one release later. Tightening one of them again reproduces that
+regression. macOS and Windows hide the problem, because Docker Desktop's
+virtiofs/gRPC-FUSE mounts present files as the host user regardless of mode --
+which is why LDM-#599 shipped before anyone noticed.
+
+**Scope**: the widening is confined to per-project and per-infrastructure
+directories under the project root and `~/.ldm/infra` -- data, state, logs,
+deploy, osgi, files, configs, and the Elasticsearch data and snapshot
+repositories. It is never applied to LDM's own configuration or credentials:
+`~/.ldm/config` is `700` and the files inside it, including target tokens, are
+`600`.
+
+**Mitigation**: `750` remains the default of `reclaim_volume_permissions()`, so
+any future caller with no container on the other side of the mount gets least
+privilege without asking. Widening is opt-in per call site and each opt-in
+carries a comment naming the container and uid it exists for. As stated at the
+top of this document, LDM is a local development tool; these directories hold
+sandbox project data on a developer machine, not production data.
+
+## 4. Hardened Command & Data Processing
 
 Following our commitment to local security, the following hardening measures are implemented:
 
@@ -54,21 +95,21 @@ Following our commitment to local security, the following hardening measures are
 - **Identifier Sanitization**: All project IDs, container names, and environment identifiers are strictly sanitized to allow only alphanumeric characters, preventing malicious path or command injection via project metadata.
 - **Snapshot Integrity Verification**: LDM generates SHA-256 checksums for all project snapshots. During recovery or import, the tool validates the archive against this checksum to detect accidental corruption or accidental tampering. Note that this provides *integrity* (data validity) but not *authenticity* (proof of origin), as the checksum files are stored alongside the data in the local filesystem.
 
-## 4. Sensitive Data Masking (Log Redaction)
+## 5. Sensitive Data Masking (Log Redaction)
 
 LDM implements a proactive redaction layer to prevent the accidental logging of sensitive information in clear-text.
 
 - **Automatic Redaction**: Common sensitive keys (e.g., `PASSWORD`, `SECRET`, `TOKEN`, `AUTH`) are automatically masked with `[REDACTED]` in all command execution logs and verbose output.
 - **Local Focus**: While LDM is a sandbox tool and developers are responsible for their local environment, this measure ensures that even when sharing logs for troubleshooting, sensitive credentials remain protected.
 
-## 5. SSL Trust (mkcert)
+## 6. SSL Trust (mkcert)
 
 LDM uses `mkcert` to provide a "Green Lock" experience. This requires installing a local Certificate Authority (CA) on your machine.
 
 - **Risk**: If your private CA key is compromised, an attacker could spoof websites on your local machine.
 - **Mitigation**: LDM stores certificates in `~/liferay-docker-certs`. Ensure this directory is kept private.
 
-## 6. Sudo & Internalized Elevation
+## 7. Sudo & Internalized Elevation
 
 To protect the integrity of the application cache (`~/.shiv`) and ensure consistent file ownership, **LDM prohibits being run with the `sudo` prefix.**
 
@@ -79,7 +120,7 @@ The tool utilizes a "Just-in-Time" elevation strategy. It runs as your standard 
 
 This ensures that all project data and temporary files remain owned by your local user, preventing permission-related lockouts.
 
-## 7. Secrets Prevention & Commit Gates
+## 8. Secrets Prevention & Commit Gates
 
 LDM integrates Yelp's `detect-secrets` scanner into its pre-commit hook suite to block credentials, API keys, and passwords from ever being committed.
 
@@ -140,4 +181,4 @@ f7e5b56e5e4e6e94fe5de5424e66fef84be863f385
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-01* | *Last Reviewed: 2026-09-01*
+*Last Updated: 2026-09-02* | *Last Reviewed: 2026-09-02*

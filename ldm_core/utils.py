@@ -2918,8 +2918,46 @@ def reclaim_volume_permissions(
 ):
     """Forces ownership and permissions of a directory via Docker (Linux/macOS).
 
-    Uses chmod 750 (owner full, group read/execute, others nothing) by default
-    to prevent world-writable project directories that violate least-privilege.
+    The default is `750` (owner full, group read/execute, others nothing).
+    **No production caller currently takes that default** -- every call site
+    passes `chmod_val` explicitly, and all but one pass `777`. LDM-#1507
+    audited them; what follows is why, so the next reader does not "fix" a
+    deliberate widening.
+
+    ## Why `750` is not usable at most call sites (LDM-#599 / LDM-#645)
+
+    This helper `chown`s to the *host* user (`os.getuid()`/`os.getgid()` by
+    default) and then applies `chmod_val`. The directories it is pointed at
+    are **bind mounts shared with containers that run as uid 1000**:
+
+    - `elasticsearch:8.x` (`liferay-search-global`) runs as uid 1000 and is
+      started with no `--user` override -- see `InfraService`'s `docker run`.
+    - The Liferay image's Tomcat/Equinox process runs as uid 1000 (the same
+      mismatch documented at `pipelines/run.py`'s named-volume hydration).
+
+    A bind mount performs no UID translation on native Linux, so after a
+    `chown` to the host uid (1001 on CI, 501 on macOS) a mode of `750` leaves
+    uid 1000 with **no access at all** to a tree it must read *and* write.
+    Neither `770` nor `775` helps: the container uid is not in the host user's
+    group either, so the "other" class is the only one both parties land in.
+
+    That is not hypothetical. LDM-#599 (commit `c618419f`) changed this
+    default from a hardcoded `777` to `750` and broke native Linux; LDM-#645
+    (commit `6861e26e`, "restore native linux cross-container mapping")
+    re-widened the affected sites to `777` one release later. Tightening one
+    of them again reproduces that regression.
+
+    On macOS and Windows the point is largely moot -- Docker Desktop's
+    virtiofs/gRPC-FUSE bind mounts present files as the host user regardless
+    of mode -- which is exactly why the LDM-#599 regression was not caught
+    before it shipped.
+
+    ## When `750` *is* the right value
+
+    Any tree that only LDM itself touches (no container uid on the other side
+    of the mount) should take the default. Keep it as the default so such a
+    caller gets least privilege for free; `777` is opt-in and every opt-in
+    carries a comment naming the container and uid it is for.
 
     `docker_prefix` (e.g. `["docker", "--context", "aws-1"]`, from
     `TargetContext.docker_prefix`) lets a caller redirect this to a remote
