@@ -962,7 +962,29 @@ class EnvironmentSetupStage(PipelineStage):
         if is_new_project and manager.assets._ensure_seeded(tag, db_type, paths):
             from ldm_core.constants import SEED_VERSION
 
-            project_meta = manager.read_meta(paths["root"])
+            # Merge the seed's meta INTO the context's, rather than replacing
+            # it. The re-read exists because seed extraction can introduce keys
+            # the pipeline has not seen; the context's dict holds everything
+            # ConfigResolutionStage resolved from the CLI -- db_type, port,
+            # host_name, container_name -- which for a NEW project has not been
+            # written to disk yet.
+            #
+            # Replacing therefore discarded all of it. `ldm run <proj> --db
+            # mysql --database-mode shared --port N` on a fresh project silently
+            # became postgresql on 8080 with host_name None, so the MySQL global
+            # was never created, and container_name=None reached the readiness
+            # probe and raised
+            #   TypeError: sequence item 4: expected str instance, NoneType found
+            # which did not fail the run. The shared-database boot check has
+            # failed on every v2.20.0 pre-release for this reason and passed on
+            # every v2.19.x.
+            #
+            # setdefault, so CLI-resolved values stay authoritative and the seed
+            # only contributes keys nobody has set.
+            seed_meta = manager.read_meta(paths["root"]) or {}
+            project_meta = context.get("project_meta")
+            for _k, _v in seed_meta.items():
+                project_meta.setdefault(_k, _v)
             project_meta["seeded"] = "true"
             project_meta["seed_version"] = str(SEED_VERSION)
             manager.write_meta(paths["root"], project_meta)
