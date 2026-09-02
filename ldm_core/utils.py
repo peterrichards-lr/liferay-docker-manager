@@ -387,6 +387,35 @@ def search_index_prefix(identifier):
     return f"ldm-{sanitize_id(identifier)}-".lower()
 
 
+def liferay_container_of(meta):
+    """The container name compose actually creates for this project's Liferay.
+
+    LDM-#1564: readiness resolved this as a bare
+    `meta.get("liferay_container_name") or meta.get("container_name")`, with no
+    transcoding, while handlers/composer.py emits
+
+        service["container_name"] = sanitize_id(
+            meta.get("liferay_container_name") or sanitize_id(original_name)
+        )
+
+    For a non-ASCII project the two disagree: Docker holds
+    `test-naming-Zolc` while readiness polled `test-naming-Żółć`, which never
+    matches. Liferay booted fine and LDM watched a name that did not exist
+    until the 900s timeout expired -- so `ldm run` looked like a 15-minute
+    hang followed by a failure, on a healthy stack.
+
+    Same class as LDM-#1512. LDM-#1524 transcoded the volume paths; this was
+    the site it missed, and the only one whose symptom is a slow timeout
+    rather than an error.
+
+    One function so the two halves cannot drift apart again. sanitize_id is
+    idempotent, so the nested call in composer collapses to this.
+    """
+    return sanitize_id(
+        meta.get("liferay_container_name") or meta.get("container_name") or ""
+    )
+
+
 def shared_database_name(identifier):
     """Returns the shared-mode database name for `identifier`, always lowercase.
 
