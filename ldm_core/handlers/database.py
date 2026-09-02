@@ -9,13 +9,32 @@ import sys
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 from ldm_core.utils import (
+    SHARED_DB_CONTAINERS,
     resolve_infrastructure_mode,
+    shared_database_container,
     shared_database_name,
 )
 
-# LDM-#1400: the global database container, created by
-# InfraService.setup_global_database with a bare `docker run`.
-GLOBAL_DB_CONTAINER = "liferay-db-global"
+
+def _shared_db_engines():
+    """The engines whose global containers `ldm db start`/`stop` act on.
+
+    LDM-#1400 introduced the global database container, created by
+    `InfraService.setup_global_database` with a bare `docker run`; LDM-#1361
+    then gave each *engine* its own -- `liferay-db-global` for PostgreSQL,
+    `liferay-db-mysql-global` for MySQL, with `mariadb` deliberately sharing
+    the MySQL one.
+
+    Iterating `SHARED_DB_CONTAINERS` by engine would therefore act on
+    `liferay-db-mysql-global` twice, so this keeps one representative engine
+    per *distinct container*. Deriving it from that map rather than restating
+    the engine list here means a fourth engine added there is picked up
+    without a second edit -- the kind of drift LDM-#1361 existed to end.
+    """
+    representatives: dict[str, str] = {}
+    for engine in SHARED_DB_CONTAINERS:
+        representatives.setdefault(shared_database_container(engine), engine)
+    return list(representatives.values())
 
 
 class DatabaseService(BaseHandler):
@@ -96,7 +115,7 @@ class DatabaseService(BaseHandler):
         return True, None
 
     def cmd_start(self):
-        """Starts the shared global database.
+        """Starts the shared global databases.
 
         "Shared" means shared among projects resolving to the *same*
         target -- not a single global instance for every target. A
@@ -110,6 +129,23 @@ class DatabaseService(BaseHandler):
         special about shared infra here, it's "which target is active for
         this invocation," same as everything else. See
         docs/explanation/remote-node-architecture.md §5.
+
+        LDM-#1547: *which engine* is a separate question from which target,
+        and this command used to answer it with a hardcoded
+        `liferay-db-global`. On a MySQL fleet that inspected -- and
+        provisioned -- a PostgreSQL container nobody uses, while the MySQL
+        global the projects actually run against stayed down.
+
+        There is no project here to read `db_type` from, and the `db start`
+        subparser takes no `--db`, so the engine is not guessed: the command
+        acts on whichever globals *exist* on the target. That is an observed
+        fact rather than an assumption, and it is what the command has always
+        advertised -- "the shared global databases (e.g. Postgres, MySQL)",
+        plural, in its help text, `docs/reference/advanced_cli.md` and the man
+        page. Only when none exists is there nothing to observe, and
+        provisioning falls back to the configured `db_type` default
+        (`~/.ldmrc`, PostgreSQL by convention) -- the same default `ldm run`
+        gives a project that names no engine.
         """
         # LDM-#1400: this used to run
         # `docker compose -f infra-compose.yml start db`, but that file defines
@@ -120,46 +156,95 @@ class DatabaseService(BaseHandler):
         from ldm_core.docker_service import DockerService
 
         target_name = getattr(self.manager, "target", None)
-        db_name = GLOBAL_DB_CONTAINER
+        engines = [
+            engine
+            for engine in _shared_db_engines()
+            if DockerService.exists(shared_database_container(engine), target_name)
+        ]
 
-        if DockerService.is_running(db_name, target_name):
-            # UI.success, not UI.detail: the latter is gated behind
-            # --info/--verbose (LDM-#1036), so the user would see nothing at all
-            # and could not tell success from a no-op.
-            UI.success(f"Global shared database '{db_name}' is already running.")
+        if not engines:
+            # Not created yet -- provision it through the same path `ldm run`
+            # uses, rather than reporting a missing container the user cannot
+            # create. `setup_global_database` owns the post-provision health
+            # check (LDM-#1545), so repeating it here would be unreachable.
+            db_type = self.manager.defaults.get("db_type", "postgresql")
+            UI.detail("Global shared database not found; provisioning it...")
+            self.manager.infra.setup_global_database(db_type=db_type)
             return
 
-        if DockerService.exists(db_name, target_name):
+        for engine in engines:
+            db_name = shared_database_container(engine)
+
+            if DockerService.is_running(db_name, target_name):
+                # UI.success, not UI.detail: the latter is gated behind
+                # --info/--verbose (LDM-#1036), so the user would see nothing at
+                # all and could not tell success from a no-op.
+                UI.success(f"Global shared database '{db_name}' is already running.")
+                continue
+
             UI.detail(f"Starting global shared database '{db_name}'...")
             DockerService.start(db_name, target_name)
-            UI.success(f"Global shared database '{db_name}' started.")
-            return
 
-        # Not created yet -- provision it through the same path `ldm run` uses,
-        # rather than reporting a missing container the user cannot create.
-        UI.detail("Global shared database not found; provisioning it...")
-        self.manager.infra.setup_global_database()
+            # LDM-#1547: `DockerService.start` runs `run_command(..., check=False)`
+            # and returns None on failure, and that result was discarded -- so a
+            # container that never came up (port clash, corrupt volume, missing
+            # image) printed a green success line and exited 0. `UI.error` only
+            # prints; only `UI.die` exits. Exit code 3 is Infrastructure/Data
+            # Error per .agents/skills/ldm-architecture/SKILL.md.
+            if not DockerService.is_running(db_name, target_name):
+                UI.die(
+                    f"Global shared database '{db_name}' did not come up.",
+                    tip=f"Inspect it with `docker logs {db_name}`.",
+                    exit_code=3,
+                )
+
+            UI.success(f"Global shared database '{db_name}' started.")
 
     def cmd_stop(self):
-        """Stops the shared global database. See cmd_start's docstring for
-        why this resolves --node/--target like any other command."""
+        """Stops the shared global databases. See cmd_start's docstring for
+        why this resolves --node/--target like any other command, and why the
+        engine is read off the containers that exist rather than guessed.
+
+        The engine resolution has to match cmd_start's or the pair is
+        incoherent: a fleet whose `ldm db start` brings up
+        `liferay-db-mysql-global` cannot have an `ldm db stop` that reports
+        `liferay-db-global` missing (LDM-#1547).
+        """
         # LDM-#1400: see cmd_start -- there is no `db` compose service to stop.
         from ldm_core.docker_service import DockerService
 
         target_name = getattr(self.manager, "target", None)
-        db_name = GLOBAL_DB_CONTAINER
+        engines = [
+            engine
+            for engine in _shared_db_engines()
+            if DockerService.exists(shared_database_container(engine), target_name)
+        ]
 
-        if not DockerService.exists(db_name, target_name):
-            UI.warning(f"Global shared database '{db_name}' does not exist.")
+        if not engines:
+            UI.warning("No global shared database exists.")
             return
 
-        if not DockerService.is_running(db_name, target_name):
-            UI.success(f"Global shared database '{db_name}' is already stopped.")
-            return
+        for engine in engines:
+            db_name = shared_database_container(engine)
 
-        UI.detail(f"Stopping global shared database '{db_name}'...")
-        DockerService.stop(db_name, target_name)
-        UI.success(f"Global shared database '{db_name}' stopped.")
+            if not DockerService.is_running(db_name, target_name):
+                UI.success(f"Global shared database '{db_name}' is already stopped.")
+                continue
+
+            UI.detail(f"Stopping global shared database '{db_name}'...")
+            DockerService.stop(db_name, target_name)
+
+            # LDM-#1547: `DockerService.stop` discards failure exactly as
+            # `start` did. Reporting a stop that did not happen is the same
+            # defect on the same pair of commands, so it gets the same guard.
+            if DockerService.is_running(db_name, target_name):
+                UI.die(
+                    f"Global shared database '{db_name}' is still running.",
+                    tip=f"Inspect it with `docker inspect {db_name}`.",
+                    exit_code=3,
+                )
+
+            UI.success(f"Global shared database '{db_name}' stopped.")
 
     def cmd_query(  # noqa: C901, PLR0911, PLR0912, PLR0915
         self, project_id=None, sql=None, output_format="table", allow_query=False

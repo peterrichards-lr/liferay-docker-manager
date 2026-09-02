@@ -314,20 +314,94 @@ class TestDatabaseQueryCommand(unittest.TestCase):
                 self.assertTrue(has_context)
 
 
-class TestSharedDatabaseCommandsResolvePerTarget(unittest.TestCase):
-    """Shared infra (cmd_start/cmd_stop) resolves --node/--target exactly
-    like any other command -- "shared" means shared among projects on the
-    *same* target, not a single global instance for every target. See
-    docs/explanation/remote-node-architecture.md §5."""
+# The two global database containers, spelled out rather than resolved through
+# `shared_database_container`. LDM-#1547 is a bug about *which name* the command
+# acts on, so a test that derived the name from the same helper the code uses
+# would agree with the code no matter which container it drove.
+PG_GLOBAL = "liferay-db-global"
+MYSQL_GLOBAL = "liferay-db-mysql-global"
+
+
+class FakeDocker:
+    """A DockerService double whose container state actually changes.
+
+    `DockerService.start` runs `run_command(..., check=False)` and returns None
+    on failure -- so a MagicMock that records a call but reports nothing about
+    the container cannot tell a start that worked from one that did not, which
+    is exactly the blind spot LDM-#1547 shipped. Here `start` really flips a
+    container to running, unless the test asks it to fail, and `is_running`
+    answers from that state.
+    """
+
+    def __init__(self, containers=None, fails_to_start=(), fails_to_stop=()):
+        # {container_name: is_running}. Absent means the container
+        # does not exist at all.
+        self.containers = dict(containers or {})
+        self.fails_to_start = set(fails_to_start)
+        self.fails_to_stop = set(fails_to_stop)
+        self.started: list[tuple[str, str | None]] = []
+        self.stopped: list[tuple[str, str | None]] = []
+        self.existence_checks: list[tuple[str, str | None]] = []
+
+    def exists(self, container_name, target_name=None):
+        self.existence_checks.append((container_name, target_name))
+        return container_name in self.containers
+
+    def is_running(self, container_name, target_name=None):
+        return bool(self.containers.get(container_name))
+
+    def start(self, container_name, target_name=None):
+        self.started.append((container_name, target_name))
+        if container_name not in self.fails_to_start:
+            self.containers[container_name] = True
+
+    def stop(self, container_name, target_name=None):
+        self.stopped.append((container_name, target_name))
+        if container_name not in self.fails_to_stop:
+            self.containers[container_name] = False
+
+
+class SharedDatabaseCommandTestCase(unittest.TestCase):
+    """Shared setup for the `ldm db start` / `ldm db stop` tests."""
 
     def setUp(self):
         self.manager = MockManager()
         self.manager.database = DatabaseService(self.manager)
         self.mock_run = MagicMock(return_value="")
         self.manager.run_command = self.mock_run  # type: ignore[method-assign]
+        self.infra = MagicMock()
+        self.manager.infra = self.infra  # type: ignore[attr-defined]
+        # DefaultsManager.get(key, fallback) semantics: nothing configured, so
+        # every lookup falls through to the caller's fallback.
+        self.manager.defaults.get.return_value = None
+        self.manager.defaults.get.side_effect = lambda _key, fallback=None: fallback
         self.exists_patcher = patch.object(Path, "exists", return_value=True)
         self.exists_patcher.start()
         self.addCleanup(self.exists_patcher.stop)
+
+    def install_docker(self, **kwargs):
+        """Swaps DockerService's container primitives for a stateful fake."""
+        fake = FakeDocker(**kwargs)
+        for name in ("exists", "is_running", "start", "stop"):
+            patcher = patch(
+                f"ldm_core.docker_service.DockerService.{name}", getattr(fake, name)
+            )
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        return fake
+
+    def started_names(self, fake):
+        return [name for name, _target in fake.started]
+
+    def stopped_names(self, fake):
+        return [name for name, _target in fake.stopped]
+
+
+class TestSharedDatabaseCommandsResolvePerTarget(SharedDatabaseCommandTestCase):
+    """Shared infra (cmd_start/cmd_stop) resolves --node/--target exactly
+    like any other command -- "shared" means shared among projects on the
+    *same* target, not a single global instance for every target. See
+    docs/explanation/remote-node-architecture.md §5."""
 
     # LDM-#1400 changed the mechanism, not the intent. These used to assert on
     # a `docker compose -f infra-compose.yml start db` command line, but that
@@ -335,61 +409,197 @@ class TestSharedDatabaseCommandsResolvePerTarget(unittest.TestCase):
     # command could never succeed. The commands now drive the container that
     # `setup_global_database` actually creates, so the target is asserted where
     # it is now passed: into DockerService.
-    @patch("ldm_core.docker_service.DockerService.start")
-    @patch("ldm_core.docker_service.DockerService.exists", return_value=True)
-    @patch("ldm_core.docker_service.DockerService.is_running", return_value=False)
-    def test_cmd_start_passes_the_explicit_target_through(
-        self, _mock_running, mock_exists, mock_start
-    ):
+    def test_cmd_start_passes_the_explicit_target_through(self):
+        fake = self.install_docker(containers={PG_GLOBAL: False})
         self.manager.target = "aws-1"
+
         self.manager.database.cmd_start()
 
-        self.assertEqual("aws-1", mock_exists.call_args[0][1])
-        self.assertEqual("aws-1", mock_start.call_args[0][1])
+        self.assertIn((PG_GLOBAL, "aws-1"), fake.existence_checks)
+        self.assertEqual([(PG_GLOBAL, "aws-1")], fake.started)
 
-    @patch("ldm_core.docker_service.DockerService.start")
-    @patch("ldm_core.docker_service.DockerService.exists", return_value=True)
-    @patch("ldm_core.docker_service.DockerService.is_running", return_value=False)
-    def test_cmd_start_stays_local_without_explicit_target(
-        self, _mock_running, mock_exists, mock_start
-    ):
+    def test_cmd_start_stays_local_without_explicit_target(self):
+        fake = self.install_docker(containers={PG_GLOBAL: False})
         self.manager.target = None
+
         self.manager.database.cmd_start()
 
-        self.assertIsNone(mock_exists.call_args[0][1])
-        self.assertIsNone(mock_start.call_args[0][1])
+        self.assertIn((PG_GLOBAL, None), fake.existence_checks)
+        self.assertEqual([(PG_GLOBAL, None)], fake.started)
 
-    @patch("ldm_core.docker_service.DockerService.stop")
-    @patch("ldm_core.docker_service.DockerService.is_running", return_value=True)
-    @patch("ldm_core.docker_service.DockerService.exists", return_value=True)
-    def test_cmd_stop_passes_the_explicit_target_through(
-        self, _mock_exists, _mock_running, mock_stop
-    ):
+    def test_cmd_stop_passes_the_explicit_target_through(self):
+        fake = self.install_docker(containers={PG_GLOBAL: True})
         self.manager.target = "aws-2"
+
         self.manager.database.cmd_stop()
 
-        self.assertEqual("aws-2", mock_stop.call_args[0][1])
+        self.assertEqual([(PG_GLOBAL, "aws-2")], fake.stopped)
 
-    @patch("ldm_core.docker_service.DockerService.exists", return_value=False)
-    @patch("ldm_core.docker_service.DockerService.is_running", return_value=False)
-    def test_cmd_start_provisions_when_the_container_does_not_exist(
-        self, _mock_running, _mock_exists
-    ):
+    def test_cmd_start_provisions_when_the_container_does_not_exist(self):
         """Previously the user was told to run a command that could not create
         it. Now the missing case provisions through the same path `ldm run`
         uses."""
-        infra = MagicMock()
-        self.manager.infra = infra  # type: ignore[attr-defined]
-        self.manager.database.cmd_start()
-        infra.setup_global_database.assert_called_once()
+        self.install_docker(containers={})
 
-    @patch("ldm_core.docker_service.DockerService.stop")
-    @patch("ldm_core.docker_service.DockerService.exists", return_value=False)
-    def test_cmd_stop_does_nothing_when_there_is_no_container(
-        self, _mock_exists, mock_stop
-    ):
+        self.manager.database.cmd_start()
+
+        self.infra.setup_global_database.assert_called_once()
+
+    def test_cmd_stop_does_nothing_when_there_is_no_container(self):
+        fake = self.install_docker(containers={})
+
         self.manager.database.cmd_stop()
-        mock_stop.assert_not_called()
+
+        self.assertEqual([], fake.stopped)
+
+
+class TestSharedDatabaseCommandsResolveTheEngine(SharedDatabaseCommandTestCase):
+    """LDM-#1547: `ldm db start` hardcoded `liferay-db-global`, so on a MySQL
+    fleet it inspected and provisioned the PostgreSQL global while the MySQL
+    one the projects actually use stayed down. LDM-#1361 gave each engine its
+    own container; these two call sites were missed."""
+
+    def test_cmd_start_starts_the_mysql_global_on_a_mysql_fleet(self):
+        fake = self.install_docker(containers={MYSQL_GLOBAL: False})
+
+        self.manager.database.cmd_start()
+
+        self.assertEqual([(MYSQL_GLOBAL, None)], fake.started)
+        self.assertTrue(fake.containers[MYSQL_GLOBAL])
+
+    def test_cmd_start_does_not_provision_postgresql_on_a_mysql_fleet(self):
+        """The damaging half of the bug: an unwanted PostgreSQL container gets
+        created on a fleet that has no PostgreSQL project."""
+        fake = self.install_docker(containers={MYSQL_GLOBAL: False})
+
+        self.manager.database.cmd_start()
+
+        self.infra.setup_global_database.assert_not_called()
+        self.assertNotIn(PG_GLOBAL, self.started_names(fake))
+        self.assertNotIn(PG_GLOBAL, fake.containers)
+
+    def test_cmd_start_starts_both_globals_on_a_mixed_fleet(self):
+        fake = self.install_docker(
+            containers={PG_GLOBAL: False, MYSQL_GLOBAL: False},
+        )
+
+        self.manager.database.cmd_start()
+
+        self.assertEqual(
+            {PG_GLOBAL, MYSQL_GLOBAL},
+            set(self.started_names(fake)),
+        )
+
+    def test_cmd_start_reports_the_mysql_global_once(self):
+        """`mysql` and `mariadb` share one container by design. Iterating the
+        engine map by key rather than by container visits it twice, and the
+        second visit reports the container it just started as "already
+        running" -- one start, two contradictory-looking success lines."""
+        self.install_docker(containers={MYSQL_GLOBAL: False})
+
+        with patch("ldm_core.ui.UI.success") as mock_success:
+            self.manager.database.cmd_start()
+
+        mentions = [
+            call.args[0]
+            for call in mock_success.call_args_list
+            if MYSQL_GLOBAL in call.args[0]
+        ]
+        self.assertEqual(1, len(mentions), mentions)
+
+    def test_cmd_start_provisions_the_configured_engine_when_nothing_exists(self):
+        """Nothing exists, so there is nothing to observe -- the engine comes
+        from the configured `db_type` default rather than a guess."""
+        self.install_docker(containers={})
+        self.manager.defaults.get.side_effect = lambda key, fallback=None: (
+            "mysql" if key == "db_type" else fallback
+        )
+
+        self.manager.database.cmd_start()
+
+        self.assertEqual(
+            "mysql",
+            self.infra.setup_global_database.call_args.kwargs["db_type"],
+        )
+
+    def test_cmd_start_provisions_postgresql_when_no_default_is_configured(self):
+        """PostgreSQL is LDM's convention default, and what every pre-#1361
+        caller got."""
+        self.install_docker(containers={})
+
+        self.manager.database.cmd_start()
+
+        self.assertEqual(
+            "postgresql",
+            self.infra.setup_global_database.call_args.kwargs["db_type"],
+        )
+
+    def test_cmd_stop_stops_the_mysql_global_on_a_mysql_fleet(self):
+        """`stop` has to resolve the engine the same way `start` does, or the
+        pair is incoherent."""
+        fake = self.install_docker(containers={MYSQL_GLOBAL: True})
+
+        self.manager.database.cmd_stop()
+
+        self.assertEqual([(MYSQL_GLOBAL, None)], fake.stopped)
+        self.assertFalse(fake.containers[MYSQL_GLOBAL])
+
+
+class TestSharedDatabaseStartVerifiesTheOutcome(SharedDatabaseCommandTestCase):
+    """LDM-#1547: `DockerService.start` returns None on failure and the result
+    was discarded, so a container that never came up printed a green success
+    line and exited 0. Exit code 3 is Infrastructure/Data Error."""
+
+    def test_cmd_start_exits_3_when_the_container_does_not_come_up(self):
+        self.install_docker(containers={PG_GLOBAL: False}, fails_to_start=[PG_GLOBAL])
+
+        with patch("ldm_core.ui.UI.error"), self.assertRaises(SystemExit) as caught:
+            self.manager.database.cmd_start()
+
+        self.assertEqual(3, caught.exception.code)
+
+    def test_cmd_start_does_not_claim_success_when_the_container_fails(self):
+        self.install_docker(containers={PG_GLOBAL: False}, fails_to_start=[PG_GLOBAL])
+
+        with (
+            patch("ldm_core.ui.UI.error"),
+            patch("ldm_core.ui.UI.success") as mock_success,
+            self.assertRaises(SystemExit),
+        ):
+            self.manager.database.cmd_start()
+
+        self.assertEqual([], mock_success.call_args_list)
+
+    def test_cmd_start_names_the_container_that_failed(self):
+        """A mixed fleet has two globals; the message has to say which one."""
+        self.install_docker(
+            containers={PG_GLOBAL: True, MYSQL_GLOBAL: False},
+            fails_to_start=[MYSQL_GLOBAL],
+        )
+
+        with patch("ldm_core.ui.UI.error") as mock_error, self.assertRaises(SystemExit):
+            self.manager.database.cmd_start()
+
+        self.assertIn(MYSQL_GLOBAL, mock_error.call_args[0][0])
+
+    def test_cmd_start_reports_success_when_the_container_comes_up(self):
+        self.install_docker(containers={PG_GLOBAL: False})
+
+        with patch("ldm_core.ui.UI.success") as mock_success:
+            self.manager.database.cmd_start()
+
+        self.assertIn(
+            f"Global shared database '{PG_GLOBAL}' started.",
+            [call.args[0] for call in mock_success.call_args_list],
+        )
+
+    def test_cmd_stop_exits_3_when_the_container_is_still_running(self):
+        self.install_docker(containers={PG_GLOBAL: True}, fails_to_stop=[PG_GLOBAL])
+
+        with patch("ldm_core.ui.UI.error"), self.assertRaises(SystemExit) as caught:
+            self.manager.database.cmd_stop()
+
+        self.assertEqual(3, caught.exception.code)
 
 
 if __name__ == "__main__":
