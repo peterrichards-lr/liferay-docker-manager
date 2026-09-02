@@ -127,3 +127,88 @@ class TestSeededFlagSurvivesALaterStage(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSeedingKeepsWhatTheCliResolved(unittest.TestCase):
+    """Seeding must not discard the run's own configuration.
+
+    LDM-#1523 fixed LDM-#1509 by putting the re-read meta into the context:
+
+        project_meta = manager.read_meta(paths["root"])   # from DISK
+        project_meta["seeded"] = "true"
+        context.set("project_meta", project_meta)
+
+    For a NEW project, ConfigResolutionStage has resolved db_type, port,
+    host_name and container_name from the CLI into the context's dict and has
+    not yet written them to disk. Replacing that dict with the disk read threw
+    all of it away.
+
+    `ldm run <proj> --db mysql --database-mode shared --port N` on a fresh
+    project therefore became postgresql on 8080 with host_name None: the MySQL
+    global was never created, and container_name=None reached the readiness
+    probe and raised TypeError without failing the run. It passed on every
+    v2.19.x and failed on every v2.20.0 pre-release.
+    """
+
+    def _run_with_cli_config(self, root):
+        # Disk holds only what a bare project has; the CLI values live in the
+        # context, exactly as they do before the first write_meta.
+        (root / "meta").write_text(json.dumps({"project_name": "p"}), encoding="utf-8")
+
+        manager = MagicMock()
+        manager.read_meta = lambda p: read_meta(_meta_path(p))
+        manager.write_meta = lambda p, m: write_meta(_meta_path(p), m)
+        manager.assets._ensure_seeded.return_value = True
+        manager.args.command = "run"
+
+        context = RunPipelineContext(manager=manager)
+        context.set(
+            "project_meta",
+            {
+                "project_name": "p",
+                "container_name": "sharedboot-mysql-9911",
+                "host_name": "localhost",
+                "db_type": "mysql",
+                "port": "9911",
+            },
+        )
+        context.set(
+            "paths",
+            {k: root / k for k in ("data", "cx", "ce_dir", "deploy", "logs", "files")}
+            | {"root": root},
+        )
+        context.set("is_new_project", True)
+        context.set("tag", "2026.q1.7-lts")
+        context.set("db_type", "mysql")
+        context.set("project_id", "p")
+
+        EnvironmentSetupStage().execute(context)
+        return context
+
+    def test_the_cli_resolved_values_survive_seeding(self):
+        with tempfile.TemporaryDirectory() as d:
+            context = self._run_with_cli_config(Path(d))
+            meta = context.get("project_meta")
+            self.assertEqual(meta.get("db_type"), "mysql", "--db was discarded")
+            self.assertEqual(meta.get("port"), "9911", "--port was discarded")
+            self.assertEqual(meta.get("host_name"), "localhost")
+            self.assertEqual(
+                meta.get("container_name"),
+                "sharedboot-mysql-9911",
+                "container_name=None is what reached the readiness probe and "
+                "raised TypeError",
+            )
+
+    def test_the_seeded_flag_is_still_set(self):
+        # The LDM-#1509 property must hold at the same time.
+        with tempfile.TemporaryDirectory() as d:
+            context = self._run_with_cli_config(Path(d))
+            self.assertEqual(context.get("project_meta").get("seeded"), "true")
+
+    def test_the_values_reach_disk(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            self._run_with_cli_config(root)
+            on_disk = read_meta(root / "meta")
+            self.assertEqual(on_disk.get("db_type"), "mysql")
+            self.assertEqual(on_disk.get("seeded"), "true")
