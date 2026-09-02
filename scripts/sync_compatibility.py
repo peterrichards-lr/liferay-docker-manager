@@ -530,6 +530,29 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
     elif is_wsl or is_windows_native:
         host_os = "Windows 11"
         arch = "Windows PC"
+        # LDM-#1563: LDM supports Windows PowerShell 5.1 and PowerShell 7, and
+        # the verification script runs under either. Without the edition in the
+        # slug both runs canonicalise to one file and the later timestamp
+        # silently replaces the earlier -- so the matrix showed a single Windows
+        # row with nothing recording which shell produced it, and running both
+        # was a trap rather than a benefit.
+        #
+        # The reports already carry the edition (added alongside LDM-#1561);
+        # $PSVersionTable.OS does not exist on 5.1, so before that the two were
+        # distinguishable only by an empty Platform line.
+        #
+        # Only reports that state it are split. A WSL2 run has no PowerShell
+        # line and keeps its existing slug, so no historical row is orphaned.
+        ps_match = re.search(
+            r"^PowerShell:\s*([0-9][^\s(]*)\s*\(([A-Za-z]+)\)", content, re.M
+        )
+        if ps_match:
+            # Edition, not version number: Desktop is always 5.1 and Core is 7+,
+            # so this stays stable when the host upgrades 7.6 -> 7.7 instead of
+            # spawning a new row per patch release.
+            edition = ps_match.group(2).lower()
+            shell = "5.1" if edition == "desktop" else "7"
+            host_os = f"Windows 11 PowerShell {shell}"
     elif is_fedora or "fedora" in content.lower():
         arch = "Linux Workstation"
         fedora_match = re.search(r"fc(\d+)|fedora\s+(?:linux\s+)?(\d+)", p_low)
