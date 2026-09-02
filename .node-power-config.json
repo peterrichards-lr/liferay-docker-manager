@@ -1,4 +1,5 @@
 {
+  "timezone": "Europe/London",
   "nodes": {
     "aws-1": {
       "name": "aws-1",
