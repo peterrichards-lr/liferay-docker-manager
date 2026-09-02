@@ -773,7 +773,7 @@ class ShareService:
                             )
                         except Exception:
                             pass
-                        UI.die("Unable to establish tunnel connection.")
+                        UI.die("Unable to establish tunnel connection.", exit_code=3)
                 else:
                     err_out = ((res.stderr or "") + "\n" + (res.stdout or "")).lower()
                     if "is already running" in err_out:
@@ -798,6 +798,10 @@ class ShareService:
                                 print("-" * 40)
                         except Exception:
                             pass
+                    # LDM-#1548: the diagnostics above are printed first, then
+                    # the run fails. Previously this fell off the end of
+                    # cmd_start, so `ldm share start` exited 0 with no tunnel.
+                    UI.die("Tunnel failed to start.", exit_code=3)
             except Exception as e:
                 UI.die(f"Process invocation error: {e}")
 
@@ -926,11 +930,15 @@ class ShareService:
                         )
                     except Exception:
                         pass
-                    UI.die("Unable to establish tunnel connection.")
+                    UI.die("Unable to establish tunnel connection.", exit_code=3)
             else:
                 UI.error(f"Failed to start tunnel container (Exit {res.returncode})")
                 if res.stderr:
                     print(res.stderr.strip())
+                # LDM-#1548: project_meta["share"] was written before the boot,
+                # so exiting 0 here left the meta claiming a tunnel that does
+                # not exist.
+                UI.die("Tunnel container failed to start.", exit_code=3)
 
         elif provider == "ngrok":
             if not root:
@@ -1003,6 +1011,8 @@ class ShareService:
                 UI.error(f"Failed to start ngrok container (Exit {res.returncode})")
                 if res.stderr:
                     print(res.stderr.strip())
+                # LDM-#1548: as above -- the meta already says share=true.
+                UI.die("Ngrok container failed to start.", exit_code=3)
 
     def _get_tunnel_api_state(self, port=4040):
         """Queries lfr-tunnel embedded client API at http://127.0.0.1:4040/api/info and /api/state."""
@@ -1285,6 +1295,10 @@ class ShareService:
                 UI.error(f"Failed to stop ngrok container (Exit {res.returncode})")
                 if res.stderr:
                     print(res.stderr.strip())
+                # LDM-#1548: share=false is already persisted, so a silent
+                # success here leaves the project still publicly exposed while
+                # the meta says it is not.
+                UI.die("Ngrok container failed to stop.", exit_code=3)
         elif provider == "lfr-tunnel-docker":
             if not root:
                 UI.die(
@@ -1323,6 +1337,8 @@ class ShareService:
                 UI.error(f"Failed to stop tunnel container (Exit {res.returncode})")
                 if res.stderr:
                     print(res.stderr.strip())
+                # LDM-#1548: as above -- the tunnel may still be live.
+                UI.die("Tunnel container failed to stop.", exit_code=3)
         else:
             # Default to lfr-tunnel
             bin_path = self._ensure_binary()
