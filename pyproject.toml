@@ -139,7 +139,14 @@ omit = ["ldm_core/tests/*"]
 [tool.coverage.report]
 # THE single source of truth for the minimum coverage gate. Change it here and
 # nowhere else; do not reintroduce --cov-fail-under in addopts above.
-fail_under = 60
+#
+# Ratcheted 60 -> 70 in LDM-#1515, when the suite measured 71%. The gate is an
+# anti-erosion device, not a bug-finder: every bug shipped in the v2.19.0 cycle
+# was in code that already had line coverage (#1512 in a module at 83%). It
+# exists so that eleven points of headroom cannot be quietly spent when several
+# branches land together. The lever that finds bugs is behaviour coverage
+# (#1513/#1516) -- do not raise this number expecting it to do that job.
+fail_under = 70
 
 [tool.deptry]
 extend_exclude = [

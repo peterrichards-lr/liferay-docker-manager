@@ -133,6 +133,38 @@ def parse_duration(ttl_str: str) -> timedelta:
     return timedelta(hours=2)
 
 
+def schedule_timezone() -> str:
+    """The timezone the shutdown windows are expressed in.
+
+    LDM-#1543: the window was evaluated against a naive datetime.now(), i.e.
+    whatever the machine's clock says. On GitHub hosted runners that is UTC, so
+    "19:00" meant 19:00 UTC no matter where the team is -- an hour adrift for
+    half the year in the UK, and further elsewhere. Making it explicit means the
+    schedule reads the same wherever `enforce` happens to run.
+    """
+    if CONFIG_FILE.exists():
+        try:
+            data = json.loads(CONFIG_FILE.read_text())
+            tz = data.get("timezone")
+            if isinstance(tz, str) and tz:
+                return tz
+        except Exception:
+            pass
+    return "UTC"
+
+
+def schedule_now() -> datetime:
+    """Current time in the schedule's declared timezone."""
+    tz_name = schedule_timezone()
+    try:
+        from zoneinfo import ZoneInfo
+
+        return datetime.now(ZoneInfo(tz_name))
+    except Exception:
+        print(f"⚠️ Unknown timezone '{tz_name}'; falling back to UTC for the schedule.")
+        return datetime.now(timezone.utc)
+
+
 def is_in_shutdown_window(dt: datetime, schedule: str) -> bool:
     """Determines whether the given datetime falls inside the scheduled shutdown window."""
     if schedule == "off":
@@ -318,6 +350,83 @@ def wait_for_ssh(host: str, timeout: int = 60) -> bool:
     return False
 
 
+WAKE_TAG = "ldm:wake-until"
+
+
+def read_wake_tag(config: dict) -> str:
+    """Read the wake deadline from the instance's own tag.
+
+    LDM-#1543: the TTL used to live only in .node-power-state.json, which is
+    git-ignored, and the workflow runs with `permissions: contents: read` so it
+    could not be committed back either. Every scheduled run is a fresh checkout,
+    so load_state() returned {} and the TTL check in cmd_enforce could only ever
+    read state the same run had written -- meaning `enforce` would stop a node
+    somebody had deliberately woken.
+
+    The tag lives on the resource it describes, survives any runner, and needs
+    no repository write access.
+    """
+    ec2_id = config.get("ec2_instance_id")
+    if not ec2_id:
+        return ""
+    cmd = [
+        "aws",
+        "ec2",
+        "describe-tags",
+        "--filters",
+        f"Name=resource-id,Values={ec2_id}",
+        f"Name=key,Values={WAKE_TAG}",
+        "--query",
+        "Tags[0].Value",
+        "--output",
+        "text",
+    ]
+    if config.get("region"):
+        cmd.extend(["--region", config["region"]])
+    res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if res.returncode != 0:
+        print(f"⚠️ Could not read {WAKE_TAG} tag: {res.stderr.strip()}")
+        # Fail SAFE: an unreadable deadline must not be treated as "no deadline",
+        # or a transient AWS error becomes a shutdown of a woken node.
+        return "unknown"
+    value = res.stdout.strip()
+    return "" if value in ("None", "") else value
+
+
+def write_wake_tag(config: dict, wake_until: str) -> bool:
+    """Record the wake deadline on the instance. Empty string clears it."""
+    ec2_id = config.get("ec2_instance_id")
+    if not ec2_id:
+        return False
+    if wake_until:
+        cmd = [
+            "aws",
+            "ec2",
+            "create-tags",
+            "--resources",
+            ec2_id,
+            "--tags",
+            f"Key={WAKE_TAG},Value={wake_until}",
+        ]
+    else:
+        cmd = [
+            "aws",
+            "ec2",
+            "delete-tags",
+            "--resources",
+            ec2_id,
+            "--tags",
+            f"Key={WAKE_TAG}",
+        ]
+    if config.get("region"):
+        cmd.extend(["--region", config["region"]])
+    res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if res.returncode != 0:
+        print(f"⚠️ Could not write {WAKE_TAG} tag: {res.stderr.strip()}")
+        return False
+    return True
+
+
 def power_on_node(node_name: str, config: dict) -> bool:
     """Boots or resumes the specified target node using AWS CLI or SSH."""
     ec2_id = config.get("ec2_instance_id")
@@ -397,6 +506,15 @@ def cmd_wake(args: argparse.Namespace) -> None:
         print(f"❌ Failed to power on target node '{node_name}'. Exiting with error.")
         sys.exit(1)
 
+    # LDM-#1543: the tag is the record; the state file is only a local cache.
+    # Without this the deadline is invisible to any later `enforce` run, which
+    # would then stop the node it was just asked to keep awake.
+    if not write_wake_tag(config, wake_until_str):
+        print(
+            f"⚠️ Could not record the wake deadline on '{node_name}'. A scheduled "
+            "enforce run will not see it and may stop the node."
+        )
+
     state = load_state()
     state[node_name] = {
         "status": "woken",
@@ -427,6 +545,11 @@ def cmd_sleep(args: argparse.Namespace) -> None:
         print(f"❌ Failed to power off target node '{node_name}'. Exiting with error.")
         sys.exit(1)
 
+    # LDM-#1543: clear the deadline too. An explicit sleep overrides an earlier
+    # wake, and a stale tag would keep every later enforce run away from a node
+    # that is already meant to be down.
+    write_wake_tag(config, "")
+
     state = load_state()
     state[node_name] = {
         "status": "shutdown",
@@ -441,7 +564,7 @@ def cmd_enforce(args: argparse.Namespace) -> None:
     nodes = load_target_nodes()
     state = load_state()
     now = datetime.now(timezone.utc)
-    now_local = datetime.now()
+    now_local = schedule_now()
 
     print(
         f"🔍 Evaluating node power enforcement at {now_local.strftime('%Y-%m-%d %H:%M:%S')}..."
@@ -451,6 +574,17 @@ def cmd_enforce(args: argparse.Namespace) -> None:
         schedule = config.get("schedule", "auto")
         node_state = state.get(name, {})
         wake_until_str = node_state.get("wake_until", "")
+
+        # LDM-#1543: prefer the instance's own tag. The local state file cannot
+        # survive a fresh CI checkout, so it is a cache, not the record.
+        tag_value = read_wake_tag(config)
+        if tag_value == "unknown":
+            print(
+                f"  • Node '{name}': wake deadline unreadable; leaving power state alone."
+            )
+            continue
+        if tag_value:
+            wake_until_str = tag_value
 
         is_woken = False
         if wake_until_str:
@@ -471,21 +605,23 @@ def cmd_enforce(args: argparse.Namespace) -> None:
                 f"  • Node '{name}': Shutdown window active (schedule: {schedule}). Enforcing shutdown."
             )
             power_off_node(name, config)
+            write_wake_tag(config, "")  # LDM-#1543: expired deadline, clear it
             state[name] = {
                 "status": "shutdown",
                 "wake_until": "",
                 "shutdown_at": now.isoformat(),
             }
         else:
+            # LDM-#1543: `enforce` used to power the node ON here, every
+            # weekday between 07:00 and 19:00, whether or not anyone intended
+            # to use it -- a job named "Cost Control" generating cost on a
+            # timer. Stopping an idle node is cost control; starting one is
+            # not. Waking is now always explicit: `ldm node wake`, or the
+            # workflow's `wake` action.
             print(
-                f"  • Node '{name}': Business hours active (schedule: {schedule}). Ensuring node is powered ON."
+                f"  • Node '{name}': outside the shutdown window (schedule: {schedule}). "
+                "Leaving power state alone."
             )
-            ok = power_on_node(name, config)
-            state[name] = {
-                "status": "active" if ok else "error",
-                "wake_until": "",
-                "powered_on_at": now.isoformat(),
-            }
 
     save_state(state)
 
@@ -495,7 +631,7 @@ def cmd_status(args: argparse.Namespace) -> None:
     nodes = load_target_nodes()
     state = load_state()
     now = datetime.now(timezone.utc)
-    now_local = datetime.now()
+    now_local = schedule_now()
 
     print(
         "\n=========================================================================="

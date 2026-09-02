@@ -2118,16 +2118,20 @@ verify_shared_db_boots() {
     rm -rf "$dir"
     mkdir -p "$dir"
 
+    # LDM-#1545: --info unmasks UI.detail, which is suppressed by default and is
+    # exactly where infrastructure provisioning narrates itself ("Ensuring global
+    # database service is running...", "Initializing Global Database (MySQL)
+    # container..."). Without it the captured log says almost nothing about the
+    # step that fails here.
     set +e
     ( cd "$dir" && "$LDM_CMD" -y run "$proj" \
-        --db "$engine" --database-mode shared --port "$port" ) \
+        --db "$engine" --database-mode shared --port "$port" --info ) \
         > "${dir}/boot.log" 2>&1
     local rc=$?
     set -e
 
     if [ "$rc" -ne 0 ]; then
         echo "❌ ERROR: 'ldm run --db ${engine} --database-mode shared' exited ${rc}." | tee -a "$RESULTS_FILE_TMP"
-        tail -40 "${dir}/boot.log" | tee -a "$RESULTS_FILE_TMP"
         ok=false
     fi
 
@@ -2147,9 +2151,22 @@ verify_shared_db_boots() {
     #    CREATE DATABASE ran against the shared instance.
     if [ "$ok" = true ]; then
         local expected db_list
-        expected=$(echo "$proj" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_' '_')
+        # LDM-#1552: this assertion could not fail. `echo` appends a newline
+        # which `tr -c` turned into `_`, so the pattern was
+        # `sharedboot_mysql_8082_` -- with a trailing underscore that the real
+        # name `lportal_sharedboot_mysql_8082` never matches. The `|lportal`
+        # alternative then always matched, because the global is created with
+        # MYSQL_DATABASE=lportal (handlers/infra.py) and PostgreSQL likewise has
+        # an lportal database. So it passed against a global where the project
+        # database had never been created -- the one thing it exists to prove.
+        #
+        # printf, not echo, so no newline enters the name; the full name is
+        # built the way utils.shared_database_name builds it
+        # (`lportal_` + sanitized id with - as _), and matched as a fixed
+        # string so no regex metacharacter can widen it again.
+        expected="lportal_$(printf '%s' "$proj" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_' '_')"
         db_list=$(docker exec "$global_container" "${list_cmd[@]}" 2>/dev/null || true)
-        if ! echo "$db_list" | grep -qiE "${expected}|lportal"; then
+        if ! printf '%s' "$db_list" | grep -qiF "$expected"; then
             echo "❌ ERROR: no per-project database inside ${global_container}." | tee -a "$RESULTS_FILE_TMP"
             echo "   expected something matching '${expected}'; found:" | tee -a "$RESULTS_FILE_TMP"
             echo "$db_list" | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
@@ -2165,10 +2182,19 @@ verify_shared_db_boots() {
             code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${port}" || echo "000")
             if [ "$code" != "200" ]; then
                 echo "❌ ERROR: Liferay did not come up against the shared ${label} (HTTP ${code})." | tee -a "$RESULTS_FILE_TMP"
-                tail -40 "${dir}/boot.log" | tee -a "$RESULTS_FILE_TMP"
                 ok=false
             fi
         fi
+    fi
+
+    # LDM-#1545: dump the captured output on EVERY failure, not only a non-zero
+    # exit. The CI failure that motivated this was rc == 0 with a missing global
+    # container -- the case where the log is the only evidence, and the only case
+    # that discarded it. Emitted here because the cleanup below deletes the file.
+    if [ "$ok" != true ]; then
+        echo "--- ${label} boot.log (last 80 lines) ---" | tee -a "$RESULTS_FILE_TMP"
+        tail -80 "${dir}/boot.log" | tee -a "$RESULTS_FILE_TMP"
+        echo "--- end ${label} boot.log ---" | tee -a "$RESULTS_FILE_TMP"
     fi
 
     "$LDM_CMD" -y rm "$proj" --delete >/dev/null 2>&1 || true

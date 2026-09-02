@@ -1716,7 +1716,23 @@ class ComposerService:
                 except Exception as e:
                     from ldm_core.ui import UI
 
-                    UI.error(f"Failed to merge archetype overlay: {e}")
+                    # LDM-#1548: swallowing this emitted a compose file with
+                    # the overlay missing entirely -- for the `clustered`
+                    # archetype that means no `liferay2` service, so a
+                    # two-node request booted a single-node stack and exited
+                    # 0. The archetype the user asked for cannot be honoured,
+                    # which is a validation error (1) under the contract in
+                    # .agents/skills/ldm-architecture/SKILL.md -- the same
+                    # bucket the #996 triage put "archetype not found" in --
+                    # not an infrastructure failure.
+                    UI.die(
+                        f"Failed to merge archetype overlay: {e}",
+                        tip=(
+                            f"The '{archetype_name}' archetype overlay at "
+                            f"{archetype_overlay_path} could not be applied."
+                        ),
+                        exit_code=1,
+                    )
 
     def _inject_logging_limits(self, compose):
         max_size = "10m"

@@ -327,5 +327,104 @@ class TestPowerShellVersionBanner(unittest.TestCase):
         self.assertNotIn("WARNING", out)
 
 
+class TestSharedDbBootParity(unittest.TestCase):
+    """LDM-#1546: the shared-database BOOT check lived only in the bash script.
+
+    Both scripts asserted the generated CONFIG for `--database-mode shared`,
+    but only `verify_e2e_refactor.sh` ever STARTED one, so on Windows the
+    headline feature of 2.19 was verified exactly as it was before LDM-#1494 --
+    which is to say, not verified at all.
+
+    A source-text parity check rather than a behavioural one, deliberately: the
+    behaviour needs Docker, an `ldm` binary and minutes of runtime, and cannot
+    run in unit tests. What it CAN catch is the failure that actually happened,
+    which was a check existing in one script and not the other.
+    """
+
+    # The in-container database listings. Each is the assertion the config-level
+    # checks cannot make -- that CREATE DATABASE ran inside the engine's global
+    # container -- so their presence is a reasonable proxy for "this script
+    # boots a shared stack", and neither string has any other use.
+    LIST_COMMANDS = (
+        ("MySQL", "SHOW DATABASES;"),
+        ("PostgreSQL", "SELECT datname FROM pg_database;"),
+    )
+
+    def test_both_scripts_check_inside_both_global_containers(self):
+        for script in (BASH_SCRIPT, PS1_SCRIPT):
+            text = script.read_text(encoding="utf-8")
+            for label, list_command in self.LIST_COMMANDS:
+                with self.subTest(script=script.name, engine=label):
+                    self.assertIn(
+                        list_command,
+                        text,
+                        f"{script.name} never lists the databases inside the "
+                        f"global {label} container, so it cannot prove a shared "
+                        f"{label} stack booted (LDM-#1546)",
+                    )
+
+    def test_the_powershell_boot_port_is_arithmetic_not_concatenation(self):
+        """LDM-#1546: $TEST_PORT is a string, and PowerShell `+` concatenates.
+
+        The bash computes the boot port with `$((TEST_PORT + 3))`. Translated
+        literally, `$TEST_PORT + 3` yields "80823" -- a string, and not a port
+        number -- so the cast is load-bearing and easy to drop in a later edit.
+        """
+        text = PS1_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("[int]$TEST_PORT + 3", text)
+        self.assertIn("[int]$TEST_PORT + 4", text)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSharedDbAssertionCanFail(unittest.TestCase):
+    """The per-project database check must be able to fail (LDM-#1552).
+
+    It could not. `echo` appended a newline that `tr -c` turned into `_`, so
+    the pattern was `sharedboot_mysql_8082_` -- with a trailing underscore the
+    real name `lportal_sharedboot_mysql_8082` never matches. The `|lportal`
+    alternative then always matched, because the global is created with
+    MYSQL_DATABASE=lportal. So it passed against a global where the project
+    database had never been created: the one thing it exists to prove.
+
+    This runs the script's own expression rather than restating it, so a
+    revert of either half is caught.
+    """
+
+    def _expected_name(self):
+        """The expected-name expression, lifted from verify_shared_db_boots."""
+        src = BASH_SCRIPT.read_text(encoding="utf-8")
+        line = next(
+            ln for ln in src.splitlines() if ln.strip().startswith('expected="lportal_')
+        )
+        expr = line.strip()
+        script = f'proj="sharedboot-mysql-8082"\n{expr}\nprintf "%s" "$expected"\n'
+        return subprocess.run(
+            ["bash", "-c", script], capture_output=True, text=True, check=True
+        ).stdout
+
+    def test_the_expected_name_matches_the_real_one(self):
+        # utils.shared_database_name: "lportal_" + sanitized id, '-' -> '_'
+        self.assertEqual(self._expected_name(), "lportal_sharedboot_mysql_8082")
+
+    def test_no_trailing_separator_from_a_newline(self):
+        self.assertFalse(
+            self._expected_name().endswith("_"),
+            "a trailing separator means the pattern can never match the real "
+            "database name (LDM-#1552)",
+        )
+
+    def test_the_lportal_alternative_is_gone(self):
+        # As an ALTERNATIVE it defeated the specific name, since every global
+        # has an lportal database of its own.
+        func = _extract_function(
+            BASH_SCRIPT,
+            re.compile(r"^verify_shared_db_boots\s*\(\)\s*\{.*?^\}", re.M | re.S),
+        )
+        self.assertNotIn(
+            '|lportal"',
+            func,
+            "restoring the alternative makes the assertion unfailable again",
+        )

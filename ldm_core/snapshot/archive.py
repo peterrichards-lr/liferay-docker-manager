@@ -21,6 +21,19 @@ class ArchiveSnapshotService:
             from ldm_core.utils import reclaim_volume_permissions
 
             UI.detail("Reclaiming project permissions before snapshot...")
+            # LDM-388 / LDM-#1507: the two loops below differ deliberately.
+            #
+            # Bind-mounted project dirs are chowned to 1000:1000 -- the uid the
+            # Liferay container's Tomcat/Equinox runs as -- so the container is
+            # still able to write them after the snapshot. That leaves the host
+            # user (501 on macOS, 1001 on CI) outside both owner and group, and
+            # the host user is the one that has to read every file back to add
+            # it to the tarball below. `777` is what lets both sides in; `750`
+            # would hand LDM a snapshot of files it cannot open, and `755`
+            # would make the host's own `deploy/` read-only to it afterwards.
+            #
+            # `data`/`state` take the opposite treatment (host uid, `755`) --
+            # see the comment on that loop.
             for d in [
                 "deploy",
                 "files",
@@ -33,6 +46,18 @@ class ArchiveSnapshotService:
                     reclaim_volume_permissions(
                         paths[d], uid="1000", gid="1000", chmod_val="777"
                     )
+            # LDM-388: host uid and `755`, deliberately *not* `777`. These are
+            # the trees that back the named volumes (`data`, `state`) -- staged
+            # on the host and hydrated into the volume on restore -- and per
+            # LDM-388 giving them `777` broke Elasticsearch on restore.
+            #
+            # NOTE (LDM-#1507): the loop is not gated on named-volume mode, so
+            # in bind-mount mode it also narrows a `data`/`state` pair that
+            # containers do mount directly. The pre-boot reclaim in
+            # `BaseHandler` and the sidecar `chmod` in `pipelines/run.py`
+            # re-widen them before the next boot, which is why this has never
+            # surfaced. Not changed here: LDM-388's restore failure is the
+            # better-evidenced of the two.
             for d in ["data", "state"]:
                 if paths.get(d) and paths[d].exists():
                     reclaim_volume_permissions(
@@ -103,6 +128,13 @@ class ArchiveSnapshotService:
                 if es_infra_backup.exists():
                     from ldm_core.utils import reclaim_volume_permissions
 
+                    # LDM-#1507: `777` required. This is the shared
+                    # `liferay-search-global` snapshot repository, written by
+                    # the uid-1000 Elasticsearch container; the host user has
+                    # to read every file to add it to the tarball. The chown
+                    # here hands ownership to the host, so anything narrower
+                    # than world-writable locks ES out of its own `path.repo`
+                    # for the *next* snapshot (LDM-#645, `6861e26e`).
                     reclaim_volume_permissions(es_infra_backup, chmod_val="777")
                     tar.add(es_infra_backup, arcname="search_backup")
 
@@ -284,6 +316,11 @@ class ArchiveSnapshotService:
                 # Reclaim permissions before extracting (Fixes [Errno 13] in CI/Linux)
                 from ldm_core.utils import reclaim_volume_permissions
 
+                # LDM-#1507: `777` required, and it is the restore side of the
+                # same tree. The host user extracts into a directory the
+                # uid-1000 Elasticsearch container owns, then ES has to read
+                # the restored repository back to run `_restore`. Both uids
+                # need write here, and they share no group (LDM-#645).
                 reclaim_volume_permissions(es_infra_backup, chmod_val="777")
 
                 for m in tar.getmembers():

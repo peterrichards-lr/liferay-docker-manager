@@ -1986,22 +1986,29 @@ assert expected in liferay[0], (
         $naRaw  = "naming-boot-" + [string]::Join('', [char]0x017B, [char]0x00F3, [char]0x0142, [char]0x0107)
         $naSafe = "naming-boot-Zolc"
         $naDir  = Join-Path $LDM_WORKSPACE $naRaw
-        $naPort = $TEST_PORT + 5
+        # LDM-#1553: [int] is load-bearing. $TEST_PORT is a string, and
+        # PowerShell's + concatenates when the left operand is a string -- so
+        # this produced "80825", above the 65535 ceiling, and the only
+        # boot-level check the ps1 has was running with an invalid port.
+        $naPort = [int]$TEST_PORT + 5
         $naOk   = $true
 
         Invoke-Cleanup $LDM_CMD "-y rm $naRaw --delete"
         Remove-Item -Recurse -Force $naDir -ErrorAction SilentlyContinue
         New-Item -ItemType Directory -Force -Path $naDir | Out-Null
 
+        # LDM-#1545: --info unmasks UI.detail, which is suppressed by default and
+        # is where provisioning narrates itself ("Ensuring global database
+        # service is running...", "Initializing ... container..."). Without it
+        # the captured log says almost nothing about the step that failed.
         $naLog = Join-Path $naDir "boot.log"
         Push-Location $naDir
-        & $LDM_CMD -y run "$naRaw" --port $naPort *> $naLog
+        & $LDM_CMD -y run "$naRaw" --port $naPort --info *> $naLog
         $naRc = $LASTEXITCODE
         Pop-Location
 
         if ($naRc -ne 0) {
             Write-Host "[ERROR] booting the non-ASCII project exited $naRc." -ForegroundColor Red
-            Get-Content $naLog -Tail 40 | ForEach-Object { Write-Host $_ }
             $naOk = $false
         }
 
@@ -2030,7 +2037,6 @@ assert expected in liferay[0], (
         #    stranded on the host.
         if ($naOk -and -not (Select-String -Path $naLog -Pattern "Liferay ready|is responding to HTTP" -Quiet)) {
             Write-Host "[ERROR] Liferay did not come up for a non-ASCII project." -ForegroundColor Red
-            Get-Content $naLog -Tail 40 | ForEach-Object { Write-Host $_ }
             $naOk = $false
         }
 
@@ -2043,6 +2049,16 @@ assert expected in liferay[0], (
                 Write-Host "[ERROR] 'ldm stop' left the non-ASCII container running (LDM-#1512)." -ForegroundColor Red
                 $naOk = $false
             }
+        }
+
+        # LDM-#1545: dump the captured output on EVERY failure, not only a
+        # non-zero exit. A missing volume or a container that outlived `ldm stop`
+        # reported nothing but the verdict, and the log is the only evidence of
+        # what the boot did. Emitted before the cleanup below deletes the file.
+        if (-not $naOk) {
+            Write-Host "--- non-ASCII boot.log (last 80 lines) ---"
+            Get-Content $naLog -Tail 80 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+            Write-Host "--- end non-ASCII boot.log ---"
         }
 
         Invoke-Cleanup $LDM_CMD "-y rm $naRaw --delete"
@@ -2233,6 +2249,200 @@ assert db_part == db_part.lower(), (
         Write-Verdict "[SUCCESS] Shared database mode verified (valid compose, shared URL, lowercase name, PostgreSQL + MySQL)."
     } else {
         throw "Shared database mode verification failed."
+    }
+
+
+    # LDM-#1494 / LDM-#1499 / LDM-#1546: everything above is derivable from the
+    # GENERATED CONFIG. It proves the compose file is valid and the JDBC URL
+    # points at the right container, and nothing more -- until LDM-#1546 no
+    # shared stack had ever been STARTED on Windows, in CI or on real hardware.
+    # The headline feature of 2.19 was verified on this platform only as far as
+    # "the configuration looks right", which is precisely the shape LDM-#1516
+    # exists to catch, and precisely the shape that produced #1494 and #1499.
+    #
+    # This is a PORT of `verify_shared_db_boots` in verify_e2e_refactor.sh. It
+    # boots one for real, per engine, and asserts the same three things the
+    # bash check asserts.
+    #
+    # LDM-#1546, READ BEFORE TRUSTING A GREEN RESULT: unlike every other
+    # assertion in this file, this block has never been observed running. It was
+    # written on a machine with no Windows, no Docker and no ldm, so its first
+    # real Windows run IS the observation -- until that run exists, a pass here
+    # is untested code reporting on itself, not evidence. The project rule
+    # (.agents/skills/testing-and-ci) is that E2E assertions are observed
+    # passing before they are relied upon; this one is knowingly outstanding on
+    # that, and says so rather than pretending otherwise.
+    #
+    # Translation notes -- what had to differ from the bash, and why. Everything
+    # not listed here is a line-for-line translation:
+    #
+    #   * [int]$TEST_PORT. $TEST_PORT is a STRING in this script (see its
+    #     assignment near the top), and PowerShell's `+` concatenates when the
+    #     left operand is a string: `$TEST_PORT + 3` is "80823", not 8085. The
+    #     bash `$((TEST_PORT + 3))` has no such trap.
+    #   * The expected database name drops a bash artefact. There,
+    #     `echo "$proj" | tr -c 'a-z0-9_' '_'` also transcodes the newline echo
+    #     appends, so its pattern carries a trailing "_" that the real name
+    #     (lportal_<proj>, see utils.shared_database_name) can never match --
+    #     only the `lportal` alternative ever fires. This computes the same name
+    #     without the artefact, so it can match MORE than the bash does, never
+    #     less.
+    #   * HTTP is probed with Invoke-WebRequest. `curl` is an alias for
+    #     Invoke-WebRequest on Windows PowerShell 5.1, so curl's
+    #     `-w '%{http_code}'` is unavailable: a non-2xx arrives as an exception
+    #     carrying the status, and a refused connection as an exception with no
+    #     Response at all, which is the bash "000" case. -TimeoutSec is added --
+    #     neither curl nor Invoke-WebRequest bounds this by default, and a hung
+    #     probe would burn a CI job rather than fail it.
+    #   * Diagnostics go through Write-Verdict, not `Write-Host -ForegroundColor
+    #     Red` as neighbouring blocks use. The bash tees every failure line into
+    #     $RESULTS_FILE_TMP and Write-Verdict is this script's equivalent
+    #     (LDM-#1327); Write-Host alone would keep the evidence out of the saved
+    #     report, which is the LDM-#1545 failure mode this check was just fixed
+    #     for.
+    #   * The function returns $true/$false and the caller throws, where bash
+    #     returns 1 and the caller does `|| exit 1`. Same net effect: the run
+    #     ends failed. Matches Test-DockerDiskSpace above.
+    #
+    # CI-only, deliberately: booting two stacks costs minutes and the manual
+    # round pays that per platform. Never skipped silently -- an assertion that
+    # quietly stops running is what LDM-#1383 and the guards elsewhere in this
+    # script exist to prevent.
+    function Test-SharedDbBoots {
+        param(
+            [string]$Engine,
+            [string]$GlobalContainer,
+            [string]$Label,
+            [string[]]$ListCmd
+        )
+
+        $proj = "sharedboot-$Engine-$TEST_PORT"
+        $dir = Join-Path $LDM_WORKSPACE $proj
+        if ($Engine -eq "mysql") {
+            $bootPort = [int]$TEST_PORT + 3
+        } else {
+            $bootPort = [int]$TEST_PORT + 4
+        }
+        $ok = $true
+
+        Invoke-Cleanup $LDM_CMD "-y rm $proj --delete"
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+
+        # LDM-#1545: --info. The default output tier says nothing about which
+        # database the run resolved, so the one CI failure this check has ever
+        # produced threw away the only evidence of what it did.
+        $log = Join-Path $dir "boot.log"
+        Push-Location $dir
+        try {
+            & $LDM_CMD -y run "$proj" --db $Engine --database-mode shared --port $bootPort --info *> $log
+            $rc = $LASTEXITCODE
+        } finally {
+            Pop-Location
+        }
+
+        if ($rc -ne 0) {
+            Write-Verdict "[ERROR] 'ldm run --db $Engine --database-mode shared' exited $rc."
+            $ok = $false
+        }
+
+        # 1. The global container for THIS engine is running. One global per
+        #    engine (LDM-#1361), provisioned lazily, so its absence means the
+        #    run never reached the shared path at all.
+        if ($ok) {
+            $running = & docker ps --filter "name=^$GlobalContainer$" --format "{{.Names}}" 2>$null
+            if (-not $running) {
+                Write-Verdict "[ERROR] $GlobalContainer is not running after a shared $Label run."
+                foreach ($line in (& docker ps -a --filter "name=$GlobalContainer" 2>$null)) {
+                    Write-Verdict "     $line"
+                }
+                $ok = $false
+            }
+        }
+
+        # 2. The per-project database was created INSIDE the global container.
+        #    This is the assertion the config-level checks cannot make: it
+        #    proves the CREATE DATABASE ran against the shared instance.
+        if ($ok) {
+            $expected = $proj.ToLower() -replace '[^a-z0-9_]', '_'
+            # Splatted, not interpolated: `-e 'SHOW DATABASES;'` must reach
+            # docker as ONE argv element, and a string built by hand would be
+            # re-split on the space.
+            $dbList = (& docker exec $GlobalContainer @ListCmd 2>$null) | Out-String
+            if ($dbList -notmatch "$expected|lportal") {
+                Write-Verdict "[ERROR] no per-project database inside $GlobalContainer."
+                Write-Verdict "   expected something matching '$expected'; found:"
+                foreach ($line in ($dbList -split "`r?`n")) {
+                    Write-Verdict "     $line"
+                }
+                $ok = $false
+            }
+        }
+
+        # 3. Liferay reached ready and serves HTTP -- i.e. it CONNECTED. A wrong
+        #    dialect or driver fails here, and nowhere earlier.
+        if ($ok -and -not (Select-String -Path $log -Pattern "Liferay ready|is responding to HTTP" -Quiet)) {
+            $code = "000"
+            try {
+                $resp = Invoke-WebRequest -Uri "http://localhost:$bootPort" -UseBasicParsing -TimeoutSec 30
+                $code = [string][int]$resp.StatusCode
+            } catch {
+                if ($_.Exception.Response) {
+                    $code = [string][int]$_.Exception.Response.StatusCode
+                }
+            }
+            if ($code -ne "200") {
+                Write-Verdict "[ERROR] Liferay did not come up against the shared $Label (HTTP $code)."
+                $ok = $false
+            }
+        }
+
+        # LDM-#1545: dump the captured log on ANY failure, not just a non-zero
+        # exit, and do it HERE -- the cleanup below deletes the directory the
+        # log lives in, and a CI failure that discards its own evidence is what
+        # #1545 was.
+        if (-not $ok -and (Test-Path $log)) {
+            Write-Verdict "     --- last 40 lines of $log ---"
+            foreach ($line in (Get-Content $log -Tail 40)) {
+                Write-Verdict "     $line"
+            }
+        }
+
+        Invoke-Cleanup $LDM_CMD "-y rm $proj --delete"
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+
+        if ($ok) {
+            Write-Verdict "[SUCCESS] A shared $Label stack boots: global container up, project database created inside it, Liferay connected."
+            return $true
+        }
+        Write-Verdict "[ERROR] shared $Label boot verification failed."
+        return $false
+    }
+
+    Write-Host ">> Verifying shared database stacks actually boot (LDM-#1494 / LDM-#1499 / LDM-#1546)..."
+    if ($env:GITHUB_ACTIONS -ne "true") {
+        Write-Verdict "[WARNING] Skipped: CI-only. Booting shared stacks costs minutes, and the"
+        Write-Verdict "          config-level assertions above already ran on this platform."
+    } else {
+        # Both engines, sequentially in one job. PostgreSQL matters at least as
+        # much as MySQL: setup_global_database resolves db_type=None to
+        # PostgreSQL, so it is the DEFAULT shared engine and the path most
+        # shared-mode users are on. MySQL got a boot test for being new and
+        # visibly unproven; Postgres escaped the same scrutiny by being older,
+        # which is not evidence (LDM-#1499).
+        #
+        # Sequential, not parallel, and deliberately so: a mixed fleet
+        # provisions both globals (see setup_global_database's docstring), so
+        # running one after the other also covers them coexisting without
+        # interfering.
+        if (-not (Test-SharedDbBoots -Engine "mysql" -GlobalContainer "liferay-db-mysql-global" -Label "MySQL" `
+                -ListCmd @("mysql", "-uroot", "-ptest", "-N", "-e", "SHOW DATABASES;"))) {
+            throw "Shared MySQL boot verification failed."
+        }
+        if (-not (Test-SharedDbBoots -Engine "postgresql" -GlobalContainer "liferay-db-global" -Label "PostgreSQL" `
+                -ListCmd @("psql", "-U", "lportal", "-d", "lportal", "-tAc", "SELECT datname FROM pg_database;"))) {
+            throw "Shared PostgreSQL boot verification failed."
+        }
     }
 
 
