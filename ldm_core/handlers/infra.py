@@ -130,7 +130,9 @@ class InfraService:
             return 443
 
         # Docker bridge proxy check (Traefik needs to talk to Docker socket securely)
-        self._ensure_docker_proxy()
+        # LDM-#1548: resolved against the same target as the compose stack below,
+        # not the local daemon.
+        self._ensure_docker_proxy(getattr(self.manager, "target", None))
 
         if not quiet:
             UI.detail("Checking infrastructure stack (Traefik SSL Proxy)...")
@@ -181,8 +183,24 @@ class InfraService:
                             "{{.State}}",
                         ],
                         check=False,
+                        timeout=_INFRA_PROBE_TIMEOUT,
                     )
-                    if containers_status and "running" in containers_status:
+                    # LDM-#1548: `check=False` returns None for a non-zero exit
+                    # AND for a timeout (utils.py), so a daemon that could not
+                    # answer produced exactly the same result as "no container
+                    # by that name" -- and this scan exists solely to warn that
+                    # recreating the proxy will cut connectivity to live
+                    # projects. Silently concluding "nothing is running" from a
+                    # broken daemon is the one answer this block must never
+                    # give, so an unanswerable probe fails closed into the
+                    # handler below, which honours --force. An empty string is
+                    # a real answer (exit 0, no match) and stays one.
+                    if containers_status is None:
+                        raise RuntimeError(
+                            f"'docker ps' gave no answer for '{name}' on node "
+                            f"'{target_node}'"
+                        )
+                    if "running" in containers_status:
                         running_projects.append((name, target_node))
             except Exception as e:
                 import sys
@@ -288,6 +306,10 @@ class InfraService:
             cmd,
             env=env,
             capture_output=True,
+            # LDM-#1413: this `compose up` may pull the Traefik image, so it is
+            # sized as a create rather than a probe. It was the one image-pulling
+            # call in this module left unbounded (LDM-#1548).
+            timeout=_INFRA_CREATE_TIMEOUT,
         )
         return ssl_port
 
@@ -324,8 +346,39 @@ class InfraService:
                 UI.error(f"Failed to reclaim ownership: {e}")
         return False
 
+    @staticmethod
+    def _ssl_fallback_warning():
+        """States the consequence of a failed certificate generation.
+
+        LDM-#1548: `setup_ssl` returns False on five paths and both callers
+        (`pipelines/run.py`, `runtime/orchestration.py`) discard the result, so
+        four of those five said nothing about what would happen next -- the run
+        continued and reported success while Traefik served its built-in
+        untrusted certificate. Only the missing-mkcert path warned.
+
+        Deliberately a warning and not a UI.die. Falling back to Traefik's
+        default certificate is a browser trust prompt, not a broken stack: the
+        project still boots and still serves, and the mkcert-missing path has
+        always been an intentional degradation with install instructions. Making
+        the other four abort `ldm run` would fail a working environment over a
+        recoverable defect. What was missing was the user being told.
+        """
+        UI.warning(
+            "SSL proxy will fall back to Traefik's default self-signed certificate."
+        )
+        UI.detail(
+            "Browsers will show an untrusted-certificate warning. Fix the cause "
+            f"above and re-run {UI.WHITE}ldm ssl renew{UI.COLOR_OFF}."
+        )
+
     def setup_ssl(self, cert_dir, host_name):  # noqa: PLR0911, PLR0912
-        """Ensures valid locally-trusted wildcard certificates exist for the host."""
+        """Ensures valid locally-trusted wildcard certificates exist for the host.
+
+        Returns True when the host has a locally-trusted certificate and False
+        when it does not. LDM-#1548: no caller reads that result, so every
+        failure path must say for itself what the consequence is -- see
+        `_ssl_fallback_warning`.
+        """
         if not shutil.which("mkcert"):
             UI.error("LDM Requirement Missing: mkcert")
             UI.detail(
@@ -348,9 +401,12 @@ class InfraService:
                 # Retry
                 try:
                     cert_dir.mkdir(parents=True, exist_ok=True)
-                except Exception:
+                except Exception as e:
+                    UI.error(f"Still cannot create {cert_dir}: {e}")
+                    self._ssl_fallback_warning()
                     return False
             else:
+                self._ssl_fallback_warning()
                 return False
 
         cert_file = cert_dir / f"{host_name}.pem"
@@ -393,10 +449,12 @@ class InfraService:
                         UI.detail(
                             "Ensure mkcert is correctly installed and initialized ('mkcert -install')."
                         )
+                    self._ssl_fallback_warning()
                     return False
                 new_files_written = True
             except Exception as e:
                 UI.error(f"mkcert unexpected error: {e}")
+                self._ssl_fallback_warning()
                 return False
 
         config_file = cert_dir / f"traefik-{host_name}.yml"
@@ -416,6 +474,7 @@ tls:
             safe_write_text(config_file, config_content)
         except Exception as e:
             UI.error(f"Failed to write Traefik configuration: {e}")
+            self._ssl_fallback_warning()
             return False
 
         if new_files_written:
@@ -500,13 +559,28 @@ tls:
         container_name = "liferay-proxy-global"
         UI.detail(f"Restarting proxy container: {container_name}...")
 
-        if DockerService.exists(container_name):
-            DockerService.restart(container_name)
-            UI.success("Proxy container restarted successfully.")
-        else:
-            UI.error(
-                f"Container '{container_name}' does not exist. Is the infrastructure running?"
+        # LDM-#1548: this reported success unconditionally. DockerService.restart
+        # runs with check=False and its result was discarded, and a wholly absent
+        # container only printed via UI.error -- which returns, since only UI.die
+        # exits -- so `ldm infra restart-proxy` exited 0 in both cases. A user or
+        # a CI step asked for the proxy to be restarted; if it is not running
+        # afterwards, nothing is reachable through it, so this fails hard as an
+        # Infrastructure error (exit 3, .agents/skills/ldm-architecture/SKILL.md).
+        if not DockerService.exists(container_name):
+            UI.die(
+                f"Container '{container_name}' does not exist. Is the infrastructure running?",
+                tip="Provision it with 'ldm infra setup'.",
+                exit_code=3,
             )
+
+        DockerService.restart(container_name)
+        if not DockerService.is_running(container_name):
+            UI.die(
+                f"Proxy container '{container_name}' did not come back up after restart.",
+                tip=f"Inspect it with 'docker logs {container_name}'.",
+                exit_code=3,
+            )
+        UI.success("Proxy container restarted successfully.")
 
     def _ensure_network(self, target_name: str | None = None):
         """Ensures the standard 'liferay-net' Docker network exists."""
@@ -524,20 +598,41 @@ tls:
                 timeout=_INFRA_LIFECYCLE_TIMEOUT,
             )
 
-    def _ensure_docker_proxy(self):
-        """Ensures a safe Docker socket proxy is running for Traefik."""
+    def _ensure_docker_proxy(self, target_name: str | None = None):
+        """Ensures a safe Docker socket proxy is running for Traefik.
+
+        LDM-#1548: `target_name` used not to exist. Every other container in
+        this module resolves the target before touching Docker, but this one
+        hardcoded `docker` and omitted `target_name` from its existence and
+        start checks -- so provisioning infrastructure on a remote node
+        inspected and created the socket bridge on the *local* daemon. Traefik
+        came up remotely with no bridge to talk to, and a stray container was
+        left behind on the laptop.
+        """
         from ldm_core.docker_service import DockerService
 
         container_name = "liferay-docker-proxy"
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+        # get_docker_cmd_prefix returns ["docker", "--context", <name>] for a
+        # remote target and ["docker"] otherwise.
+        is_remote = len(docker_prefix) > 1
         # Check if it exists at all (running or stopped)
-        exists = DockerService.exists(container_name)
+        exists = DockerService.exists(container_name, target_name=target_name)
 
         if not exists:
             UI.detail("Starting Docker socket bridge...")
             socket_path = get_docker_socket_path()
 
             # Hardening for VM-based providers (Colima, Lima, OrbStack):
-            if any(
+            if is_remote:
+                # get_docker_socket_path() resolves a path on *this* host.
+                # Bind-mounting it on a remote engine would just create an empty
+                # directory there, so the remote daemon's own socket is used.
+                UI.debug(
+                    "Remote target: binding the remote daemon's standard socket path."
+                )
+                socket_path = "/var/run/docker.sock"
+            elif any(
                 p in str(socket_path).lower() for p in ["colima", ".lima", "orbstack"]
             ):
                 UI.debug(
@@ -547,7 +642,7 @@ tls:
 
             self.manager.run_command(
                 [
-                    "docker",
+                    *docker_prefix,
                     "run",
                     "-d",
                     "--name",
@@ -557,14 +652,17 @@ tls:
                     "-v",
                     f"{socket_path}:/var/run/docker.sock:ro",
                     "tecnativa/docker-socket-proxy",
-                ]
+                ],
+                # LDM-#1413: pulls tecnativa/docker-socket-proxy on first use,
+                # so this is sized as a create. It was unbounded (LDM-#1548).
+                timeout=_INFRA_CREATE_TIMEOUT,
             )
         else:
             # If it exists, make sure it is running
-            running = DockerService.is_running(container_name)
+            running = DockerService.is_running(container_name, target_name=target_name)
             if not running:
                 UI.detail("Starting existing Docker socket bridge...")
-                DockerService.start(container_name)
+                DockerService.start(container_name, target_name=target_name)
 
     def setup_global_database(self, force=False, db_type=None):
         """Ensures the global database service for `db_type` is running.
@@ -774,6 +872,28 @@ tls:
                     exit_code=3,
                 )
 
+    @staticmethod
+    def _warn_if_backup_repo_missing(response):
+        """Warns -- deliberately not dies -- when the ES backup repo is absent.
+
+        LDM-#1548: both registration calls discarded their result, and `curl -s`
+        exits 0 for an HTTP error too, so a rejected registration was invisible
+        here and surfaced later as "repository missing" from `ldm snapshot`.
+
+        A warning rather than a UI.die on purpose: the repository only matters
+        when a snapshot that includes search indices is taken, so the stack
+        itself is perfectly usable without it. Aborting a healthy provision --
+        every `ldm run` with shared search passes through here -- over a feature
+        that may never be used would be the worse outcome. The next run
+        re-attempts the registration, since this path is not conditional.
+        """
+        if not response or '"acknowledged":true' not in response.replace(" ", ""):
+            UI.warning("Global Search backup repository could not be registered.")
+            UI.detail(
+                "Snapshots that include search indices will fail with "
+                "'repository missing' until it is."
+            )
+
     def setup_global_search(self, force=False, _depth=0):  # noqa: C901, PLR0912, PLR0915
         """Ensures the global ES8 search service is running.
 
@@ -936,11 +1056,37 @@ tls:
                 # AUTO-REPAIR: If ES fails to start, it's often due to corrupted data in the volume.
                 # Wiping and restarting usually fixes mapping/plugin-mismatch issues.
                 UI.warning("Attempting automatic search volume repair...")
-                self.manager.run_command(
+                removed = self.manager.run_command(
                     [*docker_prefix, "rm", "-f", search_name],
                     check=False,
                     timeout=_INFRA_LIFECYCLE_TIMEOUT,
                 )
+                # LDM-#1548: `rm -f` runs with check=False and its result was
+                # discarded, yet the wipe below assumed it had worked. When the
+                # removal actually failed (wedged daemon, or the removal timed
+                # out -- both return None here) the rmtree deleted the data
+                # directory out from under a still-running Elasticsearch, and
+                # the recursive call then found the container still present:
+                # that takes the `else` branch, which starts it and registers
+                # the backup repository with no readiness probe anywhere in it.
+                # The run reported success with ES sitting on a deleted data
+                # directory. Destroying data on an unverified removal is the
+                # dangerous half, so this stops before the rmtree rather than
+                # after it -- exit 3, Infrastructure/Data Error
+                # (.agents/skills/ldm-architecture/SKILL.md).
+                if removed is None and DockerService.exists(
+                    search_name, target_name=target_name
+                ):
+                    UI.die(
+                        f"Could not remove the Global Search container '{search_name}', "
+                        "so its data directory was left untouched.",
+                        details=f"Data directory: {es_data}",
+                        tip=(
+                            f"Remove it by hand with 'docker rm -f {search_name}' and "
+                            "re-run, or check that the Docker daemon is responding."
+                        ),
+                        exit_code=3,
+                    )
                 if es_data.exists():
                     import shutil
 
@@ -958,7 +1104,7 @@ tls:
                 return self.setup_global_search(force=force, _depth=_depth + 1)
 
             # Register backup repository (required for snapshots)
-            self.manager.run_command(
+            repo_res = self.manager.run_command(
                 [
                     *docker_prefix,
                     "exec",
@@ -980,6 +1126,7 @@ tls:
                 ],
                 timeout=_INFRA_PROBE_TIMEOUT,
             )
+            self._warn_if_backup_repo_missing(repo_res)
 
             # Proactive analyzer installation
             UI.detail("Installing missing Liferay analyzers in Global Search...")
@@ -1002,8 +1149,9 @@ tls:
                 "analysis-smartcn",
                 "analysis-stempel",
             ]
+            failed_plugins = []
             for plugin in analyzers:
-                self.manager.run_command(
+                installed = self.manager.run_command(
                     [
                         *docker_prefix,
                         "exec",
@@ -1018,6 +1166,27 @@ tls:
                     # call here most likely to stall on something outside the
                     # daemon entirely.
                     timeout=_INFRA_CREATE_TIMEOUT,
+                )
+                if installed is None:
+                    failed_plugins.append(plugin)
+
+            # LDM-#1548: these ran with check=False and nobody read the result,
+            # so a failed download surfaced much later as wrong tokenising --
+            # CJK content indexed with the default analyser, which looks like a
+            # relevance bug rather than a provisioning one. Deliberately a
+            # warning and not a UI.die: a missing analysis plugin degrades
+            # search quality for some languages, it does not make the stack
+            # unusable, and aborting an otherwise healthy provision over it
+            # would be the worse outcome. Re-run `ldm infra setup` (or recreate
+            # the container) once connectivity is back to pick them up.
+            if failed_plugins:
+                UI.warning(
+                    "Could not install Global Search analyzers: "
+                    + ", ".join(failed_plugins)
+                )
+                UI.detail(
+                    "Search still works, but content in the affected languages "
+                    "(e.g. CJK) will be tokenised with the default analyser."
                 )
 
             UI.detail("Restarting Global Search to activate plugins...")
@@ -1067,10 +1236,25 @@ tls:
             if not running:
                 UI.detail(f"Starting existing {search_name} container...")
                 DockerService.start(search_name, target_name=target_name)
+                # LDM-#1548: DockerService.start runs with check=False and its
+                # result was discarded, and this branch -- the one an existing
+                # container always takes -- has no readiness check of any kind.
+                # A global search that failed to start (port taken, corrupt
+                # data, OOM) left LDM configuring Liferay against a dead search
+                # engine and reporting success. Same shape, and same exit code,
+                # as the global database in LDM-#1545: the project asked for
+                # shared search, so a search engine that will not start is an
+                # Infrastructure error (3), not a degradation to shrug at.
+                if not DockerService.is_running(search_name, target_name=target_name):
+                    UI.die(
+                        f"Global Search container '{search_name}' exists but could not be started.",
+                        tip=f"Inspect it with 'docker logs {search_name}'.",
+                        exit_code=3,
+                    )
 
             # Always ensure backup repository is registered if service is running
             UI.debug("Ensuring Global Search backup repository is registered...")
-            self.manager.run_command(
+            repo_res = self.manager.run_command(
                 [
                     *docker_prefix,
                     "exec",
@@ -1093,6 +1277,7 @@ tls:
                 check=False,
                 timeout=_INFRA_PROBE_TIMEOUT,
             )
+            self._warn_if_backup_repo_missing(repo_res)
         return None
 
     def cmd_system(self, subcommand):
@@ -1126,13 +1311,49 @@ tls:
         # 1. Safety Checks
         try:
             context = (
-                self.manager.run_command(["docker", "context", "show"], check=False)
+                self.manager.run_command(
+                    ["docker", "context", "show"],
+                    check=False,
+                    timeout=_INFRA_PROBE_TIMEOUT,
+                )
                 or ""
             ).strip()
             if "colima" in context.lower() or context == "default":
                 UI.detail("Stopping Colima to ensure data integrity...")
-                self.manager.run_command(["colima", "stop"], check=False)
+                stopped = self.manager.run_command(
+                    ["colima", "stop"],
+                    check=False,
+                    timeout=_INFRA_LIFECYCLE_TIMEOUT,
+                )
+                # LDM-#1548: the stop result was discarded inside a bare
+                # `except Exception: pass`, and ~/.colima -- the VM's disk image
+                # -- was then moved regardless. Moving a live VM's disk out from
+                # under it is how you corrupt it, and the command reported
+                # "Relocation complete" either way. The stop's own exit status
+                # cannot be trusted on its own (it is also non-zero when Colima
+                # was never running, or is not installed at all), so the VM is
+                # asked directly: `colima status` exits 0 only while it is
+                # running -- the same test docs/tutorials/quick_start.md uses in
+                # its keep-alive loop. Exit 3, Infrastructure/Data Error.
+                if stopped is None:
+                    still_running = (
+                        self.manager.run_command(
+                            ["colima", "status"],
+                            check=False,
+                            timeout=_INFRA_PROBE_TIMEOUT,
+                        )
+                        is not None
+                    )
+                    if still_running:
+                        UI.die(
+                            "Colima is still running, so its VM data cannot be moved safely.",
+                            details="Moving a running VM's disk image risks corrupting it.",
+                            tip="Stop it with 'colima stop' and re-run this command.",
+                            exit_code=3,
+                        )
         except Exception:
+            # Only the probing above is best-effort. UI.die raises SystemExit,
+            # which is a BaseException and so is deliberately not caught here.
             pass
 
         for folder, label in paths_to_move:
