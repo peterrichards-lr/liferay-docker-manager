@@ -1102,10 +1102,16 @@ class ComposerService:
         # domain without SSL therefore has no router at all -- the global proxy,
         # even when one happens to be running for another project, serves
         # nothing on this host name. That is why `resolve_access_url` above must
-        # not consult the proxy's http port, and why fronting a custom domain
-        # over plain http would first need a second `entrypoints=web` router
-        # here. See the issue for why that provisioning change was deliberately
-        # left out of this fix.
+        # not consult the proxy's http port.
+        #
+        # This is the intended design, not a gap awaiting work: only SSL custom
+        # domains are proxy-fronted, because a proxy is what makes SSL on a
+        # custom domain possible at all. A non-SSL custom domain is served
+        # directly on the project's own port, and stays that way. Adding an
+        # `entrypoints=web` router here would move the canonical URL of every
+        # existing non-SSL custom-host project from `host:port` to `host`,
+        # require port 80, and pull Traefik onto boot paths that skip infra
+        # entirely -- for no gain, since the direct port already works.
         if ssl_enabled:
             traefik_id = f"{project_name}-main"
             service["labels"].extend(
