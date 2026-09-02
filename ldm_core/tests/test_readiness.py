@@ -1614,7 +1614,7 @@ class TestAccessUrlAgreement(unittest.TestCase):
 
     def _banner_url(self, meta):
         """What `_wait_for_ready` prints to the user when the boot succeeds."""
-        printed = []
+        printed: list[str] = []
 
         def mock_run_command(cmd, **kwargs):
             if "logs" in cmd:
@@ -1654,7 +1654,7 @@ class TestAccessUrlAgreement(unittest.TestCase):
             json.dumps({"test-frag": {"url": "https://foo.example.com"}})
         )
 
-        warnings = []
+        warnings: list[str] = []
         with (
             patch(
                 "urllib.request.urlopen", side_effect=urllib.error.URLError("no net")
@@ -1678,7 +1678,7 @@ class TestAccessUrlAgreement(unittest.TestCase):
         """What `ldm info` prints on its URL row."""
         from ldm_core.diagnostics.info import run_info
 
-        printed = []
+        printed: list[str] = []
         with (
             patch.object(self.handler, "read_meta", return_value=dict(meta)),
             patch("ldm_core.ui.UI.raw", side_effect=printed.append),
