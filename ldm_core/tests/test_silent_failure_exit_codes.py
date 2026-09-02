@@ -116,9 +116,12 @@ class TestRestoreDatabaseFailsLoudly(unittest.TestCase):
         # so the restore has a dump and nowhere to put it.
         manager = _RestoreManager(container_status="running", ps_result="")
         with self.assertRaises(SystemExit) as ctx:
+            # LDM-#1511: "local" was never a mode argparse accepts, and the
+            # mode axis is now validated. The point of this case is "LDM owns
+            # a container and cannot find it", which "isolated" expresses.
             self._run_restore(
                 manager,
-                db_mode="local",
+                db_mode="isolated",
                 project_meta={"db_type": "mysql"},
             )
         self.assertEqual(
@@ -131,9 +134,12 @@ class TestRestoreDatabaseFailsLoudly(unittest.TestCase):
         # The guard must not turn the file-based engine, which has no
         # container by design, into a failure.
         manager = _RestoreManager()
+        # LDM-#1511: Hypersonic's mode is `embedded` and is derived from the
+        # engine, so whatever is stored here is normalised away. Spelled
+        # correctly rather than left as the non-existent "local".
         self._run_restore(
             manager,
-            db_mode="local",
+            db_mode="embedded",
             project_meta={"db_type": "hypersonic"},
         )
 

@@ -190,15 +190,14 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
     # the user after something that was deliberately never created. Report the
     # cluster and the database inside it instead.
     from ldm_core.utils import (
+        resolve_database_mode,
         resolve_infrastructure_mode,
         search_index_prefix,
         shared_database_container,
         shared_database_name,
     )
 
-    db_mode = resolve_infrastructure_mode(
-        "database_mode", meta, handler.manager.defaults
-    )
+    db_mode = resolve_database_mode(meta, handler.manager.defaults)
     if db_mode == "shared":
         # LDM-#1361: reporting `liferay-db-global` unconditionally sent a
         # shared MySQL user after the wrong container -- the same class of

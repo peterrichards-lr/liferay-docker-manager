@@ -45,10 +45,9 @@ class InfraService:
         project_path = self.manager.detect_project_path(None)
         meta = self.manager.read_meta(project_path) or {} if project_path else {}
 
-        from ldm_core.utils import resolve_infrastructure_mode
+        from ldm_core.utils import resolve_database_mode
 
-        db_mode = resolve_infrastructure_mode(
-            "database_mode",
+        db_mode = resolve_database_mode(
             meta,
             self.manager.defaults,
             getattr(self.manager.args, "database_mode", None),

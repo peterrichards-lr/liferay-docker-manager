@@ -1013,7 +1013,13 @@ class ComposerService:
         image = self._resolve_liferay_image(meta)
 
         depends_on = []
-        if db_type not in ["hypersonic", "external"] and db_mode != "shared":
+        # LDM-#1511: one axis, one question. This used to consult both -- two
+        # `db_type` values and one `db_mode` value -- because "who owns the
+        # database" was split across them. `_build_db_service` emits the
+        # per-project container in exactly one mode, so the dependency must be
+        # declared in exactly that mode; anything else names a service the
+        # compose file does not define.
+        if db_mode == "isolated":
             depends_on.append(f"{project_name}-db")
 
         # 80/20 DESIGN: SELinux compatibility for Fedora/RHEL
@@ -1331,7 +1337,7 @@ class ComposerService:
                 "database_mode", baseline_default
             )
 
-        from ldm_core.utils import resolve_infrastructure_mode
+        from ldm_core.utils import LEGACY_EXTERNAL_DB_TYPE, resolve_database_config
 
         # LDM-#1359: the CLI override MUST be passed here. `_build_db_service`
         # passes it and this did not, so within one run the two functions
@@ -1343,28 +1349,44 @@ class ComposerService:
         # referencing an undefined service -- `ldm run --database-mode shared`
         # failed at `docker compose config` for every project, capitalised or
         # not, which is why #1354 and #1357 were never reached.
-        db_mode = resolve_infrastructure_mode(
-            "database_mode",
-            meta,
-            self.manager.defaults,
-            getattr(getattr(self.manager, "args", None), "database_mode", None),
+        override = getattr(getattr(self.manager, "args", None), "database_mode", None)
+        # LDM-#1511: engine and mode resolved as one pair. `hypersonic` implies
+        # `embedded` and the legacy `db_type: "external"` implies `external`,
+        # so a stored mode that contradicts the engine is migrated here rather
+        # than silently producing a URL nothing can connect to.
+        db_type, db_mode = resolve_database_config(
+            meta, self.manager.defaults, override
         )
+
+        # Warn only about a mode somebody actually CHOSE -- the CLI override or
+        # a value persisted into this project's meta. Comparing against the
+        # fully resolved `resolve_infrastructure_mode` result instead would
+        # warn on the CONVENTION DEFAULT: `database_mode` defaults to
+        # "isolated", so every Hypersonic project -- whose mode is `embedded`
+        # by definition -- printed "mode 'isolated' does not apply" on every
+        # single run, about a value the user never typed.
+        chosen_mode = override or meta.get("database_mode")
+        if chosen_mode and str(chosen_mode).strip().lower() != db_mode:
+            requested_mode = str(chosen_mode).strip().lower()
+            from ldm_core.ui import UI
+
+            UI.warning(
+                f"Database mode '{requested_mode}' does not apply to engine "
+                f"'{meta.get('db_type') or db_type}'; using '{db_mode}' "
+                "(LDM-#1511)."
+            )
 
         if db_mode == "shared":
             from ldm_core.ui import UI
 
             UI.detail("Utilizing Global Shared Infrastructure")
 
-        if db_type == "hypersonic" and db_mode == "shared":
-            from ldm_core.ui import UI
-
-            UI.warning(
-                "Hypersonic database cannot be shared. Enforcing 'isolated' mode."
-            )
-            db_mode = "isolated"
-
         db_updates = {}
-        if db_type == "external":
+        if db_type == LEGACY_EXTERNAL_DB_TYPE:
+            # Legacy read path (LDM-#1511 decision 2): the stored `jdbc_url`
+            # did not name a scheme LDM recognises, so there is no engine to
+            # resolve a driver or dialect from. Write what the user gave us,
+            # exactly as the pre-#1511 external branch did.
             if not has_jdbc_env:
                 db_updates = {
                     "jdbc.default.url": meta.get("jdbc_url", ""),
@@ -1452,6 +1474,22 @@ class ComposerService:
                     "hibernate.dialect": dialect,
                 }
             liferay_env.append("LIFERAY_HSQL_PERIOD_ENABLED=false")
+
+        if db_updates and db_mode == "external":
+            # LDM-#1511: the coordinates are the user's, but the ENGINE is
+            # still known -- so the driver and the per-tag dialect resolved
+            # above still apply and are kept. Under the old model choosing
+            # "external" discarded the engine, so `driverClassName` and
+            # `hibernate.dialect` were never written for an external database
+            # at all, and the care taken over the MySQL dialect in #1361 was
+            # unavailable to an external MySQL.
+            db_updates.update(
+                {
+                    "jdbc.default.url": meta.get("jdbc_url", ""),
+                    "jdbc.default.username": meta.get("jdbc_user", ""),
+                    "jdbc.default.password": meta.get("jdbc_pass", ""),
+                }
+            )
 
         if db_updates:
             # LDM-#1454: write the names Liferay actually reads.
@@ -1840,17 +1878,17 @@ class ComposerService:
 
     def _build_db_service(self, meta, project_name):
         """Constructs the Database service (MySQL/PostgreSQL) if required."""
-        db_type = meta.get("db_type", "postgresql")
-        from ldm_core.utils import resolve_infrastructure_mode
+        from ldm_core.utils import resolve_database_config
 
-        db_mode = resolve_infrastructure_mode(
-            "database_mode",
+        # LDM-#1511: engine and mode resolved together, so the legacy
+        # `db_type: "external"` spelling arrives here already migrated.
+        db_type, db_mode = resolve_database_config(
             meta or {},
             self.manager.defaults,
             getattr(self.manager.args, "database_mode", None),
         )
 
-        if db_type == "external" or db_mode == "shared":
+        if db_mode != "isolated":
             if db_mode == "shared":
                 UI.detail("Utilizing Global Shared Infrastructure")
             return None

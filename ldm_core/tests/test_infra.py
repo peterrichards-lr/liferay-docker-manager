@@ -180,7 +180,9 @@ class TestInfraService(unittest.TestCase):
         self.manager.detect_project_path.return_value = None
         self.manager.args.ssl_port = 8443
         self.manager.args.force_recreate = True
-        self.manager.args.database_mode = "local"
+        # LDM-#1511: "local" was never a mode argparse accepts; the point
+        # of the assertion is "not shared", which "isolated" expresses.
+        self.manager.args.database_mode = "isolated"
         self.manager.args.db = None
         self.infra.cmd_infra_setup()
         mock_setup.assert_called_once_with(
@@ -201,7 +203,9 @@ class TestInfraService(unittest.TestCase):
         self.manager.detect_project_path.return_value = None
         self.manager.args.ssl_port = None
         self.manager.args.force_recreate = False
-        self.manager.args.database_mode = "local"
+        # LDM-#1511: "local" was never a mode argparse accepts; the point
+        # of the assertion is "not shared", which "isolated" expresses.
+        self.manager.args.database_mode = "isolated"
         self.manager.args.db = None
         with patch.dict(os.environ, {"LDM_SSL_PORT": "9443"}):
             self.infra.cmd_infra_setup()

@@ -94,10 +94,15 @@ LDM supports connecting your local Liferay instance to an external database (e.g
 To initialize a project with an external database:
 
 ```bash
-ldm init my-project --db external
+ldm init my-project --db postgresql --database-mode external
 ```
 
-When you use `--db external`, LDM will launch an interactive wizard to gather your JDBC connection details (Host, Port, Database Name, Username, Password) and automatically generate the necessary properties in your `portal-ext.properties`. The database service container will be entirely omitted from the generated stack.
+LDM will launch an interactive wizard to gather your JDBC connection details (Host, Port, Database Name, Username, Password) and generate the necessary properties in your `portal-ext.properties`. The database service container is entirely omitted from the generated stack.
+
+**Name the engine.** `external` is a *mode* -- it says who runs the database, not which one it is -- so pairing it with `--db postgresql` or `--db mysql` lets LDM resolve the JDBC driver and the per-tag Hibernate dialect for your server, exactly as it does for a database it runs itself.
+
+> [!NOTE]
+> **`--db external` still works** and is the older spelling of the same thing (LDM-#1511). LDM infers the engine from the JDBC URL scheme you supply -- `jdbc:postgresql://` means PostgreSQL, `jdbc:mysql://` and `jdbc:mariadb://` mean MySQL -- and writes the driver and dialect accordingly. Where the scheme names an engine LDM does not support (an Oracle URL, say), it falls back to writing only the URL, username and password, which is what it always did. Existing projects whose `meta` records `db_type: "external"` are read forward the same way and keep booting unchanged.
 
 ### SSL Defaults (New Projects)
 
@@ -498,4 +503,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-14* | *Last Reviewed: 2026-08-14*
+*Last Updated: 2026-09-03* | *Last Reviewed: 2026-09-03*
