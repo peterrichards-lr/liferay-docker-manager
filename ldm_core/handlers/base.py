@@ -1793,7 +1793,20 @@ class BaseHandler:
                     docker_cmd += (
                         f'if [ "$(cat /workspace/.ldm_mount_check 2>/dev/null)" = "{token_val}" ]; then '
                         f"if touch /workspace/.ldm_write_test 2>/dev/null; then echo 'OK'; "
-                        # If touch fails, try an aggressive fix once before reporting failure
+                        # If touch fails, try an aggressive fix once before
+                        # reporting failure.
+                        #
+                        # LDM-#1507: this `777` is a last resort, not a default
+                        # -- it runs only after a `touch` inside the mounted
+                        # workspace has already failed, i.e. the mount is
+                        # unwritable and the alternative is the `NO_WRITE` bail
+                        # out below. It is the project *root*, so it is the
+                        # broadest widening in the codebase; it is also the one
+                        # the macOS self-healing path (`b8d6eb7e`) depends on,
+                        # and the container performing the touch is not the
+                        # host user, so a group-only mode would not restore the
+                        # write. Narrow it only together with the failure
+                        # branch it guards.
                         f"else chmod 777 /workspace 2>/dev/null; "
                         f"if touch /workspace/.ldm_write_test 2>/dev/null; then echo 'OK'; else echo 'NO_WRITE'; fi; "
                         f"fi; "
@@ -1921,6 +1934,27 @@ class BaseHandler:
                     composer = getattr(self.manager, "composer", None)
                 use_volumes = composer.is_using_named_volumes() if composer else False
 
+                # LDM-#1507: `777` is load-bearing for the container-shared
+                # entries here. Everything in this list is bind-mounted into
+                # the Liferay container (uid 1000 for Tomcat/Equinox), or into
+                # the sidecar Elasticsearch under `data/elasticsearch8`; the
+                # helper chowns to the host uid (1001 on Linux CI), and a bind
+                # mount does no uid translation on native Linux, so `750`
+                # leaves those containers unable to write the very trees this
+                # pre-boot check exists to guarantee are writable. This loop
+                # passed no `chmod_val` at all until LDM-#599 (`c618419f`)
+                # moved the helper's default to `750` underneath it; LDM-#645
+                # (`6861e26e`, "restore native linux cross-container mapping")
+                # then pinned `777` here explicitly, one release later.
+                #
+                # UNVERIFIED, left for a human (LDM-#1507): the widening was
+                # applied to the whole list at once, so there is no per-entry
+                # evidence. `backups` and `routes` in particular are plausibly
+                # host-only -- `backups` holds DB dumps LDM writes itself, and
+                # `routes` holds Traefik dynamic config that is only read --
+                # and might take the `750` default. Nothing in the history says
+                # either way, and getting it wrong breaks a boot, so they stay
+                # as they are until someone verifies them on native Linux.
                 for v in [
                     "data",
                     "state",

@@ -1,6 +1,7 @@
 import contextlib
 import json
 import os
+import re
 import shutil
 import tempfile
 import typing
@@ -848,6 +849,48 @@ class TestUpdateChecks(unittest.TestCase):
             docker_cmd = cmd[cmd.index("-c") + 1]
             self.assertIn("chown -R 1001:1001", docker_cmd)
             self.assertIn("chmod -R 750", docker_cmd)
+
+    @pytest.mark.exercises_docker_helper
+    def test_reclaim_volume_permissions_applies_the_mode_the_caller_asked_for(self):
+        """LDM-#1507: an explicit mode must survive into the container command.
+
+        Every production call site overrides the `750` default, and the ES and
+        Liferay bind mounts need `777` because those containers run as uid
+        1000 while the chown above targets the host uid (LDM-#645). If
+        `chmod_val` ever stopped reaching the shell command -- a hardcoded
+        mode in the f-string, a dropped parameter -- the helper would report
+        success while silently locking uid 1000 out of every tree it touched,
+        and no caller would notice until a container failed to boot.
+
+        The default is covered by the test above; this pins the other half of
+        the contract, and asserts on the mode actually applied rather than on
+        the argument going in.
+        """
+        from ldm_core.utils import reclaim_volume_permissions
+
+        with (
+            patch("ldm_core.utils.run_command") as mock_run,
+            patch("pathlib.Path.exists", return_value=True),
+            patch("ldm_core.utils.platform.system", return_value="Linux"),
+        ):
+            reclaim_volume_permissions(
+                "/tmp/es-data", uid="1001", gid="1001", chmod_val="777"
+            )
+
+            docker_cmd = mock_run.call_args[0][0][-1]
+
+        applied = re.search(r"chmod -R (\d+) /workspace", docker_cmd)
+        self.assertIsNotNone(
+            applied, f"no chmod reached the helper container: {docker_cmd!r}"
+        )
+        assert applied is not None
+        mode = applied.group(1)
+        self.assertEqual(
+            "777",
+            mode,
+            f"caller asked for 777, container was told {mode} -- a uid-1000 "
+            "container cannot write a host-owned bind mount at that mode.",
+        )
 
     def test_run_command_timeout(self):
         import subprocess
