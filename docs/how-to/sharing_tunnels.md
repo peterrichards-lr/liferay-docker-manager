@@ -73,8 +73,16 @@ ldm share start [project] --provider lfr-tunnel --subdomain my-subdomain --ports
 ```
 
 - If `--provider` is omitted, LDM defaults to `lfr-tunnel`.
+- If `--domain` is omitted, the client picks a gateway itself by latency and
+  fails over automatically if that gateway goes down. Naming a known gateway
+  with `--domain` **pins** it, which disables both — useful when you need a
+  specific region, but the tunnel will stay down for the duration if that
+  gateway stops. LDM warns when a run is pinned.
 - If `--subdomain` is omitted, it defaults to the project name or your machine hostname.
-- If `--ports` is omitted, it defaults to port `8080`.
+- If `--ports` is omitted, the tunnel client auto-discovers what to expose:
+  running Docker containers first, then common Liferay ports, then the
+  client-extension ports declared by the workspace. Passing `--ports`
+  narrows it to exactly what you name, so omit it unless you need that.
 
 ### Check Tunnel Status
 
@@ -420,4 +428,4 @@ If you are running the `lfr-tunnel` Go executable directly or writing custom scr
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*
+*Last Updated: 2026-09-02* | *Last Reviewed: 2026-09-02*
