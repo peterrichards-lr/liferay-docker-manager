@@ -13,8 +13,8 @@ param([switch]$AllowVersionMismatch)
 # by scripts/release.py on every bump) so a locally-held copy can be checked
 # against what actually shipped, rather than guessing from a file mtime -- git
 # checkout/pull doesn't preserve original commit timestamps.
-# LDM_MAGIC_VERSION: 2.20.0-pre.4
-$SCRIPT_VERSION = "2.20.0-pre.4"
+# LDM_MAGIC_VERSION: 2.20.0-pre.5
+$SCRIPT_VERSION = "2.20.0-pre.5"
 
 # LDM-#1058: extracted into a named function (still in this same file -- the
 # real verification workflow copies just this one file onto test rigs with
