@@ -271,10 +271,16 @@ class DatabaseSnapshotService:
                         time.sleep(2)
                         break
                     if status == "exited":
-                        UI.error(
-                            f"Global database container '{db_container}' exited unexpectedly."
+                        # LDM-#1548: UI.error prints and RETURNS, and
+                        # handlers/snapshot.py ignores what this returns -- so
+                        # a bare `return` here made `ldm snapshot restore`
+                        # print "Restore complete." and exit 0 with the dump
+                        # never applied. The sibling failure at the end of
+                        # _execute_orchestrated_db_restore already dies with 3.
+                        UI.die(
+                            f"Global database container '{db_container}' exited unexpectedly.",
+                            exit_code=3,
                         )
-                        return
                     time.sleep(2)
 
             if db_container:
@@ -282,7 +288,12 @@ class DatabaseSnapshotService:
                     db_container, db_type, sql_file, paths, project_meta
                 )
             else:
-                UI.error("  ! Could not find database container for restore.")
+                # LDM-#1548: there is a database.sql to restore and nowhere to
+                # restore it to. Falling off the end here reported success.
+                UI.die(
+                    "  ! Could not find database container for restore.",
+                    exit_code=3,
+                )
 
     def _execute_orchestrated_db_restore(  # noqa: C901, PLR0912, PLR0915
         self, db_container, db_type, sql_file, paths, project_meta

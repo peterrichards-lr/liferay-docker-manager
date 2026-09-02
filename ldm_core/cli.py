@@ -3202,10 +3202,26 @@ def _execute_command(args, current_cmd, cmds):
         if getattr(args, "benchmark", False):
             Benchmarker.start()
 
-        cmds[current_cmd]()
+        result = cmds[current_cmd]()
 
         if getattr(args, "benchmark", False):
             Benchmarker.print_report()
+
+        # LDM-#1548: a handler that RETURNS an exit code used to have it
+        # discarded, so `ldm node wake <n>` exited 0 when the underlying
+        # script failed (handlers/node.py:_run_node_script is the only place
+        # in handlers/ that reports this way). Deliberately narrow:
+        #   - None means "said nothing" -- the overwhelming majority of
+        #     handlers -- and is left alone.
+        #   - bool is excluded explicitly: bool IS an int in Python, and
+        #     the ("run", None) entry returns Pipeline.run()'s bool. A
+        #     returned False must not become exit 0-by-accident, nor True
+        #     become exit 1.
+        #   - Non-int returns (lists, paths, MagicMocks) are ignored.
+        # Handlers that fail by calling UI.die still exit through sys.exit
+        # before reaching here; this only adds a channel, it removes none.
+        if isinstance(result, int) and not isinstance(result, bool) and result != 0:
+            sys.exit(result)
 
     except KeyboardInterrupt:
         print(f"\n{UI.WHITE}Aborted.{UI.COLOR_OFF}")
