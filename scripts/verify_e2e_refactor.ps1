@@ -1986,7 +1986,11 @@ assert expected in liferay[0], (
         $naRaw  = "naming-boot-" + [string]::Join('', [char]0x017B, [char]0x00F3, [char]0x0142, [char]0x0107)
         $naSafe = "naming-boot-Zolc"
         $naDir  = Join-Path $LDM_WORKSPACE $naRaw
-        $naPort = $TEST_PORT + 5
+        # LDM-#1553: [int] is load-bearing. $TEST_PORT is a string, and
+        # PowerShell's + concatenates when the left operand is a string -- so
+        # this produced "80825", above the 65535 ceiling, and the only
+        # boot-level check the ps1 has was running with an invalid port.
+        $naPort = [int]$TEST_PORT + 5
         $naOk   = $true
 
         Invoke-Cleanup $LDM_CMD "-y rm $naRaw --delete"
