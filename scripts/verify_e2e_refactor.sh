@@ -2118,16 +2118,20 @@ verify_shared_db_boots() {
     rm -rf "$dir"
     mkdir -p "$dir"
 
+    # LDM-#1545: --info unmasks UI.detail, which is suppressed by default and is
+    # exactly where infrastructure provisioning narrates itself ("Ensuring global
+    # database service is running...", "Initializing Global Database (MySQL)
+    # container..."). Without it the captured log says almost nothing about the
+    # step that fails here.
     set +e
     ( cd "$dir" && "$LDM_CMD" -y run "$proj" \
-        --db "$engine" --database-mode shared --port "$port" ) \
+        --db "$engine" --database-mode shared --port "$port" --info ) \
         > "${dir}/boot.log" 2>&1
     local rc=$?
     set -e
 
     if [ "$rc" -ne 0 ]; then
         echo "❌ ERROR: 'ldm run --db ${engine} --database-mode shared' exited ${rc}." | tee -a "$RESULTS_FILE_TMP"
-        tail -40 "${dir}/boot.log" | tee -a "$RESULTS_FILE_TMP"
         ok=false
     fi
 
@@ -2165,10 +2169,19 @@ verify_shared_db_boots() {
             code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${port}" || echo "000")
             if [ "$code" != "200" ]; then
                 echo "❌ ERROR: Liferay did not come up against the shared ${label} (HTTP ${code})." | tee -a "$RESULTS_FILE_TMP"
-                tail -40 "${dir}/boot.log" | tee -a "$RESULTS_FILE_TMP"
                 ok=false
             fi
         fi
+    fi
+
+    # LDM-#1545: dump the captured output on EVERY failure, not only a non-zero
+    # exit. The CI failure that motivated this was rc == 0 with a missing global
+    # container -- the case where the log is the only evidence, and the only case
+    # that discarded it. Emitted here because the cleanup below deletes the file.
+    if [ "$ok" != true ]; then
+        echo "--- ${label} boot.log (last 80 lines) ---" | tee -a "$RESULTS_FILE_TMP"
+        tail -80 "${dir}/boot.log" | tee -a "$RESULTS_FILE_TMP"
+        echo "--- end ${label} boot.log ---" | tee -a "$RESULTS_FILE_TMP"
     fi
 
     "$LDM_CMD" -y rm "$proj" --delete >/dev/null 2>&1 || true

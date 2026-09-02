@@ -1993,15 +1993,18 @@ assert expected in liferay[0], (
         Remove-Item -Recurse -Force $naDir -ErrorAction SilentlyContinue
         New-Item -ItemType Directory -Force -Path $naDir | Out-Null
 
+        # LDM-#1545: --info unmasks UI.detail, which is suppressed by default and
+        # is where provisioning narrates itself ("Ensuring global database
+        # service is running...", "Initializing ... container..."). Without it
+        # the captured log says almost nothing about the step that failed.
         $naLog = Join-Path $naDir "boot.log"
         Push-Location $naDir
-        & $LDM_CMD -y run "$naRaw" --port $naPort *> $naLog
+        & $LDM_CMD -y run "$naRaw" --port $naPort --info *> $naLog
         $naRc = $LASTEXITCODE
         Pop-Location
 
         if ($naRc -ne 0) {
             Write-Host "[ERROR] booting the non-ASCII project exited $naRc." -ForegroundColor Red
-            Get-Content $naLog -Tail 40 | ForEach-Object { Write-Host $_ }
             $naOk = $false
         }
 
@@ -2030,7 +2033,6 @@ assert expected in liferay[0], (
         #    stranded on the host.
         if ($naOk -and -not (Select-String -Path $naLog -Pattern "Liferay ready|is responding to HTTP" -Quiet)) {
             Write-Host "[ERROR] Liferay did not come up for a non-ASCII project." -ForegroundColor Red
-            Get-Content $naLog -Tail 40 | ForEach-Object { Write-Host $_ }
             $naOk = $false
         }
 
@@ -2043,6 +2045,16 @@ assert expected in liferay[0], (
                 Write-Host "[ERROR] 'ldm stop' left the non-ASCII container running (LDM-#1512)." -ForegroundColor Red
                 $naOk = $false
             }
+        }
+
+        # LDM-#1545: dump the captured output on EVERY failure, not only a
+        # non-zero exit. A missing volume or a container that outlived `ldm stop`
+        # reported nothing but the verdict, and the log is the only evidence of
+        # what the boot did. Emitted before the cleanup below deletes the file.
+        if (-not $naOk) {
+            Write-Host "--- non-ASCII boot.log (last 80 lines) ---"
+            Get-Content $naLog -Tail 80 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+            Write-Host "--- end non-ASCII boot.log ---"
         }
 
         Invoke-Cleanup $LDM_CMD "-y rm $naRaw --delete"

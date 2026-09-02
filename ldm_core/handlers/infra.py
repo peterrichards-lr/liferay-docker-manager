@@ -607,6 +607,18 @@ tls:
                 f"Starting existing Global Database ({engine_label}) container..."
             )
             DockerService.start(db_name, target_name=target_name)
+            # LDM-#1545: DockerService.start runs with check=False and its result
+            # was discarded, and the readiness probe below lives inside the
+            # `if not exists:` branch -- so a global that already existed but
+            # failed to restart (port taken, corrupt volume, OOM) was never
+            # probed at all. LDM then configured Liferay against a dead
+            # database and reported success.
+            if not DockerService.is_running(db_name, target_name=target_name):
+                UI.die(
+                    f"Global database container '{db_name}' exists but could not be started.",
+                    tip=f"Inspect it with 'docker logs {db_name}'.",
+                    exit_code=3,
+                )
 
         if not exists:
             UI.detail(f"Initializing Global Database ({engine_label}) container...")
@@ -712,13 +724,33 @@ tls:
                     "lportal",
                 ]
 
+            # LDM-#1545: this loop had no failure path. It broke on success,
+            # broke after UI.error (which prints and RETURNS -- only UI.die
+            # exits), or exhausted 60 attempts and fell through silently. So a
+            # shared database that never started was indistinguishable from one
+            # that came up, and `ldm run` reported success with no container.
+            #
+            # Observed in CI: `ldm run --db mysql --database-mode shared` exited
+            # 0 while `docker ps -a` showed the global had never been created.
+            # The E2E caught it only because LDM-#1494 checks the container
+            # directly; nothing in LDM itself objected.
+            #
+            # Exit code 3 is the contract's Infrastructure/Data Error
+            # (.agents/skills/ldm-architecture/SKILL.md). Liferay cannot run
+            # without its database, so continuing here only defers the failure
+            # to something less legible -- a readiness timeout, or a stack that
+            # boots and cannot serve.
+            ready = False
             for _ in range(60):
                 status = self.manager.get_container_status(
                     db_name, target_name=target_name
                 )
                 if status == "exited":
-                    UI.error("Global database container exited unexpectedly.")
-                    break
+                    UI.die(
+                        f"Global database container '{db_name}' exited unexpectedly.",
+                        tip=f"Inspect it with 'docker logs {db_name}'.",
+                        exit_code=3,
+                    )
                 res = self.manager.run_command(
                     ready_cmd,
                     check=False,
@@ -727,8 +759,20 @@ tls:
                 )
                 if res is not None:
                     UI.success("Global database is ready.")
+                    ready = True
                     break
                 time.sleep(2)
+
+            if not ready:
+                UI.die(
+                    f"Global database ({engine_label}) did not become ready in time.",
+                    details=f"Container: {db_name}",
+                    tip=(
+                        f"Check 'docker logs {db_name}'. If the host is slow or "
+                        "loaded, the container may still be initialising."
+                    ),
+                    exit_code=3,
+                )
 
     def setup_global_search(self, force=False, _depth=0):  # noqa: C901, PLR0912, PLR0915
         """Ensures the global ES8 search service is running.
