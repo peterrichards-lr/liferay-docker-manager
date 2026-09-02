@@ -9,6 +9,7 @@ import urllib.error
 import urllib.request
 
 from ldm_core.handlers.base import BaseHandler
+from ldm_core.handlers.composer import resolve_access_url
 from ldm_core.ui import UI
 from ldm_core.utils import read_meta
 
@@ -170,6 +171,9 @@ class FragmentsService(BaseHandler):
         # 1. Build expansion dictionary
         expansion_env = os.environ.copy()
         host_name = project_meta.get("host_name", "localhost")
+        # `pipelines/run.py` persists `ssl` as `str(_is_ssl_active(...)).lower()`,
+        # so this reads back the same decision `ldm info` and the readiness
+        # banner make -- it is the resolved value, not a raw user preference.
         is_ssl = str(project_meta.get("ssl", "False")).lower() == "true"
         share_enabled = (
             str(project_meta.get("share", "false")).lower() == "true"
@@ -195,21 +199,26 @@ class FragmentsService(BaseHandler):
                     f"https://{host_name}" if is_ssl else f"http://{host_name}"
                 )
             else:
-                proxy_ports = self.manager.infra.get_proxy_ports()
-                if is_ssl:
-                    port_suffix = (
-                        f":{proxy_ports['https']}"
-                        if proxy_ports.get("https", 443) != 443
-                        else ""
-                    )
-                    ext_base_url = f"https://{host_name}{port_suffix}"
-                else:
-                    port_suffix = (
-                        f":{proxy_ports['http']}"
-                        if proxy_ports.get("http", 80) != 80
-                        else ""
-                    )
-                    ext_base_url = f"http://{host_name}{port_suffix}"
+                # LDM-#1568: this used to build the base URL purely from the
+                # global proxy's ports, and get_proxy_ports() answered with a
+                # hardcoded 80/443 when there was no proxy to inspect. A
+                # non-SSL project has no proxy and no Traefik router, so the
+                # Headless call went to http://host:80 where nothing listened;
+                # it failed, and the client-extension/fragment setup it drives
+                # was skipped with only a warning. The base URL now comes from
+                # the same resolver the readiness banner and `ldm info` use, so
+                # what we dial is what the user is told to open.
+                proxy_ports = None
+                try:
+                    proxy_ports = self.manager.infra.get_proxy_ports()
+                except Exception:
+                    pass
+                ext_base_url = resolve_access_url(
+                    host_name,
+                    project_meta,
+                    is_ssl,
+                    proxy_ports=proxy_ports,
+                )
         else:
             ext_base_url = f"http://localhost:{lfr_port}"
 

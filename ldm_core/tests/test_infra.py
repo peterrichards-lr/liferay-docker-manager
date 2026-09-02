@@ -215,9 +215,14 @@ class TestInfraService(unittest.TestCase):
             )
 
     def test_get_proxy_ports_not_running(self):
+        """No proxy must report absence, not a plausible-looking default.
+
+        LDM-#1568: returning {"http": 80, ...} here was indistinguishable from
+        a proxy genuinely bound to 80, so callers built URLs pointing at a port
+        with no listener. `None` forces them to decide what to do about it.
+        """
         with patch("ldm_core.docker_service.DockerService.inspect", return_value=""):
-            ports = self.infra.get_proxy_ports()
-            self.assertEqual(ports, {"http": 80, "https": 443, "admin": 18080})
+            self.assertIsNone(self.infra.get_proxy_ports())
 
     def test_get_proxy_ports_running(self):
         mock_inspect_json = '{"80/tcp": [{"HostIp": "0.0.0.0", "HostPort": "8080"}], "443/tcp": [{"HostIp": "0.0.0.0", "HostPort": "8443"}], "8080/tcp": [{"HostIp": "0.0.0.0", "HostPort": "18081"}]}'
@@ -229,11 +234,33 @@ class TestInfraService(unittest.TestCase):
             self.assertEqual(ports, {"http": 8080, "https": 8443, "admin": 18081})
 
     def test_get_proxy_ports_null_settings(self):
+        """A container that answers with no port bindings is also absence."""
         with patch(
             "ldm_core.docker_service.DockerService.inspect", return_value="null"
         ):
-            ports = self.infra.get_proxy_ports()
-            self.assertEqual(ports, {"http": 80, "https": 443, "admin": 18080})
+            self.assertIsNone(self.infra.get_proxy_ports())
+
+    @patch("ldm_core.docker_service.DockerService.is_running", return_value=True)
+    def test_setup_infrastructure_keeps_requested_ports_when_proxy_unreadable(
+        self, _mock_is_running
+    ):
+        """Absence must not overwrite the ports the caller asked for.
+
+        The "reuse the running ports" branch exists to keep compose state
+        identical to what is already bound. With nothing readable there are no
+        running ports to preserve, so 8443 must survive rather than being
+        replaced by the invented 443 (LDM-#1568).
+        """
+        self.manager.args.search = False
+        with (
+            patch.object(self.infra, "get_proxy_ports", return_value=None),
+            patch.object(self.manager, "check_port", return_value=True),
+            patch.object(self.manager, "run_command"),
+        ):
+            ssl_port = self.infra.setup_infrastructure(
+                "127.0.0.1", 8443, use_ssl=True, quiet=True, force_recreate=False
+            )
+            self.assertEqual(ssl_port, 8443)
 
     @patch("ldm_core.docker_service.DockerService.exists", return_value=False)
     @patch("ldm_core.ui.UI.info")

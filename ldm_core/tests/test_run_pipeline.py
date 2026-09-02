@@ -62,6 +62,46 @@ class TestRunPipeline(unittest.TestCase):
         args, kwargs = self.context.manager.composer.write_docker_compose.call_args
         pass  # is_dry_run is handled dynamically
 
+    def _run_composer_stage_for_host(self, host_name, ssl):
+        """Drives ComposerStage far enough to reach the reachability check."""
+        self.context.set("dry_run", True)
+        self.context.set("host_name", host_name)
+        self.context.set(
+            "project_meta",
+            {"container_name": "test-project", "ssl": ssl, "port": 8080},
+        )
+        root_mock = MagicMock()
+        root_mock.__truediv__.return_value.exists.return_value = False
+        self.context.set("paths", {"root": root_mock, "configs": MagicMock()})
+        self.context.set("infra_ports", {})
+
+        with patch("ldm_core.pipelines.run.UI.warning") as mock_warning:
+            ComposerStage().execute(self.context)
+        return [call.args[0] for call in mock_warning.call_args_list]
+
+    def test_custom_host_without_ssl_warns_but_does_not_fail(self):
+        """LDM-#1568: a package may legitimately intend a custom host on http.
+
+        Nothing fronts it -- composer.py emits Traefik labels only under
+        `if ssl_enabled`, hardcoded to `tls=true` / `entrypoints=websecure` --
+        so the project is reachable on Liferay's own port only. Say so; do not
+        refuse to start, and do not silently print a URL that does not serve.
+        """
+        warnings = self._run_composer_stage_for_host("aica-e2e.demo", "false")
+
+        reachability = [w for w in warnings if "aica-e2e.demo" in w]
+        self.assertTrue(reachability, f"No reachability warning in {warnings}")
+        self.assertIn("http://aica-e2e.demo:8080", reachability[0])
+        self.assertIn("--ssl", reachability[0])
+
+    def test_custom_host_with_ssl_is_not_warned_about(self):
+        warnings = self._run_composer_stage_for_host("aica-e2e.demo", "true")
+        self.assertEqual([w for w in warnings if "aica-e2e.demo" in w], [])
+
+    def test_localhost_is_not_warned_about(self):
+        warnings = self._run_composer_stage_for_host("localhost", "false")
+        self.assertEqual([w for w in warnings if "localhost" in w], [])
+
     def test_composer_stage_threads_target_context_into_write_docker_compose(self):
         """ComposerStage must pass the TargetContext already resolved by
         ProjectInitializationStage straight through to write_docker_compose()

@@ -6,6 +6,7 @@ from datetime import datetime
 from ldm_core.config import resolve_target_context
 from ldm_core.docker_service import DockerService
 from ldm_core.handlers.base import BaseHandler
+from ldm_core.handlers.composer import resolve_access_url
 from ldm_core.ui import UI
 from ldm_core.utils import liferay_container_of, open_browser
 
@@ -126,15 +127,6 @@ class ReadinessService(BaseHandler):
         except Exception:
             pass
 
-        if ssl_enabled:
-            protocol = "https"
-            port = 443
-            if proxy_ports and "https" in proxy_ports:
-                port = proxy_ports["https"]
-        else:
-            protocol = "http"
-            port = meta.get("port", 8080)
-
         # LDM-388 / Issue #1223: Resolve active compute target context to use target_node host for remote nodes
         target_ctx = resolve_target_context(
             explicit_target=target_name,
@@ -153,12 +145,18 @@ class ReadinessService(BaseHandler):
             else host_name
         )
         target_host = "127.0.0.1" if effective_host == "localhost" else effective_host
-        url = f"{protocol}://{target_host}"
-        if protocol == "https":
-            if port != 443:
-                url += f":{port}"
-        elif port != 80:
-            url += f":{port}"
+        # LDM-#1568: the probe dials whatever the shared resolver says serves,
+        # so a green readiness check and the banner printed after it can never
+        # name different URLs. `host_override` swaps the address dialled without
+        # disturbing the SSL decision, which stays keyed on the project's own
+        # host name.
+        url = resolve_access_url(
+            host_name,
+            meta,
+            ssl_enabled,
+            proxy_ports=proxy_ports,
+            host_override=target_host,
+        )
 
         import requests
 
@@ -692,8 +690,11 @@ class ReadinessService(BaseHandler):
                         or str(project_meta.get("expose", "false")).lower() == "true"
                         or getattr(self.manager.args, "share", False)
                     )
-                    proxy_ports = self.manager.infra.get_proxy_ports()
-                    active_ssl_port = proxy_ports["https"]
+                    proxy_ports = None
+                    try:
+                        proxy_ports = self.manager.infra.get_proxy_ports()
+                    except Exception:
+                        pass
 
                     access_url = None
                     if share_enabled:
@@ -714,32 +715,22 @@ class ReadinessService(BaseHandler):
                             )
 
                     if not access_url:
-                        # Respect ssl property from args/metadata, defaulting to True if not localhost and ssl not explicitly disabled
-                        ssl_arg = getattr(self.manager.args, "ssl", None)
-                        use_ssl = (
-                            ssl_arg if ssl_arg is not None else host_name != "localhost"
+                        # LDM-#1568: this block used to claim it "respects the
+                        # ssl property from args/metadata" while reading neither
+                        # -- it took `args.ssl`, and with no --ssl flag fell back
+                        # to `host_name != "localhost"`. For a package declaring
+                        # a custom domain with `ssl` "false" that guess prints
+                        # https:// for a project served over http on :8080. The
+                        # scheme now comes from the same `_is_ssl_active` rule
+                        # `ldm info` uses, through the shared resolver.
+                        access_url = resolve_access_url(
+                            host_name,
+                            project_meta,
+                            self.manager.composer._is_ssl_active(
+                                host_name, project_meta
+                            ),
+                            proxy_ports=proxy_ports,
                         )
-                        scheme = "https" if use_ssl else "http"
-
-                        access_url = (
-                            f"{scheme}://{host_name}"
-                            if host_name != "localhost"
-                            else f"http://localhost:{project_meta.get('port', 8080)}"
-                        )
-                        if (
-                            host_name != "localhost"
-                            and use_ssl
-                            and active_ssl_port != 443
-                        ):
-                            access_url = f"https://{host_name}:{active_ssl_port}"
-                        elif (
-                            host_name != "localhost"
-                            and not use_ssl
-                            and project_meta.get("port", 8080) != 80
-                        ):
-                            access_url = (
-                                f"http://{host_name}:{project_meta.get('port', 8080)}"
-                            )
 
                     if UI.NON_INTERACTIVE:
                         UI.raw(f"✅  Liferay ready: {access_url}  ({duration_str})")

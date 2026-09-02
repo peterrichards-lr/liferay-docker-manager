@@ -1366,6 +1366,26 @@ class ComposerStage(PipelineStage):
         ssl_enabled = str(project_meta.get("ssl", "false")).lower() == "true"
         ssl_port = project_meta.get("ssl_port", 443)
 
+        # LDM-#1568: a custom host name with SSL off gets no Traefik router --
+        # `composer.py` emits routing labels only under `if ssl_enabled`, and
+        # they are hardcoded to `tls=true` / `entrypoints=websecure`, so there
+        # is no http entrypoint to front it with. The project is reachable only
+        # on Liferay's own published port, which is what the shared URL
+        # resolver reports everywhere. That is a legitimate thing for a package
+        # to intend (the AICA `.ldmp` declares exactly this), so say what the
+        # user gets rather than refusing to start.
+        if host_name and host_name != "localhost" and not ssl_enabled:
+            from ldm_core.handlers.composer import resolve_access_url
+
+            UI.warning(
+                f"'{host_name}' is a custom host name but SSL is disabled, so no "
+                f"proxy will front it. Liferay is reachable at "
+                f"{resolve_access_url(host_name, project_meta, False)} only -- "
+                f"point that name at this host and keep the port. Re-run with "
+                f"--ssl to serve it on https://{host_name} through the global "
+                f"proxy."
+            )
+
         # Provision what the resolved modes actually need, and only when
         # something is being started.
         #
