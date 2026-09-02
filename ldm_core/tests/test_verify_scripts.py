@@ -377,3 +377,54 @@ class TestSharedDbBootParity(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSharedDbAssertionCanFail(unittest.TestCase):
+    """The per-project database check must be able to fail (LDM-#1552).
+
+    It could not. `echo` appended a newline that `tr -c` turned into `_`, so
+    the pattern was `sharedboot_mysql_8082_` -- with a trailing underscore the
+    real name `lportal_sharedboot_mysql_8082` never matches. The `|lportal`
+    alternative then always matched, because the global is created with
+    MYSQL_DATABASE=lportal. So it passed against a global where the project
+    database had never been created: the one thing it exists to prove.
+
+    This runs the script's own expression rather than restating it, so a
+    revert of either half is caught.
+    """
+
+    def _expected_name(self):
+        """The expected-name expression, lifted from verify_shared_db_boots."""
+        src = BASH_SCRIPT.read_text(encoding="utf-8")
+        line = next(
+            ln for ln in src.splitlines() if ln.strip().startswith('expected="lportal_')
+        )
+        expr = line.strip()
+        script = f'proj="sharedboot-mysql-8082"\n{expr}\nprintf "%s" "$expected"\n'
+        return subprocess.run(
+            ["bash", "-c", script], capture_output=True, text=True, check=True
+        ).stdout
+
+    def test_the_expected_name_matches_the_real_one(self):
+        # utils.shared_database_name: "lportal_" + sanitized id, '-' -> '_'
+        self.assertEqual(self._expected_name(), "lportal_sharedboot_mysql_8082")
+
+    def test_no_trailing_separator_from_a_newline(self):
+        self.assertFalse(
+            self._expected_name().endswith("_"),
+            "a trailing separator means the pattern can never match the real "
+            "database name (LDM-#1552)",
+        )
+
+    def test_the_lportal_alternative_is_gone(self):
+        # As an ALTERNATIVE it defeated the specific name, since every global
+        # has an lportal database of its own.
+        func = _extract_function(
+            BASH_SCRIPT,
+            re.compile(r"^verify_shared_db_boots\s*\(\)\s*\{.*?^\}", re.M | re.S),
+        )
+        self.assertNotIn(
+            '|lportal"',
+            func,
+            "restoring the alternative makes the assertion unfailable again",
+        )

@@ -2151,9 +2151,22 @@ verify_shared_db_boots() {
     #    CREATE DATABASE ran against the shared instance.
     if [ "$ok" = true ]; then
         local expected db_list
-        expected=$(echo "$proj" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_' '_')
+        # LDM-#1552: this assertion could not fail. `echo` appends a newline
+        # which `tr -c` turned into `_`, so the pattern was
+        # `sharedboot_mysql_8082_` -- with a trailing underscore that the real
+        # name `lportal_sharedboot_mysql_8082` never matches. The `|lportal`
+        # alternative then always matched, because the global is created with
+        # MYSQL_DATABASE=lportal (handlers/infra.py) and PostgreSQL likewise has
+        # an lportal database. So it passed against a global where the project
+        # database had never been created -- the one thing it exists to prove.
+        #
+        # printf, not echo, so no newline enters the name; the full name is
+        # built the way utils.shared_database_name builds it
+        # (`lportal_` + sanitized id with - as _), and matched as a fixed
+        # string so no regex metacharacter can widen it again.
+        expected="lportal_$(printf '%s' "$proj" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_' '_')"
         db_list=$(docker exec "$global_container" "${list_cmd[@]}" 2>/dev/null || true)
-        if ! echo "$db_list" | grep -qiE "${expected}|lportal"; then
+        if ! printf '%s' "$db_list" | grep -qiF "$expected"; then
             echo "❌ ERROR: no per-project database inside ${global_container}." | tee -a "$RESULTS_FILE_TMP"
             echo "   expected something matching '${expected}'; found:" | tee -a "$RESULTS_FILE_TMP"
             echo "$db_list" | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
