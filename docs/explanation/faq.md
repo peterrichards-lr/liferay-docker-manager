@@ -55,12 +55,14 @@ By default, each LDM project spins up its own isolated database container (Postg
 > [!NOTE]
 > There is one global container per engine -- `liferay-db-global` for PostgreSQL and `liferay-db-mysql-global` for MySQL/MariaDB -- each provisioned lazily on the first project that needs it. An all-PostgreSQL or all-MySQL fleet therefore gets the full saving below; a **mixed** fleet runs both globals, which erodes it (though two containers still beat one per project). Hypersonic cannot be shared -- it runs inside the Liferay JVM, so its mode is always `embedded`, and `--db hypersonic --database-mode shared` is refused outright (LDM-#1511).
 
-* **Resource Saved**: Saves **~500MB to 1GB of RAM** per running project by eliminating redundant database container overhead.
+* **Resource Saved**: Saves **~500MB to 1GB of RAM** per running project by eliminating redundant database container overhead. Measured on one machine with `docker stats --no-stream`, the database container itself accounts for **108-127 MiB** of that per project; the rest is the overhead it brings with it. For scale, the same project's Liferay heap is `-Xmx3072m` -- roughly 25x the database -- so this is a real saving but a modest one, which is why LDM *offers* shared mode rather than defaulting to it.
 * **Usage**: Configure it globally or toggle it for specific projects:
 
   ```bash
   ldm config database-mode shared --global
   ```
+
+* **Discoverability**: LDM mentions this once, after your **first** project is created, naming the engine shared mode would use (LDM-#1510). It is deliberately not repeated: the completion banner is already dense, and a line added to it on every run gets skipped. The tip is also suppressed entirely once `database_mode` is set in `~/.ldmrc` or `/etc/ldmrc` -- to anything, `isolated` included -- because at that point you have decided.
 
 #### 2. Local Database Connection Pool Throttling
 

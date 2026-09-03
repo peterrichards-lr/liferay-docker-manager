@@ -513,6 +513,63 @@ def is_shared_capable_db(db_type):
     return str(db_type or "").lower() in SHARED_DB_CONTAINERS
 
 
+def shared_database_engine(defaults=None):
+    """The engine shared mode uses when no project names one (LDM-#1510).
+
+    #1361 gave each engine its own global container, but the FALLBACK stayed
+    hardcoded: `shared_database_container(None)` resolves to PostgreSQL --
+    "what every pre-#1361 caller got", as `setup_global_database` puts it.
+    That left the choice implicit, so turning shared mode on silently picked
+    an engine and there was no way to say which.
+
+    Routed through the existing `db_type` default so the answer has ONE
+    source. A separate `shared_db_engine` key was considered and rejected: it
+    would split "which engine" across two settings that could disagree, which
+    is precisely the split #1511 removed from the engine/mode axes.
+
+    An engine with no global container -- `hypersonic` (in-process) or the
+    legacy `external` marker -- cannot back a shared container, so it falls
+    through to PostgreSQL rather than producing a name for a container that
+    can never exist.
+    """
+    engine = None
+    if defaults is not None:
+        with contextlib.suppress(Exception):
+            engine = defaults.get("db_type")
+    if not is_shared_capable_db(engine):
+        return _DEFAULT_SHARED_DB_ENGINE
+    return str(engine).strip().lower()
+
+
+def registered_project_count():
+    """How many projects the global registry currently records (LDM-#1510).
+
+    Reads the registry file directly. There is no registry object to ask:
+    `handlers/base.py` writes this file and `find_dxp_roots` reads it, each
+    opening it themselves, and the `manager.registry` referenced by
+    `has_shared_projects` below is guarded by `hasattr` because it does not
+    generally exist.
+
+    Honours `LDM_HOME` through `get_actual_home`, so a test can point it at a
+    temp directory and never touch the developer's real `~/.ldm` (#1349).
+
+    Returns 0 for a missing or unreadable registry. An absent registry means
+    no projects have been recorded, which is exactly what the run that creates
+    the first one starts from -- and a corrupt one must not turn a cosmetic tip
+    into a failed `ldm run`.
+    """
+    from ldm_core.constants import REGISTRY_FILE
+
+    registry_path = get_actual_home() / ".ldm" / REGISTRY_FILE
+    try:
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    except Exception:
+        return 0
+    if not isinstance(registry, dict):
+        return 0
+    return len(registry)
+
+
 # --- LDM-#1511: the database model has two axes, not one -------------------
 #
 # `db_type` answers *which engine* -- dialect, driver, JDBC scheme.
