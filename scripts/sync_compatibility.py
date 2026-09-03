@@ -8,7 +8,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from ldm_core.constants import VERSION
+from ldm_core.constants import GITHUB_REPO_URL, VERSION
 from ldm_core.ui import UI
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -21,6 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # The real, shipped locations. Overridable so tests never operate on the actual
 # verification record -- those reports are an honest historical account of what
 # was tested, and a test that rewrites them destroys real data (LDM-#1391).
+REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RESULTS_DIR = Path("references/verification-results")
 DEFAULT_TABLE_FILE = Path("docs/reference/compatibility.md")
 
@@ -832,13 +833,34 @@ def sync_reports(results_dir=None, table_file=None):  # noqa: C901, PLR0912, PLR
     for meta in sorted(table_metas, key=lambda x: (x["arch"], x["os"], x["provider"])):
         badge = get_badge(meta["provider"], meta["os"])
         icon = "✅" if meta["passed"] else "❌"
-        # Derived rather than hardcoded, so an overridden results_dir still
-        # produces a correct link. At the defaults this is byte-identical to the
-        # previous literal "../../references/verification-results/<name>".
-        rel_report = os.path.relpath(
-            results_dir / meta["report_path"].name, source_file.parent
-        ).replace(os.sep, "/")
-        report_link = f"[{meta['report_path'].name}]({rel_report})"
+        # An absolute GitHub blob URL, not a filesystem-relative path.
+        #
+        # references/verification-results/ lives at the REPO ROOT, outside
+        # mkdocs' docs_dir, so a relative link out of docs/ can never resolve
+        # in the built site: `mkdocs build --strict` failed with 14 warnings,
+        # 7 each from docs/reference/compatibility.md and docs/TESTING.md.
+        #
+        # An absolute URL resolves identically whatever the referring file's
+        # depth, which also makes sync_docs.py's "../../references/" ->
+        # "../references/" rewrite a harmless no-op rather than a second place
+        # the path has to be kept in step. (sync_docs.py also targets
+        # README.md, but that file carries no COMPATIBILITY markers and is
+        # skipped.)
+        #
+        # The relative form is retained for an out-of-repo --results-dir: tests
+        # sandbox that directory (LDM-#1391), and no blob URL can be correct
+        # for a path the repository does not contain.
+        report_name = meta["report_path"].name
+        try:
+            rel_in_repo = (
+                (results_dir / report_name).resolve().relative_to(REPO_ROOT).as_posix()
+            )
+            report_target = f"{GITHUB_REPO_URL}/blob/master/{rel_in_repo}"
+        except ValueError:
+            report_target = os.path.relpath(
+                results_dir / report_name, source_file.parent
+            ).replace(os.sep, "/")
+        report_link = f"[{report_name}]({report_target})"
 
         provider_display = f"**{meta['provider']}**"
         if meta["provider_v"]:
