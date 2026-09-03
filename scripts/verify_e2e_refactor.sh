@@ -495,6 +495,27 @@ fi
 
 # Determine venv binaries
 VENV_PYTHON="${TEST_VENV}/bin/python3"
+
+# LDM-#1599: probe HTTP without curl.
+#
+# Alpine ships no curl, and `curl ... || echo "000"` cannot tell "nothing
+# answered" from "the tool is missing" -- so the LDM-#1574 assertion failed on
+# Alpine against a URL that was serving perfectly well, and burned
+# v2.21.0-pre.1. The venv python is created at the top of this script (line
+# ~497) and is present on every platform this runs on, which curl is not.
+http_status() {
+    "$VENV_PYTHON" - "$1" <<'PYEOF' 2>/dev/null || echo "000"
+import sys, urllib.error, urllib.request
+
+try:
+    with urllib.request.urlopen(sys.argv[1], timeout=30) as response:
+        print(response.status)
+except urllib.error.HTTPError as exc:
+    print(exc.code)
+except Exception:
+    print("000")
+PYEOF
+}
 VENV_PIP="${TEST_VENV}/bin/pip"
 VENV_PYTEST="${TEST_VENV}/bin/pytest"
 
@@ -1553,7 +1574,7 @@ if [ -z "$STATUS_URL" ]; then
     exit 1
 fi
 
-URL_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$STATUS_URL" || echo "000")
+URL_CODE=$(http_status "$STATUS_URL")
 case "$URL_CODE" in
     2*|3*)
         report_ok "✅ Reported access URL serves: ${STATUS_URL} -> HTTP ${URL_CODE} (LDM-#1574)."
@@ -2266,7 +2287,7 @@ verify_shared_db_boots() {
     if [ "$ok" = true ]; then
         if ! grep -qE "Liferay ready|is responding to HTTP" "${dir}/boot.log"; then
             local code
-            code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${port}" || echo "000")
+            code=$(http_status "http://localhost:${port}")
             if [ "$code" != "200" ]; then
                 echo "❌ ERROR: Liferay did not come up against the shared ${label} (HTTP ${code})." | tee -a "$RESULTS_FILE_TMP"
                 ok=false
