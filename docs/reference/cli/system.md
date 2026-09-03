@@ -2,7 +2,16 @@
 
 ## `system doctor` (legacy: `doctor`)
 
-Verify host environment health, Docker resources (CPUs/Memory), disk space (warns on dangling volumes), and project dependencies. Includes checks for required tools: `mkcert`, `telnet`, `nc`, `lcp`, and the Docker Compose V2 plugin.
+Verify host environment health, Docker resources (CPUs/Memory), disk space (warns on dangling volumes), and project dependencies. Includes checks for required tools: `mkcert`, `telnet`, `nc`, `lcp`, `lfr-tunnel`, and the Docker Compose V2 plugin.
+
+The `lfr-tunnel` row reports the client's version and the date it was last
+installed or self-upgraded, for whichever binary `ldm share` would use --
+`LDM_LFR_TUNNEL_BIN`, the `lfr_tunnel_bin` setting, or `PATH`. The date comes
+from the file itself, because `lfr-tunnel -version` reports no build date.
+The check is offline and does not compare against the gateway's minimum
+version; a client below that floor is explained when `ldm share` runs. A
+missing client is a warning, not a failure -- sharing is optional, and the
+containerised `lfr-tunnel-docker` provider needs no host binary.
 
 ```bash
 ldm system doctor          # Health check for current/selected project
@@ -516,4 +525,4 @@ ldm target migrate win-wsl aws-1
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*
+*Last Updated: 2026-09-03* | *Last Reviewed: 2026-09-03*
