@@ -8,6 +8,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     pass
 from ldm_core.constants import FALLBACK_LIFERAY_TAG, GIT_CLONE_TIMEOUT, VERSION
+from ldm_core.snapshot.archive import (
+    CLIENT_EXTENSION_SOURCES,
+    OSGI_MODULE_SOURCES,
+    scan_member_names,
+)
 from ldm_core.utils import (
     calculate_sha256,
     is_within_root,
@@ -253,6 +258,28 @@ def _discard_package_temp(temp_pkg_dir, temp_extract_dir):
             shutil.rmtree(scratch)
 
 
+def _recover_listing_from_payload(temp_extract_dir, sources):
+    """What the package actually ships for one manifest category.
+
+    LDM-#1579: reads member NAMES from files.tar.gz without extracting it. At
+    this point in the import only the outer package has been unpacked --
+    temp_extract_dir holds meta, files.tar.gz and its checksum; the project
+    tree does not exist on disk until cmd_restore() runs much later.
+
+    Returns [] when the payload is missing or unreadable, so a caller cannot
+    mistake "could not look" for "looked and found nothing".
+    """
+    payload = temp_extract_dir / "files.tar.gz"
+    if not payload.exists():
+        return []
+    try:
+        with tarfile.open(payload, "r:gz") as tar:
+            names = tar.getnames()
+    except Exception:
+        return []
+    return scan_member_names(names, sources)
+
+
 def _verify_ldm_package_manifest(self, temp_extract_dir, temp_pkg_dir, owner, repo):
     from ldm_core.utils import UI, MetaReadError
 
@@ -287,25 +314,55 @@ def _verify_ldm_package_manifest(self, temp_extract_dir, temp_pkg_dir, owner, re
     # Refuse rather than half-install. The generator that produced the
     # contradiction is fixed in the same change (snapshot/archive.py), so a
     # package rebuilt with this version cannot trip this.
-    for flag, listing, label in (
-        ("includes_client_extensions", "client_extensions", "client extensions"),
-        ("includes_osgi_modules", "osgi_modules", "OSGi modules"),
+    for flag, listing, label, sources in (
+        (
+            "includes_client_extensions",
+            "client_extensions",
+            "client extensions",
+            CLIENT_EXTENSION_SOURCES,
+        ),
+        (
+            "includes_osgi_modules",
+            "osgi_modules",
+            "OSGi modules",
+            OSGI_MODULE_SOURCES,
+        ),
     ):
         claims = str(manifest.get(flag, "false")).lower() == "true"
         listed = str(manifest.get(listing, "") or "").strip()
-        if claims and not listed:
-            _discard_package_temp(temp_pkg_dir, temp_extract_dir)
-            UI.die(
-                "Invalid LDM package: the manifest is self-contradictory.",
-                details=(
-                    f"Caused by: '{flag}' is true but '{listing}' is empty, "
-                    f"so LDM cannot tell which {label} to install."
-                ),
-                tip=(
-                    "Rebuild the package with 'ldm snapshot' on this version "
-                    "of LDM, which derives both fields from one scan."
-                ),
+        if not claims or listed:
+            continue
+
+        # LDM-#1579: recover before refusing. The archives the manifest fails
+        # to list are in the payload and discoverable, so refusing strands the
+        # user on a re-publish by whoever built the package -- the published
+        # AICA package sets includes_client_extensions true with an empty
+        # listing, and #1568 turned that into a hard failure of
+        # `ldm quickstart aica` for everyone.
+        #
+        # This corrects a wrong manifest from the package's own contents; it is
+        # not the half-install #1568 set out to prevent.
+        recovered = _recover_listing_from_payload(temp_extract_dir, sources)
+        if recovered:
+            manifest[listing] = ",".join(recovered)
+            UI.warning(
+                f"Package manifest claims {label} but lists none. "
+                f"Recovered {len(recovered)} from the package contents."
             )
+            continue
+
+        _discard_package_temp(temp_pkg_dir, temp_extract_dir)
+        UI.die(
+            "Invalid LDM package: the manifest is self-contradictory.",
+            details=(
+                f"Caused by: '{flag}' is true but '{listing}' is empty, and "
+                f"the package ships no {label} either."
+            ),
+            tip=(
+                "Rebuild the package with 'ldm snapshot' on this version "
+                "of LDM, which derives both fields from one scan."
+            ),
+        )
 
     db_type = manifest.get("db_type")
     if db_type and db_type not in [

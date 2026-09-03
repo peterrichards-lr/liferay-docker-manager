@@ -2,10 +2,61 @@ import errno
 import json
 import os
 import tarfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, safe_extract
+
+# LDM-#1579: the directory/pattern pairs that define what a project ships, as
+# paths relative to the project root.
+#
+# The snapshot generator globs a project on disk; the importer reads member
+# names out of a package's files.tar.gz, before anything is extracted. Stating
+# the sets once means those two views cannot disagree about what a package
+# contains -- disagreement between two scans is exactly what LDM-#1568 was.
+#
+# "themes" is deliberately absent from the module sources. `modules_list` below
+# iterates ["modules", "deploy", "themes"], but setup_paths() defines no
+# "themes" key, so `paths.get("themes")` is always None and that branch has
+# never matched anything. Mirrored here as it actually behaves, not as it reads.
+CLIENT_EXTENSION_SOURCES = (
+    ("osgi/client-extensions", "*.zip"),
+    ("deploy", "*.zip"),
+    ("client-extensions", "*.zip"),
+    ("client-extensions", "*/dist/*.zip"),
+)
+
+OSGI_MODULE_SOURCES = (
+    ("osgi/modules", "*.jar"),
+    ("osgi/modules", "*.war"),
+    ("deploy", "*.jar"),
+    ("deploy", "*.war"),
+)
+
+
+def scan_member_names(names, sources):
+    """Bare filenames among `names` matching any (directory, pattern) source.
+
+    `names` are POSIX-relative paths as stored in a package's files.tar.gz.
+
+    Matching is anchored at the package root. PurePosixPath.match() alone is
+    right-anchored, so "vendor/deploy/x.zip" would satisfy "deploy/*.zip";
+    comparing segment counts first rejects that. Returns sorted, de-duplicated
+    bare names, matching what _scan_client_extension_archives() produces for
+    the same tree.
+    """
+    found: set[str] = set()
+    for raw in names:
+        name = str(raw).lstrip("./")
+        if not name:
+            continue
+        rel = PurePosixPath(name)
+        for directory, pattern in sources:
+            full = f"{directory}/{pattern}"
+            if len(rel.parts) == len(PurePosixPath(full).parts) and rel.match(full):
+                found.add(rel.name)
+                break
+    return sorted(found)
 
 
 def _scan_client_extension_archives(paths):
