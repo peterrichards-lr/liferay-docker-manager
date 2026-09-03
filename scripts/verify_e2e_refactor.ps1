@@ -1500,6 +1500,58 @@ zf.close()
         throw "Expected exit code 5 (Idempotent No-Op) from 'ldm -y up' on an already-running project, got $upExitCode."
     }
 
+    Write-Host ">> Verifying the reported access URL is the one that serves (LDM-#1574)..."
+    # LDM-#1574: three code paths disagreed about a project's access URL, so
+    # quickstart printed one that was dead. resolve_access_url()
+    # (handlers/composer.py) is now the single resolver, and 'status --json'
+    # reports what it returns (diagnostics/info.py:780).
+    #
+    # Placement is load-bearing. '"url": url if project_running else None', so
+    # the same assertion against a STOPPED project reads None and proves
+    # nothing -- exactly how the exit-5 assertion above was wrong for two
+    # burned tags. The idempotency check above leaves the project running, and
+    # that is the only reason this can see a URL at all.
+    #
+    # Asserting the URL RESPONDS rather than that it equals a string rebuilt
+    # here: a rebuilt expectation would restate the resolver and pass whatever
+    # it produced. A dead URL answers 0, which is the defect.
+    $statusUrlRaw = & $LDM_CMD status . --json 2>$null
+    $statusUrl = $statusUrlRaw | & $VENV_PYTHON -c @"
+import json, sys
+try:
+    data = json.loads(sys.stdin.read())
+except Exception:
+    sys.exit(0)
+for p in data.get('projects', []):
+    if p.get('url'):
+        print(p['url'])
+        break
+"@
+
+    if ([string]::IsNullOrWhiteSpace($statusUrl)) {
+        Write-Host ($statusUrlRaw | Out-String)
+        throw "status --json reported no access URL for a RUNNING project (LDM-#1574)."
+    }
+
+    $statusUrl = $statusUrl.Trim()
+    $urlCode = 0
+    try {
+        $resp = Invoke-WebRequest -Uri $statusUrl -TimeoutSec 30 -UseBasicParsing -MaximumRedirection 0 -ErrorAction Stop
+        $urlCode = [int]$resp.StatusCode
+    } catch {
+        if ($_.Exception.Response) {
+            $urlCode = [int]$_.Exception.Response.StatusCode
+        } else {
+            $urlCode = 0
+        }
+    }
+
+    if ($urlCode -ge 200 -and $urlCode -lt 400) {
+        Write-Verdict "[SUCCESS] Reported access URL serves: $statusUrl -> HTTP $urlCode (LDM-#1574)."
+    } else {
+        throw "LDM reports an access URL that does not serve: $statusUrl -> HTTP $urlCode. 0 means nothing answered -- the dead-URL defect this check exists for (LDM-#1574)."
+    }
+
 
     Write-Host ">> Verifying Client Extension deploy & staging (#1257 / #1262)..."
     # LDM-#1262: this check previously passed a *directory*
@@ -1557,6 +1609,45 @@ zf.close()
     }
 
     Remove-Item -Recurse -Force "cx-build" -ErrorAction SilentlyContinue
+
+    Write-Host ">> Verifying snapshot manifest lists the extensions it claims (LDM-#1573)..."
+    # LDM-#1573: has_cx and cx_list scanned DIFFERENT directory sets -- has_cx
+    # looked in cx/, deploy/ and the build dir, cx_list only in the build dir.
+    # A project whose extensions live in osgi/client-extensions/ therefore
+    # produced a manifest claiming includes_client_extensions "true" with
+    # client_extensions "". The published AICA package still has that shape.
+    #
+    # Non-vacuous BECAUSE of the CX deploy above: it leaves
+    # osgi/client-extensions/$cxName.zip staged, precisely the directory the
+    # old cx_list did not scan. Without that file both fields read
+    # false-and-empty, agree trivially, and prove nothing. Confirmed both ways
+    # against a real 'ldm snapshot' before landing: with the archive the
+    # manifest reads true/"synthetic-cx.zip", without it false/"".
+    #
+    # --files-only skips the database dump: this asserts a filesystem scan, and
+    # a dump would add minutes and a database dependency for nothing.
+    Log-AndRun "Snapshot for manifest consistency" $LDM_CMD "-y snapshot . -n cx-manifest-check --files-only"
+
+    $snapMeta = Get-ChildItem -Path "snapshots" -Recurse -Filter "meta" -ErrorAction SilentlyContinue |
+        Sort-Object FullName | Select-Object -Last 1
+    if (-not $snapMeta) {
+        Get-ChildItem "snapshots" -ErrorAction SilentlyContinue | Out-String | Write-Host
+        throw "No snapshot manifest was produced (LDM-#1573)."
+    }
+
+    & $VENV_PYTHON -c @"
+import json, sys
+m = json.load(open(sys.argv[1]))
+inc = str(m.get('includes_client_extensions', '')).lower()
+lst = str(m.get('client_extensions', '') or '')
+assert inc == 'true', 'includes_client_extensions is %r, but a CX is staged' % inc
+assert sys.argv[2] in lst, 'client_extensions is %r and omits %r' % (lst, sys.argv[2])
+"@ $snapMeta.FullName "$cxName.zip"
+    if ($LASTEXITCODE -ne 0) {
+        Get-Content $snapMeta.FullName | Select-String "client_extensions" | Out-String | Write-Host
+        throw "Snapshot manifest claims client extensions it does not list (LDM-#1573). Manifest: $($snapMeta.FullName)"
+    }
+    Write-Verdict "[SUCCESS] Snapshot manifest lists the client extension it claims (LDM-#1573)."
 
     Write-Host ">> Verifying Portal Patch Overlay (#1264)..."
     # The patch JAR is SYNTHETIC and deliberately inert: a valid OSGi bundle

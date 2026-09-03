@@ -1520,6 +1520,51 @@ else
     exit 1
 fi
 
+echo ">> Verifying the reported access URL is the one that serves (LDM-#1574)..."
+# LDM-#1574: three code paths disagreed about a project's access URL, so
+# quickstart printed one that was dead. resolve_access_url()
+# (handlers/composer.py) is now the single resolver, and `status --json`
+# reports what it returns (diagnostics/info.py:780).
+#
+# Placement is load-bearing. `"url": url if project_running else None`, so the
+# same assertion against a STOPPED project reads None and proves nothing --
+# which is exactly how the exit-5 assertion above was wrong for two burned
+# tags. The idempotency check immediately above leaves the project running,
+# and that is the only reason this can see a URL at all.
+#
+# Asserting that the URL RESPONDS, rather than that it equals some string we
+# rebuild here: a rebuilt expectation would just restate the resolver and pass
+# whatever it produced. A dead URL answers 000, which is the defect.
+STATUS_URL=$("$LDM_CMD" status . --json 2>/dev/null | "$VENV_PYTHON" -c "
+import json, sys
+try:
+    data = json.loads(sys.stdin.read())
+except Exception:
+    sys.exit(0)
+for p in data.get('projects', []):
+    if p.get('url'):
+        print(p['url'])
+        break
+" || true)
+
+if [ -z "$STATUS_URL" ]; then
+    echo "❌ ERROR: status --json reported no access URL for a RUNNING project (LDM-#1574)." | tee -a "$RESULTS_FILE_TMP"
+    "$LDM_CMD" status . --json 2>&1 | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+URL_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$STATUS_URL" || echo "000")
+case "$URL_CODE" in
+    2*|3*)
+        report_ok "✅ Reported access URL serves: ${STATUS_URL} -> HTTP ${URL_CODE} (LDM-#1574)."
+        ;;
+    *)
+        echo "❌ ERROR: LDM reports an access URL that does not serve: ${STATUS_URL} -> HTTP ${URL_CODE} (LDM-#1574)." | tee -a "$RESULTS_FILE_TMP"
+        echo "   000 means nothing answered -- the dead-URL defect this check exists for." | tee -a "$RESULTS_FILE_TMP"
+        exit 1
+        ;;
+esac
+
 
 echo ">> Verifying Client Extension deploy & staging (#1257 / #1262)..."
 # LDM-#1262: this check previously passed a *directory* (`deploy . synthetic-cx/`).
@@ -1579,6 +1624,48 @@ else
 fi
 
 rm -rf "cx-build"
+
+echo ">> Verifying snapshot manifest lists the extensions it claims (LDM-#1573)..."
+# LDM-#1573: has_cx and cx_list scanned DIFFERENT directory sets -- has_cx
+# looked in cx/, deploy/ and the build dir, cx_list only in the build dir. A
+# project whose extensions live in osgi/client-extensions/ therefore produced
+# a manifest claiming includes_client_extensions "true" with
+# client_extensions "". The published AICA package still has that shape.
+#
+# This is non-vacuous BECAUSE of the CX deploy above: it leaves
+# osgi/client-extensions/${CX_NAME}.zip staged, which is precisely the
+# directory the old cx_list did not scan. Without that file both fields read
+# false-and-empty, agree trivially, and the check proves nothing. Confirmed
+# both ways against a real `ldm snapshot` before landing: with the archive the
+# manifest reads true/"synthetic-cx.zip", and with it removed false/"" -- so
+# the assertion is sensitive to the thing it measures.
+#
+# --files-only skips the database dump: this asserts a filesystem scan, and a
+# dump would add minutes and a database dependency for nothing.
+log_and_run "Snapshot for manifest consistency" "$LDM_CMD" -y snapshot . -n cx-manifest-check --files-only
+
+SNAP_META=$(find snapshots -maxdepth 2 -name meta 2>/dev/null | sort | tail -1)
+if [ -z "$SNAP_META" ]; then
+    echo "❌ ERROR: no snapshot manifest was produced (LDM-#1573)." | tee -a "$RESULTS_FILE_TMP"
+    find snapshots -maxdepth 2 2>&1 | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+if "$VENV_PYTHON" -c "
+import json, sys
+m = json.load(open(sys.argv[1]))
+inc = str(m.get('includes_client_extensions', '')).lower()
+lst = str(m.get('client_extensions', '') or '')
+assert inc == 'true', f'includes_client_extensions is {inc!r}, but a CX is staged'
+assert sys.argv[2] in lst, f'client_extensions is {lst!r} and omits {sys.argv[2]!r}'
+" "$SNAP_META" "${CX_NAME}.zip"; then
+    report_ok "✅ Snapshot manifest lists the client extension it claims (LDM-#1573)."
+else
+    echo "❌ ERROR: snapshot manifest claims client extensions it does not list (LDM-#1573)." | tee -a "$RESULTS_FILE_TMP"
+    echo "   manifest: $SNAP_META" | tee -a "$RESULTS_FILE_TMP"
+    grep -E "client_extensions" "$SNAP_META" | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
 
 echo ">> Verifying Portal Patch Overlay (#1264)..."
 # The patch JAR is SYNTHETIC and deliberately inert. It is a valid OSGi bundle
