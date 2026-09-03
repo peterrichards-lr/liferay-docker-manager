@@ -159,6 +159,12 @@ LDM automatically mounts and hot-deploys these assets during stack start (`ldm r
 * **Metadata manifests** automatically record the resources included inside the snapshot (e.g. `includes_client_extensions`, `includes_osgi_modules`).
 * **Source & Build Packaging**: When running `ldm package`, LDM packs both the database/DL snapshot and the source workspace (including custom theme folders and client extensions).
 * **Hydration auto-builds**: Upon `ldm import`, LDM restores the database, moves client extension zip files to `client-extensions/`, and builds/syncs code components so the theme and extensions load seamlessly on startup.
+* **Under-reporting manifests are corrected, not rejected**: a package whose
+  manifest claims client extensions or OSGi modules but lists none is scanned
+  on import and the listing is rebuilt from the package's own contents, with a
+  warning. The import is only refused when the package ships nothing for the
+  category it claims. Packages built before LDM-#1568 can carry this
+  contradiction; the published AI Commerce Accelerator package is one.
 
 ---
 
@@ -233,4 +239,4 @@ This maps your local Liferay HTTP port (`8080`) to a free, secure Cloudflare tun
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*
+*Last Updated: 2026-09-03* | *Last Reviewed: 2026-09-03*

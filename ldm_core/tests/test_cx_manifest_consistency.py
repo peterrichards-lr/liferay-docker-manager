@@ -12,8 +12,10 @@ Observed in the published AICA package: six archives under
 osgi/client-extensions/, zero listed. Importing it produced a project that
 looked installed and was not -- the site-level setup had nothing to act on.
 
-Both halves are covered here: the generator can no longer emit the
-contradiction, and the importer refuses one if it ever sees it.
+This file covers the generator half only: it can no longer emit the
+contradiction. The importer half -- recovering a listing from the payload, and
+refusing only when the package ships nothing -- is in
+test_package_listing_recovery.py (LDM-#1579).
 """
 
 import tempfile
