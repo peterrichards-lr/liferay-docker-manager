@@ -145,7 +145,13 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
     ssl_enabled = handler.manager.composer._is_ssl_active(host_name, meta)
     port = meta.get("port", 8080)
 
-    url = f"https://{host_name}" if ssl_enabled else f"http://{host_name}:{port}"
+    # LDM-#1568: this was the one site that got the URL right, so it now
+    # *defines* it -- through the shared resolver the readiness banner and the
+    # fragment/Headless base URL also go through, rather than by three
+    # independent derivations that agreed only by coincidence.
+    from ldm_core.handlers.composer import resolve_access_url
+
+    url = resolve_access_url(host_name, meta, ssl_enabled)
     UI.raw(
         f"  {UI.WHITE}URL:{UI.COLOR_OFF}        {UI.CYAN}{UI.UNDERLINE}{url}{UI.COLOR_OFF}"
     )

@@ -9,6 +9,25 @@ All project initialization commands follow these security and naming rules:
 3. **Explicit Control**: You can override the auto-SSL behavior using `--ssl` or `--no-ssl`.
 4. **Port Mapping**: When SSL is active, the direct port `8080` mapping is removed to ensure all traffic passes through the secure Traefik proxy.
 
+### Custom hostname without SSL
+
+Rule 2 is a *default*, not a constraint: `--no-ssl`, and a `.ldmp` package
+manifest that declares `ssl: "false"` alongside a custom `host_name`, both
+produce a custom hostname with SSL off. That combination is supported, and LDM
+prints a warning at start-up saying what you get:
+
+- **No proxy fronts the project.** Traefik routing labels are emitted only for
+  SSL projects and are TLS-only (`entrypoints=websecure`), so there is no plain
+  HTTP router for the hostname.
+- **The access URL keeps Liferay's own port** — `http://my-project.local:8080`,
+  not `http://my-project.local`. Point the hostname at the machine in your
+  hosts file and keep the port.
+- `ldm info`, `ldm list` and the readiness banner all report that same URL;
+  they share one resolver, so they cannot disagree (LDM-#1568).
+
+Re-run with `--ssl` to serve the same hostname on `https://my-project.local`
+through the global proxy instead.
+
 ## Client Extension Routing & Wildcard SSL
 
 LDM automates the routing and SSL orchestration for both the main Liferay instance and its related Client Extensions using a **Wildcard Subdomain Strategy**:
@@ -23,4 +42,4 @@ LDM automates the routing and SSL orchestration for both the main Liferay instan
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-09-02* | *Last Reviewed: 2026-09-02*

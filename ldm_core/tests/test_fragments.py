@@ -433,12 +433,17 @@ class TestFragments(unittest.TestCase):
         # Mock shifted proxy ports
         mock_proxy_ports = {"http": 8080, "https": 8443, "admin": 18080}
 
-        # Scenario 1: HTTP local, proxy HTTP shifted to 8080
+        # Scenario 1: no SSL, so no Traefik router exists for this host and the
+        # proxy's http port is irrelevant. LDM-#1568: the port must come from
+        # the project's own published port (8081 here), NOT from the proxy's
+        # shifted 8080 -- which this case previously matched only because both
+        # numbers happened to be 8080.
         project_meta = {
             "tag": "2025.Q1.0",
             "container_name": "liferay-demo",
             "host_name": "my-host.local",
             "ssl": "False",
+            "port": 8081,
             "share": "false",
         }
         self.handler.args.share = False
@@ -455,7 +460,7 @@ class TestFragments(unittest.TestCase):
             patch_req = mock_urlopen.call_args_list[-1][0][0]
             payload = json.loads(patch_req.data.decode("utf-8"))
             self.assertEqual(
-                payload["definition"]["config"]["url"], "http://my-host.local:8080/test"
+                payload["definition"]["config"]["url"], "http://my-host.local:8081/test"
             )
 
         # Scenario 2: HTTPS local, proxy HTTPS shifted to 8443

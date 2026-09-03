@@ -72,9 +72,24 @@ class InfraService:
         )
         UI.success("Infrastructure setup complete.")
 
-    def get_proxy_ports(self, target_name: str | None = None):
-        """Returns the active mapped host ports for liferay-proxy-global."""
+    def get_proxy_ports(self, target_name: str | None = None) -> dict | None:
+        """Returns the mapped host ports of a RUNNING liferay-proxy-global.
+
+        Returns ``None`` when no proxy can be inspected -- there is no
+        proxy, the container is not running, or the daemon did not answer.
+
+        LDM-#1568: this used to return a hardcoded ``{"http": 80, "https":
+        443, "admin": 18080}`` in exactly those cases, which is the specific
+        lie that broke `ldm quickstart`. The proxy is only provisioned when
+        `ssl_enabled or --search or use_shared_db` (`pipelines/run.py`), so a
+        plain non-SSL project has none -- and the fragment/Headless base URL,
+        built from these ports, pointed at port 80 where nothing listened.
+        The call failed and client-extension setup was silently skipped.
+
+        Absence is not a default. Callers must handle ``None``.
+        """
         ports = {"http": 80, "https": 443, "admin": 18080}
+        found = False
         target = target_name or getattr(self.manager, "target", None)
         try:
             # Inspect the running proxy container
@@ -93,13 +108,16 @@ class InfraService:
                 if isinstance(settings, dict):
                     if settings.get("80/tcp"):
                         ports["http"] = int(settings["80/tcp"][0]["HostPort"])
+                        found = True
                     if settings.get("443/tcp"):
                         ports["https"] = int(settings["443/tcp"][0]["HostPort"])
+                        found = True
                     if settings.get("8080/tcp"):
                         ports["admin"] = int(settings["8080/tcp"][0]["HostPort"])
+                        found = True
         except Exception:
             pass
-        return ports
+        return ports if found else None
 
     def setup_infrastructure(  # noqa: C901, PLR0912, PLR0915
         self,
@@ -235,11 +253,16 @@ class InfraService:
             is_proxy_running = False
 
         if is_proxy_running and not force_recreate:
-            # Use the currently running ports to keep compose state identical
+            # Use the currently running ports to keep compose state identical.
+            # LDM-#1568: get_proxy_ports() now reports absence with None -- if
+            # the container cannot be inspected there are no "currently running
+            # ports" to preserve, so keep the ports the caller asked for rather
+            # than inventing 80/443.
             ports = self.get_proxy_ports()
-            http_port = ports["http"]
-            ssl_port = ports["https"]
-            admin_port = ports["admin"]
+            if ports:
+                http_port = ports["http"]
+                ssl_port = ports["https"]
+                admin_port = ports["admin"]
         else:
             allocated_ports = []
 

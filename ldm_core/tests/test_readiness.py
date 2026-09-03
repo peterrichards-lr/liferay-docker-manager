@@ -1,8 +1,11 @@
 import contextlib
+import json
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 from ldm_core.docker_service import DockerService
@@ -1542,3 +1545,238 @@ services:
             mock_die.assert_called_with(
                 "Project 'test-project' is running but HTTP http://127.0.0.1:8080 is not responding correctly."
             )
+
+
+class TestAccessUrlAgreement(unittest.TestCase):
+    """LDM-#1568: the three sites that name a project's access URL must agree.
+
+    The readiness banner, the fragment/Headless base URL and `ldm info` each
+    derived the URL independently -- from the hostname, from the global
+    proxy's ports, and from the metadata respectively. For the packaged case
+    `ldm quickstart aica` produces on every run (custom host name, `ssl`
+    "false", and therefore NO proxy provisioned) they produced
+    `https://aica-e2e.demo`, `http://aica-e2e.demo` and
+    `http://aica-e2e.demo:8080`. Only the last one serves.
+
+    Asserting any single path in isolation would have passed while the bug was
+    live -- each was self-consistent. The disagreement IS the bug, so what is
+    asserted here is that they agree, and that what they agree on is what
+    Liferay actually listens on.
+    """
+
+    # The AICA `.ldmp` manifest supplies both values (workspace/importer.py
+    # takes `host_name` and `ssl` from the package), so this is the default
+    # first-run shape, not an edge case.
+    PACKAGED_META: ClassVar[dict] = {
+        "project_name": "aica",
+        "container_name": "aica",
+        "liferay_container_name": "aica",
+        "host_name": "aica-e2e.demo",
+        "ssl": "false",
+        "port": 8080,
+        "tag": "2025.Q1.0",
+        "share": "false",
+        "expose": "false",
+    }
+
+    # Liferay publishes 8080 and nothing fronts it: composer.py emits Traefik
+    # labels only under `if ssl_enabled`, so a non-SSL project has no router.
+    WHAT_ACTUALLY_SERVES = "http://aica-e2e.demo:8080"
+
+    def setUp(self):
+        self.tmp_dir_obj = tempfile.TemporaryDirectory()
+        self.tmp_dir = Path(self.tmp_dir_obj.name)
+        self.addCleanup(self.tmp_dir_obj.cleanup)
+
+        update_patcher = patch(
+            "ldm_core.diagnostics.doctor.check_for_updates", return_value=(None, None)
+        )
+        update_patcher.start()
+        self.addCleanup(update_patcher.stop)
+
+        self.handler = MockRuntime()
+        self.handler.detect_project_path = MagicMock(return_value=self.tmp_dir)  # type: ignore[method-assign]
+        self.handler.args.browser = False
+        self.handler.args.total_start = None
+        self.handler.args.share = False
+        # `--ssl` is `action="store_true", default=None` (cli.py), and this is
+        # the quickstart path where it was not passed. Metadata therefore
+        # decides, which is the whole point of the case under test -- leaving
+        # it as MagicMock's truthy auto-attribute would silently force SSL on.
+        self.handler.args.ssl = None
+        # No proxy is running for this project, and get_proxy_ports() now says
+        # so with None instead of inventing 80/443.
+        self.handler.infra.get_proxy_ports.return_value = None
+
+    def _extract_url(self, text):
+        match = re.search(r"https?://aica-e2e\.demo(?::\d+)?", text)
+        return match.group(0) if match else None
+
+    def _banner_url(self, meta):
+        """What `_wait_for_ready` prints to the user when the boot succeeds."""
+        printed: list[str] = []
+
+        def mock_run_command(cmd, **kwargs):
+            if "logs" in cmd:
+                return ""
+            if "inspect" in cmd:
+                return "healthy"
+            return ""
+
+        with (
+            patch.object(BaseHandler, "run_command", side_effect=mock_run_command),
+            patch("time.sleep"),
+            patch("ldm_core.ui.UI.raw", side_effect=printed.append),
+            patch("ldm_core.ui.UI.success"),
+        ):
+            self.handler.handler.readiness._wait_for_ready(
+                dict(meta), meta["host_name"]
+            )
+
+        for line in printed:
+            if "🌐" in line or "Liferay ready:" in line:
+                url = self._extract_url(line)
+                if url:
+                    return url
+        raise AssertionError(f"No access URL printed in banner: {printed}")
+
+    def _headless_url(self, meta):
+        """What the fragment patcher actually dials for the Headless API.
+
+        Read back off the warning the user sees when the call fails, which is
+        the exact line the bug report quotes.
+        """
+        import urllib.error
+
+        configs_dir = self.tmp_dir / "configs"
+        configs_dir.mkdir(parents=True, exist_ok=True)
+        (configs_dir / "fragment-overrides.json").write_text(
+            json.dumps({"test-frag": {"url": "https://foo.example.com"}})
+        )
+
+        warnings: list[str] = []
+        with (
+            patch(
+                "urllib.request.urlopen", side_effect=urllib.error.URLError("no net")
+            ),
+            patch("time.sleep"),
+            patch.object(BaseHandler, "run_command", return_value=""),
+            patch("ldm_core.ui.UI.warning", side_effect=warnings.append),
+        ):
+            self.handler.handler.fragments._patch_fragment_overrides(
+                dict(meta), {"root": self.tmp_dir}, timeout=5
+            )
+
+        for line in warnings:
+            if "Headless API at" in line:
+                url = self._extract_url(line)
+                if url:
+                    return url
+        raise AssertionError(f"No Headless base URL reported: {warnings}")
+
+    def _info_url(self, meta):
+        """What `ldm info` prints on its URL row."""
+        from ldm_core.diagnostics.info import run_info
+
+        printed: list[str] = []
+        with (
+            patch.object(self.handler, "read_meta", return_value=dict(meta)),
+            patch("ldm_core.ui.UI.raw", side_effect=printed.append),
+            patch("ldm_core.ui.UI.heading"),
+            patch(
+                "ldm_core.docker_service.DockerService.get_status",
+                return_value="running",
+            ),
+            patch.object(BaseHandler, "run_command", return_value=""),
+            # run_info goes on to render containers, JVM tuning and client
+            # extensions, none of which this test is about. The URL row is
+            # printed before any of it, so anything that trips later cannot
+            # invalidate what was already captured.
+            contextlib.suppress(Exception),
+        ):
+            # MockRuntime is its own `manager`, which is all run_info needs.
+            run_info(self.handler, "aica")
+
+        for line in printed:
+            if "URL:" in line:
+                url = self._extract_url(line)
+                if url:
+                    return url
+        raise AssertionError(f"No URL row printed by run_info: {printed}")
+
+    def test_packaged_project_all_three_paths_agree(self):
+        """Custom host, ssl false, no proxy -- the shape quickstart produces."""
+        banner = self._banner_url(self.PACKAGED_META)
+        headless = self._headless_url(self.PACKAGED_META)
+        info = self._info_url(self.PACKAGED_META)
+
+        self.assertEqual(
+            {banner, headless, info},
+            {self.WHAT_ACTUALLY_SERVES},
+            f"banner={banner} headless={headless} info={info}",
+        )
+
+    def test_ssl_project_all_three_paths_agree(self):
+        """The same project with SSL on is fronted by the proxy on 443."""
+        meta = {**self.PACKAGED_META, "ssl": "true"}
+        self.handler.infra.get_proxy_ports.return_value = {
+            "http": 80,
+            "https": 443,
+            "admin": 18080,
+        }
+
+        banner = self._banner_url(meta)
+        headless = self._headless_url(meta)
+        info = self._info_url(meta)
+
+        self.assertEqual(
+            {banner, headless, info},
+            {"https://aica-e2e.demo"},
+            f"banner={banner} headless={headless} info={info}",
+        )
+
+    def test_ssl_project_follows_a_shifted_proxy_port(self):
+        """A proxy that had to move off 443 takes the URL with it.
+
+        `ldm info` reads the port from the `ssl_port` run.py persists; the
+        running paths read it off the container -- same answer either way.
+        """
+        meta = {**self.PACKAGED_META, "ssl": "true", "ssl_port": 8443}
+        self.handler.infra.get_proxy_ports.return_value = {
+            "http": 80,
+            "https": 8443,
+            "admin": 18080,
+        }
+
+        banner = self._banner_url(meta)
+        headless = self._headless_url(meta)
+        info = self._info_url(meta)
+
+        self.assertEqual(
+            {banner, headless, info},
+            {"https://aica-e2e.demo:8443"},
+            f"banner={banner} headless={headless} info={info}",
+        )
+
+    def test_non_ssl_never_borrows_the_proxy_http_port(self):
+        """A proxy running for OTHER projects must not capture this one.
+
+        There is no `entrypoints=web` router, so the proxy's http port serves
+        nothing for a non-SSL project -- reading it is what sent the Headless
+        call to a port with no listener.
+        """
+        self.handler.infra.get_proxy_ports.return_value = {
+            "http": 80,
+            "https": 443,
+            "admin": 18080,
+        }
+
+        banner = self._banner_url(self.PACKAGED_META)
+        headless = self._headless_url(self.PACKAGED_META)
+        info = self._info_url(self.PACKAGED_META)
+
+        self.assertEqual(
+            {banner, headless, info},
+            {self.WHAT_ACTUALLY_SERVES},
+            f"banner={banner} headless={headless} info={info}",
+        )

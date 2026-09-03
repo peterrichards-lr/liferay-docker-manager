@@ -15,6 +15,71 @@ from ldm_core.utils import (
 )
 
 
+def resolve_access_url(
+    host_name, meta, ssl_active, proxy_ports=None, host_override=None
+):
+    """The single source of truth for a project's access URL (LDM-#1568).
+
+    Three sites used to derive this independently and disagree for the same
+    project: `ldm info`/`ldm list` read the metadata, the readiness banner
+    guessed the scheme from the hostname, and the fragment/Headless base URL
+    read the *global proxy's* ports. A package declaring `host_name`
+    "aica-e2e.demo" with `ssl` "false" -- which the flagship `ldm quickstart
+    aica` path produces on every run -- got `http://host:8080` from the first,
+    `https://host` from the second and `http://host:80` from the third. Only
+    the first serves.
+
+    The rule, in one place:
+
+    - ``ssl_active`` decides the scheme. Callers MUST obtain it from
+      ``ComposerService._is_ssl_active(host_name, meta)`` -- the rule that
+      `ldm info` already used -- rather than re-deriving it from the hostname.
+    - Over **https** the request is served by the global Traefik proxy, so the
+      port is the proxy's mapped 443 when one is actually running
+      (``proxy_ports``), else the project's recorded ``ssl_port``, else 443.
+    - Over **http** nothing fronts the project: `composer.py` emits Traefik
+      labels only under `if ssl_enabled`, and they hardcode `tls=true` /
+      `entrypoints=websecure`. There is no `web`-entrypoint router, so the
+      proxy's http port serves nothing for this project and must NOT be
+      consulted. The port is Liferay's own published port from metadata.
+    - The port is omitted when it is the scheme's default, so
+      ``http://host:80`` is never printed as a distinct thing from
+      ``http://host``.
+
+    ``proxy_ports`` is dict-or-absent: ``InfraService.get_proxy_ports()``
+    returns ``None`` when no proxy can be inspected, and anything that is not a
+    dict is treated as absence here so a caller cannot accidentally feed a
+    sentinel back in as a port.
+
+    ``host_override`` substitutes the host in the emitted URL *without*
+    affecting the SSL decision -- `cmd_wait` dials a remote node's address or
+    127.0.0.1, neither of which should change whether the project is SSL.
+    """
+    meta = meta or {}
+    host_name = host_name or meta.get("host_name") or "localhost"
+
+    if not isinstance(proxy_ports, dict):
+        proxy_ports = None
+
+    if ssl_active:
+        scheme = "https"
+        default_port = 443
+        port = (proxy_ports or {}).get("https") or meta.get("ssl_port") or 443
+    else:
+        scheme = "http"
+        default_port = 80
+        port = meta.get("port", 8080)
+
+    try:
+        port = int(port)
+    except (TypeError, ValueError):
+        port = default_port
+
+    emitted_host = host_override or host_name
+    suffix = "" if port == default_port else f":{port}"
+    return f"{scheme}://{emitted_host}{suffix}"
+
+
 def _volume_role(volume_name):
     """Classifies a named volume by how destructive removing it would be (LDM-#1267).
 
@@ -1032,6 +1097,21 @@ class ComposerService:
                 ]
             )
 
+        # LDM-#1568: routing exists ONLY for SSL projects, and every label below
+        # is hardcoded to TLS (`tls=true`, `entrypoints=websecure`). A custom
+        # domain without SSL therefore has no router at all -- the global proxy,
+        # even when one happens to be running for another project, serves
+        # nothing on this host name. That is why `resolve_access_url` above must
+        # not consult the proxy's http port.
+        #
+        # This is the intended design, not a gap awaiting work: only SSL custom
+        # domains are proxy-fronted, because a proxy is what makes SSL on a
+        # custom domain possible at all. A non-SSL custom domain is served
+        # directly on the project's own port, and stays that way. Adding an
+        # `entrypoints=web` router here would move the canonical URL of every
+        # existing non-SSL custom-host project from `host:port` to `host`,
+        # require port 80, and pull Traefik onto boot paths that skip infra
+        # entirely -- for no gain, since the direct port already works.
         if ssl_enabled:
             traefik_id = f"{project_name}-main"
             service["labels"].extend(
