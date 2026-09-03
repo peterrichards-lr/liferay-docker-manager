@@ -4,9 +4,11 @@ Three separate defects, each one a case of a check looking for the wrong
 shape and then acting confidently on the miss.
 """
 
+import re
 import sys
 import tempfile
 import unittest
+from itertools import pairwise
 from pathlib import Path
 from unittest.mock import patch
 
@@ -64,6 +66,47 @@ class TestChangelogInsertPoint(unittest.TestCase):
                 earlier.startswith("## ["),
                 "the chosen line is not the first release heading in the file",
             )
+
+
+class TestChangelogIsChronological(unittest.TestCase):
+    """Entries never get older going UP the file.
+
+    LDM-#1585: 24 entries (2.7.28 down to 2.7.3, all 2026-05-21) sat wedged at
+    the very top, above v2.20.0. Fixing the insert-point scan alone would have
+    made this worse, not better -- matching "## [" puts the next release at the
+    true top, i.e. above that stale block, giving v2.20.1 / 170 lines of 2.7.x
+    / v2.20.0.
+
+    This invariant was checked before being relied on: across all 351 headings
+    there was exactly ONE violation, and it was this defect. So the rule is a
+    genuine property of the file, not a shape that merely happens to hold.
+    """
+
+    def _headings(self):
+        text = REAL_CHANGELOG.read_text(encoding="utf-8")
+        return [
+            (m.group(1), m.group(2))
+            for m in re.finditer(r"^## \[(.+?)\] - (\d{4}-\d{2}-\d{2})", text, re.M)
+        ]
+
+    def test_dates_never_increase_going_down_the_file(self):
+        headings = self._headings()
+        self.assertGreater(len(headings), 300, "the changelog did not parse")
+        violations = [
+            (above, below) for above, below in pairwise(headings) if above[1] < below[1]
+        ]
+        self.assertEqual(
+            violations,
+            [],
+            "an entry is older than the one below it: " + str(violations[:3]),
+        )
+
+    def test_the_newest_release_is_at_the_top(self):
+        first = self._headings()[0]
+        latest = max(h[1] for h in self._headings())
+        self.assertEqual(
+            first[1], latest, f"{first[0]} heads the file but is not the newest"
+        )
 
 
 class TestShebangScriptsAreSource(unittest.TestCase):
