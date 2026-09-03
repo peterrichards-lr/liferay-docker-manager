@@ -137,6 +137,43 @@ RELEASE_ANNOUNCEMENTS = {
             "One unreachable project no longer abandons every project after it",
         ),
     ],
+    "2.21": [
+        (
+            "ldm run --database-mode <mode>",
+            "Choose who owns the database independently of the engine: "
+            "isolated (a container per project), shared (one global container "
+            "per engine), external (someone else's server) or embedded "
+            "(in-JVM, Hypersonic only). 'external' used to occupy the engine "
+            "slot, which discarded the engine and left the dialect and driver "
+            "unset",
+        ),
+        (
+            "ldm config database-mode shared",
+            "Offered once, on first project creation, with the saving stated: "
+            "one database container for every project instead of roughly "
+            "120 MB each. The shared engine is configurable rather than "
+            "implicitly PostgreSQL",
+        ),
+        (
+            "ldm doctor",
+            "Reports the lfr-tunnel client -- its version and when it was "
+            "last installed or upgraded -- for whichever binary 'ldm share' "
+            "would actually use",
+        ),
+        (
+            "ldm quickstart <package>",
+            "A package whose manifest claims client extensions but lists none "
+            "is corrected from the package's own contents instead of refused, "
+            "and the access URL printed at the end is the one that serves",
+        ),
+        (
+            "ldm share",
+            "Leaves gateway selection and port discovery to the lfr-tunnel "
+            "client instead of pinning them, so region election and failover "
+            "work again; a client too old for the gateway is explained rather "
+            "than dumped as a raw fatal",
+        ),
+    ],
     "2.20": [
         (
             "ldm ai",
