@@ -374,7 +374,25 @@ The following is a comprehensive index of all registered CLI option flags and th
 
 - **`--archetype`**: Apply an Extensible Stack Archetype (e.g. 'keycloak-sso', 'clustered')
 - **`--ascii`**: Enable ASCII-safe output translation.
-- **`--auto-install-lfr-tunnel`**: Automatically install lfr-tunnel if not found in PATH.
+- **`--auto-install-lfr-tunnel`** *(deprecated)*: LDM no longer downloads a
+  client. The flag still parses and still means "do not prompt", so it
+  continues to work with a `lfr_tunnel_install_cmd` configured in `~/.ldmrc`;
+  without one it warns and explains how to install the client.
+
+LDM resolves an existing `lfr-tunnel` client rather than installing one, in
+this order:
+
+1. `LDM_LFR_TUNNEL_BIN`
+2. `lfr_tunnel_bin` in `~/.ldmrc`
+3. anywhere on `PATH`
+4. `~/liferay/lfr-tunnel/lfr-tunnel` -- the location endpoint protection is
+   configured to allow (`lfr-tunnel.exe` on Windows)
+5. `~/.ldm/bin/lfr-tunnel` -- where LDM used to install its own copy. Still
+   resolved so existing setups keep working, but never written to again.
+
+If no client is found, LDM explains how to install one and points at the
+containerised `lfr-tunnel-docker` provider, which needs no host binary.
+
 - **`--background`**: Run dashboard in background.
 - **`--backup-dir`**: Directory path to backup archives.
 - **`--benchmark`**: Display performance benchmark on execution.

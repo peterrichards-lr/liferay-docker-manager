@@ -54,18 +54,23 @@ class TestShareService(unittest.TestCase):
     def test_get_binary_path(self, mock_system, mock_home):
         mock_home.return_value = Path("/fake/home")
 
+        # LDM-#1576: the notional path is the EDR-whitelisted location, not
+        # the legacy ~/.ldm/bin. LDM no longer installs anything, so this is
+        # only used for messages and not-found checks -- it names where the
+        # binary belongs.
+        #
         # Unix
         mock_system.return_value = "Darwin"
         self.assertEqual(
             self.service._get_binary_path(),
-            Path("/fake/home/.ldm/bin/lfr-tunnel"),
+            Path("/fake/home/liferay/lfr-tunnel/lfr-tunnel"),
         )
 
         # Windows
         mock_system.return_value = "Windows"
         self.assertEqual(
             self.service._get_binary_path(),
-            Path("/fake/home/.ldm/bin/lfr-tunnel.exe"),
+            Path("/fake/home/liferay/lfr-tunnel/lfr-tunnel.exe"),
         )
 
     @patch("subprocess.run")
@@ -92,55 +97,12 @@ class TestShareService(unittest.TestCase):
         mock_bin.exists.return_value = False
         self.assertIsNone(self.service._get_installed_version(mock_bin))
 
-    @patch("ldm_core.handlers.share.get_actual_home")
-    @patch("ldm_core.handlers.share.download_file")
-    @patch("subprocess.run")
-    @patch("platform.system")
-    @patch("platform.machine")
-    def test_ensure_binary_download(
-        self,
-        mock_machine,
-        mock_system,
-        mock_run,
-        mock_download,
-        mock_home,
-    ):
-        mock_home.return_value = Path("/fake/home")
-        mock_system.return_value = "Darwin"
-        mock_machine.return_value = "arm64"
-
-        # Mock installed version query (returns None -> trigger download, then returns "1.3.0" after download)
-        mock_ver_res = MagicMock()
-        mock_ver_res.stdout = "v1.3.0"
-        mock_run.return_value = mock_ver_res
-        mock_download.return_value = True
-
-        # We need _get_installed_version to return None first, then "1.3.0"
-        with patch.object(
-            self.service,
-            "_get_installed_version",
-            side_effect=[None, "1.3.0"],
-        ):
-            # Mock file operations inside open()
-            with patch("pathlib.Path.chmod") as mock_chmod:
-                with patch("pathlib.Path.mkdir"):
-                    with patch("pathlib.Path.stat") as mock_stat:
-                        mock_stat.return_value.st_mode = 0o100644
-                        bin_path = self.service._ensure_binary()
-
-                    self.assertEqual(
-                        bin_path,
-                        Path("/fake/home/.ldm/bin/lfr-tunnel"),
-                    )
-                    # Should request the correct Go binary for darwin-arm64
-                    mock_download.assert_called_once()
-                    req_url = mock_download.call_args[0][0]
-                    self.assertIn("lfr-tunnel-darwin-arm64", req_url)
-                    self.assertEqual(
-                        mock_download.call_args[0][1],
-                        Path("/fake/home/.ldm/bin/lfr-tunnel"),
-                    )
-                    mock_chmod.assert_called_once()
+    # LDM-#1576: test_ensure_binary_download removed. It asserted that
+    # _ensure_binary downloaded a client from a GitHub release and chmod'd it
+    # executable -- behaviour deliberately deleted, because LDM does not
+    # install unsigned binaries. That the fetch is gone (not merely
+    # unreachable) is asserted by TestNoDownloadRemains in
+    # test_tunnel_not_managed.py.
 
     @patch("subprocess.run")
     @patch("ldm_core.handlers.share.UI")
@@ -1289,7 +1251,11 @@ class TestShareService(unittest.TestCase):
                 self.service, "_get_installed_version", return_value="1.0.0"
             ):
                 res = ShareService._resolve_existing_binary(self.service)
-                self.assertEqual(res, Path("/fake/home/.ldm/bin/lfr-tunnel"))
+                # LDM-#1576: with everything "existing", the whitelisted
+                # location is reached before the legacy ~/.ldm/bin. That the
+                # legacy path still resolves when it is the only one present
+                # is asserted in test_tunnel_not_managed.py.
+                self.assertEqual(res, Path("/fake/home/liferay/lfr-tunnel/lfr-tunnel"))
 
     @patch("ldm_core.handlers.share.UI")
     def test_ensure_binary_non_interactive_no_flag_fails(self, mock_ui):
@@ -1346,7 +1312,9 @@ class TestShareService(unittest.TestCase):
 
         with self.assertRaises(SystemExit):
             self.service._ensure_binary()
-        mock_ui.die.assert_called_once_with("Custom installation command failed.")
+        mock_ui.die.assert_called_once_with(
+            "Custom installation command failed.", exit_code=3
+        )
 
     @patch("ldm_core.handlers.share.run_command")
     @patch("ldm_core.handlers.share.UI")

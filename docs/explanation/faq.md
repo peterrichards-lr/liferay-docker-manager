@@ -192,7 +192,12 @@ This will output a public HTTPS URL (e.g., `https://my-awesome-demo.lfr.direct`)
 
    * **How it works**: Runs the custom Liferay `lfr-tunnel` CLI binary directly on your host machine.
    * **Security**: Resolves the tunnel token securely using the local token config (`LFT_CLIENT_TOKEN` or system keystore).
-   * **Custom Path**: LDM resolves custom paths via `LDM_LFR_TUNNEL_BIN` or automatically installs the tunnel binary if run with `--auto-install-lfr-tunnel`.
+   * **Resolution**: LDM resolves an existing client -- it does not install
+     one -- checking `LDM_LFR_TUNNEL_BIN`, then `lfr_tunnel_bin` in
+     `~/.ldmrc`, then `PATH`, then `~/liferay/lfr-tunnel/` (the location
+     endpoint protection allows), then the legacy `~/.ldm/bin/`. If none is
+     found it explains how to install one, or you can use the containerised
+     `lfr-tunnel-docker` provider and skip the host binary entirely.
 
 2. **`lfr-tunnel-docker` (Docker Sidecar)**:
 

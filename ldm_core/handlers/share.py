@@ -13,7 +13,6 @@ from ldm_core.docker_service import DockerService
 from ldm_core.ui import UI
 from ldm_core.utils import (
     dns_label,
-    download_file,
     get_actual_home,
     is_local_host,
     run_command,
@@ -235,10 +234,24 @@ class ShareService:
             if self._get_installed_version(path):
                 return path
 
-        # 4. Fallback default location
-        default_path = get_actual_home() / ".ldm" / "bin" / bin_name
-        if default_path.exists() and self._get_installed_version(default_path):
-            return default_path
+        # 4. The EDR-whitelisted install location, then 5. the legacy one.
+        #
+        # LDM-#1576: InfoSec whitelist the binary itself, not a directory --
+        #   */liferay/lfr-tunnel/lfr-tunnel        (macOS, Linux)
+        #   *\liferay\lfr-tunnel\lfr-tunnel.exe    (Windows)
+        # so the filename must stay exactly `lfr-tunnel`, and nothing else in
+        # that directory is covered.
+        #
+        # ~/.ldm/bin is where LDM used to install its own copy. It is still
+        # resolved so existing setups keep working, but never written to again:
+        # it sits outside the whitelist, so a binary there is one endpoint
+        # protection may quarantine.
+        for candidate in (
+            get_actual_home() / "liferay" / "lfr-tunnel" / bin_name,
+            get_actual_home() / ".ldm" / "bin" / bin_name,
+        ):
+            if candidate.exists() and self._get_installed_version(candidate):
+                return candidate
 
         return None
 
@@ -250,7 +263,10 @@ class ShareService:
 
         is_windows = platform.system().lower() == "windows"
         bin_name = "lfr-tunnel.exe" if is_windows else "lfr-tunnel"
-        return get_actual_home() / ".ldm" / "bin" / bin_name
+        # LDM-#1576: LDM installs nothing now, so this is only the notional
+        # path used in messages and not-found checks. It names the
+        # EDR-whitelisted location, because that is where the binary belongs.
+        return get_actual_home() / "liferay" / "lfr-tunnel" / bin_name
 
     def _get_installed_version(self, bin_path):
         """Queries the binary version by running it with -version."""
@@ -291,19 +307,24 @@ class ShareService:
             pass
         return None
 
-    def _ensure_binary(self):  # noqa: C901, PLR0912, PLR0915
-        """Ensures *a* lfr-tunnel binary is present, downloading one if absent.
+    def _ensure_binary(self):
+        """Resolves the lfr-tunnel client. LDM does not install one.
 
-        LDM-#1575: the name and the old docstring both said "the correct
-        version", which this has never checked -- any installed version
-        satisfies it, so the copy downloaded into ~/.ldm/bin is never
-        revisited. The gateway's min_version is enforced client-side and
-        fatally, so a raised floor strands that copy; cmd_start recognises the
-        resulting fatal and tells the user how to replace it.
+        LDM-#1576: LDM used to fetch an unsigned binary from a GitHub release,
+        chmod +x it and run it, with no checksum and no signature check --
+        `download_file` verifies neither. That download -> chmod -> execute
+        sequence is what endpoint protection objects to, and relocating the
+        destination would not have changed it.
 
-        Deliberately not a version check here: that would mean a network call
-        on every share for a floor that moves rarely. The maintainer's call was
-        to explain the failure when it happens rather than poll to prevent it.
+        It was never really management either. The client self-upgrades, and
+        `_verify_compatibility` already tells users to run `lfr-tunnel
+        -upgrade`, so LDM owned exactly one moment -- first install -- and
+        nothing after it. Following the first self-upgrade the file was no
+        longer the one LDM put there.
+
+        A user-configured `lfr_tunnel_install_cmd` is still honoured: that is
+        the user's own command, involves no unsigned fetch by LDM, and is the
+        migration path for anyone who relied on auto-install.
         """
         bin_path = self._get_binary_path()
         installed_ver = self._get_installed_version(bin_path)
@@ -314,101 +335,81 @@ class ShareService:
         if getattr(self.manager, "dry_run", False):
             return bin_path
 
-        # Check if user authorized installation
-        auto_install = getattr(self.manager.args, "auto_install_lfr_tunnel", False)
-        authorized = auto_install
-
-        if not authorized and not self.manager.non_interactive:
-            # Interactive prompt fallback
-            custom_cmd = (
-                os.environ.get("LDM_LFR_TUNNEL_INSTALL_CMD")
-                or os.environ.get("LFR_TUNNEL_INSTALL_CMD")
-                or self.manager.config.get_global_config().get("lfr_tunnel_install_cmd")
-            )
-            if custom_cmd:
-                prompt_msg = f"lfr-tunnel not found. Run custom installation command '{custom_cmd}'? [Y/n]"
-            else:
-                prompt_msg = "lfr-tunnel not found. Download and install it from GitHub to ~/.ldm/bin/lfr-tunnel? [Y/n]"
-
-            authorized = UI.confirm(prompt_msg, default="Y")
-
-        if not authorized:
-            UI.die(
-                "lfr-tunnel binary not found.\n"
-                "To automatically install it, run with --auto-install-lfr-tunnel or in interactive mode.\n"
-                "Alternatively, configure a custom binary path using 'lfr_tunnel_bin' in ~/.ldmrc or the LDM_LFR_TUNNEL_BIN env var."
-            )
-
-        # Run custom installer command if configured
         custom_cmd = (
             os.environ.get("LDM_LFR_TUNNEL_INSTALL_CMD")
             or os.environ.get("LFR_TUNNEL_INSTALL_CMD")
             or self.manager.config.get_global_config().get("lfr_tunnel_install_cmd")
         )
 
-        if custom_cmd:
-            UI.detail(f"Running custom installation command: {custom_cmd}")
-            import shlex
-
-            safe_cmd = shlex.split(custom_cmd)
-            res = run_command(safe_cmd, check=False)
-            if res is None:
-                UI.die("Custom installation command failed.")
-
-            resolved_bin = self._resolve_existing_binary()
-            if resolved_bin:
-                new_ver = self._get_installed_version(resolved_bin)
-                UI.success(
-                    f"lfr-tunnel v{new_ver} ready (installed via custom command)."
-                )
-                return resolved_bin
-            UI.die(
-                "Failed to locate lfr-tunnel binary after running the custom installation command."
+        # --auto-install-lfr-tunnel still parses on every subcommand that
+        # declares it and still means "do not ask me" -- deprecated, not
+        # removed. With a custom command configured its behaviour is unchanged.
+        # Without one there is nothing left for it to authorise, so say so
+        # instead of failing silently.
+        auto_install = getattr(self.manager.args, "auto_install_lfr_tunnel", False)
+        if auto_install and not custom_cmd:
+            UI.warning(
+                "--auto-install-lfr-tunnel no longer downloads a client: LDM "
+                "does not install unsigned binaries. Install lfr-tunnel "
+                "yourself, or set 'lfr_tunnel_install_cmd' in ~/.ldmrc to a "
+                "command that installs it."
             )
 
-        # Default fallback: GitHub download
-        sys_type = platform.system().lower()
-        if sys_type == "darwin":
-            os_name = "darwin"
-        elif sys_type == "linux":
-            os_name = "linux"
-        elif sys_type == "windows":
-            os_name = "windows"
-        else:
-            UI.die(f"Unsupported operating system: {sys_type}")
+        if custom_cmd:
+            authorized = auto_install
+            if not authorized and not self.manager.non_interactive:
+                authorized = UI.confirm(
+                    f"lfr-tunnel not found. Run custom installation command "
+                    f"'{custom_cmd}'? [Y/n]",
+                    default="Y",
+                )
+            if authorized:
+                UI.detail(f"Running custom installation command: {custom_cmd}")
+                import shlex
 
-        machine = platform.machine().lower()
-        if machine in ["x86_64", "amd64"]:
-            arch_name = "amd64"
-        elif machine in ["arm64", "aarch64"]:
-            arch_name = "arm64"
-        else:
-            arch_name = "amd64"
+                safe_cmd = shlex.split(custom_cmd)
+                res = run_command(safe_cmd, check=False)
+                if res is None:
+                    UI.die("Custom installation command failed.", exit_code=3)
 
-        # Construct download URL
-        ext = ".exe" if os_name == "windows" else ""
-        url = f"https://github.com/peterrichards-lr/lfr-tunnel/releases/latest/download/lfr-tunnel-{os_name}-{arch_name}{ext}"
+                resolved_bin = self._resolve_existing_binary()
+                if resolved_bin:
+                    new_ver = self._get_installed_version(resolved_bin)
+                    UI.success(
+                        f"lfr-tunnel v{new_ver} ready (installed via custom command)."
+                    )
+                    return resolved_bin
+                UI.die(
+                    "Ran the custom installation command, but still cannot "
+                    "find an lfr-tunnel client.",
+                    details=f"Command: {custom_cmd}",
+                    tip=(
+                        "Check that it installs onto PATH, or set "
+                        "'lfr_tunnel_bin' in ~/.ldmrc to the installed path."
+                    ),
+                    exit_code=3,
+                )
 
-        bin_path.parent.mkdir(parents=True, exist_ok=True)
-
-        try:
-            with UI.spinner(f"Downloading lfr-tunnel for {os_name}-{arch_name}..."):
-                success = download_file(url, bin_path)
-                if not success:
-                    raise RuntimeError("Download failed.")
-
-            if os_name != "windows":
-                bin_path.chmod(bin_path.stat().st_mode | 0o111)  # chmod +x
-
-            # Verify installation
-            new_ver = self._get_installed_version(bin_path)
-            if not new_ver:
-                UI.die("Failed to verify lfr-tunnel installation after download.")
-            UI.success(f"lfr-tunnel v{new_ver} ready.")
-        except Exception as e:
-            UI.die(f"Failed to download/install lfr-tunnel: {e}")
-
-        return bin_path
+        # No client, and nothing configured to install one. There is nothing to
+        # consent to, so explain rather than prompt.
+        UI.die(
+            "No lfr-tunnel client found.",
+            details=(
+                "LDM does not install one: the client self-upgrades and is "
+                "distributed by its own project."
+            ),
+            tip=(
+                f"Install it to {bin_path.parent} -- the location endpoint "
+                "protection is configured to allow -- or anywhere on PATH.\n"
+                "    Already have one elsewhere? Set 'lfr_tunnel_bin' in "
+                "~/.ldmrc, or the LDM_LFR_TUNNEL_BIN environment variable.\n"
+                "    Prefer not to install a host binary at all? Use the "
+                "containerised provider:\n"
+                "        ldm share --share-provider lfr-tunnel-docker"
+            ),
+            exit_code=3,
+        )
+        return bin_path  # unreachable; UI.die exits, but keeps the type honest
 
     def _verify_compatibility(self, cmd_prefix, local_version):
         """Checks the client against the remote server for minimum and latest versions."""
