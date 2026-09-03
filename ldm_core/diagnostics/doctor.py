@@ -880,6 +880,17 @@ class DoctorRunner:
         if lcp_status:
             self.results.append(("Liferay Cloud Auth", lcp_status, lcp_ok))
 
+        # 4.3 Tunnel client (LDM-#1578)
+        tunnel_status, tunnel_ok = _check_lfr_tunnel(self.handler)
+        if tunnel_status:
+            self.results.append(("lfr-tunnel Client", tunnel_status, tunnel_ok))
+            if tunnel_status == "Not installed":
+                self.add_hint(
+                    "Install lfr-tunnel to share a local instance, or use the "
+                    "containerised provider with "
+                    "'ldm share --share-provider lfr-tunnel-docker'."
+                )
+
         # 4.2 Project Health (if specific project is being checked)
         if self.project_paths and len(self.project_paths) == 1:
             p_path = self.project_paths[0]
@@ -2544,6 +2555,65 @@ def _check_lcp_cli(self):
         if is_auth:
             return "Logged In", True
         return "Not Logged In (Run 'lcp login')", "warn"
+    except Exception:
+        return None, None
+
+
+def describe_tunnel_client(version, mtime_epoch):
+    """The doctor line for a resolved lfr-tunnel binary.
+
+    LDM-#1578: `lfr-tunnel -version` prints "lfr-tunnel version v1.48.12" --
+    semver and nothing else. No flag exposes a build date, so the only date
+    available is the file's mtime, which records the last install or
+    self-upgrade. It is labelled "updated" rather than "built" because that is
+    what it actually means: the client self-upgrades, so the file is routinely
+    not the one that was first installed.
+
+    No staleness threshold is applied. A meaningful one would need the
+    gateway's minimum version, and that is a network call this check
+    deliberately does not make -- see the wrapper below.
+    """
+    if not version:
+        return "Version unreadable", "warn"
+
+    label = version if str(version).startswith("v") else f"v{version}"
+    if mtime_epoch is None:
+        return label, True
+
+    when = datetime.fromtimestamp(mtime_epoch).strftime("%Y-%m-%d")
+    return f"{label} (updated {when})", True
+
+
+def _check_lfr_tunnel(self):
+    """Presence, version and staleness of the lfr-tunnel client (LDM-#1578).
+
+    Resolution goes through ShareService._resolve_existing_binary() rather than
+    a bare shutil.which(), so doctor reports the binary `ldm share` will
+    actually use: that helper honours LDM_LFR_TUNNEL_BIN and the `ldmrc`
+    `lfr_tunnel_bin` setting as well as PATH. A bare PATH lookup would report
+    "Not installed" to anyone who configured a custom path, and would drift
+    from `share` over time.
+
+    Offline by design. Comparing against the gateway's floor would need
+    `-check-version`, which requires a gateway URL and -- measured -- exits 0
+    while failing when it has none, so the answer would be silently absent for
+    most users. A raised floor is explained at `ldm share` time instead
+    (LDM-#1575).
+    """
+    try:
+        from ldm_core.handlers.share import ShareService
+
+        service = ShareService(self.manager)
+        bin_path = service._resolve_existing_binary()
+        if not bin_path:
+            return "Not installed", "warn"
+
+        version = service._get_installed_version(bin_path)
+        try:
+            mtime = Path(bin_path).stat().st_mtime
+        except Exception:
+            mtime = None
+        return describe_tunnel_client(version, mtime)
     except Exception:
         return None, None
 
