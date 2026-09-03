@@ -758,7 +758,7 @@ def get_parser():  # noqa: PLR0915
     run.add_argument(
         "--auto-install-lfr-tunnel",
         action="store_true",
-        help="Automatically install lfr-tunnel if not found in PATH",
+        help="(Deprecated) LDM no longer downloads a client. Still suppresses the prompt when lfr_tunnel_install_cmd is configured.",
     )
     run.add_argument(
         "--persist-osgi",
@@ -852,7 +852,7 @@ def get_parser():  # noqa: PLR0915
     imp.add_argument(
         "--auto-install-lfr-tunnel",
         action="store_true",
-        help="Automatically install lfr-tunnel if not found in PATH",
+        help="(Deprecated) LDM no longer downloads a client. Still suppresses the prompt when lfr_tunnel_install_cmd is configured.",
     )
     imp.add_argument("--backup-dir")
     imp.add_argument("--build", action="store_true")
@@ -1859,7 +1859,7 @@ def get_parser():  # noqa: PLR0915
     share_start.add_argument(
         "--auto-install-lfr-tunnel",
         action="store_true",
-        help="Automatically install lfr-tunnel if not found in PATH",
+        help="(Deprecated) LDM no longer downloads a client. Still suppresses the prompt when lfr_tunnel_install_cmd is configured.",
     )
     share_inspector = share_subparsers.add_parser(
         "inspector",
