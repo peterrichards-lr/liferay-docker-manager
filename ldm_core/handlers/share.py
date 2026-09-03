@@ -21,6 +21,24 @@ from ldm_core.utils import (
 )
 
 
+def is_min_version_failure(stderr, stdout=""):
+    """Whether the client refused to connect because it is below the floor.
+
+    LDM-#1575: the gateway's min_version is enforced client-side and fatally.
+    Extracted so the rule can be asserted directly -- inline, the only way to
+    test it was to restate it in the test, which then passes no matter what the
+    code does.
+
+    Several markers rather than one exact string: the wording comes from the
+    client's own log.Fatalf, which this project neither controls nor has
+    observed firing.
+    """
+    combined = ((stderr or "") + "\n" + (stdout or "")).lower()
+    return any(
+        marker in combined for marker in ("too old", "min_version", "minversion")
+    )
+
+
 class ShareService:
     """Service for lfr-tunnel management (downloader, start, status, stop)."""
 
@@ -274,7 +292,19 @@ class ShareService:
         return None
 
     def _ensure_binary(self):  # noqa: C901, PLR0912, PLR0915
-        """Ensures the correct version of lfr-tunnel is installed, downloading it if necessary."""
+        """Ensures *a* lfr-tunnel binary is present, downloading one if absent.
+
+        LDM-#1575: the name and the old docstring both said "the correct
+        version", which this has never checked -- any installed version
+        satisfies it, so the copy downloaded into ~/.ldm/bin is never
+        revisited. The gateway's min_version is enforced client-side and
+        fatally, so a raised floor strands that copy; cmd_start recognises the
+        resulting fatal and tells the user how to replace it.
+
+        Deliberately not a version check here: that would mean a network call
+        on every share for a floor that moves rarely. The maintainer's call was
+        to explain the failure when it happens rather than poll to prevent it.
+        """
         bin_path = self._get_binary_path()
         installed_ver = self._get_installed_version(bin_path)
 
@@ -898,6 +928,37 @@ class ShareService:
                         UI.die("Unable to establish tunnel connection.", exit_code=3)
                 else:
                     err_out = ((res.stderr or "") + "\n" + (res.stdout or "")).lower()
+
+                    # LDM-#1575: the client enforces the gateway's min_version
+                    # itself, and fatally. ensure_installed() returns as soon as
+                    # ANY version is present, so whichever copy is found first
+                    # is never revisited -- pinned by neglect. When the gateway
+                    # raises its floor, that copy stops connecting and the user
+                    # sees a raw client fatal with nothing saying why.
+                    #
+                    # The remedy is the same whoever installed it: the client
+                    # self-upgrades (-upgrade), which is already the advice
+                    # given by _verify_compatibility above. Naming an install
+                    # location here would be wrong for anyone who installed it
+                    # themselves, and LDM does not manage upgrades either way.
+                    #
+                    # Matched on several substrings rather than one exact
+                    # string: the wording comes from the client's log.Fatalf,
+                    # which we do not control and have not observed firing.
+                    if is_min_version_failure(res.stderr, res.stdout):
+                        tip = (
+                            f"The client upgrades itself. Run:\n    {bin_path} -upgrade"
+                        )
+                        UI.die(
+                            "The lfr-tunnel client is too old for this gateway.",
+                            details=(
+                                "The gateway enforces a minimum client version and "
+                                "refused the connection."
+                            ),
+                            tip=tip,
+                            exit_code=3,
+                        )
+
                     if "is already running" in err_out:
                         UI.die(
                             f"Tunnel is already running in the background for this subdomain. "
