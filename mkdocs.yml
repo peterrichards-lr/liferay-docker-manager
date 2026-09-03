@@ -35,12 +35,15 @@ nav:
     - Multi-Node Orchestration: how-to/multi_node_orchestration.md
     - Development: how-to/development.md
     - Cloud Deployment: how-to/cloud_deployment.md
+    - Portal Patches: how-to/portal_patches.md
+    - Target Node IAM Least Privilege: how-to/target_node_iam_least_privilege.md
   - Reference:
     - Configuration: reference/configuration.md
     - CLI Reference:
       - Core: reference/cli/core.md
       - Data: reference/cli/data.md
       - System: reference/cli/system.md
+      - Cloud: reference/cli/cloud.md
     - Compatibility: reference/compatibility.md
     - Security: reference/security.md
     - Third-Party Tools: reference/third_party_tools.md
