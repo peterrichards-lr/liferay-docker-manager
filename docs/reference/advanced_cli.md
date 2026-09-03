@@ -213,6 +213,17 @@ Controls **who owns the database container**. Available modes: `isolated`, `shar
 
 `hypersonic` cannot be shared -- it runs in-process, so its mode is always `embedded`. `external` is a mode of its own: LDM uses the JDBC URL you supplied and never consults a global container.
 
+**Which engine does shared mode use?** The project's own `--db`, when it names one. When nothing does -- `ldm db start` outside a project, or a global container provisioned before any project has picked -- LDM resolves it from the `db_type` default, which is `postgresql` by convention (LDM-#1510):
+
+```bash
+ldm config defaults db_type mysql   # shared mode now provisions liferay-db-mysql-global
+ldm config defaults --remove db_type   # back to PostgreSQL
+```
+
+This was previously implicit: the fallback was hardcoded to PostgreSQL, so turning shared mode on picked an engine silently and there was no way to say which. There is deliberately **no** separate `shared_db_engine` setting -- one question, one source, so two settings cannot disagree about which engine you meant.
+
+An engine that has no global container -- `hypersonic`, or the legacy `external` marker -- is not a valid answer here and falls back to PostgreSQL rather than naming a container that can never exist.
+
 > [!NOTE]
 > `--db mysql` and `--db mariadb` share **one** container. This is not a shortcut: LDM emits an identical `jdbc:mariadb://` URL and `MariaDB103Dialect` for both engines, so Liferay cannot distinguish them from the connection down. A single container also avoids a third idle global on a mixed fleet.
 

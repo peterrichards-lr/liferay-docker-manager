@@ -68,6 +68,23 @@ class DefaultsManager:
     def get(self, key, fallback=None):
         return self.get_resolved().get(key, fallback)
 
+    def has_explicit(self, key):
+        """Whether someone SET `key`, rather than it falling back to convention.
+
+        LDM-#1510: `get_resolved()` layers CONVENTION_DEFAULTS < /etc/ldmrc <
+        ~/.ldmrc, and `get()` cannot tell the layers apart -- an explicit
+        `database_mode: isolated` in `~/.ldmrc` and the convention default of
+        the same value read identically. The difference is the whole basis of
+        deciding whether to OFFER a setting: a developer who has chosen a
+        value, including deliberately choosing the default one, has decided,
+        and inviting them to reconsider is noise.
+
+        Deliberately does not consider whether the value is *different* from
+        the convention default. "I set this explicitly" is the question, and
+        `ldm config database-mode isolated` is an answer.
+        """
+        return key in self.user_defaults or key in self.global_defaults
+
     def set_user_default(self, key, value):
         root = load_global_config_safe(self.user_path)
         self.user_defaults[key] = value

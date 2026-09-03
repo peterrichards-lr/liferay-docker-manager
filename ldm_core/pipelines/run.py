@@ -106,6 +106,88 @@ def project_has_own_db_service(db_mode):
     return str(db_mode or "").strip().lower() == "isolated"
 
 
+# The measured cost of one project's database container, from the #1510
+# investigation: `docker stats --no-stream` reported 108.4MiB and 126.5MiB for
+# two PostgreSQL containers on the same machine. Stated as a number rather
+# than as "saves resources" because the number is what makes the trade-off
+# decidable -- the same project's Liferay heap is -Xmx3072m, about 25x this.
+SHARED_DB_TIP_MB = 120
+
+
+def should_offer_shared_database_tip(
+    *, is_first_project, mode_chosen_explicitly, resolved_mode
+):
+    """Whether to tell the user that shared database mode exists (LDM-#1510).
+
+    Shared mode works and saves ~120 MB per project, but nothing advertises
+    it, so the default of one container per project is a choice nobody makes
+    knowingly.
+
+    Three conditions, and all three matter:
+
+    - **First project only.** The completion banner is already dense --
+      banner, phases, readiness, URL, path, `Next:` hints, credentials -- and
+      a line added to that stream on every run gets skipped, exactly as the
+      credentials tip did (#1508). First creation is when the choice is
+      actually live.
+    - **Not if the user has already chosen.** If `database_mode` is set in
+      `~/.ldmrc` or `/etc/ldmrc` -- to anything, `isolated` included -- the
+      decision is made and an offer to reconsider is noise. `DefaultsManager`
+      already separates the layers; `has_explicit` asks it the question.
+    - **Only when the mode really is isolated.** There is nothing to offer a
+      project that is already shared, external or embedded.
+
+    Extracted as a module-level function so the rule can be called directly.
+    Inline in the pipeline, the only way to test it would be to restate it in
+    the test, which then passes no matter what the pipeline does.
+    """
+    if not is_first_project:
+        return False
+    if mode_chosen_explicitly:
+        return False
+    return str(resolved_mode or "").strip().lower() == "isolated"
+
+
+def offer_shared_database_tip(manager, db_mode, is_new_project):
+    """Emits the #1510 tip when `should_offer_shared_database_tip` says to.
+
+    Names the engine shared mode would use. Stating it is the point of the
+    third part of #1510: the global container's engine used to be an implicit
+    PostgreSQL fallback, so turning shared mode on silently picked one.
+    """
+    from ldm_core.utils import registered_project_count, shared_database_engine
+
+    defaults = getattr(manager, "defaults", None)
+    mode_chosen_explicitly = False
+    if defaults is not None and hasattr(defaults, "has_explicit"):
+        with contextlib.suppress(Exception):
+            mode_chosen_explicitly = bool(defaults.has_explicit("database_mode"))
+
+    # `register_project` runs in EnvironmentSetupStage, before this, so the
+    # project that has just been created is already counted. One entry means
+    # it is the only one there has ever been.
+    is_first_project = bool(is_new_project) and registered_project_count() <= 1
+
+    if not should_offer_shared_database_tip(
+        is_first_project=is_first_project,
+        mode_chosen_explicitly=mode_chosen_explicitly,
+        resolved_mode=db_mode,
+    ):
+        return False
+
+    engine = shared_database_engine(defaults)
+    engine_label = "MySQL" if engine in ("mysql", "mariadb") else "PostgreSQL"
+    # The command goes first because `UI.hint` prefixes "Next step:" -- the
+    # banner's own `Next:` block sets that expectation, and "Next step: Each
+    # project runs its own database" would not read as one.
+    UI.hint(
+        f"Run 'ldm config database-mode shared' to share one {engine_label} "
+        f"container across all projects, instead of one database per project "
+        f"(~{SHARED_DB_TIP_MB} MB each)."
+    )
+    return True
+
+
 class ProjectInitializationStage(PipelineStage):
     """Handles project selection, discovery, and path setup."""
 
@@ -2151,13 +2233,21 @@ class ExecutionStage(PipelineStage):
                 if getattr(manager.args, "command", "") != "quickstart":
                     UI.phase(3, 3, "Awaiting Liferay Readiness")
 
-                return manager.runtime._wait_for_ready(
+                ready = manager.runtime._wait_for_ready(
                     project_meta,
                     host_name,
                     context.get("total_start"),
                     timeout=timeout_val,
                     browser=context.get("browser"),
                 )
+                # LDM-#1510: after the completion banner, not before it, and
+                # only on a run that actually succeeded -- a tip about saving
+                # memory is not what someone whose boot just timed out needs.
+                if ready:
+                    offer_shared_database_tip(
+                        manager, db_mode, context.get("is_new_project")
+                    )
+                return ready
 
         no_wait = getattr(manager.args, "no_wait", False)
         if no_wait:
@@ -2183,6 +2273,10 @@ class ExecutionStage(PipelineStage):
                 f"Run 'ldm link <path-to-cx>' to attach client extensions, "
                 f"or 'ldm logs -f {project_id}' to tail logs."
             )
+            # LDM-#1510: the other place a run finishes. Without this, whether
+            # a first-time user is told shared mode exists would depend on
+            # whether they happened to pass --no-wait.
+            offer_shared_database_tip(manager, db_mode, context.get("is_new_project"))
 
         return None
 

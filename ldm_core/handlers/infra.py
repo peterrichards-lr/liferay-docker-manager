@@ -710,8 +710,18 @@ tls:
         from ldm_core.utils import (
             resolve_dependency_version,
             shared_database_container,
+            shared_database_engine,
             shared_database_volume,
         )
+
+        # LDM-#1510: `db_type=None` used to mean PostgreSQL, hardcoded inside
+        # `shared_database_container`. That made the shared engine an implicit
+        # choice -- turning shared mode on picked one silently, and there was
+        # no way to say which. It now resolves through the configured `db_type`
+        # default, so `ldm config defaults db_type mysql` decides it, and the
+        # engine is named in the output below rather than merely assumed.
+        if not db_type:
+            db_type = shared_database_engine(getattr(self.manager, "defaults", None))
 
         target_name = getattr(self.manager, "target", None)
         docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
