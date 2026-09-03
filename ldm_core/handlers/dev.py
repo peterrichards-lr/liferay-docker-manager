@@ -9,6 +9,24 @@ from ldm_core.constants import VERSION
 from ldm_core.ui import UI
 
 
+def find_changelog_insert_index(lines):
+    """Where a new release heading belongs: above every existing one.
+
+    Both heading forms count. Releases up to 2.7.28 were written
+    "## [2.7.28] - ...", everything from v2.8.0 on "## [v2.8.0] - ...".
+    Matching only the "v" form skipped the older block entirely, so the index
+    landed BELOW it and every new release was filed under ~170 lines of 2.7.x
+    history instead of at the top of the file.
+
+    Returns 0 when the file carries no release heading yet, which the caller
+    treats as "use the fallback and append after the intro text".
+    """
+    for i, line in enumerate(lines):
+        if line.startswith("## ["):
+            return i
+    return 0
+
+
 class DevService:
     """Service for development-only utilities (versioning, internal tools)."""
 
@@ -307,11 +325,7 @@ class DevService:
                 UI.detail("Prepending version header to CHANGELOG.md...")
                 # Insert after the initial boilerplate (first few lines)
                 lines = content.splitlines()
-                insert_idx = 0
-                for i, line in enumerate(lines):
-                    if line.startswith("## [v"):
-                        insert_idx = i
-                        break
+                insert_idx = find_changelog_insert_index(lines)
 
                 if insert_idx == 0:
                     # Fallback: append after the intro text

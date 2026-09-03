@@ -29,6 +29,10 @@ IGNORE_DIRS = {
     ".ruff_cache",
     ".pytest_cache",
     ".ldm_temp",
+    # .claude/worktrees holds full checkouts of the repository, so scanning it
+    # walks every markdown file again once per worktree. .claude/skills is a
+    # symlink to .agents/skills, which is scanned at its canonical path.
+    ".claude",
     "node_modules",
     "e2e-work-dir",
     "build",

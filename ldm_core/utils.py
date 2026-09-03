@@ -2286,6 +2286,14 @@ def verify_executable_checksum(version):  # noqa: C901, PLR0911, PLR0912
         with open(exe_path, "rb") as f:
             content = f.read()
 
+        # A shebang script is source, whatever it is called. `ldm` installed as
+        # a console-script wrapper has no .py suffix and is not frozen, so the
+        # checks above classify it as a compiled binary -- and its hash is then
+        # compared against checksums.txt for the real binary, which it can
+        # never match. Reported as tampered when nothing is wrong.
+        if content.startswith(b"#!"):
+            return "Source", True, version
+
         # 1.1 "Magic Byte" Version Extraction
         # We look for the marker in the binary content to find the TRUE version.
         # If this marker exists, it's definitely a packaged binary.
