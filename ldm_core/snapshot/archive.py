@@ -8,6 +8,37 @@ from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, safe_extract
 
 
+def _scan_client_extension_archives(paths):
+    """Every client-extension archive this project ships, as bare filenames.
+
+    LDM-#1568: the single source of truth for both `includes_client_extensions`
+    and `client_extensions` in a snapshot manifest. They previously scanned
+    different directory sets, so a package could claim to include extensions
+    and list none -- and the import side had no way to tell that apart from a
+    project that genuinely has none.
+
+    Order is stable (sorted) so a manifest does not churn between snapshots of
+    an unchanged project, and duplicates are collapsed: the same archive can
+    legitimately appear both in a build directory and staged for deploy.
+    """
+    found: set[str] = set()
+    candidates = [
+        (paths.get("cx"), "*.zip"),
+        (paths.get("deploy"), "*.zip"),
+        (paths.get("ce_dir"), "*.zip"),
+        (paths.get("ce_dir"), "*/dist/*.zip"),
+    ]
+    for dir_path, pattern in candidates:
+        if not dir_path or not dir_path.exists() or not dir_path.is_dir():
+            continue
+        try:
+            found.update(f.name for f in dir_path.glob(pattern))
+        except Exception:
+            # A single unreadable directory must not lose the others.
+            pass
+    return sorted(found)
+
+
 class ArchiveSnapshotService:
     def __init__(self, facade):
         self.facade = facade
@@ -396,24 +427,21 @@ class ArchiveSnapshotService:
             except Exception:
                 pass
 
-        has_cx = False
-        for d in ["cx", "deploy"]:
-            dir_path = paths.get(d)
-            if dir_path and dir_path.exists() and dir_path.is_dir():
-                try:
-                    if any(dir_path.glob("*.zip")):
-                        has_cx = True
-                        break
-                except Exception:
-                    pass
-        if not has_cx:
-            ce_dir = paths.get("ce_dir")
-            if ce_dir and ce_dir.exists() and ce_dir.is_dir():
-                try:
-                    if any(ce_dir.glob("*.zip")) or any(ce_dir.glob("*/dist/*.zip")):
-                        has_cx = True
-                except Exception:
-                    pass
+        # LDM-#1568: `has_cx` and `cx_list` used to scan DIFFERENT directory
+        # sets -- has_cx looked in cx/, deploy/ and the client-extension build
+        # dir, while cx_list looked only in the build dir. A project whose
+        # extensions live in cx/ or deploy/ therefore produced a manifest
+        # claiming `includes_client_extensions: "true"` with
+        # `client_extensions: ""`: the package truthfully said it shipped
+        # extensions and then listed none.
+        #
+        # Observed in the published AICA package, which ships six archives
+        # under osgi/client-extensions/ and lists zero. Importing it produced a
+        # half-installed project.
+        #
+        # One scan now feeds both, so the pair cannot disagree by construction.
+        cx_list = _scan_client_extension_archives(paths)
+        has_cx = bool(cx_list)
 
         has_modules = False
         for d in ["modules", "deploy"]:
@@ -435,16 +463,6 @@ class ArchiveSnapshotService:
                             break
                     except Exception:
                         pass
-
-        cx_list = []
-        ce_dir = paths.get("ce_dir")
-        if ce_dir and ce_dir.exists() and ce_dir.is_dir():
-            try:
-                cx_list = [f.name for f in ce_dir.glob("*.zip")]
-                if not cx_list:
-                    cx_list = [f.name for f in ce_dir.glob("*/dist/*.zip")]
-            except Exception:
-                pass
 
         modules_list = []
         for d in ["modules", "deploy", "themes"]:
