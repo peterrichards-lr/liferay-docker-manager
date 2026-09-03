@@ -931,29 +931,24 @@ class ShareService:
 
                     # LDM-#1575: the client enforces the gateway's min_version
                     # itself, and fatally. ensure_installed() returns as soon as
-                    # ANY version is present, so the copy LDM downloads into
-                    # ~/.ldm/bin is never revisited -- pinned by neglect. When
-                    # the gateway raises its floor, that copy stops connecting
-                    # and the user sees a raw client fatal with nothing telling
-                    # them LDM owns the binary or how to replace it.
+                    # ANY version is present, so whichever copy is found first
+                    # is never revisited -- pinned by neglect. When the gateway
+                    # raises its floor, that copy stops connecting and the user
+                    # sees a raw client fatal with nothing saying why.
+                    #
+                    # The remedy is the same whoever installed it: the client
+                    # self-upgrades (-upgrade), which is already the advice
+                    # given by _verify_compatibility above. Naming an install
+                    # location here would be wrong for anyone who installed it
+                    # themselves, and LDM does not manage upgrades either way.
                     #
                     # Matched on several substrings rather than one exact
                     # string: the wording comes from the client's log.Fatalf,
                     # which we do not control and have not observed firing.
                     if is_min_version_failure(res.stderr, res.stdout):
-                        managed = get_actual_home() / ".ldm" / "bin" / bin_path.name
-                        is_managed = str(bin_path) == str(managed)
-                        if is_managed:
-                            tip = (
-                                f"LDM installed this copy. Delete it and re-run with "
-                                f"--auto-install-lfr-tunnel to fetch the current "
-                                f"release:\n    rm {managed}"
-                            )
-                        else:
-                            tip = (
-                                f"This binary is not managed by LDM ({bin_path}). "
-                                "Update it however you installed it."
-                            )
+                        tip = (
+                            f"The client upgrades itself. Run:\n    {bin_path} -upgrade"
+                        )
                         UI.die(
                             "The lfr-tunnel client is too old for this gateway.",
                             details=(
