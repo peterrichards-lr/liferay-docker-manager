@@ -46,6 +46,104 @@ class ShareService:
         # every time. One flag per process (this service is a manager
         # singleton, see ldm_core/manager.py), not per call.
         self._custom_domain_note_shown = False
+        # LDM-#1569: same one-flag-per-process reasoning as above, for the
+        # note explaining that a remembered gateway domain is no longer
+        # pinned.
+        self._unpinned_gateway_note_shown = False
+
+    # LDM-#1569: every name the lfr-tunnel client reads as an explicit
+    # gateway pin. Both region election and failover are gated on
+    # !isExplicitServer inside the client, so anything set here costs the
+    # user latency-based gateway selection *and* survival of a scheduled
+    # gateway stop. If the user set one of these themselves that's their
+    # call -- LDM must neither override it nor add one of its own.
+    GATEWAY_PIN_ENV_VARS: ClassVar[tuple[str, ...]] = (
+        "LFT_SERVER_URL",
+        "LFT_CLIENT_SERVER",
+        "LFT_SERVER",
+    )
+
+    def _explicit_gateway_domain(self):
+        """LDM-#1569: the gateway domain the user asked for *on this
+        invocation*, or None.
+
+        Deliberately not the same question as `resolve_share_config()`. That
+        one falls back to project meta and then to the global config, and
+        persists whatever it lands on back into the global config -- so it
+        answers "yes" for a domain picked at a prompt months ago on an
+        unrelated project. Treating that as an explicit gateway request is
+        what pinned every subsequent share on the machine.
+
+        Only a domain naming a *known* gateway counts. A custom vanity
+        domain is public-URL-only (#1038) and
+        `resolve_tunnel_gateway_url()` maps it to the default gateway, so
+        pinning on one would disable election and failover for a gateway the
+        user never named.
+        """
+        args = getattr(self.manager, "args", None)
+        for attr in ("share_domain", "domain"):
+            value = getattr(args, attr, None)
+            # argparse gives None when unset; non-strings are guarded the
+            # same way resolve_share_config() guards them.
+            if isinstance(value, str) and value:
+                return value if value in self.get_known_tunnel_base_domains() else None
+        return None
+
+    def _apply_gateway_pin(self, env):
+        """LDM-#1569: pin the tunnel gateway only when the user explicitly
+        asked for one, and never hide what pinning costs.
+
+        Returns the pinned gateway URL, or None when topology is left to the
+        client (the normal case).
+        """
+        preset = next((v for v in self.GATEWAY_PIN_ENV_VARS if env.get(v)), None)
+        if preset:
+            self._warn_gateway_pinned(env[preset], f"{preset} is set")
+            return env[preset]
+
+        domain = self._explicit_gateway_domain()
+        if not domain:
+            return None
+
+        url = self.resolve_tunnel_gateway_url(domain)
+        env["LFT_SERVER_URL"] = url
+        self._warn_gateway_pinned(url, "requested on the command line")
+        return url
+
+    def _warn_gateway_pinned(self, url, reason):
+        """LDM-#1569: say the cost out loud. The client prints its own
+        pinned-shutdown warning too; this one arrives before the tunnel
+        starts, so the user can drop the pin instead of debugging a tunnel
+        that never comes back after a scheduled gateway stop."""
+        UI.warning(
+            f"Tunnel gateway pinned to {url} ({reason}). Region election and "
+            "failover are disabled while pinned -- the tunnel stays down if "
+            "that gateway stops."
+        )
+
+    def _note_unpinned_gateway(self, share_domain):
+        """LDM-#1569: a remembered non-default gateway domain used to pin the
+        client. It no longer does, and silently dropping someone's stored
+        choice is its own bug -- so say so once, and say how to get it back
+        for a run that really needs it.
+
+        Only fires for a *known* gateway domain other than the default: that
+        is the only configuration whose behaviour changes here. A custom
+        vanity domain never reached a gateway anyway, and the default one is
+        what an unpinned client would most likely elect regardless.
+        """
+        if self._unpinned_gateway_note_shown or not share_domain:
+            return
+        if share_domain not in self.get_known_tunnel_base_domains():
+            return
+        if share_domain == self.get_default_tunnel_domain():
+            return
+        self._unpinned_gateway_note_shown = True
+        UI.info(
+            f"Gateway not pinned: the lfr-tunnel client picks the closest "
+            f"gateway and can fail over. Pass --domain {share_domain} to pin "
+            f"this run to '{share_domain}' instead (which disables both)."
+        )
 
     def get_known_tunnel_base_domains(self):
         """LDM-#1077: the Liferay Tunnel gateway domain(s) considered
@@ -692,7 +790,6 @@ class ShareService:
 
             token = self._get_auth_token()
 
-            ports = ports or "8080"
             # LDM-#1356: the default must be a valid DNS label. `project_id`
             # is the project DIRECTORY name, unsanitized -- so a project called
             # "Saarbrücken" asked the provider for a subdomain containing a
@@ -703,7 +800,17 @@ class ShareService:
             # rejects "_" and ".", both legal in a Docker name and illegal here.
             subdomain = subdomain or dns_label(project_id)
 
-            cmd = [str(bin_path), "-background", "-ports", ports]
+            # LDM-#1569: -ports only when the user (or lcp.json above) named
+            # them. Left off, the client auto-discovers -- Docker containers
+            # first, then 8080/13000/3000, then the workspace's
+            # client-extension ports. The old unconditional `ports or "8080"`
+            # suppressed all of that, which is why a direct `lfr-tunnel` run
+            # produced three tunnels where LDM produced one. LDM projects
+            # routinely expose client-extension ports; those are exactly what
+            # a hardcoded 8080 drops.
+            cmd = [str(bin_path), "-background"]
+            if ports:
+                cmd += ["-ports", str(ports)]
             if subdomain:
                 cmd += ["-subdomain", subdomain]
 
@@ -715,8 +822,15 @@ class ShareService:
             env = os.environ.copy()
             env["LFT_CLIENT_TOKEN"] = token
             env["LFR_TUNNEL_TOKEN"] = token
-            if "LFT_SERVER_URL" not in env and share_domain:
-                env["LFT_SERVER_URL"] = self.resolve_tunnel_gateway_url(share_domain)
+            # LDM-#1569: identity (token, subdomain, target host) is the
+            # wrapper's business; topology (which gateway, which region,
+            # failover) is the client's. LFT_SERVER_URL used to be set from
+            # whatever domain resolve_share_config() landed on -- including
+            # one remembered in the global config -- which pinned the client
+            # and silently disabled both region election and failover.
+            pinned_gateway = self._apply_gateway_pin(env)
+            if not pinned_gateway:
+                self._note_unpinned_gateway(share_domain)
 
             if getattr(self.manager, "dry_run", False):
                 UI.detail(
@@ -758,6 +872,14 @@ class ShareService:
                         )
                         if res.stdout:
                             print(res.stdout.strip())
+                        # LDM-#1569: the client emits its own warning when it
+                        # is started against a pinned gateway (no failover, so
+                        # a scheduled gateway stop takes the tunnel down for
+                        # the whole window). It goes to stderr, which the
+                        # success path dropped -- the one message that
+                        # explains a dead tunnel never reached the user.
+                        if pinned_gateway and res.stderr:
+                            print(res.stderr.strip())
                     else:
                         UI.error(f"Tunnel healthcheck failed: {err_msg}")
                         # Clean up background process

@@ -1578,3 +1578,221 @@ class TestShareService(unittest.TestCase):
                 content = cfg.read_text()
                 self.assertIn("warning_received", content)
                 self.assertIn("ldm tunnel-event", content)
+
+
+class TestShareTunnelTopology(unittest.TestCase):
+    """LDM-#1569: identity is the wrapper's business, topology is the
+    client's.
+
+    The lfr-tunnel client reads `-server` / `LFT_SERVER_URL` /
+    `LFT_CLIENT_SERVER` / `LFT_SERVER` as an explicit gateway pin and gates
+    both region election and failover on `!isExplicitServer`; and with no
+    `-ports` it auto-discovers Docker containers, then 8080/13000/3000, then
+    the workspace's client-extension ports. LDM used to set the first from a
+    domain it merely remembered, and always pass the second, defaulted to
+    8080.
+
+    Every test here asserts the argv and the environment actually handed to
+    the client -- not that some string appears in a config or in source.
+    """
+
+    def setUp(self):
+        self.mock_manager = MockManager()
+        self.service = ShareService(self.mock_manager)
+        self.service._poll_tunnel_health = MagicMock(return_value=(True, None))  # type: ignore[method-assign]
+        self.service._resolve_existing_binary = MagicMock(return_value=None)  # type: ignore[method-assign]
+        self.service._get_tunnel_api_state = MagicMock(return_value={})  # type: ignore[method-assign]
+        self.service._ensure_binary = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/bin/lfr-tunnel")
+        )
+        self.service._get_installed_version = MagicMock(return_value="1.2.3")  # type: ignore[method-assign]
+        self.service._verify_compatibility = MagicMock()  # type: ignore[method-assign]
+        self.service._get_auth_token = MagicMock(return_value="my-token")  # type: ignore[method-assign]
+        self.service.resolve_public_tunnel_url = MagicMock(  # type: ignore[method-assign]
+            return_value="https://demo.lfr-demo.online"
+        )
+        self.service._sync_gui_state = MagicMock()  # type: ignore[method-assign]
+        # argparse leaves unsupplied flags as None; MockManager.args is a
+        # MagicMock, whose auto-attributes would otherwise read as "supplied".
+        self.mock_manager.args.share_domain = None
+        self.mock_manager.args.domain = None
+
+    def _run_start(self, mock_run, stderr="", **kwargs):
+        """Starts a native tunnel and returns the (argv, env) the client got."""
+        res = MagicMock()
+        res.returncode = 0
+        res.stdout = ""
+        res.stderr = stderr
+        mock_run.return_value = res
+        self.service.cmd_start(**kwargs)
+        return mock_run.call_args[0][0], mock_run.call_args[1]["env"]
+
+    def _set_global_config(self, **values):
+        self.mock_manager.config.get_global_config = MagicMock(  # type: ignore[method-assign]
+            return_value={"share_provider": "lfr-tunnel", **values}
+        )
+
+    # --- gateway pinning -------------------------------------------------
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("subprocess.run")
+    def test_remembered_global_domain_does_not_pin_the_gateway(self, mock_run):
+        """A share_domain sitting in ~/.ldmrc is not a gateway request."""
+        self._set_global_config(share_domain="lfr-demo.se")
+
+        _cmd, env = self._run_start(mock_run, subdomain="demo")
+
+        for var in ShareService.GATEWAY_PIN_ENV_VARS:
+            self.assertNotIn(var, env)
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("subprocess.run")
+    def test_project_meta_domain_does_not_pin_the_gateway(self, mock_run):
+        """Nor does one LDM itself wrote into the project's meta last run."""
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/demo")
+        )
+        self.mock_manager.read_meta = MagicMock(  # type: ignore[method-assign]
+            return_value={"share_provider": "lfr-tunnel", "share_domain": "lfr-demo.se"}
+        )
+
+        _cmd, env = self._run_start(mock_run, subdomain="demo")
+
+        self.assertNotIn("LFT_SERVER_URL", env)
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("ldm_core.handlers.share.UI")
+    @patch("subprocess.run")
+    def test_domain_flag_pins_the_gateway_and_warns(self, mock_run, mock_ui):
+        """`--share-domain lfr-demo.se` names a real gateway: that is explicit."""
+        self.mock_manager.args.share_domain = "lfr-demo.se"
+
+        _cmd, env = self._run_start(mock_run, subdomain="demo")
+
+        self.assertEqual(env["LFT_SERVER_URL"], "https://tunnel.lfr-demo.se")
+        warned = " ".join(str(c[0][0]) for c in mock_ui.warning.call_args_list)
+        self.assertIn("https://tunnel.lfr-demo.se", warned)
+        self.assertIn("failover", warned)
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("ldm_core.handlers.share.UI")
+    @patch("subprocess.run")
+    def test_share_start_domain_flag_pins_the_gateway(self, mock_run, mock_ui):
+        """`ldm share start --domain` lands on args.domain, not share_domain."""
+        self.mock_manager.args.domain = "lfr-demo.se"
+
+        _cmd, env = self._run_start(mock_run, subdomain="demo")
+
+        self.assertEqual(env["LFT_SERVER_URL"], "https://tunnel.lfr-demo.se")
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("subprocess.run")
+    def test_custom_vanity_domain_flag_does_not_pin(self, mock_run):
+        """A vanity domain is public-URL-only (#1038); it names no gateway, so
+        pinning would hand the user the *default* gateway they never asked
+        for, minus election and failover."""
+        self.mock_manager.args.domain = "my-vanity.example"
+
+        _cmd, env = self._run_start(mock_run, subdomain="demo")
+
+        self.assertNotIn("LFT_SERVER_URL", env)
+
+    @patch.dict(os.environ, {"LFT_SERVER_URL": "https://tunnel.self-hosted.test"})
+    @patch("ldm_core.handlers.share.UI")
+    @patch("subprocess.run")
+    def test_preset_environment_pin_is_preserved_and_warned(self, mock_run, mock_ui):
+        self._set_global_config(share_domain="lfr-demo.se")
+
+        _cmd, env = self._run_start(mock_run, subdomain="demo")
+
+        self.assertEqual(env["LFT_SERVER_URL"], "https://tunnel.self-hosted.test")
+        warned = " ".join(str(c[0][0]) for c in mock_ui.warning.call_args_list)
+        self.assertIn("https://tunnel.self-hosted.test", warned)
+
+    @patch.dict(os.environ, {"LFT_CLIENT_SERVER": "https://tunnel.self-hosted.test"})
+    @patch("ldm_core.handlers.share.UI")
+    @patch("subprocess.run")
+    def test_alternate_pin_variable_suppresses_ldm_pin(self, mock_run, mock_ui):
+        """LFT_CLIENT_SERVER pins the client just as LFT_SERVER_URL does, so
+        LDM must not add a second, conflicting one."""
+        self.mock_manager.args.domain = "lfr-demo.se"
+
+        _cmd, env = self._run_start(mock_run, subdomain="demo")
+
+        self.assertNotIn("LFT_SERVER_URL", env)
+        self.assertEqual(env["LFT_CLIENT_SERVER"], "https://tunnel.self-hosted.test")
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("builtins.print")
+    @patch("subprocess.run")
+    def test_client_pinned_warning_is_surfaced_on_success(self, mock_run, mock_print):
+        """The client prints its own pinned-shutdown warning to stderr; the
+        success path used to drop it, so the one message explaining a tunnel
+        that never came back never reached the user."""
+        self.mock_manager.args.domain = "lfr-demo.se"
+
+        self._run_start(
+            mock_run,
+            stderr="WARNING: pinned server will not fail over on shutdown",
+            subdomain="demo",
+        )
+
+        printed = " ".join(str(c[0][0]) for c in mock_print.call_args_list if c[0])
+        self.assertIn("will not fail over on shutdown", printed)
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("ldm_core.handlers.share.UI")
+    @patch("subprocess.run")
+    def test_remembered_non_default_gateway_is_not_dropped_silently(
+        self, mock_run, mock_ui
+    ):
+        """Their stored choice stops pinning -- so say so, and say how to pin
+        a run that really needs it."""
+        self._set_global_config(share_domain="lfr-demo.se")
+
+        self._run_start(mock_run, subdomain="demo")
+
+        noted = " ".join(str(c[0][0]) for c in mock_ui.info.call_args_list)
+        self.assertIn("--domain lfr-demo.se", noted)
+
+    # --- port auto-discovery ---------------------------------------------
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("subprocess.run")
+    def test_ports_omitted_when_the_user_named_none(self, mock_run):
+        """No -ports at all, so the client auto-discovers -- including the
+        client-extension ports LDM projects routinely expose."""
+        cmd, _env = self._run_start(mock_run, subdomain="demo")
+
+        self.assertNotIn("-ports", cmd)
+        self.assertNotIn("8080", cmd)
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("subprocess.run")
+    def test_ports_passed_through_when_the_user_named_them(self, mock_run):
+        cmd, _env = self._run_start(mock_run, subdomain="demo", ports="9090,3001")
+
+        self.assertIn("-ports", cmd)
+        self.assertEqual(cmd[cmd.index("-ports") + 1], "9090,3001")
+
+    # --- identity still ours ---------------------------------------------
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("subprocess.run")
+    def test_identity_arguments_are_still_passed(self, mock_run):
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/demo")
+        )
+        self.mock_manager.read_meta = MagicMock(  # type: ignore[method-assign]
+            return_value={
+                "share_provider": "lfr-tunnel",
+                "host_name": "custom.domain.local",
+            }
+        )
+
+        cmd, env = self._run_start(mock_run, subdomain="demo")
+
+        self.assertEqual(cmd[cmd.index("-subdomain") + 1], "demo")
+        self.assertEqual(cmd[cmd.index("-target-host") + 1], "custom.domain.local")
+        self.assertEqual(env["LFT_CLIENT_TOKEN"], "my-token")
+        self.assertEqual(env["LFR_TUNNEL_TOKEN"], "my-token")
