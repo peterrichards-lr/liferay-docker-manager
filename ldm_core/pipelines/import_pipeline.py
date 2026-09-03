@@ -154,8 +154,10 @@ class ProjectSetupStage(PipelineStage):
                         else config_data
                     )
 
+        from ldm_core.utils import DB_ENGINES
+
         db_type = manifest.get("db_type")
-        if db_type and db_type not in ["postgresql", "mysql", "mariadb", "hypersonic"]:
+        if db_type and db_type not in DB_ENGINES:
             UI.die(f"Unsupported database type '{db_type}' in LDM package manifest.")
 
         project_name = getattr(manager.args, "project", None) or getattr(

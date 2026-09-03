@@ -10,7 +10,6 @@ from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 from ldm_core.utils import (
     SHARED_DB_CONTAINERS,
-    resolve_infrastructure_mode,
     shared_database_container,
     shared_database_name,
 )
@@ -257,12 +256,31 @@ class DatabaseService(BaseHandler):
             return
 
         project_meta = self.manager.read_meta(project_path)
-        db_type = project_meta.get("db_type", "postgresql")
+        from ldm_core.utils import (
+            ldm_manages_database_container,
+            resolve_database_config,
+        )
+
+        db_type, db_mode = resolve_database_config(
+            project_meta or {}, self.manager.defaults
+        )
 
         if db_type not in ["postgresql", "mysql", "mariadb"]:
             UI.warning(
                 f"Query execution is not supported for database type '{db_type}'. "
                 "Only PostgreSQL and MySQL/MariaDB variants are supported."
+            )
+            return
+
+        # LDM-#1511: the engine may now be known for a database LDM does not
+        # run. `ldm db query` execs into a container, so it needs a container
+        # LDM owns -- which is a question about the MODE. Before #1511 the
+        # engine check above happened to cover it, because choosing "external"
+        # discarded the engine.
+        if not ldm_manages_database_container(db_mode):
+            UI.warning(
+                f"Query execution is not supported in '{db_mode}' database mode: "
+                "LDM does not run this database and has no container to execute in."
             )
             return
 
@@ -273,9 +291,6 @@ class DatabaseService(BaseHandler):
         if not container_name:
             container_name = project_path.name
 
-        db_mode = resolve_infrastructure_mode(
-            "database_mode", project_meta or {}, self.manager.defaults
-        )
         db_name = "lportal"
         if db_mode == "shared":
             from ldm_core.utils import shared_database_container
@@ -442,12 +457,28 @@ class DatabaseService(BaseHandler):
             return
 
         project_meta = self.manager.read_meta(project_path)
-        db_type = project_meta.get("db_type", "postgresql")
+        from ldm_core.utils import (
+            ldm_manages_database_container,
+            resolve_database_config,
+        )
+
+        db_type, db_mode = resolve_database_config(
+            project_meta or {}, self.manager.defaults
+        )
 
         if db_type not in ["postgresql", "mysql", "mariadb"]:
             UI.die(
                 f"Password reset is not supported for database type '{db_type}'. "
                 "Only PostgreSQL and MySQL/MariaDB variants are supported."
+            )
+            return
+
+        # LDM-#1511: see cmd_query -- an engine LDM knows is not the same as a
+        # container LDM runs.
+        if not ldm_manages_database_container(db_mode):
+            UI.die(
+                f"Password reset is not supported in '{db_mode}' database mode: "
+                "LDM does not run this database and has no container to execute in."
             )
             return
 
@@ -457,17 +488,12 @@ class DatabaseService(BaseHandler):
 
         update_sql = f"UPDATE User_ SET password_ = '{test_hash}', passwordEncrypted = 1, passwordReset = 0, status = 0, lockDate = NULL, failedLoginAttempts = 0 WHERE emailAddress = '{target_email}';"  # nosec B608
 
-        from ldm_core.utils import resolve_infrastructure_mode
-
         container_name = project_meta.get("liferay_container_name") or project_meta.get(
             "container_name"
         )
         if not container_name:
             container_name = project_path.name
 
-        db_mode = resolve_infrastructure_mode(
-            "database_mode", project_meta or {}, self.manager.defaults
-        )
         db_name = "lportal"
         if db_mode == "shared":
             from ldm_core.utils import shared_database_container

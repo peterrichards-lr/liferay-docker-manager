@@ -22,15 +22,26 @@ class DatabaseSnapshotService:
         self.args = facade.manager.args
 
     def _snapshot_database(self, project_meta, container_name, snap_dir, paths):  # noqa: C901, PLR0912
-        db_type = project_meta.get("db_type", "hypersonic")
-        db_snapshot_file = None
-        if db_type in ["mysql", "postgresql", "mariadb"]:
-            db_container = project_meta.get("db_container_name")
-            from ldm_core.utils import resolve_infrastructure_mode
+        from ldm_core.utils import (
+            ldm_manages_database_container,
+            resolve_database_config,
+        )
 
-            db_mode = resolve_infrastructure_mode(
-                "database_mode", project_meta or {}, self.manager.defaults
-            )
+        # LDM-#1511: engine and mode together. A dump is taken by exec'ing into
+        # a container LDM runs, so BOTH have to hold: an engine that can be
+        # dumped, and a mode in which there is something to dump it from. The
+        # engine test alone used to cover this only because `db_type:
+        # "external"` was not an engine.
+        db_type, db_mode = resolve_database_config(
+            project_meta or {},
+            self.manager.defaults,
+            db_type=project_meta.get("db_type", "hypersonic"),
+        )
+        db_snapshot_file = None
+        if db_type in ["mysql", "postgresql", "mariadb"] and (
+            ldm_manages_database_container(db_mode)
+        ):
+            db_container = project_meta.get("db_container_name")
             if db_mode == "shared":
                 # LDM-#1361: was hardcoded, so a shared MySQL project dumped
                 # from the PostgreSQL container. The restore path 160 lines
@@ -140,9 +151,26 @@ class DatabaseSnapshotService:
             except Exception as e:
                 UI.warning(f"Failed to decompress {db_gz.name}: {e}")
 
-        db_type = project_meta.get("db_type", "hypersonic")
+        from ldm_core.utils import (
+            ldm_manages_database_container,
+            resolve_database_config,
+        )
+
+        db_type, db_mode = resolve_database_config(
+            project_meta or {},
+            self.manager.defaults,
+            db_type=project_meta.get("db_type", "hypersonic"),
+        )
         if db_type == "hypersonic":
             UI.success("  + Hypersonic database restored successfully (file-based).")
+        elif not ldm_manages_database_container(db_mode):
+            # LDM-#1511: same reasoning as the snapshot path -- a restore
+            # streams SQL into a container LDM runs, and in `external` mode
+            # there is none. LDM must not touch someone else's server.
+            UI.warning(
+                f"Skipping database restore: in '{db_mode}' mode LDM does not "
+                "run this database. Restore the dump yourself if you need it."
+            )
         elif sql_file.exists():
             try:
                 import tempfile
@@ -185,12 +213,6 @@ class DatabaseSnapshotService:
             # restore, not the end of a user-facing stop.
             self.manager.runtime.cmd_stop(
                 paths["root"].name, service="liferay", emit_hint=False
-            )
-
-            from ldm_core.utils import resolve_infrastructure_mode
-
-            db_mode = resolve_infrastructure_mode(
-                "database_mode", project_meta, self.manager.defaults
             )
 
             target_name = getattr(self.manager, "target", None) or (
@@ -301,7 +323,7 @@ class DatabaseSnapshotService:
         """Internal helper to execute a robust SQL import into a running DB container."""
         import subprocess
 
-        from ldm_core.utils import resolve_infrastructure_mode
+        from ldm_core.utils import resolve_database_mode
 
         target_name = getattr(self.manager, "target", None) or (
             project_meta.get("target") if isinstance(project_meta, dict) else None
@@ -310,9 +332,7 @@ class DatabaseSnapshotService:
 
         docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
 
-        db_mode = resolve_infrastructure_mode(
-            "database_mode", project_meta or {}, self.manager.defaults
-        )
+        db_mode = resolve_database_mode(project_meta or {}, self.manager.defaults)
         db_name = "lportal"
         if db_mode == "shared":
             db_name = shared_database_name(paths["root"].name)
@@ -574,10 +594,10 @@ class DatabaseSnapshotService:
                 # LDM-410: Auto-update virtualhost to match local hostname
 
                 host_name = project_meta.get("host_name", "localhost")
-                from ldm_core.utils import resolve_infrastructure_mode
+                from ldm_core.utils import resolve_database_mode
 
-                db_mode = resolve_infrastructure_mode(
-                    "database_mode", project_meta or {}, self.manager.defaults
+                db_mode = resolve_database_mode(
+                    project_meta or {}, self.manager.defaults
                 )
                 db_name = "lportal"
                 if db_mode == "shared":

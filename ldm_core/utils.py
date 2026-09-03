@@ -513,6 +513,185 @@ def is_shared_capable_db(db_type):
     return str(db_type or "").lower() in SHARED_DB_CONTAINERS
 
 
+# --- LDM-#1511: the database model has two axes, not one -------------------
+#
+# `db_type` answers *which engine* -- dialect, driver, JDBC scheme.
+# `database_mode` answers *who owns the container*.
+#
+# `external` used to occupy a slot on the engine axis, which meant choosing it
+# DISCARDED the engine: an external MySQL could not be given the per-tag
+# dialect resolution `--db mysql` gets (#1361), and `--db postgresql
+# --database-mode external` was inexpressible. `hypersonic` is the mirror
+# image -- a genuine engine whose mode happens to be "no container at all".
+#
+# The old spelling keeps working. `--db external`, and a `db_type: "external"`
+# already written into a project's `meta`, are read forward by
+# `normalize_database_selection` rather than rejected.
+DB_ENGINES = ("postgresql", "mysql", "mariadb", "hypersonic")
+DB_MODES = ("isolated", "shared", "external", "embedded")
+
+# The legacy engine-axis spelling of the external MODE. It survives as an
+# engine value for exactly one reason: a project whose stored `jdbc_url` does
+# not name a scheme LDM recognises has no engine to migrate TO, and the
+# maintainer's decision on #1511 is to fall back to the legacy read path there
+# rather than guess an engine or prompt mid-run.
+LEGACY_EXTERNAL_DB_TYPE = "external"
+
+# Which modes each engine can physically run in. Anything outside this grid is
+# rejected, not accepted and quietly ignored -- `--database-mode shared` was
+# accepted and silently did nothing until #1359, and making the mode axis total
+# is only worth doing if the pairing can then be checked.
+DB_ENGINE_MODES = {
+    "postgresql": ("isolated", "shared", "external"),
+    "mysql": ("isolated", "shared", "external"),
+    "mariadb": ("isolated", "shared", "external"),
+    # In-JVM. There is no container to isolate, share or point elsewhere.
+    "hypersonic": ("embedded",),
+    LEGACY_EXTERNAL_DB_TYPE: ("external",),
+}
+
+# Engines whose mode is a property of the engine itself, not a choice.
+_DB_ENGINE_IMPLIED_MODE = {
+    "hypersonic": "embedded",
+    LEGACY_EXTERNAL_DB_TYPE: "external",
+}
+
+# The migration table from the #1511 decision: a stored `jdbc_url` names the
+# engine an existing `db_type: "external"` project is really running against.
+_JDBC_SCHEME_ENGINES = {
+    "postgresql": "postgresql",
+    "postgres": "postgresql",
+    "mysql": "mysql",
+    "mariadb": "mysql",
+}
+
+
+class DatabaseConfigError(ValueError):
+    """An engine/mode pairing that cannot work (LDM-#1511)."""
+
+
+def infer_db_engine_from_jdbc_url(jdbc_url):
+    """The engine behind a JDBC URL, or None when it cannot be told.
+
+    Used to read a legacy `db_type: "external"` project forward: the engine it
+    is really running against is recoverable from the URL it already stored.
+    Returning None is meaningful -- it selects the legacy read path.
+    """
+    if not jdbc_url:
+        return None
+    match = re.match(r"\s*jdbc:([a-z0-9_+-]+):", str(jdbc_url), re.IGNORECASE)
+    if not match:
+        return None
+    return _JDBC_SCHEME_ENGINES.get(match.group(1).lower())
+
+
+def _reject_database_pairing(engine, mode):
+    allowed = DB_ENGINE_MODES.get(engine, DB_MODES)
+    raise DatabaseConfigError(
+        f"Database engine '{engine}' cannot run in database mode '{mode}'. "
+        f"'{engine}' supports: {', '.join(allowed)}."
+    )
+
+
+def validate_database_selection(db_type, db_mode):
+    """Raise `DatabaseConfigError` for an impossible engine/mode pairing.
+
+    A blank mode is not an error -- it means "unspecified", and resolution
+    fills it in. An unrecognised *engine* is deliberately not this function's
+    business: the import paths already police that with their own message.
+    """
+    engine = str(db_type or "").strip().lower() or "postgresql"
+    mode = str(db_mode or "").strip().lower()
+    if not mode:
+        return
+    if engine not in DB_ENGINE_MODES:
+        return
+    if mode not in DB_MODES:
+        raise DatabaseConfigError(
+            f"Unknown database mode '{mode}' (engine '{engine}'). "
+            f"Valid modes: {', '.join(DB_MODES)}."
+        )
+    if mode not in DB_ENGINE_MODES[engine]:
+        _reject_database_pairing(engine, mode)
+
+
+def normalize_database_selection(db_type, db_mode=None, jdbc_url=None, strict=False):
+    """Canonical `(engine, mode)` for a database selection (LDM-#1511).
+
+    Reads the legacy `db_type: "external"` spelling forward: the engine is
+    recovered from `jdbc_url` where the scheme names one, and falls back to the
+    legacy marker where it cannot be. A project that booted yesterday boots
+    today either way.
+
+    `strict=True` refuses a mode that contradicts an engine which implies its
+    own -- the CLI path, where the user typed both values and one of them is
+    going to be ignored. `strict=False` lets the engine's implied mode win,
+    which is how a `meta` written under the old model migrates instead of
+    being rejected: `hypersonic` + a persisted `database_mode: "shared"` is a
+    state LDM itself used to produce.
+    """
+    engine = str(db_type or "").strip().lower() or "postgresql"
+    mode = str(db_mode or "").strip().lower() or None
+
+    implied = _DB_ENGINE_IMPLIED_MODE.get(engine)
+    if implied:
+        if strict and mode is not None and mode != implied:
+            _reject_database_pairing(engine, mode)
+        if engine == LEGACY_EXTERNAL_DB_TYPE:
+            engine = infer_db_engine_from_jdbc_url(jdbc_url) or LEGACY_EXTERNAL_DB_TYPE
+        return engine, implied
+
+    if mode is None:
+        mode = "isolated"
+    validate_database_selection(engine, mode)
+    return engine, mode
+
+
+def ldm_manages_database_container(db_mode):
+    """Whether LDM itself runs the database container for this mode.
+
+    True for `isolated` and `shared`; false for `external` (someone else's
+    server) and `embedded` (no container at all). This is the question the
+    old `db_type not in ["hypersonic", "external"]` tests were really asking,
+    and asking it of the mode is the whole point of #1511.
+    """
+    return str(db_mode or "").strip().lower() in ("isolated", "shared")
+
+
+def resolve_database_config(meta, defaults, args_override=None, db_type=None):
+    """The `(engine, mode)` a project actually runs with.
+
+    Resolution order for the mode is `resolve_infrastructure_mode`'s
+    (CLI override > meta > defaults); the pair is then normalised and checked.
+    An impossible pairing exits `1` with a message naming both values rather
+    than being silently accepted and behaving unexpectedly later.
+    """
+    meta = meta or {}
+    engine_in = db_type if db_type is not None else meta.get("db_type")
+    mode = resolve_infrastructure_mode("database_mode", meta, defaults, args_override)
+    if not isinstance(mode, str):
+        # A `MagicMock` args attribute, which argparse can never produce -- the
+        # same class of test contamination `RunPipelineContext.SafeArgsWrapper`
+        # guards against. Treat it as "unspecified" rather than as a mode name
+        # that fails validation.
+        mode = None
+    try:
+        return normalize_database_selection(engine_in, mode, meta.get("jdbc_url"))
+    except DatabaseConfigError as exc:
+        UI.die(str(exc), exit_code=1)
+        raise
+
+
+def resolve_database_mode(meta, defaults, args_override=None, db_type=None):
+    """The database MODE: isolated | shared | external | embedded.
+
+    A drop-in for `resolve_infrastructure_mode("database_mode", ...)` that
+    additionally honours the engine axis, so a Hypersonic project can no
+    longer resolve to `shared` just because a `~/.ldmrc` default says so.
+    """
+    return resolve_database_config(meta, defaults, args_override, db_type)[1]
+
+
 # Runtime forwarders. These hold a published port as a CONSEQUENCE of a
 # container publishing it, so naming one as "the holder" sends the reader after
 # the wrong process (LDM-#1479).
@@ -3313,7 +3492,7 @@ def has_shared_projects(manager):
         if not path.exists():
             continue
         meta = manager.read_meta(path) or {}
-        db_mode = resolve_infrastructure_mode("database_mode", meta, manager.defaults)
+        db_mode = resolve_database_mode(meta, manager.defaults)
         search_mode = resolve_infrastructure_mode("search_mode", meta, manager.defaults)
         if db_mode == "shared" or search_mode == "shared":
             return True

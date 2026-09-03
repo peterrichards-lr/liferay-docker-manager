@@ -364,13 +364,10 @@ def _verify_ldm_package_manifest(self, temp_extract_dir, temp_pkg_dir, owner, re
             ),
         )
 
+    from ldm_core.utils import DB_ENGINES
+
     db_type = manifest.get("db_type")
-    if db_type and db_type not in [
-        "postgresql",
-        "mysql",
-        "mariadb",
-        "hypersonic",
-    ]:
+    if db_type and db_type not in DB_ENGINES:
         _discard_package_temp(temp_pkg_dir, temp_extract_dir)
         UI.die(f"Unsupported database type '{db_type}' in LDM package manifest.")
 

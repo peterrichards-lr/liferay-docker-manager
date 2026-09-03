@@ -67,6 +67,9 @@
 | 2.5 | **Doctor DNS Fix** | `ldm doctor --fix-hosts` | Batch fixes all missing entries. |
 | 2.6 | **DNS Cleanup (Surg)** | `ldm rm test-dns --clean-hosts` | Removes specific project host entries. |
 | 2.7 | **DNS Cleanup (Glob)** | `ldm prune --clean-hosts` | Removes ALL LDM-managed host entries. |
+| 2.8 | **External DB Mode** | `ldm init <Name> --no-up --no-seed --db postgresql --database-mode external` (answer the JDBC wizard) | No `<Name>-db` service in the compose file **and** no `depends_on` naming one. `portal-ext.properties` carries the supplied URL/user/password **plus** `jdbc.default.driverClassName` and `hibernate.dialect`. `meta` records `db_type: postgresql`, `database_mode: external`. |
+| 2.9 | **Legacy `--db external`** | `ldm init <Name> --no-up --no-seed --db external` (supply a `jdbc:mysql://` URL) | Still succeeds. `meta` is migrated to `db_type: mysql`, `database_mode: external`; a MySQL/MariaDB driver and dialect are written. |
+| 2.10 | **Impossible pairings refused** | `ldm init <Name> --db hypersonic --database-mode shared`; `ldm init <Name> --db external --database-mode shared`; `ldm init <Name> --db postgresql --database-mode embedded` | Each exits `1` with a message naming **both** values. Nothing is created. |
 
 ---
 
@@ -486,4 +489,4 @@ powershell -ExecutionPolicy Bypass -File scripts/verify_e2e_refactor.ps1
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*
+*Last Updated: 2026-09-03* | *Last Reviewed: 2026-09-03*

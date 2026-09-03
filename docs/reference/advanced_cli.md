@@ -180,9 +180,29 @@ Liferay appends the company ID, so the actual indices look like
 
 ### `--database-mode`
 
-Controls whether LDM provisions a dedicated database container for the project or connects it to the Global Shared Database cluster. Available modes: `isolated` or `shared`.
+Controls **who owns the database container**. Available modes: `isolated`, `shared`, `external` and `embedded`.
 
-`isolated` supports every engine `--db` accepts -- `postgresql`, `mysql`, `hypersonic` and `external`.
+| mode | who runs the database |
+| :--- | :--- |
+| `isolated` | LDM, one container per project (the default) |
+| `shared` | LDM, one global container per engine (#1361) |
+| `external` | someone else -- LDM writes the JDBC details and creates nothing |
+| `embedded` | nobody: it runs inside the Liferay JVM (Hypersonic) |
+
+`--db` names the **engine** -- the dialect, driver and JDBC scheme -- and is a separate question. The two axes were muddled before LDM-#1511: `external` sat on the engine axis, so choosing it discarded the engine and `--db postgresql --database-mode external` could not be expressed at all.
+
+**Not every pairing is possible, and the impossible ones are refused.** LDM exits `1` at parse time with a message naming both values, rather than accepting the pair and behaving unexpectedly later:
+
+| engine | isolated | shared | external | embedded |
+| :--- | :---: | :---: | :---: | :---: |
+| `postgresql` | yes | yes | yes | no |
+| `mysql` / `mariadb` | yes | yes | yes | no |
+| `hypersonic` | no | no | no | yes |
+
+`hypersonic` runs in-process, so `embedded` is the only mode it has; LDM applies it automatically and you never need to type it. `--db hypersonic --database-mode shared` is refused (it was previously accepted and downgraded with a warning), as is `--db external --database-mode shared` (previously accepted and meaningless -- both flags suppressed the same container).
+
+> [!NOTE]
+> **`--db external` is still accepted.** It is the pre-#1511 spelling of `--database-mode external`, and LDM recovers the engine from the JDBC URL scheme you supply. Existing projects whose `meta` records `db_type: "external"` are migrated on their next run; where the scheme names an engine LDM does not support, the legacy read path (URL, username and password only) is kept so the project still boots.
 
 **`shared` supports PostgreSQL and MySQL/MariaDB.** There is one global container per engine, and each is provisioned lazily -- on the first project that needs it:
 
@@ -191,7 +211,7 @@ Controls whether LDM provisions a dedicated database container for the project o
 | `postgresql` (default) | `liferay-db-global` | `5433` | `postgres:<resolved>` |
 | `mysql`, `mariadb` | `liferay-db-mysql-global` | `3307` | `mysql:<resolved>` |
 
-`hypersonic` cannot be shared -- it runs in-process, so LDM downgrades it to `isolated` with a warning. `external` ignores the mode entirely: LDM uses the JDBC URL you supplied and never consults a global container.
+`hypersonic` cannot be shared -- it runs in-process, so its mode is always `embedded`. `external` is a mode of its own: LDM uses the JDBC URL you supplied and never consults a global container.
 
 > [!NOTE]
 > `--db mysql` and `--db mariadb` share **one** container. This is not a shortcut: LDM emits an identical `jdbc:mariadb://` URL and `MariaDB103Dialect` for both engines, so Liferay cannot distinguish them from the connection down. A single container also avoids a third idle global on a mixed fleet.
@@ -243,4 +263,4 @@ In `isolated` mode the database is always called `lportal` and the project name 
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-28* | *Last Reviewed: 2026-08-28*
+*Last Updated: 2026-09-03* | *Last Reviewed: 2026-09-03*

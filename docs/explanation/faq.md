@@ -53,7 +53,7 @@ Running multiple Liferay DXP instances locally can quickly overwhelm standard la
 By default, each LDM project spins up its own isolated database container (PostgreSQL, MySQL or Hypersonic). In Shared Database Mode, LDM skips launching project-specific databases and routes all projects to a global database container, namespaced as `lportal_<project_id>` (always lowercase):
 
 > [!NOTE]
-> There is one global container per engine -- `liferay-db-global` for PostgreSQL and `liferay-db-mysql-global` for MySQL/MariaDB -- each provisioned lazily on the first project that needs it. An all-PostgreSQL or all-MySQL fleet therefore gets the full saving below; a **mixed** fleet runs both globals, which erodes it (though two containers still beat one per project). Hypersonic cannot be shared and is downgraded to `isolated` with a warning.
+> There is one global container per engine -- `liferay-db-global` for PostgreSQL and `liferay-db-mysql-global` for MySQL/MariaDB -- each provisioned lazily on the first project that needs it. An all-PostgreSQL or all-MySQL fleet therefore gets the full saving below; a **mixed** fleet runs both globals, which erodes it (though two containers still beat one per project). Hypersonic cannot be shared -- it runs inside the Liferay JVM, so its mode is always `embedded`, and `--db hypersonic --database-mode shared` is refused outright (LDM-#1511).
 
 * **Resource Saved**: Saves **~500MB to 1GB of RAM** per running project by eliminating redundant database container overhead.
 * **Usage**: Configure it globally or toggle it for specific projects:

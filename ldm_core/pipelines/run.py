@@ -83,21 +83,27 @@ def _resolve_pipeline_target_context(manager, project_meta, root):
     )
 
 
-def project_has_own_db_service(db_type, use_shared_db):
+def project_has_own_db_service(db_mode):
     """Whether compose defines a `<project>-db` service for this project.
 
-    Must agree with composer._build_db_service, which returns early for
-    `db_type == "external" or db_mode == "shared"`. When they disagreed, the
-    pipeline named `<project>-db` as a startup dependency for an `external`
-    project and ran `docker compose up -d <project>-db` against a service the
-    compose file never defined -- with check=True, so it raised. `--db external`
-    could not work in the default isolated mode.
+    Must agree with composer._build_db_service, which emits that service in
+    exactly one mode. When the two disagreed, the pipeline named
+    `<project>-db` as a startup dependency for an `external` project and ran
+    `docker compose up -d <project>-db` against a service the compose file
+    never defined -- with check=True, so it raised. `--db external` could not
+    work in the default isolated mode (LDM-#1554).
 
-    Extracted so the rule can be asserted directly. Inline, the only way to test
-    it was to restate it in the test, which would then pass no matter what the
-    pipeline actually did.
+    LDM-#1511 collapsed the test from two axes to one. It used to read
+    `db_type not in ("hypersonic", "external") and not use_shared_db`, which
+    needed both axes because `external` and `embedded` were being spelled as
+    engine values; now that they live on the mode axis, the per-project
+    container exists in `isolated` and nowhere else.
+
+    Kept extracted rather than inlined as `db_mode == "isolated"`: inline, the
+    only way to test the rule is to restate it in the test, which then passes
+    no matter what the pipeline actually does.
     """
-    return db_type not in ("hypersonic", "external") and not use_shared_db
+    return str(db_mode or "").strip().lower() == "isolated"
 
 
 class ProjectInitializationStage(PipelineStage):
@@ -525,6 +531,16 @@ class ConfigResolutionStage(PipelineStage):
         return tag, is_portal
 
     def _resolve_database(self, manager, project_meta, is_samples):
+        """Resolves the `(engine, mode)` pair this run uses (LDM-#1511).
+
+        This is the read-old-write-new step of the #1511 migration: a project
+        whose `meta` still says `db_type: "external"` comes back out of here as
+        its real engine plus `database_mode: "external"`, and the caller
+        persists both. Where the engine cannot be inferred from the stored
+        `jdbc_url`, the legacy marker survives and the legacy read path in
+        `_inject_liferay_db_env` handles it -- deliberately, so a project that
+        booted yesterday boots today.
+        """
         db_type = (
             getattr(manager.args, "db", None)
             or project_meta.get("db_type")
@@ -538,7 +554,17 @@ class ConfigResolutionStage(PipelineStage):
         ):
             db_type = manager.config.get_samples_db_type()
 
-        if db_type == "external" and not project_meta.get("jdbc_url"):
+        from ldm_core.utils import LEGACY_EXTERNAL_DB_TYPE, resolve_database_config
+
+        mode_override = getattr(manager.args, "database_mode", None)
+        db_type, db_mode = resolve_database_config(
+            project_meta, manager.defaults, mode_override, db_type=db_type
+        )
+
+        # Keyed on the MODE, not the engine: `--db postgresql --database-mode
+        # external` needs these details just as much as the legacy
+        # `--db external` did, and used to be inexpressible.
+        if db_mode == "external" and not project_meta.get("jdbc_url"):
             UI.heading("External Database Configuration")
             project_meta["jdbc_url"] = UI.ask(
                 "JDBC URL (e.g. jdbc:postgresql://host:5432/db)",
@@ -547,7 +573,14 @@ class ConfigResolutionStage(PipelineStage):
             project_meta["jdbc_user"] = UI.ask("Database Username", "liferay")
             project_meta["jdbc_pass"] = UI.ask("Database Password", "liferay")
 
-        return db_type
+            if db_type == LEGACY_EXTERNAL_DB_TYPE:
+                # The URL did not exist when the engine was first resolved.
+                # Now it does, so `--db external` recovers its engine too.
+                db_type, db_mode = resolve_database_config(
+                    project_meta, manager.defaults, mode_override, db_type=db_type
+                )
+
+        return db_type, db_mode
 
     def _resolve_share_and_expose(self, manager, project_meta):
         is_share = (
@@ -686,7 +719,9 @@ class ConfigResolutionStage(PipelineStage):
             if not manager.non_interactive:
                 host_name = UI.ask("Enter project Virtual Hostname", host_name)
 
-        db_type = self._resolve_database(manager, project_meta, is_samples)
+        db_type, db_mode_resolved = self._resolve_database(
+            manager, project_meta, is_samples
+        )
 
         archetype_name = getattr(manager.args, "archetype", None) or project_meta.get(
             "archetype"
@@ -845,18 +880,17 @@ class ConfigResolutionStage(PipelineStage):
             use_shared_search = False
             search_mode = "sidecar"
 
-        # LDM-#1359: resolved here, before the metadata below is assembled, so
-        # the mode can be PERSISTED. It used to be resolved only at compose
-        # time, which left `database_mode` absent from meta -- so every later
-        # command (snapshot, restore, db query, orchestration) resolved it from
+        # LDM-#1359: resolved before the metadata below is assembled, so the
+        # mode can be PERSISTED. It used to be resolved only at compose time,
+        # which left `database_mode` absent from meta -- so every later command
+        # (snapshot, restore, db query, orchestration) resolved it from
         # defaults instead and silently assumed "isolated" for a project that
         # was provisioned "shared".
-        db_mode_resolved = resolve_infrastructure_mode(
-            "database_mode",
-            project_meta,
-            manager.defaults,
-            getattr(manager.args, "database_mode", None),
-        )
+        #
+        # LDM-#1511: `db_mode_resolved` now comes back from `_resolve_database`
+        # alongside the engine, because the two axes cannot be resolved
+        # independently -- `db_type: "external"` determines the mode, and
+        # `hypersonic` determines it too.
 
         # LDM-#1361 removed the LDM-#1360 refusal that used to sit here.
         # `--database-mode shared --db mysql` exited 1 because the only global
@@ -938,6 +972,9 @@ class ConfigResolutionStage(PipelineStage):
         context.set("host_name", host_name)
         context.set("tag", tag)
         context.set("db_type", db_type)
+        # LDM-#1511: the mode travels with the engine. Downstream stages ask
+        # "who owns the database" of this, not of `db_type`.
+        context.set("db_mode", db_mode_resolved)
         context.set("use_shared_search", use_shared_search)
         context.set("is_samples", is_samples)
         context.set("external_snapshot", external_snapshot)
@@ -959,7 +996,17 @@ class EnvironmentSetupStage(PipelineStage):
         if getattr(manager.args, "command", "") != "quickstart":
             UI.phase(1, 3, "Synchronizing Assets")
 
-        if is_new_project and manager.assets._ensure_seeded(tag, db_type, paths):
+        # LDM-#1511: a pre-warmed seed is a database dump restored into a
+        # container LDM owns. In `external` mode there is no such container, so
+        # the lookup is skipped rather than attempted -- which is what happened
+        # before by accident, because `db_type: "external"` produced a seed
+        # filename that could never exist upstream.
+        db_mode = context.get("db_mode")
+        if (
+            is_new_project
+            and db_mode != "external"
+            and manager.assets._ensure_seeded(tag, db_type, paths)
+        ):
             from ldm_core.constants import SEED_VERSION
 
             # Merge the seed's meta INTO the context's, rather than replacing
@@ -1191,19 +1238,19 @@ class ComposerStage(PipelineStage):
                 if not db_container:
                     db_container = f"{container_name}-db"
 
-                db_type_val = project_meta.get("db_type", "postgresql")
-                from ldm_core.utils import resolve_infrastructure_mode
-
-                db_mode = resolve_infrastructure_mode(
-                    "database_mode", project_meta, manager.defaults
+                from ldm_core.utils import (
+                    ldm_manages_database_container,
+                    resolve_database_mode,
                 )
+
+                db_mode = resolve_database_mode(project_meta, manager.defaults)
                 use_shared_db = db_mode == "shared"
 
                 import shutil
 
-                if db_type_val not in ["hypersonic", "external"] and shutil.which(
-                    "docker"
-                ):
+                # LDM-#1511: "is there a database container LDM can start" is a
+                # question about the mode. It used to be asked of the engine.
+                if ldm_manages_database_container(db_mode) and shutil.which("docker"):
                     is_running = manager.run_command(
                         ["docker", "ps", "-q", "-f", f"name=^{db_container}$"],
                         check=False,
@@ -1313,20 +1360,20 @@ class ComposerStage(PipelineStage):
                         "Keeping custom configs. LDM Sidecar injection will be bypassed."
                     )
 
-        from ldm_core.utils import resolve_infrastructure_mode
+        from ldm_core.utils import resolve_database_mode
 
         # LDM-#1359: this resolution was already correct -- it passes the CLI
         # override. The defect was `_inject_liferay_db_env` in composer.py
         # omitting it, so the compose file and this disagreed. Kept explicit
         # (rather than reusing the earlier local, which is in another stage's
         # scope) and now backed by the persisted meta value.
-        db_mode = resolve_infrastructure_mode(
-            "database_mode",
+        db_mode = resolve_database_mode(
             project_meta,
             manager.defaults,
             getattr(manager.args, "database_mode", None),
         )
         use_shared_db = db_mode == "shared"
+        context.set("db_mode", db_mode)
         context.set("use_shared_db", use_shared_db)
         if use_shared_db or use_shared_search:
             UI.detail("Utilizing Global Shared Infrastructure")
@@ -1838,6 +1885,17 @@ class ExecutionStage(PipelineStage):
             else "postgresql"
         )
         use_shared_db = context.get("use_shared_db")
+        # LDM-#1511: set by ConfigResolutionStage; resolved here as a fallback
+        # so this stage still behaves when invoked outside the full pipeline.
+        db_mode = context.get("db_mode")
+        if not db_mode:
+            from ldm_core.utils import resolve_database_mode
+
+            db_mode = resolve_database_mode(
+                project_meta if isinstance(project_meta, dict) else {},
+                manager.defaults,
+                getattr(manager.args, "database_mode", None),
+            )
 
         if is_samples or external_snapshot:
             db_svc = f"{sanitize_id(paths['root'].name)}-db"
@@ -1958,7 +2016,13 @@ class ExecutionStage(PipelineStage):
                 UI.debug(f"Time to orchestration start: {duration_str}")
 
             deps = []
-            if project_has_own_db_service(db_type, use_shared_db):
+            # LDM-#1511: the per-project database service exists in exactly one
+            # mode, so wait on it in exactly that mode. Asking the engine
+            # instead meant an `external` project queued `<project>-db` as a
+            # dependency -- a service `_build_db_service` had deliberately not
+            # emitted -- and `docker compose up -d <project>-db` failed on a
+            # service the compose file does not define.
+            if project_has_own_db_service(db_mode):
                 deps.append(f"{safe_project_id}-db")
 
             if deps:
@@ -1990,7 +2054,7 @@ class ExecutionStage(PipelineStage):
                             context.stopped = True
                             return None
                         time.sleep(2)
-            elif use_shared_db and db_type != "hypersonic":
+            elif db_mode == "shared":
                 from ldm_core.utils import shared_database_container
 
                 global_db_container = shared_database_container(db_type)

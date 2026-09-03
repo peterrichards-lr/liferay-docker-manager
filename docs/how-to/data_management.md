@@ -20,30 +20,33 @@ LDM prioritizes an **exact match** for your environment (e.g., `mysql` + `sideca
 
 ## 🔗 External Database Connection
 
-If you want to use an external database (such as a shared development DB, an RDS instance, or a standalone local MySQL/PostgreSQL server) instead of generating an isolated database container inside your project's stack, you can use the `--db external` flag during initialization.
+If you want to use an external database (such as a shared development DB, an RDS instance, or a standalone local MySQL/PostgreSQL server) instead of generating an isolated database container inside your project's stack, use `--database-mode external` during initialization.
 
 ```bash
-ldm init my-project --db external
+ldm init my-project --db postgresql --database-mode external
 ```
+
+`external` is a **mode**, not an engine: it answers *who runs the database*, and the engine is still whatever it is. Naming it with `--db` is what lets LDM resolve the JDBC driver and the per-tag Hibernate dialect for your server.
+
+> [!NOTE]
+> **`--db external` remains valid** -- it is the older spelling, kept working deliberately (LDM-#1511). LDM infers the engine from the JDBC URL scheme instead: `jdbc:postgresql://` is PostgreSQL, `jdbc:mysql://` and `jdbc:mariadb://` are MySQL. A URL naming an engine LDM does not support falls back to writing the URL, username and password alone, exactly as before. Projects already carrying `db_type: "external"` in their `meta` are migrated on their next run and keep booting unchanged.
 
 ### Interactive DB Wizard
 
-When this flag is detected, LDM runs an interactive wizard that prompts you for:
+When the mode resolves to `external` and no JDBC URL is recorded yet, LDM runs an interactive wizard that prompts you for:
 
-1. **Database Type** (PostgreSQL, MySQL, Oracle, SQL Server, etc.)
-2. **JDBC Host** (e.g. `192.168.1.50` or `db.internal.network`)
-3. **JDBC Port** (Defaults based on type: 5432, 3306, 1521, 1433)
-4. **Database Name** (e.g., `lportal` or your custom schema)
-5. **Database Username & Password**
+1. **JDBC URL** (e.g. `jdbc:postgresql://db.internal.network:5432/lportal`)
+2. **Database Username**
+3. **Database Password**
 
 ### What Happens Under the Hood?
 
-- LDM formats your answers into standard Liferay JDBC properties (e.g. `jdbc.default.url`, `jdbc.default.driverClassName`) and securely appends them directly into your project's `portal-ext.properties`.
-- It completely excludes the `db` service block from the generated `docker-compose.yml`.
+- LDM formats your answers into standard Liferay JDBC properties (`jdbc.default.url`, `jdbc.default.username`, `jdbc.default.password`) and securely appends them directly into your project's `portal-ext.properties`. Where the engine is known, `jdbc.default.driverClassName` and `hibernate.dialect` are written too.
+- It completely excludes the `db` service block from the generated `docker-compose.yml`, and no `depends_on` refers to it.
 - Liferay boots up normally, but opens a connection out to your specified external database instead of looking for a local container on the Docker bridge network.
 
 > [!WARNING]
-> Since the database lives outside of LDM's control, features like automatic **Seeding**, `reset db`, and complete `snapshot` backups will not capture the state of your external database.
+> Since the database lives outside of LDM's control, features like automatic **Seeding**, `reset db`, `ldm db query` and complete `snapshot` backups do not operate on your external database. LDM refuses those rather than reaching for a container it does not own.
 
 ---
 
@@ -177,4 +180,4 @@ ldm re-seed demo              # Total project reset to Day Zero (Seeded)
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-09-03* | *Last Reviewed: 2026-09-03*

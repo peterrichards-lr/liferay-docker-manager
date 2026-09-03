@@ -587,8 +587,8 @@ def get_parser():  # noqa: PLR0915
     )
     run.add_argument(
         "--database-mode",
-        choices=["isolated", "shared"],
-        help="Explicitly force a specific Database mode (overrides local repository configs)",
+        choices=["isolated", "shared", "external", "embedded"],
+        help="Explicitly force a specific Database mode: isolated (a container per project), shared (one global container per engine), external (someone else's server -- LDM writes the JDBC details only) or embedded (in-JVM; Hypersonic only). LDM-#1511.",
     )
     run.add_argument(
         "--release-type",
@@ -842,8 +842,8 @@ def get_parser():  # noqa: PLR0915
     )
     imp.add_argument(
         "--database-mode",
-        choices=["isolated", "shared"],
-        help="Explicitly force a specific Database mode (overrides local repository configs)",
+        choices=["isolated", "shared", "external", "embedded"],
+        help="Explicitly force a specific Database mode: isolated (a container per project), shared (one global container per engine), external (someone else's server -- LDM writes the JDBC details only) or embedded (in-JVM; Hypersonic only). LDM-#1511.",
     )
     imp.add_argument(
         "--share-domain",
@@ -943,7 +943,11 @@ def get_parser():  # noqa: PLR0915
         help="Automatically use the latest Liferay tag",
     )
     init.add_argument("--host-name", help="Virtual Hostname")
-    init.add_argument("--db", choices=["postgresql", "mysql", "hypersonic", "external"])
+    init.add_argument(
+        "--db",
+        choices=["postgresql", "mysql", "hypersonic", "external"],
+        help="Database engine. 'external' is the legacy spelling of '--database-mode external' and still works: LDM infers the engine from the JDBC URL you supply (LDM-#1511). Prefer '--db postgresql --database-mode external' to keep the dialect and driver.",
+    )
     init.add_argument(
         "--search-mode",
         choices=["shared", "sidecar", "remote"],
@@ -951,8 +955,8 @@ def get_parser():  # noqa: PLR0915
     )
     init.add_argument(
         "--database-mode",
-        choices=["isolated", "shared"],
-        help="Explicitly force a specific Database mode (overrides local repository configs)",
+        choices=["isolated", "shared", "external", "embedded"],
+        help="Explicitly force a specific Database mode: isolated (a container per project), shared (one global container per engine), external (someone else's server -- LDM writes the JDBC details only) or embedded (in-JVM; Hypersonic only). LDM-#1511.",
     )
     init.add_argument("--internal-state", action="store_true")
     init.add_argument(
@@ -1070,8 +1074,8 @@ def get_parser():  # noqa: PLR0915
     )
     link.add_argument(
         "--database-mode",
-        choices=["isolated", "shared"],
-        help="Explicitly force a specific Database mode (overrides local repository configs)",
+        choices=["isolated", "shared", "external", "embedded"],
+        help="Explicitly force a specific Database mode: isolated (a container per project), shared (one global container per engine), external (someone else's server -- LDM writes the JDBC details only) or embedded (in-JVM; Hypersonic only). LDM-#1511.",
     )
     link.add_argument("--mount-logs", action="store_true")
     link.add_argument("--gogo-port", type=int)
@@ -1133,8 +1137,8 @@ def get_parser():  # noqa: PLR0915
     )
     clone.add_argument(
         "--database-mode",
-        choices=["isolated", "shared"],
-        help="Explicitly force a specific Database mode (overrides local repository configs)",
+        choices=["isolated", "shared", "external", "embedded"],
+        help="Explicitly force a specific Database mode: isolated (a container per project), shared (one global container per engine), external (someone else's server -- LDM writes the JDBC details only) or embedded (in-JVM; Hypersonic only). LDM-#1511.",
     )
     clone.add_argument("--mount-logs", action="store_true")
     clone.add_argument("--gogo-port", type=int)
@@ -2671,6 +2675,31 @@ def check_and_display_upgrade_banner():
         pass
 
 
+def _validate_database_flags(args):
+    """Reject an engine/mode pairing that cannot work, at parse time.
+
+    LDM-#1511: `--database-mode` used to be accepted for any `--db` and simply
+    not apply -- `--db external --database-mode shared` set two flags that both
+    suppressed the per-project container and meant nothing together, and
+    `--db hypersonic --database-mode shared` was accepted and downgraded. That
+    is the same shape as #1359, where `--database-mode shared` was accepted and
+    silently did nothing. Making the mode axis total is only worth doing if the
+    pairing is then checked, so an impossible pair exits 1 here, naming both
+    values, before any project state is read or written.
+    """
+    db_type = getattr(args, "db", None)
+    db_mode = getattr(args, "database_mode", None)
+    if not db_type or not db_mode:
+        return
+
+    from ldm_core.utils import DatabaseConfigError, normalize_database_selection
+
+    try:
+        normalize_database_selection(db_type, db_mode, strict=True)
+    except DatabaseConfigError as exc:
+        UI.die(f"{exc} (--db {db_type} --database-mode {db_mode})", exit_code=1)
+
+
 def _check_root_safety(args):
     # Root Safety Guard: Prevent running as sudo for non-upgrade/non-fix-hosts commands
     # This protects the ~/.shiv cache from ownership issues.
@@ -3305,6 +3334,7 @@ def main():
     args = parser.parse_args()
 
     _check_root_safety(args)
+    _validate_database_flags(args)
 
     if not args.command:
         parser.print_help()

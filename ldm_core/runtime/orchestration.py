@@ -668,14 +668,16 @@ class OrchestrationService(BaseHandler):
                         75,
                     ):
                         pass
-                    from ldm_core.utils import resolve_infrastructure_mode
+                    from ldm_core.utils import resolve_database_config
 
-                    db_mode = resolve_infrastructure_mode(
-                        "database_mode", meta, self.manager.defaults
+                    # LDM-#1511: engine and mode resolved as one pair, so a
+                    # Hypersonic project can no longer resolve to "shared"
+                    # from a ~/.ldmrc default and be excluded again here.
+                    db_type, db_mode = resolve_database_config(
+                        meta, self.manager.defaults
                     )
-                    db_type = meta.get("db_type", "postgresql")
 
-                    if db_mode == "shared" and db_type != "hypersonic":
+                    if db_mode == "shared":
                         project_name = meta.get("project_name", root.name)
                         db_name = shared_database_name(project_name)
                         from ldm_core.utils import shared_database_container
