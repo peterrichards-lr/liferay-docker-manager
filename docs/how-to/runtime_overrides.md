@@ -50,6 +50,67 @@ In addition to the variables listed above, LDM parses the active Liferay contain
 
 * **Example**: `${LIFERAY_WORKSPACE_ENVIRONMENT}` could resolve to `dev`, `local`, `uat`, or `prd`.
 
+## How the override is applied
+
+LDM tries three routes in order, stopping at the first that works.
+
+### 1. Headless API
+
+`PATCH /o/headless-delivery/v1.0/page-elements/{id}` — the supported path, and
+the only one needing no extra setup. It works on ordinary pages.
+
+It fails on **published site initializer pages**, which reject specification
+updates with HTTP 400 `UnsupportedOperationException` (upstream
+[LPD-99955](https://liferay.atlassian.net/browse/LPD-99955)). Packages built
+from a site initializer — the AI Commerce Accelerator among them — hit this
+every time, which is why the routes below exist.
+
+### 2. The `fragment-override` OSGi module *(recommended, opt-in)*
+
+Runs inside the portal, so the update goes through
+`FragmentEntryLinkLocalService` and Liferay invalidates its own cache. **No
+restart.** It merges your overrides over the existing values, leaving every key
+you did not mention untouched.
+
+Two one-time steps, both deliberate — LDM does not do either for you:
+
+```bash
+# 1. Fetch the bundle and deploy it (v2.0.0 or later)
+gh release download v2.0.0 \
+  --repo peterrichards-lr/liferay-custom-osgi-modules \
+  --pattern 'com.liferay.fragment.override*'
+
+shasum -a 256 -c com.liferay.fragment.override-*.sha256
+
+ldm deploy <project> com.liferay.fragment.override-2.0.0-dxp-2026.q1.12-lts.jar
+```
+
+```properties
+# 2. In files/portal-ext.properties
+feature.flag.LPD-99955=true
+```
+
+**Require v2.0.0 or later.** v1.0.0 replaced `editableValues` wholesale, so a
+partial override destroyed every other value on the fragment.
+
+**Match the DXP line.** The bundle declares bounded OSGi ranges and resolves
+only on the line named in its filename. Deployed against another line it will
+not start, and LDM falls through to route 3.
+
+### 3. Direct database patch *(last resort)*
+
+Used only when both routes above fail. It works, but it is the weakest option
+by some distance:
+
+* a regex over a JSON column, so a value containing a quote can corrupt it
+* an unscoped `WHERE` — every matching row in the instance is rewritten
+* PostgreSQL and MySQL only; Hypersonic projects get a warning and no override
+* **it cannot apply to a running portal.** Liferay caches fragment
+  configuration in memory and no Gogo command can invalidate it, so the change
+  is invisible until you `ldm restart`.
+
+Route 2 exists to avoid all four.
+
 ## Example Usage
 
 Create an `.ldm/fragment-overrides.json` file in the root of your project workspace. This file maps the Fragment `externalReferenceCode` to the specific configuration properties you want to update.
@@ -88,4 +149,4 @@ Two further limitations of the fallback are worth knowing, since it is a regex r
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-21* | *Last Reviewed: 2026-08-21*
+*Last Updated: 2026-09-04* | *Last Reviewed: 2026-09-04*

@@ -593,6 +593,52 @@ class FragmentsService(BaseHandler):
             UI.debug(f"Headless API connection to {base_url} failed: {e}")
             return None
 
+    def _patch_via_override_module(self, element_id, config, base_url, headers):
+        """Second rung of the fragment-override chain (LDM-#1602).
+
+        The Headless API refuses specification updates on published site
+        initializer pages (LDM-#883, upstream LPD-99955), so the rung above
+        this one fails on exactly the packages that need it most. The
+        `fragment-override` OSGi module answers the same need from inside the
+        portal, where `FragmentEntryLinkLocalService` handles cache
+        invalidation, model listeners and indexing -- none of which the SQL
+        fallback below can do.
+
+        Deliberately not the first rung: this needs a bundle deployed and
+        `feature.flag.LPD-99955=true` set, so most projects will not have it.
+        Trying the supported API first means nothing changes for them.
+
+        UNVERIFIED, and the reason this returns False rather than raising:
+        `element_id` comes from the Headless page-element representation and
+        may not be a `fragmentEntryLinkId` at all. If it is not, the module
+        answers 404 and this falls through to the SQL fallback exactly as if
+        the module were absent. That is why the chain is ordered the way it is
+        -- an id that turns out to be wrong costs a wasted request, not a
+        failure. Confirm against a live instance before relying on this rung.
+
+        The module merges server-side (its issue #9), so sending LDM's partial
+        overrides preserves every editable value it does not mention. Sending
+        the same payload to a replacing endpoint would destroy the rest of the
+        document, which is what the module's v1.0.0 did and v2.0.0 fixed --
+        require v2.0.0 or later.
+        """
+        res = self._api_request(
+            "PUT",
+            f"/o/fragment-override/fragment-entry-links/{element_id}",
+            base_url,
+            headers,
+            payload=config,
+        )
+
+        # A 403 (flag off), 404 (module absent, or the id is not a
+        # fragmentEntryLinkId) and 409 (existing values unparseable) all arrive
+        # here as None from _api_request. Falling through is right for each:
+        # the SQL fallback is no worse off than it is today.
+        if not isinstance(res, dict):
+            return False
+
+        return str(res.get("status", "")).lower() == "success"
+
     def _expand_vars(self, obj, expansion_env):
         if isinstance(obj, str):
             res = string.Template(obj).safe_substitute(expansion_env)
@@ -875,6 +921,14 @@ class FragmentsService(BaseHandler):
                         f"  -> Patched configuration for fragment '{matched_key}' on page '{page_name}'"
                     )
                     patched_count += 1
+                elif self._patch_via_override_module(
+                    element_id, overrides[matched_key], ext_base_url, headers
+                ):
+                    UI.success(
+                        f"  -> Patched configuration for fragment '{matched_key}' on page "
+                        f"'{page_name}' via the fragment-override module"
+                    )
+                    patched_count += 1
 
         for child_key in (
             "pageElement",
@@ -1047,6 +1101,16 @@ class FragmentsService(BaseHandler):
                 "because the Headless REST API rejected the update (see upstream #883). "
                 "Liferay caches fragment configuration in memory, so this change is not "
                 "visible until the portal reloads it -- restart the project to apply it:"
+            )
+            # LDM-#1602: said here rather than in the docs alone, because this
+            # is the moment the user is being told to restart -- which is the
+            # cost the module removes. The module updates through
+            # FragmentEntryLinkLocalService, so the portal invalidates its own
+            # cache and no restart is needed.
+            UI.detail(
+                "    Avoid this fallback entirely by deploying the fragment-override "
+                "module and setting feature.flag.LPD-99955=true "
+                "(see docs/how-to/runtime_overrides.md)."
             )
             project_id = project_meta.get("project_name") or project_meta.get(
                 "container_name"
