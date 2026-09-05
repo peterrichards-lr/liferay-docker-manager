@@ -48,6 +48,51 @@ To monitor live deployment logs and hot-reloading events:
 ldm logs -f
 ```
 
+## 🔐 4. Testing Authorisation
+
+**Your LDM project is more permissive than a customer's instance.** An
+authorisation check that passes here can fail in production, and the local test
+cannot tell you.
+
+LDM never sets `omniadmin.users`, so projects run with Liferay's default:
+
+> If the `omniadmin.users` property is not set or is empty, users with the
+> **Administrator** role in the **default instance** are also considered Omni
+> Admins.
+
+So the Administrator account satisfies `isOmniadmin()`, and any endpoint gated
+on it succeeds. The same code deployed somewhere that sets `omniadmin.users`
+explicitly, or where the caller belongs to a **non-default** instance, returns
+403.
+
+That is a test which cannot fail — the assertion is fine, the environment
+guarantees it passes.
+
+### Reproducing the stricter posture
+
+Set this in `files/portal-ext.properties` and restart:
+
+```properties
+omniadmin.users=some-other-screen-name
+```
+
+Then re-run the check. If it still passes, the gate is genuinely satisfied
+rather than satisfied by the default.
+
+Worth doing whenever you are testing:
+
+- an OSGi module or client extension that gates on `isOmniadmin()`
+- anything called by a **service account** rather than an interactive user, since
+  a service account is far less likely to hold Administrator in a real
+  deployment
+- a permission cascade, where the branch you think is being exercised may not be
+
+LDM keeps the permissive default deliberately: it matches stock Liferay, and
+this is a local development and demo sandbox (see
+[Security Posture](../reference/security.md)). The point is not that the default
+is wrong, but that it is invisible — and it makes authorisation tests
+optimistic.
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-18* | *Last Reviewed: 2026-08-18*
+*Last Updated: 2026-09-05* | *Last Reviewed: 2026-09-05*
