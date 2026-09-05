@@ -36,6 +36,40 @@ def _shared_db_engines():
     return list(representatives.values())
 
 
+def _docker_failure_detail(res):
+    """What docker said, for a start/stop guard that has just tripped.
+
+    LDM-#1603: `DockerService.start`/`.stop` return
+    `run_command(..., check=False, capture_output=True)` and both call sites
+    discarded it. The LDM-#1547 guards then reported "did not come up" or "is
+    still running" -- correctly detecting that something failed, while throwing
+    away the only evidence of why.
+
+    That cost a real diagnosis: `ldm db stop` failed once on debian during
+    v2.21.0-pre.2 verification, passed on a re-run with no code change, and the
+    cause could not be established afterwards because docker's stderr was gone.
+
+    `run_command(check=False)` returns None on a non-zero exit **and** on
+    TimeoutExpired, so `res is None` is itself worth reporting rather than
+    glossing -- it narrows the cause to those two.
+    """
+    if res is None:
+        return (
+            "The docker command failed or timed out; no output was captured. "
+            "(run_command returns None for both.)"
+        )
+
+    stderr = (getattr(res, "stderr", "") or "").strip()
+    if stderr:
+        return f"docker said: {stderr}"
+
+    stdout = (getattr(res, "stdout", "") or "").strip()
+    if stdout:
+        return f"docker said: {stdout}"
+
+    return "docker exited without producing any output."
+
+
 class DatabaseService(BaseHandler):
     """Orchestration handler for project database querying operations."""
 
@@ -182,7 +216,7 @@ class DatabaseService(BaseHandler):
                 continue
 
             UI.detail(f"Starting global shared database '{db_name}'...")
-            DockerService.start(db_name, target_name)
+            res = DockerService.start(db_name, target_name)
 
             # LDM-#1547: `DockerService.start` runs `run_command(..., check=False)`
             # and returns None on failure, and that result was discarded -- so a
@@ -193,6 +227,7 @@ class DatabaseService(BaseHandler):
             if not DockerService.is_running(db_name, target_name):
                 UI.die(
                     f"Global shared database '{db_name}' did not come up.",
+                    details=_docker_failure_detail(res),
                     tip=f"Inspect it with `docker logs {db_name}`.",
                     exit_code=3,
                 )
@@ -231,7 +266,7 @@ class DatabaseService(BaseHandler):
                 continue
 
             UI.detail(f"Stopping global shared database '{db_name}'...")
-            DockerService.stop(db_name, target_name)
+            res = DockerService.stop(db_name, target_name)
 
             # LDM-#1547: `DockerService.stop` discards failure exactly as
             # `start` did. Reporting a stop that did not happen is the same
@@ -239,6 +274,7 @@ class DatabaseService(BaseHandler):
             if DockerService.is_running(db_name, target_name):
                 UI.die(
                     f"Global shared database '{db_name}' is still running.",
+                    details=_docker_failure_detail(res),
                     tip=f"Inspect it with `docker inspect {db_name}`.",
                     exit_code=3,
                 )
