@@ -75,14 +75,25 @@ you did not mention untouched.
 Two one-time steps, both deliberate — LDM does not do either for you:
 
 ```bash
-# 1. Fetch the bundle and deploy it (v2.0.0 or later)
-gh release download v2.0.0 \
+# 1. Fetch the bundle and deploy it (v3.0.0 or later)
+gh release download v3.0.0 \
   --repo peterrichards-lr/liferay-custom-osgi-modules \
-  --pattern 'com.liferay.fragment.override*'
+  --pattern 'com.liferay.custom.fragment.override*'
 
-shasum -a 256 -c com.liferay.fragment.override-*.sha256
+shasum -a 256 -c com.liferay.custom.fragment.override-*.sha256
 
-ldm deploy <project> com.liferay.fragment.override-2.0.0-dxp-2026.q1.12-lts.jar
+ldm deploy <project> com.liferay.custom.fragment.override-3.0.0-dxp-2026.q1.12-lts.jar
+```
+
+Every release also publishes a `modules.json` describing each bundle — its
+symbolic name, version, DXP line, asset filename and checksum. Resolving the
+asset from it rather than hardcoding a filename survives the next release:
+
+```bash
+gh release download v3.0.0 \
+  --repo peterrichards-lr/liferay-custom-osgi-modules --pattern 'modules.json'
+
+jq -r '.bundles["com.liferay.custom.fragment.override"].asset' modules.json
 ```
 
 ```properties
@@ -90,8 +101,27 @@ ldm deploy <project> com.liferay.fragment.override-2.0.0-dxp-2026.q1.12-lts.jar
 feature.flag.LPD-99955=true
 ```
 
-**Require v2.0.0 or later.** v1.0.0 replaced `editableValues` wholesale, so a
-partial override destroyed every other value on the fragment.
+**Require v3.0.0 or later.** Two earlier releases are unsafe or unusable here:
+v1.0.0 replaced `editableValues` wholesale, so a partial override destroyed
+every other value on the fragment; v2.0.0 fixed that but ships under the old
+symbolic name (see below).
+
+**Upgrading from v2.0.0? Remove the old bundle first.** v3.0.0 renamed the
+bundle from `com.liferay.fragment.override` to
+`com.liferay.custom.fragment.override`. OSGi treats a renamed symbolic name as a
+*different bundle*, so deploying v3.0.0 does not supersede v2.0.0 — both resolve,
+both register a JAX-RS application on `/fragment-override`, and which one answers
+depends on resolution order. Delete the old jar from the project's
+`osgi/modules/` before deploying the new one:
+
+```bash
+rm <project>/osgi/modules/com.liferay.fragment.override-*.jar
+```
+
+The retirement is also machine-readable — `modules.json` records
+`"replaces": ["com.liferay.fragment.override"]` — so an automated deploy script
+can prune by symbolic name rather than by filename, which matters because
+Liferay strips versions from deployed filenames.
 
 **Match the DXP line.** The bundle declares bounded OSGi ranges and resolves
 only on the line named in its filename. Deployed against another line it will
@@ -149,4 +179,4 @@ Two further limitations of the fallback are worth knowing, since it is a regex r
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-04* | *Last Reviewed: 2026-09-04*
+*Last Updated: 2026-09-05* | *Last Reviewed: 2026-09-05*
