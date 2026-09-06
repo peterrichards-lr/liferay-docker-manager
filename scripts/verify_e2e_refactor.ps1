@@ -1515,18 +1515,29 @@ zf.close()
     # Asserting the URL RESPONDS rather than that it equals a string rebuilt
     # here: a rebuilt expectation would restate the resolver and pass whatever
     # it produced. A dead URL answers 0, which is the defect.
+    # LDM-#1610: parsed with ConvertFrom-Json rather than by piping the JSON
+    # into `python -c`. The Python form passed a multi-line script as a native
+    # command argument, which PowerShell 5.1 does not quote reliably -- it
+    # returned nothing on a real Windows run whose JSON plainly contained the
+    # URL, so the check reported "no access URL" against a project that had one.
+    #
+    # It went unnoticed because the bash half of this pair uses a different
+    # implementation and works, and because both Windows CI jobs report success
+    # while failing at Docker setup (LDM-#1611), so this line had never executed
+    # on Windows in CI.
+    #
+    # ConvertFrom-Json ships with PowerShell 3.0 and later, so it needs no venv
+    # Python and behaves the same in 5.1 and 7.
     $statusUrlRaw = & $LDM_CMD status . --json 2>$null
-    $statusUrl = $statusUrlRaw | & $VENV_PYTHON -c @"
-import json, sys
-try:
-    data = json.loads(sys.stdin.read())
-except Exception:
-    sys.exit(0)
-for p in data.get('projects', []):
-    if p.get('url'):
-        print(p['url'])
-        break
-"@
+    $statusUrl = $null
+    try {
+        $statusJson = ($statusUrlRaw | Out-String) | ConvertFrom-Json
+        $statusUrl = ($statusJson.projects |
+            Where-Object { $_.url } |
+            Select-Object -First 1).url
+    } catch {
+        $statusUrl = $null
+    }
 
     if ([string]::IsNullOrWhiteSpace($statusUrl)) {
         Write-Host ($statusUrlRaw | Out-String)
