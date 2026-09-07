@@ -133,9 +133,31 @@ print_version_banner() {
             # plain test rigs with no git checkout at all (upgrade the target
             # machine via `ldm system upgrade --beta`, copy the script over, run
             # it) -- `git checkout` is useless advice there. A raw-file download
-            # keyed to the installed binary's own tag needs no git and resolves
-            # correctly whether that binary is stable or pre-release.
-            echo "   re-pull this script: curl -fsSL \"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/v$installed_version/scripts/verify_e2e_refactor.sh\" -o scripts/verify_e2e_refactor.sh"
+            # keyed to the installed binary's own version needs no git and
+            # resolves correctly whether that binary is stable or pre-release.
+            #
+            # LDM-#1613: for a `-pre.N` binary that key must be the RELEASE
+            # BRANCH, not the tag. Tags are immutable under the Burn Rule, so a
+            # harness fix landed after the tag was cut is unreachable from the
+            # tag URL forever -- the hint would serve the broken script for
+            # ever. Hit for real on #1610/#1612: the PowerShell 5.1 parse fix
+            # was on release/v2.21.0 and master, but v2.21.0-pre.2 contained
+            # none of it. release/vX.Y.Z is the only ref carrying both the fix
+            # and the matching SCRIPT_VERSION stamp that sync_compatibility.py
+            # requires. A stable version's tag is immutable BY DESIGN -- it is
+            # exactly what shipped -- so that case keeps the tag, which also
+            # matters because release/vX.Y.Z is deleted once the version is
+            # promoted: the branch exists exactly while `-pre.N` builds are in
+            # flight, which is exactly when this hint is reached.
+            #
+            # raw.githubusercontent.com resolves a slashed ref in this position
+            # (verified: 200 for a `fix/...` branch); scripts/manage_target_nodes.py
+            # already relies on the same `release/vX.Y.Z` URL form.
+            local repull_ref="v$installed_version"
+            case "$installed_version" in
+                *-pre.*) repull_ref="release/v${installed_version%%-pre.*}" ;;
+            esac
+            echo "   re-pull this script: curl -fsSL \"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/$repull_ref/scripts/verify_e2e_refactor.sh\" -o scripts/verify_e2e_refactor.sh"
             echo "   or, if the mismatch is deliberate, re-run with --allow-version-mismatch"
         fi
     fi
