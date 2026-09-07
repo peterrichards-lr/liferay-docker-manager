@@ -2831,9 +2831,33 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
 
     Write-Host "`n[SUCCESS] ALL E2E VERIFICATIONS PASSED!"
     Finalize-Verification 0
+    $script:VerificationExitCode = 0
 } catch {
     Write-Host $_.Exception.Message -ForegroundColor Red
     Finalize-Verification 1
+    $script:VerificationExitCode = 1
 } finally {
     Set-Location $ORIGINAL_PWD
 }
+
+# LDM-#1611: exit explicitly, or a failed run reports success.
+#
+# `Finalize-Verification 1` writes the "-fail" report and prints
+# "[FAILED] Verification FAILED (fail)", then execution falls off the end of
+# the script -- and PowerShell exits 0. A caught `throw` is NOT a nonzero exit
+# status: the exception was handled, so there is nothing left for the host to
+# report. Measured on pwsh 7.6.5, with both `pwsh script.ps1` (the implicit
+# -Command form) and `pwsh -File script.ps1`: both exited 0. There is no
+# invocation form that recovers it -- only the script can report it.
+#
+# That is how `verify-windows` reported `success` on runs that never got past
+# infrastructure setup (v2.21.0-pre.2, v2.21.0) and manufactured two cycles of
+# fictional Windows coverage. The bash twin never had this defect -- it runs
+# under `set -e` and its failure paths call `exit 1` directly.
+#
+# `exit` inside the `catch` would also work (the `finally` still runs), but
+# setting a variable and exiting once, here, keeps the exit status in one
+# place. The `$null` guard makes "no branch recorded an outcome" a failure
+# rather than a silent pass -- the exact failure mode being fixed.
+if ($null -eq $script:VerificationExitCode) { $script:VerificationExitCode = 1 }
+exit $script:VerificationExitCode

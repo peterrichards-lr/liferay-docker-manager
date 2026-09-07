@@ -566,6 +566,35 @@ lives in the unit suite instead. Recorded here so the gap stays visible:
   over a `.ldmp` built in the test with only `requests.get` mocked, and which
   measures the routing above rather than asserting it in prose.
 
+### **Exit status, and why CI cross-checks the report**
+
+Both scripts exit `0` only when the run reached `ALL E2E VERIFICATIONS PASSED`,
+and `1` otherwise. The Bash script has always done this (`set -e` plus explicit
+`exit 1` on each failure path). The PowerShell script did **not** until
+LDM-#1611: its top-level `catch` wrote the `-fail` report, printed
+`[FAILED] Verification FAILED (fail)`, and then fell off the end of the
+script — and PowerShell exits `0` once an exception has been handled. Measured
+on pwsh 7.6.5, `pwsh script.ps1` and `pwsh -File script.ps1` both exited `0`
+from that failure path.
+
+The consequence was that `LDM Platform Verification (Multi-OS)` reported
+`success` on the `v2.21.0-pre.2` and `v2.21.0` tag runs while uploading three
+`-fail.txt` reports (both Windows shells and macOS/Colima; the macOS half came
+from a `continue-on-error: true` on that job's suite step). A job that cannot
+report failure is worse than an absent one, because the compatibility matrix is
+built from its output: a red job says "unverified", whereas those green ones
+said "verified" and were wrong.
+
+Every verification job therefore now cross-checks the artefact as a second,
+independent signal — the exit status alone has been lost once already. The step
+fails if no `verify-*.txt` was produced, if a report's filename ends `-fail`, or
+if a report lacks the `ALL E2E VERIFICATIONS PASSED` marker. It runs with
+`if: always()`, after the artefact upload, so a failing run still ships its
+report.
+
+Report size is a usable smoke signal alongside this: a genuine pass is ~4 kB,
+and the three false passes above were 608–794 b.
+
 <!-- markdownlint-disable MD049 -->
 ---
 *Last Updated: 2026-09-07* | *Last Reviewed: 2026-09-07*

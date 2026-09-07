@@ -160,6 +160,36 @@ jobs:
           path: verify-*.txt
           retention-days: 7
 
+      # LDM-#1611: second, independent signal. The step above is the primary
+      # one -- the script's exit status -- but that status has been silently
+      # lost before (see the verify-windows job), and when it is, a green job
+      # manufactures coverage that does not exist. The report the script writes
+      # names its own outcome in its filename, so cross-check it. Runs after
+      # the upload so the artifact still reaches the run either way.
+      - name: Assert the verification report says it passed
+        if: always()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          reports=(verify-*.txt)
+          if [ ${#reports[@]} -eq 0 ]; then
+            echo "::error::No verification report was produced by scripts/verify_e2e_refactor.sh."
+            exit 1
+          fi
+          rc=0
+          for report in "${reports[@]}"; do
+            if [[ "$report" == *-fail.txt ]]; then
+              echo "::error::${report} is a FAILURE report; this job did not verify anything."
+              rc=1
+            elif ! grep -q "ALL E2E VERIFICATIONS PASSED" "$report"; then
+              echo "::error::${report} has no 'ALL E2E VERIFICATIONS PASSED' marker; the suite did not run to completion."
+              rc=1
+            else
+              echo "OK: ${report}"
+            fi
+          done
+          exit "$rc"
+
   verify-windows:
     needs: validate-tag
     # LDM-#1500: both shells, on the same runner. windows-latest carries
@@ -199,11 +229,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install .
 
+      # LDM-#1611: propagate the child shell's exit status explicitly.
+      # The script now exits nonzero on failure (it did not before -- see the
+      # comment at the bottom of scripts/verify_e2e_refactor.ps1), but that
+      # only helps if this step forwards it. Relying on the runner's implicit
+      # `exit $LASTEXITCODE` epilogue leaves the whole chain resting on an
+      # undeclared default, which is how this job reported `success` on runs
+      # that never got past infrastructure setup.
       - name: Run E2E Verification Suite (Windows, ${{ matrix.shell }})
+        shell: pwsh
         env:
           GITHUB_ACTIONS: "true"
         run: |
-          ${{ matrix.shell }} scripts/verify_e2e_refactor.ps1
+          ${{ matrix.shell }} -File scripts/verify_e2e_refactor.ps1
+          $rc = $LASTEXITCODE
+          if ($rc -ne 0) {
+            Write-Host "::error::scripts/verify_e2e_refactor.ps1 exited $rc under ${{ matrix.shell }}."
+            exit $rc
+          }
 
       - name: Upload Test Results
         if: always()
@@ -212,6 +255,32 @@ jobs:
           name: verification-results-windows-${{ matrix.shell }}
           path: verify-*.txt
           retention-days: 7
+
+      # LDM-#1611: see the equivalent step in verify-linux. Written in
+      # PowerShell rather than bash because that is the shell this job already
+      # runs in; the check is the same one.
+      - name: Assert the verification report says it passed
+        if: always()
+        shell: pwsh
+        run: |
+          $reports = @(Get-ChildItem -Path . -Filter "verify-*.txt" -File -ErrorAction SilentlyContinue)
+          if ($reports.Count -eq 0) {
+            Write-Host "::error::No verification report was produced by scripts/verify_e2e_refactor.ps1."
+            exit 1
+          }
+          $bad = $false
+          foreach ($report in $reports) {
+            if ($report.Name -like "*-fail.txt") {
+              Write-Host "::error::$($report.Name) is a FAILURE report; this job did not verify anything."
+              $bad = $true
+            } elseif (-not (Select-String -Path $report.FullName -Pattern "ALL E2E VERIFICATIONS PASSED" -SimpleMatch -Quiet)) {
+              Write-Host "::error::$($report.Name) has no 'ALL E2E VERIFICATIONS PASSED' marker; the suite did not run to completion."
+              $bad = $true
+            } else {
+              Write-Host "OK: $($report.Name)"
+            }
+          }
+          if ($bad) { exit 1 }
 
   verify-macos:
     needs: validate-tag
@@ -231,13 +300,29 @@ jobs:
           export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
           brew install colima docker docker-compose || true
 
+      # The continue-on-error here is NOT the LDM-#1611 defect and is kept
+      # deliberately: if Colima cannot start, the suite step below fails on
+      # its own (and now says so), which produces a report and the failure
+      # debug logs instead of aborting the job with only a brew/colima trace.
       - name: Start Colima
         continue-on-error: true
         run: |
           colima start --cpu 2 --memory 4 --vm-type=vfkit || colima start --cpu 2 --memory 4
 
+      # LDM-#1611: `continue-on-error: true` was here, and it is the whole bug
+      # on this platform. The bash script propagates its own failure correctly
+      # (`set -e` plus explicit `exit 1`), so nothing else was swallowing it --
+      # the step simply declared the failure unimportant. Runs 33752742268
+      # (v2.21.0-pre.2) and 34063433007 (v2.21.0) reported `success` while
+      # uploading a `-fail.txt` report containing a header, "Docker: running"
+      # and "--- FAILURE DEBUG LOGS ---": no verification step ever ran.
+      #
+      # The macOS runner's Docker being unusable is a runner defect, not an
+      # LDM defect, and fixing that is out of scope here. But a job that
+      # cannot report failure is worse than an absent one, because it
+      # manufactures the evidence the compatibility matrix is built from.
+      # A red job says "unverified"; a green one said "verified" and was wrong.
       - name: Run E2E Verification Suite (macOS)
-        continue-on-error: true
         env:
           GITHUB_ACTIONS: "true"
         run: |
@@ -254,6 +339,31 @@ jobs:
           path: verify-*.txt
           retention-days: 7
 
+      # LDM-#1611: see the equivalent step in verify-linux.
+      - name: Assert the verification report says it passed
+        if: always()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          reports=(verify-*.txt)
+          if [ ${#reports[@]} -eq 0 ]; then
+            echo "::error::No verification report was produced by scripts/verify_e2e_refactor.sh."
+            exit 1
+          fi
+          rc=0
+          for report in "${reports[@]}"; do
+            if [[ "$report" == *-fail.txt ]]; then
+              echo "::error::${report} is a FAILURE report; this job did not verify anything."
+              rc=1
+            elif ! grep -q "ALL E2E VERIFICATIONS PASSED" "$report"; then
+              echo "::error::${report} has no 'ALL E2E VERIFICATIONS PASSED' marker; the suite did not run to completion."
+              rc=1
+            else
+              echo "OK: ${report}"
+            fi
+          done
+          exit "$rc"
+
   sync-compatibility:
     name: Sync Compatibility Table
     needs: [verify-linux, verify-windows, verify-macos]
@@ -266,7 +376,21 @@ jobs:
     # always rejects it -- it gets silently archived and never reaches the
     # table (LDM-#1043). Mirrors the same "-" check validate-tag already
     # uses to distinguish stable vs. pre-release tags.
+    #
+    # LDM-#1611: gated on verify-linux ONLY, and deliberately tolerant of the
+    # other two. Until #1611 the Windows and macOS jobs could not report
+    # failure, so plain `needs:` semantics never blocked this job. Now that
+    # they can, `needs: [...]` alone would skip the sync on every stable tag
+    # for as long as the runner Docker defects persist -- silently trading one
+    # broken signal for another. This job only ever consumes the ubuntu and
+    # fedora artifacts (see the download steps below), so verify-linux is the
+    # only dependency whose outcome it actually needs. The `!cancelled()`
+    # status-check function is what lets `needs.*.result` be evaluated at all
+    # after a dependency fails; without it the job is skipped before this
+    # expression runs.
     if: |
+      !cancelled() &&
+      needs.verify-linux.result == 'success' &&
       github.event_name == 'push' &&
       startsWith(github.ref, 'refs/tags/v') &&
       !contains(github.ref_name, '-')
