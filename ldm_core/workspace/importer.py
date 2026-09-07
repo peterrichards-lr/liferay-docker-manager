@@ -244,17 +244,21 @@ def _extract_ldm_package(self, ldmp_path, temp_extract_dir, temp_pkg_dir):
         UI.die(f"Failed to extract LDM package: {e}")
 
 
-def _discard_package_temp(temp_pkg_dir, temp_extract_dir):
-    """Remove both scratch directories used while verifying a package.
+def _discard_package_temp(*scratch_dirs):
+    """Remove the scratch directories used while verifying a package.
 
     LDM-#1522: this pair was repeated verbatim at every rejection point in
     _verify_ldm_package_manifest. Extracted when adding the parse-failure
     rejection pushed that function past the complexity limit -- five copies of
     a cleanup is also five chances to forget one on a new failure path, which
     would leave an extracted archive behind on a rejected package.
+
+    LDM-#1621: variadic because the two callers hold different numbers of
+    scratch directories -- the release-asset path has a download dir and an
+    extraction dir, the import pipeline only the extraction dir.
     """
-    for scratch in (temp_pkg_dir, temp_extract_dir):
-        if scratch.exists():
+    for scratch in scratch_dirs:
+        if scratch is not None and Path(scratch).exists():
             shutil.rmtree(scratch)
 
 
@@ -280,12 +284,23 @@ def _recover_listing_from_payload(temp_extract_dir, sources):
     return scan_member_names(names, sources)
 
 
-def _verify_ldm_package_manifest(self, temp_extract_dir, temp_pkg_dir, owner, repo):
+def parse_package_manifest(manager, temp_extract_dir, *scratch_dirs):
+    """The manifest of an .ldmp, read strictly, or a refusal.
+
+    LDM-#1621: split out of _verify_ldm_package_manifest so the import
+    pipeline's PackageVerificationStage holds a local or downloaded package to
+    the same parse as one fetched from a GitHub release. Before that split the
+    pipeline read the manifest with the non-strict read_meta, so an unparseable
+    one degraded to {} and the import reported success having silently dropped
+    the package's `tag` and `db_type` -- measured: a manifest with trailing
+    lines after the closing brace imported to a project carrying neither key,
+    which is exactly the LDM-#1522 report reproduced on the other input.
+    """
     from ldm_core.utils import UI, MetaReadError
 
     manifest_file = temp_extract_dir / "meta"
     if not manifest_file.exists():
-        _discard_package_temp(temp_pkg_dir, temp_extract_dir)
+        _discard_package_temp(*scratch_dirs)
         UI.die("Invalid LDM Package: Missing manifest 'meta' file.")
 
     # LDM-#1522: read strictly. read_meta degrades an unparseable file to {},
@@ -299,11 +314,29 @@ def _verify_ldm_package_manifest(self, temp_extract_dir, temp_pkg_dir, owner, re
     # trailing lines after the closing brace: tag, db_type and github_repository
     # were all present in the file and all silently discarded.
     try:
-        manifest = self.manager.read_meta(temp_extract_dir, strict=True) or {}
+        return manager.read_meta(temp_extract_dir, strict=True) or {}
     except MetaReadError as e:
-        _discard_package_temp(temp_pkg_dir, temp_extract_dir)
+        _discard_package_temp(*scratch_dirs)
         UI.die(f"Invalid LDM Package: manifest 'meta' could not be parsed. {e}")
         return {}  # unreachable; UI.die exits, but keeps the type honest
+
+
+def reconcile_package_listings(temp_extract_dir, manifest, *scratch_dirs, refuse):
+    """Correct, or object to, a manifest that claims a category and lists none.
+
+    Mutates `manifest` in place when the listing is recovered from the payload.
+
+    LDM-#1621: `refuse` is the difference between the two inputs, and it is a
+    deliberate asymmetry rather than an oversight. On the release-asset path
+    (refuse=True) an unrecoverable contradiction is fatal, which is what
+    LDM-#1568 decided. On the import pipeline (refuse=False) it warns: the
+    listing keys are consumed only by `ldm snapshot` listing output and the
+    dashboard, never by cmd_restore, so a local package claiming a category it
+    neither lists nor ships still restores correctly today -- measured -- and
+    refusing it would break a working import over a cosmetic manifest defect.
+    The recovery half runs on both paths, and breaks nobody either way.
+    """
+    from ldm_core.utils import UI
 
     # LDM-#1568: a manifest that claims to include something and then lists
     # nothing is not a package we can honour. Importing it produced a project
@@ -351,18 +384,43 @@ def _verify_ldm_package_manifest(self, temp_extract_dir, temp_pkg_dir, owner, re
             )
             continue
 
-        _discard_package_temp(temp_pkg_dir, temp_extract_dir)
+        contradiction = (
+            f"'{flag}' is true but '{listing}' is empty, and the package "
+            f"ships no {label} either."
+        )
+        rebuild = (
+            "Rebuild the package with 'ldm snapshot' on this version "
+            "of LDM, which derives both fields from one scan."
+        )
+        if not refuse:
+            UI.warning(f"Package manifest is self-contradictory: {contradiction}")
+            UI.detail(rebuild)
+            continue
+
+        _discard_package_temp(*scratch_dirs)
         UI.die(
             "Invalid LDM package: the manifest is self-contradictory.",
-            details=(
-                f"Caused by: '{flag}' is true but '{listing}' is empty, and "
-                f"the package ships no {label} either."
-            ),
-            tip=(
-                "Rebuild the package with 'ldm snapshot' on this version "
-                "of LDM, which derives both fields from one scan."
-            ),
+            details=f"Caused by: {contradiction}",
+            tip=rebuild,
         )
+
+
+def _verify_ldm_package_manifest(self, temp_extract_dir, temp_pkg_dir, owner, repo):
+    """Every manifest control, for a package fetched from a GitHub release.
+
+    LDM-#1621: the parse and the listing reconciliation are shared with the
+    import pipeline; the db_type and origin checks below are not. db_type is
+    already enforced by ProjectSetupStage on that path, and the origin checks
+    have nothing to compare against there -- see PackageVerificationStage.
+    """
+    from ldm_core.utils import UI
+
+    manifest = parse_package_manifest(
+        self.manager, temp_extract_dir, temp_pkg_dir, temp_extract_dir
+    )
+    reconcile_package_listings(
+        temp_extract_dir, manifest, temp_pkg_dir, temp_extract_dir, refuse=True
+    )
 
     from ldm_core.utils import DB_ENGINES
 

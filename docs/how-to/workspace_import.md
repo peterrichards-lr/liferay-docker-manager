@@ -46,6 +46,39 @@ ldm import <source-path-or-url>
 | **Local Liferay Workspace** | `ldm link /path/to/local/liferay-workspace` | Maps folders, executes `gradlew` build (if `--build` is specified), and configures the container paths. |
 | **Local Cloud Workspace** | `ldm link /path/to/local/lcp-workspace` | Detects `LCP.json`, resolves the nested `liferay/` folder structure, and configures environment variables and properties. |
 
+### Manifest Verification
+
+Every `.ldmp` carries a `meta` manifest describing the package. It used to be
+checked only when the package came from a **GitHub Release**; a local file or a
+`.ldmp` URL was read with a tolerant parser and any problem with it was passed
+over silently (LDM-#1621). It is now checked on every input, though not
+every check behaves the same way, because a local file has less context around
+it than a release asset does.
+
+| Condition | Local file / `.ldmp` URL | GitHub Release asset |
+| :--- | :--- | :--- |
+| Manifest is missing | Treated as a plain workspace archive, not a package | Refused |
+| Manifest cannot be parsed | **Refused** (exit `1`) | Refused |
+| `db_type` names an unknown engine | Refused (exit `1`) | Refused |
+| Claims client extensions or OSGi modules but lists none, and ships some | Listing recovered from the package contents, with a warning | Same |
+| Claims client extensions or OSGi modules but lists none, and ships none | Warning; the import continues | Refused |
+| `github_repository` absent | Warning; the import continues | Refused |
+| `github_repository` names a different repository | Reported with `--info`/`--verbose`; the import continues | Refused |
+
+Two notes on the differences:
+
+* **The origin checks cannot apply to a local file.** They exist to catch a
+  release asset claiming to come from a repository other than the one it was
+  downloaded from. A file you chose yourself has no fetch origin for the
+  manifest to contradict, so there is nothing to compare against — the
+  declaration is reported as unverified rather than trusted or refused.
+* **A parse failure is refused because it is not recoverable by carrying on.**
+  The manifest is where `tag` and `db_type` come from. An unreadable one used to
+  import "successfully" while silently dropping both, so the database dump was
+  restored into whichever engine the defaults happened to pick. If you hit this,
+  fix the `meta` file inside the archive or rebuild the package with
+  `ldm package` on this version of LDM.
+
 ---
 
 ## 2. Packaging Workspaces (`ldm package`)
@@ -148,4 +181,4 @@ This scaffolds a `.github/workflows/ldm-package-release.yml` file which:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-10*
+*Last Updated: 2026-09-07* | *Last Reviewed: 2026-09-07*

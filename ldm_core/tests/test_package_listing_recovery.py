@@ -478,10 +478,14 @@ class TestOnlyOneInputReachesThisCode(unittest.TestCase):
     destinations stubbed and records which one it actually picked, so the claim
     in #1588 is checked by running the router instead of by reading it.
 
-    If a future change routes a local `.ldmp` through package verification --
-    the option #1588 lists under "what would change this", and worth doing on
-    its own merits since a local package currently skips the origin and db_type
-    checks too -- this test fails, and the E2E assertion becomes possible.
+    LDM-#1621 has since put manifest verification on the local/downloaded input
+    too, and these assertions are unchanged by it: it added a stage INSIDE the
+    import pipeline rather than rerouting anything, so the destinations below
+    are still the destinations. What changed is what happens after
+    `ImportPipeline.run` is reached, which is asserted in
+    `test_local_package_verification.py`. Rerouting a local `.ldmp` into
+    `_import_ldm_package` would still fail this, and would still be wrong --
+    that function fetches a GitHub release asset.
     """
 
     def _route(self, source_path):

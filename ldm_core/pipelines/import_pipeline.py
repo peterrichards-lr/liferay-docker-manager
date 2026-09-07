@@ -128,6 +128,87 @@ class ExtractionStage(PipelineStage):
             context.set("extracted_source", source)
 
 
+def _note_unverifiable_origin(manifest) -> None:
+    """Report, and never refuse on, a package origin nothing can confirm.
+
+    LDM-#1621: `_verify_ldm_package_manifest` treats a missing
+    `github_repository`, or one naming a repo other than the release it was
+    fetched from, as a Security Violation. Neither refusal transfers here. A
+    file the user chose themselves has no fetch origin for the declaration to
+    contradict, so there is nothing to compare against -- the check is not
+    relaxed so much as inapplicable.
+
+    Both shapes import successfully today (measured: a manifest with no
+    `github_repository`, and one naming an unrelated repo, each produced a
+    working project), and hand-built packages and packages moved between
+    machines are the normal case for this input. So the declared-origin case is
+    a detail line rather than a warning, to avoid teaching users to ignore a
+    warning that fires on every legitimate local import; the absent-origin case
+    is a warning, because that is the one the release path calls a violation.
+    """
+    declared = manifest.get("github_repository")
+    if declared:
+        UI.detail(
+            f"Package declares origin '{declared}'. It was not fetched from "
+            "that repository's releases, so the origin is unverified."
+        )
+    else:
+        UI.warning(
+            "Package manifest declares no 'github_repository', so its origin "
+            "cannot be established."
+        )
+
+
+class PackageVerificationStage(PipelineStage):
+    """Manifest controls for a local or downloaded .ldmp (LDM-#1621).
+
+    Until this stage existed, `_verify_ldm_package_manifest` was reachable from
+    exactly one input -- a GitHub repo URL whose latest release carries a
+    `.ldmp` -- so `ldm import ./thing.ldmp`, and the `.ldmp` URL that downloads
+    and re-enters cmd_import with a local path, were verified by nothing.
+
+    Not every control transfers, and the ones that do not are listed here
+    rather than silently dropped:
+
+    * The parse is applied, and refuses. Measured before this stage existed: a
+      package whose manifest had trailing lines after the closing brace
+      imported and reported success, with `tag` and `db_type` silently absent
+      from the project it produced -- so the database dump was restored into
+      whichever engine the defaults picked. That import was already broken; it
+      just did not say so.
+    * The listing reconciliation is applied, and warns rather than refuses.
+      See reconcile_package_listings.
+    * `db_type` is left to ProjectSetupStage, which already enforces it on this
+      path (measured: exit 1 on an unknown engine, before this change) and also
+      covers the `.ldmrc` manifest of a directory source, which this stage does
+      not see. It was only ever vacuous because the manifest could arrive as
+      {}, and the strict parse above is what fixes that.
+    * The origin checks cannot be applied at all. See
+      _note_unverifiable_origin.
+    """
+
+    def execute(self, context: PipelineContext) -> None:
+        context = typing.cast(ImportPipelineContext, context)
+        backup_dir = context.get("backup_dir")
+
+        # No manifest means this is not a package. A .zip/.tgz/.tar workspace
+        # archive legitimately has none, and its absence is exactly what
+        # ProjectSetupStage uses to tell the two apart, so refusing here would
+        # reject every workspace archive rather than every broken package.
+        if not backup_dir or not (Path(backup_dir) / "meta").exists():
+            return
+
+        from ldm_core.workspace.importer import (
+            parse_package_manifest,
+            reconcile_package_listings,
+        )
+
+        scratch = [d for d in context.get("temp_dirs", []) if isinstance(d, Path)]
+        manifest = parse_package_manifest(context.manager, Path(backup_dir), *scratch)
+        reconcile_package_listings(Path(backup_dir), manifest, *scratch, refuse=False)
+        _note_unverifiable_origin(manifest)
+
+
 class ProjectSetupStage(PipelineStage):
     """Sets up the project directory and meta configuration."""
 
@@ -526,6 +607,7 @@ class ImportPipeline(Pipeline):
                 SharedValidationStage(),
                 ImportValidationStage(),
                 ExtractionStage(),
+                PackageVerificationStage(),
                 ProjectSetupStage(),
                 BackupStateStage(),
                 DatabaseRestoreStage(),
