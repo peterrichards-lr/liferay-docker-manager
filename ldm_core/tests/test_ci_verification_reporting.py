@@ -12,9 +12,19 @@ independent defects produced that:
   step `continue-on-error: true`.
 
 Both were invisible: the run was green and the compatibility record showed the
-platforms as verified. These are static guards -- they assert the *shape* of
-the workflow and the script, because the behaviour itself only reproduces on a
-GitHub-hosted Windows or macOS runner.
+platforms as verified.
+
+Scope: this module covers the **workflow** half only, and does so by parsing
+the YAML and asserting on the resulting structure -- a workflow file cannot be
+executed locally, so its shape is the strongest available signal.
+
+The script half is NOT guarded here, and deliberately not by matching source
+text: a text match passes whenever the text survives, including when the
+behaviour is gone, and on an issue whose whole premise is that a green signal
+could not be trusted that would repeat the mistake. The .ps1's exit status is
+*executed* instead, in real PowerShell, by TestPowerShellSuiteExitStatus in
+test_verify_scripts.py -- which is where this repository's pwsh-invocation and
+skip-if-absent machinery already lives.
 """
 
 import unittest
@@ -25,7 +35,6 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "scheduled-verification.yml"
-PS1_SCRIPT = REPO_ROOT / "scripts" / "verify_e2e_refactor.ps1"
 
 # The jobs whose whole purpose is to report a verification outcome.
 VERIFY_JOBS = ("verify-linux", "verify-windows", "verify-macos")
@@ -116,44 +125,6 @@ class TestVerificationFailuresAreReported(unittest.TestCase):
                 "The Windows suite step must capture and re-raise the exit code "
                 "of the shell it launches (LDM-#1611).",
             )
-
-    def test_powershell_suite_exits_nonzero_on_failure(self):
-        """`Finalize-Verification 1` must be followed by an explicit nonzero exit.
-
-        A caught `throw` is not a nonzero exit status: the exception was
-        handled, so there is nothing left for the host to report. Measured on
-        pwsh 7.6.5 -- both `pwsh script.ps1` and `pwsh -File script.ps1` exited 0
-        from a script whose `catch` ended at `Finalize-Verification 1`.
-        """
-        body = PS1_SCRIPT.read_text(encoding="utf-8")
-        self.assertIn(
-            "Finalize-Verification 1",
-            body,
-            "The failure path of verify_e2e_refactor.ps1 has moved; this guard "
-            "needs updating rather than deleting.",
-        )
-        # The failure branch must record a nonzero code, and the script must
-        # exit with whatever it recorded.
-        self.assertIn(
-            "$script:VerificationExitCode = 1",
-            body,
-            "The catch block of verify_e2e_refactor.ps1 no longer records a "
-            "nonzero exit code, so a failed run would exit 0 (LDM-#1611).",
-        )
-        self.assertIn(
-            "exit $script:VerificationExitCode",
-            body,
-            "verify_e2e_refactor.ps1 no longer exits with its recorded status, "
-            "so a failed run would exit 0 (LDM-#1611).",
-        )
-        # An unset outcome must be treated as failure, not as a silent pass.
-        self.assertIn(
-            "if ($null -eq $script:VerificationExitCode) { "
-            "$script:VerificationExitCode = 1 }",
-            body,
-            "verify_e2e_refactor.ps1 must default an unrecorded outcome to "
-            "failure (LDM-#1611).",
-        )
 
 
 if __name__ == "__main__":

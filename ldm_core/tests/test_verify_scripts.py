@@ -1,6 +1,7 @@
 import re
 import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -541,3 +542,154 @@ class TestPowerShellEnvLabelLine(unittest.TestCase):
             with self.subTest(shell=name):
                 self.assertEqual(_run_powershell_env_label(binary, "").strip(), "")
                 self.assertEqual(_run_powershell_env_label(binary, "   ").strip(), "")
+
+
+# LDM-#1611: the suite's own exit status.
+#
+# The .ps1's top-level `catch` wrote the "-fail" report, printed
+# "[FAILED] Verification FAILED (fail)", and then execution fell off the end of
+# the script -- and PowerShell exits 0, because a caught `throw` is not a
+# nonzero exit status. `verify-windows` therefore reported `success` on the
+# v2.21.0-pre.2 and v2.21.0 tag runs while uploading a `-fail.txt` report.
+#
+# This is measured, not text-matched. The whole point of #1611 is that a green
+# signal could not be trusted, so a guard over that root cause which passes
+# whenever the source text merely survives would be the same class of mistake.
+# The 2800-line suite cannot run here (Docker, a Liferay boot, a real `ldm`),
+# but the exit machinery is the last thirty lines and needs none of it: the
+# success assignment, the `catch`, the `finally` and the epilogue are extracted
+# verbatim from the real script, and only the `try` body -- the part that needs
+# Docker -- is supplied by the harness.
+_EXIT_TAIL_RE = re.compile(
+    r'^    Write-Host "`n\[SUCCESS\] ALL E2E VERIFICATIONS PASSED!".*\Z',
+    re.M | re.S,
+)
+
+# Anything the extracted tail refers to but does not define. Finalize-Verification
+# is stubbed rather than mocked away: the real one runs `ldm`, `docker` and
+# `chcp`, and no test may invoke those binaries for real.
+_EXIT_TAIL_PREAMBLE = (
+    "$ORIGINAL_PWD = (Get-Location).Path\n"
+    'function Finalize-Verification { param($ExitCode) Write-Output "finalize:$ExitCode" }\n'
+    "try {\n"
+)
+
+_FAILING_BODY = "    throw 'simulated infrastructure failure'\n"
+_PASSING_BODY = ""
+
+# Drops both `$script:VerificationExitCode = N` assignments, leaving the
+# epilogue's $null guard as the only thing that can set an exit status.
+_ASSIGNMENT_RE = re.compile(r"^\s*\$script:VerificationExitCode = [01]\s*$\n", re.M)
+
+
+def _exit_tail():
+    return _extract_function(PS1_SCRIPT, _EXIT_TAIL_RE)
+
+
+def _run_exit_tail(binary, body, tail=None, via_file=False):
+    """Runs the real script's exit machinery over a stubbed `try` body."""
+    script = _EXIT_TAIL_PREAMBLE + body + (tail if tail is not None else _exit_tail())
+    if not via_file:
+        return subprocess.run(
+            [binary, "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp) / "exit_tail.ps1"
+        fixture.write_text(script, encoding="utf-8")
+        return subprocess.run(
+            [binary, "-NoProfile", "-NonInteractive", "-File", str(fixture)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+
+@unittest.skipUnless(_powershell_binaries(), "no PowerShell available")
+class TestPowerShellSuiteExitStatus(unittest.TestCase):
+    """LDM-#1611: a failed verification run must exit nonzero.
+
+    Runs under every PowerShell on the machine, for the same reason as
+    TestPowerShellJsonHelpers: #1611 was reported against both `powershell`
+    (5.1) and `pwsh` (7), and only a Windows host has the former.
+    """
+
+    def test_a_failing_run_exits_nonzero(self):
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                res = _run_exit_tail(binary, _FAILING_BODY)
+                self.assertIn(
+                    "finalize:1",
+                    res.stdout,
+                    f"{name}: the failure branch did not run at all; "
+                    f"stderr={res.stderr!r}",
+                )
+                self.assertNotEqual(
+                    0,
+                    res.returncode,
+                    f"{name}: the suite reported SUCCESS on a failed run. This "
+                    "is LDM-#1611 exactly: two release cycles of Windows "
+                    f"coverage were fictional because of it. stdout={res.stdout!r}",
+                )
+
+    def test_a_passing_run_exits_zero(self):
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                res = _run_exit_tail(binary, _PASSING_BODY)
+                self.assertIn("finalize:0", res.stdout, f"{name}: {res.stderr!r}")
+                self.assertEqual(
+                    0,
+                    res.returncode,
+                    f"{name}: a passing run must exit 0, or every green run "
+                    f"turns red. stdout={res.stdout!r} stderr={res.stderr!r}",
+                )
+
+    def test_an_unrecorded_outcome_exits_nonzero(self):
+        """The $null default: no branch recorded an outcome.
+
+        This is the precise failure mode #1611 was, and the one a text match
+        can never demonstrate. With both assignments removed, the only thing
+        left that can produce an exit status is the epilogue's $null guard --
+        so if that guard is dropped, this exits 0 and the test fails.
+        """
+        tail = _ASSIGNMENT_RE.sub("", _exit_tail())
+        # Self-check on the harness, not on the fix: confirm the fixture really
+        # records nothing in either branch, or this would measure the ordinary
+        # failure path again. Deliberately NOT asserting that the guard is
+        # present in the text -- `exit $null` exits 0 (measured), so dropping
+        # the guard shows up in the exit status below, and a text check here
+        # would short-circuit the behavioural assertion that proves it.
+        self.assertIsNone(
+            _ASSIGNMENT_RE.search(tail),
+            "the fixture still records an outcome in a branch, so it is not "
+            "exercising the $null default at all",
+        )
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                res = _run_exit_tail(binary, _FAILING_BODY, tail=tail)
+                self.assertNotEqual(
+                    0,
+                    res.returncode,
+                    f"{name}: an unrecorded outcome exited 0 -- a silent pass. "
+                    "The epilogue must default it to failure (LDM-#1611). "
+                    f"stdout={res.stdout!r} stderr={res.stderr!r}",
+                )
+
+    def test_the_workflow_file_invocation_propagates_the_status(self):
+        """`-File` is the form .github/workflows/scheduled-verification.yml uses.
+
+        Both invocation forms exited 0 from the unfixed script, so neither is a
+        substitute for the script reporting its own status -- but the one CI
+        actually runs is worth asserting directly.
+        """
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                res = _run_exit_tail(binary, _FAILING_BODY, via_file=True)
+                self.assertNotEqual(
+                    0,
+                    res.returncode,
+                    f"{name} -File: a failed run exited 0, so the workflow step "
+                    f"would report success. stdout={res.stdout!r}",
+                )

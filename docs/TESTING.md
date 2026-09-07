@@ -592,6 +592,15 @@ if a report lacks the `ALL E2E VERIFICATIONS PASSED` marker. It runs with
 `if: always()`, after the artefact upload, so a failing run still ships its
 report.
 
+The `.ps1`'s exit status is regression-tested by *executing* it —
+`TestPowerShellSuiteExitStatus` in `ldm_core/tests/test_verify_scripts.py`
+extracts the script's real `try`/`catch`/`finally` tail and epilogue, stubs
+only the `try` body (the part needing Docker), and asserts the exit code in
+real PowerShell for a failing run, a passing run and the "no branch recorded
+an outcome" case. A source-text match was rejected deliberately: it passes
+whenever the text survives, including when the behaviour is gone, which on
+this issue of all issues would repeat the mistake.
+
 Report size is a usable smoke signal alongside this: a genuine pass is ~4 kB,
 and the three false passes above were 608–794 b.
 
