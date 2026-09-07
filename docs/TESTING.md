@@ -434,6 +434,16 @@ and the download returns **404** — which reads as a missing script and hides t
 real failure. That has happened: on Windows a one-file binary that could not
 unpack to a full `%TEMP%` produced exactly this (LDM-#1437).
 
+**For a pre-release binary, fetch from the release branch, not the tag**
+(LDM-#1613). Tags are immutable under the Burn Rule, so a harness fix landed
+after `vX.Y.Z-pre.N` was cut is unreachable from that tag for ever -- the URL
+keeps serving the broken script. `release/vX.Y.Z` is the only ref carrying both
+the fix and the matching `SCRIPT_VERSION` stamp; `master` has the fix but the
+wrong stamp, so it trips the version gate. This was hit for real on
+LDM-#1610/#1612. A **stable** version's tag is immutable *by design* -- it is
+exactly what shipped, and the release branch is deleted once the version is
+promoted -- so that case keeps the tag.
+
 ```bash
 LDM_VER="$(ldm version 2>/dev/null)"
 if [ -z "$LDM_VER" ]; then
@@ -441,7 +451,12 @@ if [ -z "$LDM_VER" ]; then
   echo "A binary that cannot unpack itself prints nothing here (LDM-#1437)." >&2
   exit 1
 fi
-curl -fsSL "https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/v${LDM_VER}/scripts/verify_e2e_refactor.sh" \
+# LDM-#1613: pre-releases resolve to the mutable release branch.
+case "$LDM_VER" in
+  *-pre.*) LDM_REF="release/v${LDM_VER%%-pre.*}" ;;
+  *)       LDM_REF="v${LDM_VER}" ;;
+esac
+curl -fsSL "https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/${LDM_REF}/scripts/verify_e2e_refactor.sh" \
   -o verify_e2e_refactor.sh && chmod +x verify_e2e_refactor.sh
 ```
 
@@ -451,11 +466,19 @@ if (-not $LdmVer) {
     Write-Error "Could not determine the LDM version -- is 'ldm' on PATH and working? A binary that cannot unpack itself prints nothing here (LDM-#1437)."
     exit 1
 }
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/v$LdmVer/scripts/verify_e2e_refactor.ps1" -OutFile "verify_e2e_refactor.ps1"
+# LDM-#1613: pre-releases resolve to the mutable release branch.
+if ($LdmVer -like '*-pre.*') {
+    $LdmRef = "release/v" + (($LdmVer -split '-pre\.')[0])
+} else {
+    $LdmRef = "v$LdmVer"
+}
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/$LdmRef/scripts/verify_e2e_refactor.ps1" -OutFile "verify_e2e_refactor.ps1"
 ```
 
 Both check the version is non-empty **before** building the URL, so a broken
-binary produces a message naming the real problem instead of a 404.
+binary produces a message naming the real problem instead of a 404. The scripts'
+own mismatch banner derives the ref the same way, so the hint it prints and the
+instructions here can never disagree.
 
 ### **1. macOS & Linux**
 
@@ -489,4 +512,4 @@ powershell -ExecutionPolicy Bypass -File scripts/verify_e2e_refactor.ps1
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-03* | *Last Reviewed: 2026-09-03*
+*Last Updated: 2026-09-07* | *Last Reviewed: 2026-09-07*

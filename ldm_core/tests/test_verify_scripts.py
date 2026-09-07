@@ -253,10 +253,20 @@ class TestBashVersionBanner(unittest.TestCase):
         self.assertIn("Script Ver:   2.15.27-pre.3", out)
         self.assertNotIn("WARNING", out)
 
-    def test_mismatched_version_warns_with_matching_tag_url(self):
+    def test_mismatched_prerelease_hint_points_at_the_release_branch(self):
         # LDM-#1049: the re-pull hint must be keyed to the *installed*
         # binary's own version, not master -- this is the exact regression
         # this test suite exists to catch.
+        #
+        # LDM-#1613: for a `-pre.N` install that key is the RELEASE BRANCH,
+        # not the tag. Tags are immutable under the Burn Rule, so a harness
+        # fix landed after the tag was cut is unreachable from the tag URL
+        # forever -- following the script's own advice re-downloaded the
+        # broken script. Observed for real on #1610/#1612: the PS 5.1 parse
+        # fix was on release/v2.21.0 and master, but
+        # `git show v2.21.0-pre.2:scripts/verify_e2e_refactor.ps1` had none
+        # of it. The release branch is the only ref carrying both the fix and
+        # the matching SCRIPT_VERSION stamp.
         out = _run_bash_banner("2.15.26", "ldm 2.15.27-pre.3")
         # LDM-#1529: this is now an ERROR, not a WARNING -- the run refuses
         # rather than producing a report that claims to verify one version
@@ -268,13 +278,30 @@ class TestBashVersionBanner(unittest.TestCase):
         self.assertIn(
             "curl -fsSL "
             '"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/'
-            'v2.15.27-pre.3/scripts/verify_e2e_refactor.sh" '
+            'release/v2.15.27/scripts/verify_e2e_refactor.sh" '
             "-o scripts/verify_e2e_refactor.sh",
             out,
         )
+        # The immutable tag must not be what the operator is sent to.
+        self.assertNotIn("/v2.15.27-pre.3/scripts/", out)
         # LDM-#1047: must never fall back to a fixed 'origin/master' hint.
         self.assertNotIn("origin/master", out)
         self.assertNotIn("git checkout", out)
+
+    def test_mismatched_stable_hint_keeps_the_immutable_tag(self):
+        # LDM-#1613: a stable version's tag is immutable *by design* -- the
+        # shipped script for v2.15.27 is exactly what that tag holds, and no
+        # release/v2.15.27 branch is guaranteed to survive the release. Only
+        # the `-pre.N` case moves to the branch.
+        out = _run_bash_banner("2.15.26", "ldm 2.15.27")
+        self.assertIn(
+            "curl -fsSL "
+            '"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/'
+            'v2.15.27/scripts/verify_e2e_refactor.sh" '
+            "-o scripts/verify_e2e_refactor.sh",
+            out,
+        )
+        self.assertNotIn("release/", out)
 
     def test_stable_release_matching_version_no_warning(self):
         out = _run_bash_banner("2.15.26", "ldm 2.15.26")
@@ -306,7 +333,10 @@ class TestPowerShellVersionBanner(unittest.TestCase):
         self.assertIn("Script Ver: 2.15.27-pre.3", out)
         self.assertNotIn("WARNING", out)
 
-    def test_mismatched_version_warns_with_matching_tag_url(self):
+    def test_mismatched_prerelease_hint_points_at_the_release_branch(self):
+        # LDM-#1613: parity with the bash half -- a `-pre.N` install is sent
+        # to the mutable release branch, never the immutable tag. See the
+        # bash test of the same name for why.
         out = _run_powershell_banner("2.15.26", "ldm 2.15.27-pre.3")
         # LDM-#1529: ERROR, not WARNING -- the run now refuses. The #1049 and
         # #1047 assertions below are unchanged and remain the point of this test.
@@ -316,11 +346,24 @@ class TestPowerShellVersionBanner(unittest.TestCase):
         self.assertIn(
             "Invoke-WebRequest -Uri "
             '"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/'
-            'v2.15.27-pre.3/scripts/verify_e2e_refactor.ps1"',
+            'release/v2.15.27/scripts/verify_e2e_refactor.ps1"',
             out,
         )
+        self.assertNotIn("/v2.15.27-pre.3/scripts/", out)
         self.assertNotIn("origin/master", out)
         self.assertNotIn("git checkout", out)
+
+    def test_mismatched_stable_hint_keeps_the_immutable_tag(self):
+        # LDM-#1613: parity with the bash half -- a stable version keeps the
+        # tag URL, which is immutable by design.
+        out = _run_powershell_banner("2.15.26", "ldm 2.15.27")
+        self.assertIn(
+            "Invoke-WebRequest -Uri "
+            '"https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/'
+            'v2.15.27/scripts/verify_e2e_refactor.ps1"',
+            out,
+        )
+        self.assertNotIn("release/", out)
 
     def test_unparseable_ldm_version_no_warning(self):
         out = _run_powershell_banner("2.15.27-pre.3", "Unknown")
