@@ -1237,6 +1237,16 @@ class CommandRunner:
             UI.trace(f"[ERROR] Timeout after {e.timeout}s")
             sys.exit(124)
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            # LDM-#1615: this branch sits OUTSIDE the `if check:` guard below,
+            # which reads as deliberate but is unreachable under `check=False`:
+            # `subprocess.run(check=False)` never raises CalledProcessError, so
+            # a child exiting 130 returns normally and is handled by the
+            # `returncode != 0 and not check` branch above. It fires only for
+            # `check=True` callers. Recorded rather than moved -- relocating it
+            # would change control flow on the interrupt path, which is one of
+            # the paths under investigation, for no behavioural gain. The
+            # `FileNotFoundError` half of the tuple genuinely does arrive under
+            # `check=False`, and correctly falls through to `return None`.
             if isinstance(e, subprocess.CalledProcessError) and e.returncode == 130:
                 raise KeyboardInterrupt()
 

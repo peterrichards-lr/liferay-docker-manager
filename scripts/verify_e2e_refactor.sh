@@ -2535,6 +2535,13 @@ fi
 # LDM-#1419: leave the machine as we found it. If this check provisioned the
 # global database, remove it -- including its volume, which would otherwise
 # survive as an orphan (see #1414).
+#
+# LDM-#1615: this runs BEFORE the verdict and OUTSIDE it, unconditionally, and
+# must stay that way. The PowerShell half had the same cleanup nested inside
+# its success branch, so a FAILED Windows verification leaked the container and
+# its volume -- and a failed run is precisely when the machine most needs
+# putting back, since the operator is about to re-run. Parity between the two
+# halves was being maintained by habit; it had already drifted here.
 if [ "$DB_GLOBAL_PREEXISTED" = false ]; then
     echo "ℹ  Removing the global database this check provisioned..."
     docker rm -f "$DB_GLOBAL" >/dev/null 2>&1 || true

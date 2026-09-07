@@ -616,5 +616,189 @@ class TestThePowerShellHalfSurfacesIt(unittest.TestCase):
                 self.assertIn("exit code: 3", text)
 
 
+def _extract_block_tail(script_path, window_start, window_end, region_start):
+    """Extracts the tail of the shared-database block from either script.
+
+    Deliberately indentation-agnostic about *where* the LDM-#1419 cleanup sits.
+    The point of the tests below is that the cleanup runs on the failure path,
+    and a pattern that only matched the arrangement which does that would fail
+    to extract the arrangement which does not -- proving nothing about
+    behaviour. Anchoring on a window and taking the first structural boundary
+    inside it yields a syntactically complete region either way, so the two
+    arrangements can be run and compared.
+    """
+    text = script_path.read_text(encoding="utf-8")
+    start = text.index(window_start)
+    end = text.index(window_end, start) + len(window_end)
+    window = text[start:end]
+    match = region_start.search(window)
+    if match is None:
+        raise AssertionError(
+            f"Could not locate the block tail in {script_path} using "
+            f"{region_start.pattern!r}"
+        )
+    return window[match.start() :]
+
+
+class TestCleanupRunsOnTheFailurePath(unittest.TestCase):
+    """A failed verification must still put the machine back (LDM-#1615).
+
+    The LDM-#1419 cleanup removes the global database container and its volume
+    when the check provisioned them. The bash half runs it unconditionally; the
+    PowerShell half had it nested inside `if ($dbCmdOk)`, so a **failed**
+    Windows run leaked both -- and a failed run is exactly when the operator is
+    about to re-run and most needs the machine clean.
+
+    Cross-platform parity is a hard rule (.agents/skills/testing-and-ci), and
+    it had drifted here. These tests run the real region from each script in an
+    isolated bash/pwsh subprocess with `docker` shadowed, so neither the daemon
+    nor any binary is touched.
+    """
+
+    _SH_MARKER = "docker rm -f"
+    _PS_MARKER = "docker rm -f"
+
+    def _run_bash_tail(self, db_cmd_ok):
+        tail = _extract_block_tail(
+            BASH_SCRIPT,
+            '-y db stop > "$DB_CMD_LOG"',
+            "    exit 1\nfi",
+            re.compile(
+                r"^(?:# LDM-#1419: leave the machine|if \[ \"\$DB_CMD_OK\" = true \]; then)",
+                re.M,
+            ),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            calls = Path(tmp) / "docker-calls.txt"
+            results = Path(tmp) / "results.txt"
+            script = (
+                f'docker() {{ echo "docker $*" >> "{calls}"; }}\n'
+                f'report_ok() {{ echo "$1" >> "{results}"; }}\n'
+                f'RESULTS_FILE_TMP="{results}"\n'
+                'DB_GLOBAL="liferay-db-global"\n'
+                "DB_GLOBAL_PREEXISTED=false\n"
+                f"DB_CMD_OK={'true' if db_cmd_ok else 'false'}\n"
+                f"{tail}\n"
+            )
+            res = subprocess.run(
+                ["bash", "-c", script], capture_output=True, text=True, check=False
+            )
+            recorded = calls.read_text(encoding="utf-8") if calls.exists() else ""
+            return res.returncode, recorded
+
+    def test_bash_cleans_up_when_the_check_failed(self):
+        code, calls = self._run_bash_tail(db_cmd_ok=False)
+        self.assertEqual(code, 1, "a failed shared-database check must still exit 1")
+        self.assertIn(
+            "rm -f liferay-db-global",
+            calls,
+            "the container this check provisioned was left behind on failure",
+        )
+        self.assertIn("volume rm liferay-db-global-data", calls)
+
+    def test_bash_cleans_up_when_the_check_passed(self):
+        code, calls = self._run_bash_tail(db_cmd_ok=True)
+        self.assertEqual(code, 0)
+        self.assertIn("rm -f liferay-db-global", calls)
+
+    @staticmethod
+    def _pwsh():
+        return shutil.which("pwsh") or shutil.which("powershell")
+
+    def _run_pwsh_tail(self, db_cmd_ok):
+        tail = _extract_block_tail(
+            PS1_SCRIPT,
+            "-y db stop *> $dbCmdLog",
+            'throw "Shared database start/stop verification failed."\n    }',
+            re.compile(
+                r"^    (?:# LDM-#1419: leave the machine|if \(\$dbCmdOk\) \{)", re.M
+            ),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            calls = Path(tmp) / "docker-calls.txt"
+            script = (
+                f"function docker {{ $args -join ' ' | "
+                f"Out-File -FilePath '{calls}' -Append -Encoding utf8 }}\n"
+                "function Write-Verdict { param([string]$Message) "
+                "Write-Output $Message }\n"
+                "$dbGlobal = 'liferay-db-global'\n"
+                "$dbGlobalPreexisted = $false\n"
+                f"$dbCmdOk = ${'true' if db_cmd_ok else 'false'}\n"
+                "$threw = $false\n"
+                f"try {{\n{tail}\n}} catch {{ $threw = $true }}\n"
+                'Write-Output "threw=$threw"\n'
+            )
+            res = subprocess.run(
+                [self._pwsh(), "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(res.returncode, 0, f"pwsh failed: {res.stderr}")
+            recorded = calls.read_text(encoding="utf-8") if calls.exists() else ""
+            return res.stdout, recorded
+
+    @unittest.skipUnless(
+        shutil.which("pwsh") or shutil.which("powershell"),
+        "PowerShell not available on this host",
+    )
+    def test_powershell_cleans_up_when_the_check_failed(self):
+        stdout, calls = self._run_pwsh_tail(db_cmd_ok=False)
+        self.assertIn("threw=True", stdout, "a failed check must still throw")
+        self.assertIn(
+            "rm -f liferay-db-global",
+            calls,
+            "the .ps1 half leaked the container and volume on the failure path, "
+            "while the .sh half cleaned up -- a parity violation",
+        )
+        self.assertIn("volume rm liferay-db-global-data", calls)
+
+    @unittest.skipUnless(
+        shutil.which("pwsh") or shutil.which("powershell"),
+        "PowerShell not available on this host",
+    )
+    def test_powershell_cleans_up_when_the_check_passed(self):
+        stdout, calls = self._run_pwsh_tail(db_cmd_ok=True)
+        self.assertIn("threw=False", stdout)
+        self.assertIn("rm -f liferay-db-global", calls)
+
+    @unittest.skipUnless(
+        shutil.which("pwsh") or shutil.which("powershell"),
+        "PowerShell not available on this host",
+    )
+    def test_neither_half_touches_a_pre_existing_global(self):
+        """LDM-#1419's actual contract: only remove what this check created."""
+        tail = _extract_block_tail(
+            PS1_SCRIPT,
+            "-y db stop *> $dbCmdLog",
+            'throw "Shared database start/stop verification failed."\n    }',
+            re.compile(
+                r"^    (?:# LDM-#1419: leave the machine|if \(\$dbCmdOk\) \{)", re.M
+            ),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            calls = Path(tmp) / "docker-calls.txt"
+            script = (
+                f"function docker {{ $args -join ' ' | "
+                f"Out-File -FilePath '{calls}' -Append -Encoding utf8 }}\n"
+                "function Write-Verdict { param([string]$Message) "
+                "Write-Output $Message }\n"
+                "$dbGlobal = 'liferay-db-global'\n"
+                "$dbGlobalPreexisted = $true\n"
+                "$dbCmdOk = $false\n"
+                f"try {{\n{tail}\n}} catch {{ }}\n"
+            )
+            subprocess.run(
+                [self._pwsh(), "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertFalse(
+                calls.exists(),
+                "a global database the operator already had must not be removed",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

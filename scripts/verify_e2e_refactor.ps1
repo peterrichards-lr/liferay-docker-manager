@@ -2668,15 +2668,25 @@ assert db_part == db_part.lower(), (
         }
     }
 
+    # LDM-#1419: leave the machine as we found it. If this check provisioned
+    # the global database, remove it -- including its volume, which would
+    # otherwise survive as an orphan (see #1414).
+    #
+    # LDM-#1615: this runs BEFORE the verdict and OUTSIDE it, unconditionally.
+    # It used to be nested inside the success branch below, so a FAILED
+    # verification leaked the container and its volume -- and a failed run is
+    # precisely when the machine most needs putting back, since the operator is
+    # about to re-run. The bash half has always done it unconditionally
+    # (verify_e2e_refactor.sh), so this is the proven arrangement rather than a
+    # third one; cross-platform parity is a hard rule in
+    # .agents/skills/testing-and-ci/SKILL.md and this pair was violating it.
+    if (-not $dbGlobalPreexisted) {
+        Write-Host "[INFO]  Removing the global database this check provisioned..."
+        docker rm -f $dbGlobal 2>$null | Out-Null
+        docker volume rm liferay-db-global-data 2>$null | Out-Null
+    }
+
     if ($dbCmdOk) {
-        # LDM-#1419: leave the machine as we found it. If this check provisioned
-        # the global database, remove it -- including its volume, which would
-        # otherwise survive as an orphan (see #1414).
-        if (-not $dbGlobalPreexisted) {
-            Write-Host "[INFO]  Removing the global database this check provisioned..."
-            docker rm -f $dbGlobal 2>$null | Out-Null
-            docker volume rm liferay-db-global-data 2>$null | Out-Null
-        }
         Write-Verdict "[SUCCESS] 'ldm db start'/'db stop' drive the real global container, idempotently (LDM-#1400)."
     } else {
         throw "Shared database start/stop verification failed."
