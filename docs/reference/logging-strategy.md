@@ -295,6 +295,25 @@ for path in paths:
 
 `UI.trace()` is called automatically by `UI._print()`. All output goes to `~/.ldm/last-command.log` regardless of level.
 
+**One narrow exception: facts that are never printed at all.** A handful of
+call sites record something the console deliberately never shows, so
+`UI._print()` never runs and there is nothing for it to trace. These are not a
+loophole for demoting noisy output -- if a line has a console tier, put it on
+that tier and let `_print()` trace it.
+
+The exception covers exactly:
+
+- `CommandRunner.run` in `ldm_core/utils.py`, which records `[CMD]`, `[EXIT n]`,
+  `[STDOUT]` and `[STDERR]` for every command it runs. LDM-#1615 added the
+  `[EXIT n]`/`[STDERR]` pair to the `check=False` failure branch: that branch
+  returns `None` and used to discard `result.stderr` outright, so a trace log
+  from a failed run was indistinguishable from one from a successful run, and
+  docker's own explanation of a failure could not be recovered by anyone. See
+  `last_command_failure()` for the in-process half of the same record.
+- `cli.py`'s catch-all `except Exception`, which traces the traceback. The
+  terminal gets the exception type and message; the full traceback belongs in
+  the file, not in a user's console.
+
 ---
 
 ## Phase Headers
@@ -360,4 +379,4 @@ When reviewing PRs, flag any log call that:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-22*
+*Last Updated: 2026-09-07* | *Last Reviewed: 2026-09-07*
