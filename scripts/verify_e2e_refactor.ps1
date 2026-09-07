@@ -143,8 +143,6 @@ function Get-EnvLabelLine {
     Write-Output "=== LDM BINARY VERIFICATION REPORT ==="
     Write-Output "Timestamp: $(Get-Date)"
     Write-Output "Platform:  $($PSVersionTable.OS)"
-    $envLabelLine = Get-EnvLabelLine -EnvLabel $env:LDM_ENV_LABEL
-    if ($envLabelLine) { Write-Output $envLabelLine }
     # $PSVersionTable.OS does not exist on Windows PowerShell 5.1 -- it arrived
     # in PowerShell 6 -- so the line above renders empty there and a 5.1 report
     # was distinguishable from a 7 report only by that absence, which reads as a
@@ -152,7 +150,9 @@ function Get-EnvLabelLine {
     # compatibility matrix, so the edition has to be stated. PSVersion and
     # PSEdition both exist on 5.1 (5.1.x / Desktop) and on 7 (7.x / Core).
     Write-Output "PowerShell: $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))"
-    
+    $envLabelLine = Get-EnvLabelLine -EnvLabel $env:LDM_ENV_LABEL
+    if ($envLabelLine) { Write-Output $envLabelLine }
+
     $binaryPath = "Not Found"
     try {
         $cmdInfo = Get-Command $LDM_CMD -ErrorAction SilentlyContinue
