@@ -1,6 +1,8 @@
+import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -693,3 +695,227 @@ class TestPowerShellSuiteExitStatus(unittest.TestCase):
                     f"{name} -File: a failed run exited 0, so the workflow step "
                     f"would report success. stdout={res.stdout!r}",
                 )
+
+
+# ---------------------------------------------------------------------------
+# LDM-#1621: the local-.ldmp manifest refusal check, in both scripts.
+# ---------------------------------------------------------------------------
+
+
+def _stub_ldm(directory, exit_code, message, *, windows=False):
+    """A fake `ldm` that prints one line and exits with a chosen code.
+
+    The assertion under test is "exit 1 AND the parse message", and that logic
+    is what can silently be wrong -- an inverted comparison, a grep that never
+    matches, a cleanup that runs on the wrong path. Driving it with a stub
+    exercises it for real without a compiled `ldm`, without Docker and without
+    the developer's home directory, none of which a unit test may touch.
+
+    The `rm` the function issues during cleanup lands on this stub too, which
+    is harmless: it prints and exits, exactly as it does for the import.
+    """
+    if windows:
+        path = directory / "ldm.cmd"
+        path.write_text(f"@echo off\r\necho {message}\r\nexit /b {exit_code}\r\n")
+        return path
+    path = directory / "ldm"
+    path.write_text(f'#!/bin/sh\necho "{message}"\nexit {exit_code}\n')
+    path.chmod(0o755)
+    return path
+
+
+PARSE_REFUSAL = "Invalid LDM Package: manifest 'meta' could not be parsed. Extra data"
+# The real thing, observed on 2026-09-07 against a binary without LDM-#1621:
+# the same package reached verify_runtime_environment and exited 1 there. A
+# check that only looked at the exit code would have called that a pass.
+WRONG_REASON = "FATAL: VOLUME MOUNTING IS BROKEN"
+
+
+def _run_bash_ldmp_refusal(work, ldm_path):
+    func = _extract_function(
+        BASH_SCRIPT,
+        re.compile(r"^verify_ldmp_manifest_refusal\s*\(\)\s*\{.*?^\}", re.M | re.S),
+    )
+    script = (
+        f"{func}\n"
+        f"verify_ldmp_manifest_refusal '{ldm_path}' '{work}' 'ldmp-refusal-unit'\n"
+    )
+    return subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, check=False
+    )
+
+
+class TestBashLdmpManifestRefusal(unittest.TestCase):
+    """LDM-#1621: verify_e2e_refactor.sh's verify_ldmp_manifest_refusal().
+
+    LDM-#1588 recorded that no E2E assertion could exist for package manifest
+    verification, because the only input reaching it was a GitHub repo URL
+    against a hardcoded API host. #1621 put the manifest controls on the import
+    pipeline, so the parse refusal became assertable from a tarball the script
+    builds itself -- and this is that assertion's own test.
+    """
+
+    def test_a_correct_refusal_is_accepted(self):
+        with tempfile.TemporaryDirectory() as d:
+            work = Path(d) / "workspace"
+            work.mkdir()
+            stub = _stub_ldm(Path(d), 1, PARSE_REFUSAL)
+            res = _run_bash_ldmp_refusal(work, stub)
+
+        self.assertEqual(res.returncode, 0, f"rejected a correct refusal: {res.stdout}")
+        self.assertIn("Unparseable .ldmp manifest refused", res.stdout)
+
+    def test_a_successful_import_is_rejected(self):
+        """The regression this exists to catch: the package imports anyway."""
+        with tempfile.TemporaryDirectory() as d:
+            work = Path(d) / "workspace"
+            work.mkdir()
+            stub = _stub_ldm(Path(d), 0, "Project created/imported at: /somewhere")
+            res = _run_bash_ldmp_refusal(work, stub)
+
+        self.assertEqual(res.returncode, 1, "an import that succeeded was accepted")
+        self.assertIn("expected exit 1", res.stdout)
+
+    def test_exit_one_for_another_reason_is_rejected(self):
+        """Observed for real, which is why the message half is not optional."""
+        with tempfile.TemporaryDirectory() as d:
+            work = Path(d) / "workspace"
+            work.mkdir()
+            stub = _stub_ldm(Path(d), 1, WRONG_REASON)
+            res = _run_bash_ldmp_refusal(work, stub)
+
+        self.assertEqual(res.returncode, 1, "exit 1 alone was treated as a pass")
+        self.assertIn("not for the manifest parse", res.stdout)
+
+    def test_the_wrong_exit_code_is_named_in_the_failure(self):
+        with tempfile.TemporaryDirectory() as d:
+            work = Path(d) / "workspace"
+            work.mkdir()
+            stub = _stub_ldm(Path(d), 3, PARSE_REFUSAL)
+            res = _run_bash_ldmp_refusal(work, stub)
+
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("got 3", res.stdout)
+
+    def test_nothing_is_left_behind_on_either_outcome(self):
+        """A check that leaks a fixture is a cost on every contributor."""
+        for exit_code, message in ((1, PARSE_REFUSAL), (0, "imported fine")):
+            with self.subTest(exit_code=exit_code), tempfile.TemporaryDirectory() as d:
+                work = Path(d) / "workspace"
+                work.mkdir()
+                stub = _stub_ldm(Path(d), exit_code, message)
+                _run_bash_ldmp_refusal(work, stub)
+                self.assertEqual(
+                    sorted(p.name for p in work.iterdir()),
+                    [],
+                    "the check left its fixture behind",
+                )
+
+
+@unittest.skipUnless(_powershell_binaries(), "no PowerShell available")
+class TestPowerShellLdmpManifestRefusal(unittest.TestCase):
+    """The .ps1 twin of the class above (LDM-#1621).
+
+    Parity is a hard rule in this repository, and a Windows developer running a
+    verification script that silently checks less than its Unix twin gets a
+    green result that means nothing. Both halves are therefore driven here.
+    """
+
+    def _run(self, binary, work, ldm_path):
+        func = _extract_function(
+            PS1_SCRIPT,
+            re.compile(r"^function Test-LdmpManifestRefusal\s*\{.*?^\}", re.M | re.S),
+        )
+        script = (
+            f"{func}\n"
+            f"$r = Test-LdmpManifestRefusal -LdmCmd '{ldm_path}' "
+            f"-VenvPython '{sys.executable}' -WorkDir '{work}' "
+            f"-ProjectName 'ldmp-refusal-unit'\n"
+            "Write-Output ('Ok=' + $r.Ok)\n"
+            "Write-Output ('Message=' + $r.Message)\n"
+        )
+        return subprocess.run(
+            [binary, "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_a_correct_refusal_is_accepted(self):
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name), tempfile.TemporaryDirectory() as d:
+                work = Path(d) / "workspace"
+                work.mkdir()
+                stub = _stub_ldm(Path(d), 1, PARSE_REFUSAL, windows=os.name == "nt")
+                res = self._run(binary, work, stub)
+                self.assertIn("Ok=True", res.stdout, f"{res.stdout}{res.stderr}")
+
+    def test_a_successful_import_is_rejected(self):
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name), tempfile.TemporaryDirectory() as d:
+                work = Path(d) / "workspace"
+                work.mkdir()
+                stub = _stub_ldm(Path(d), 0, "imported fine", windows=os.name == "nt")
+                res = self._run(binary, work, stub)
+                self.assertIn("Ok=False", res.stdout, f"{res.stdout}{res.stderr}")
+                self.assertIn("expected exit 1", res.stdout)
+
+    def test_exit_one_for_another_reason_is_rejected(self):
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name), tempfile.TemporaryDirectory() as d:
+                work = Path(d) / "workspace"
+                work.mkdir()
+                stub = _stub_ldm(Path(d), 1, WRONG_REASON, windows=os.name == "nt")
+                res = self._run(binary, work, stub)
+                self.assertIn("Ok=False", res.stdout, f"{res.stdout}{res.stderr}")
+                self.assertIn("not for the manifest parse", res.stdout)
+
+    def test_nothing_is_left_behind(self):
+        binary = _pwsh_binary()
+        with tempfile.TemporaryDirectory() as d:
+            work = Path(d) / "workspace"
+            work.mkdir()
+            stub = _stub_ldm(Path(d), 1, PARSE_REFUSAL, windows=os.name == "nt")
+            self._run(binary, work, stub)
+            self.assertEqual(sorted(p.name for p in work.iterdir()), [])
+
+
+class TestLdmpRefusalParity(unittest.TestCase):
+    """LDM-#1621: the check must exist in BOTH scripts.
+
+    A source-text parity check rather than a behavioural one, deliberately, and
+    for the same reason as TestSharedDbBootParity above: the end-to-end
+    behaviour needs a real `ldm`, Docker and the developer's home directory,
+    none of which a unit test may touch. The behaviour of each half is covered
+    by the stub-driven classes above; what this catches is the failure that has
+    actually happened here before -- a check present in one script and missing
+    from the other.
+    """
+
+    # The exit-code assertion and the message assertion, in each script's own
+    # dialect. Neither string has any other use in either file.
+    EXPECTATIONS = (
+        (BASH_SCRIPT, ('[ "$code" -ne 1 ]', "manifest 'meta' could not be parsed")),
+        (PS1_SCRIPT, ("$code -ne 1", "manifest 'meta' could not be parsed")),
+    )
+
+    def test_both_scripts_assert_the_code_and_the_reason(self):
+        for script, needles in self.EXPECTATIONS:
+            text = script.read_text(encoding="utf-8")
+            for needle in needles:
+                with self.subTest(script=script.name, needle=needle):
+                    self.assertIn(
+                        needle,
+                        text,
+                        f"{script.name} does not assert the .ldmp manifest "
+                        f"refusal on both the exit code and the reason "
+                        f"(LDM-#1621)",
+                    )
+
+    def test_both_scripts_remove_their_fixture(self):
+        """A leaked .ldmp or project directory is a cost on every contributor."""
+        for script in (BASH_SCRIPT, PS1_SCRIPT):
+            text = script.read_text(encoding="utf-8")
+            with self.subTest(script=script.name):
+                self.assertIn("bad-manifest.ldmp", text)
+                self.assertIn("ldmp-manifest-src", text)

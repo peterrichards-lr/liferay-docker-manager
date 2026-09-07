@@ -28,6 +28,7 @@ SSHFAIL_TEST_NODE="sshfail-node-${TEST_PORT}"
 SSHFAIL_TEST_PROJ="sshfail-proj-${TEST_PORT}"
 PORTCONFLICT_PROJ="portconflict-${TEST_PORT}"
 PORT_HOLDER="ldm-e2e-port-holder-${TEST_PORT}"
+LDMP_REFUSAL_PROJECT="ldmp-refusal-${TEST_PORT}"
 # Kibana publishes this host port unconditionally (composer.py
 # _build_kibana_service). It is the LDM-#1350 lever -- see that check below.
 KIBANA_HOST_PORT=5601
@@ -288,6 +289,11 @@ cleanup_1383_artifacts() {
     docker rm -f "$PORT_HOLDER" >/dev/null 2>&1 || true
     "$LDM_CMD" -y rm "$PORTCONFLICT_PROJ" --delete >/dev/null 2>&1 || true
     rm -rf "${LDM_WORKSPACE:?}/${PORTCONFLICT_PROJ}"
+    # LDM-#1621: verify_ldmp_manifest_refusal tears its own fixture down before
+    # it asserts, so this only matters if the run is killed between the import
+    # and that cleanup. Nothing is created when the control is working.
+    "$LDM_CMD" -y rm "$LDMP_REFUSAL_PROJECT" --delete >/dev/null 2>&1 || true
+    rm -rf "${LDM_WORKSPACE:?}/${LDMP_REFUSAL_PROJECT}" "${LDM_WORKSPACE:?}/.ldm_temp"
 }
 
 cleanup_test_projects() {
@@ -775,6 +781,91 @@ if echo "$DEV_GUARD_OUT" | grep -qE "Error: Developer utility requires LDM_DEV_M
     report_ok "✅ Dev Guardrails verified."
 else
     echo "❌ ERROR: Dev Guardrails failed. Output was: $DEV_GUARD_OUT" && exit 1
+fi
+
+# LDM-#1621: a local .ldmp whose manifest cannot be parsed must be refused.
+#
+# Until #1621, manifest verification was reachable from exactly one input -- a
+# GitHub repo URL whose latest release carries a .ldmp -- and the API host is
+# hardcoded, so LDM-#1588 recorded the whole area as un-assertable from this
+# script. That is no longer true for the parse control: it needs no network, no
+# release, and no Docker beyond what is already running, because the refusal
+# happens in PackageVerificationStage, before ProjectSetupStage creates
+# anything. A tarball this function builds itself is the entire fixture.
+#
+# What it is protecting: the manifest is where `tag` and `db_type` come from.
+# An unreadable one used to import "successfully" and silently drop both, so
+# the database dump was restored into whichever engine the defaults picked.
+#
+# Kept as a named function for the same reason as print_version_banner above --
+# so it can be executed without a full Docker/ldm E2E run
+# (ldm_core/tests/test_verify_scripts.py).
+verify_ldmp_manifest_refusal() {
+    local ldm_cmd="$1"
+    local work_dir="$2"
+    local project_name="$3"
+
+    local pkg_src="${work_dir}/ldmp-manifest-src"
+    local ldmp="${work_dir}/bad-manifest.ldmp"
+
+    rm -rf "$pkg_src" "$ldmp"
+    mkdir -p "${pkg_src}/payload"
+
+    # Valid JSON followed by a trailing line after the closing brace: the exact
+    # shape LDM-#1522 was reported against, and the one read_meta's non-strict
+    # path degrades to {}. Built with tar/printf rather than the venv python so
+    # the fixture has no dependency of its own.
+    printf '%s\n%s\n' \
+        '{"tag":"7.4.13-u108","db_type":"mysql","github_repository":"acme/widget"}' \
+        'trailing junk' >"${pkg_src}/meta"
+    echo "SELECT 1;" >"${pkg_src}/payload/dump.sql"
+    tar -czf "${pkg_src}/files.tar.gz" -C "${pkg_src}/payload" dump.sql || return 1
+    tar -czf "$ldmp" -C "$pkg_src" meta files.tar.gz || return 1
+
+    local out code
+    out=$(cd "$work_dir" && "$ldm_cmd" -y import "$ldmp" "$project_name" --no-run 2>&1) && code=0 || code=$?
+
+    # Cleanup BEFORE asserting, so a failed assertion leaves nothing behind
+    # either. When the control is working there is no project to remove: the
+    # refusal precedes both the project directory and the registry entry
+    # (measured -- registry.json stays byte-identical and never mentions the
+    # name). The `ldm rm` and the rmdir are for the case this check exists to
+    # catch: against a binary without #1621 the import runs on into
+    # ProjectSetupStage and a project IS created (observed). The empty
+    # .ldm_temp shell the pipeline leaves in the CWD is ours to remove too --
+    # the extraction directory inside it is already gone, discarded by the
+    # refusal itself. Do NOT copy the pre-existing db_type refusal, which
+    # leaves .ldm_temp/import_<ts>/ behind.
+    "$ldm_cmd" -y rm "$project_name" --delete >/dev/null 2>&1 || true
+    rm -rf "$pkg_src" "$ldmp" "${work_dir:?}/.ldm_temp" "${work_dir:?}/${project_name:?}"
+
+    # The exit code AND the reason, because either alone is weak. Exit 1 is the
+    # validation code in LDM's contract, but almost anything that goes wrong
+    # this early also exits 1 -- observed for real while writing this: against a
+    # binary without #1621 the same package reached verify_runtime_environment
+    # and exited 1 on "VOLUME MOUNTING IS BROKEN", which a bare code check would
+    # have called a pass.
+    if [ "$code" -ne 1 ]; then
+        echo "❌ ERROR: expected exit 1 (validation) for an unparseable .ldmp manifest, got ${code}."
+        echo "   Output was: ${out}"
+        return 1
+    fi
+    if ! echo "$out" | grep -q "manifest 'meta' could not be parsed"; then
+        echo "❌ ERROR: the .ldmp was refused with exit 1, but not for the manifest parse."
+        echo "   Output was: ${out}"
+        return 1
+    fi
+
+    echo "✅ Unparseable .ldmp manifest refused (exit 1, before any project was created)."
+    return 0
+}
+
+echo ">> Verifying local .ldmp manifest verification (LDM-#1621)..."
+if LDMP_REFUSAL_OUT=$(verify_ldmp_manifest_refusal "$LDM_CMD" "$LDM_WORKSPACE" "$LDMP_REFUSAL_PROJECT"); then
+    report_ok "$LDMP_REFUSAL_OUT"
+else
+    echo "$LDMP_REFUSAL_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
 fi
 
 echo ">> Verifying Sudo Guard (Behavioral)..."
