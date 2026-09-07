@@ -531,6 +531,40 @@ before moving anything**, naming each report and its platform — the same
 approach LDM-#1390 took to a version mismatch. Repeat runs of the *same*
 environment continue to supersede one another as before.
 
+### **How a CI pass reaches the published matrix**
+
+On a **stable** tag push, the `sync-compatibility` job downloads the
+verification artifacts, copies the passing Linux reports into
+`references/verification-results/`, re-runs `sync_compatibility.py` and opens a
+docs-only PR. Being labelled is therefore necessary but not sufficient — a
+report also has to be *fetched*, and for a while three were not.
+
+That job downloaded two artifacts by name, `verification-results-ubuntu` and
+`verification-results-fedora`, and its pre-copy cleanup knew the matching two
+slugs, while `verify-linux` ran five arms. Debian, Rocky and Alpine ran on
+every stable tag, passed, uploaded a report — and had it discarded by the job
+whose purpose is to publish it. Nothing went red, because a list that has
+drifted out of step with another list looks exactly like a list that has not
+(LDM-#1625).
+
+It now fetches `verification-results-*` in a single step and selects what to
+publish by the `linux-workstation-` prefix every `verify-linux` report carries,
+so **adding a distro to `matrix.distro` needs no change to the sync job at
+all**. Two consequences worth knowing:
+
+* macOS and Windows artifacts are downloaded but never published. Those rows
+  are curated by hand, and the filename selector — not the download step — is
+  what keeps them that way.
+* If nothing passing was downloaded, the step **fails** rather than clearing
+  the committed Linux reports and replacing them with nothing.
+
+The slug is derived from the report, never from the matrix key, and the three
+differ: the `rockylinux` arm reports `Rocky Linux 9.3 (Blue Onyx)`, writes a
+raw file named `…rocky-9.3…`, and publishes as
+`verify-linux-workstation-rocky-linux-9.3-native-docker-pass.txt`. Read the
+canonical name out of a real report (or out of
+`sync_compatibility.get_report_metadata`) rather than guessing it.
+
 ### **What the scripts verify**
 
 * Docker daemon connectivity and registry cleanups.

@@ -382,8 +382,8 @@ jobs:
     # failure, so plain `needs:` semantics never blocked this job. Now that
     # they can, `needs: [...]` alone would skip the sync on every stable tag
     # for as long as the runner Docker defects persist -- silently trading one
-    # broken signal for another. This job only ever consumes the ubuntu and
-    # fedora artifacts (see the download steps below), so verify-linux is the
+    # broken signal for another. This job only ever publishes the verify-linux
+    # reports (see the download and copy steps below), so verify-linux is the
     # only dependency whose outcome it actually needs. The `!cancelled()`
     # status-check function is what lets `needs.*.result` be evaluated at all
     # after a dependency fails; without it the job is skipped before this
@@ -423,34 +423,66 @@ jobs:
           pip install --disable-pip-version-check -r requirements.txt
           pip install --disable-pip-version-check -e .
 
-      - name: Download Ubuntu verification report
+      # LDM-#1625: one pattern, not one hardcoded step per distro. This was two
+      # steps -- ubuntu and fedora -- while verify-linux ran five arms, so
+      # Debian, Rocky and Alpine ran on every stable tag, passed, uploaded an
+      # artifact, and had it discarded by the job whose purpose is to publish
+      # it. The matrix understated real coverage by three environments and
+      # nothing failed, because a list that has drifted out of step with
+      # another list looks exactly like a list that has not. A glob cannot
+      # drift: a sixth arm added to `matrix.distro` needs no change here.
+      #
+      # This deliberately also fetches the macOS and Windows artifacts, which
+      # this job must NOT publish -- those rows are curated by hand. The copy
+      # step below filters on the `linux-workstation-` prefix every
+      # verify-linux report carries instead, so that invariant is enforced
+      # where the files are actually used rather than by what was downloaded.
+      - name: Download verification reports
         uses: actions/download-artifact@v8
         with:
-          name: verification-results-ubuntu
+          pattern: verification-results-*
           path: ci-reports/
-        continue-on-error: true
-
-      - name: Download Fedora verification report
-        uses: actions/download-artifact@v8
-        with:
-          name: verification-results-fedora
-          path: ci-reports/
+          merge-multiple: true
         continue-on-error: true
 
       - name: Sync CI reports into repository
+        shell: bash
         run: |
-          # Remove stale CI-managed Linux reports before replacing with fresh ones.
-          # Manual reports (macOS/Windows) are intentionally never touched here.
-          rm -f references/verification-results/verify-linux-workstation-ubuntu-*.txt
-          rm -f references/verification-results/verify-linux-workstation-fedora-*.txt
-          # Copy only passing reports from this CI run.
+          # Passing reports from this CI run, Linux only.
+          #
           # LDM-#1018: verify_e2e_refactor.sh --ci writes a plain
           # verify-{slug}-pass.txt (nothing after "pass" but the extension) --
           # the previous "-pass-*.txt" pattern required a suffix after "pass"
           # and only ever matched archived/hash-suffixed filenames, silently
-          # matching zero real reports and leaving the rm -f above with
+          # matching zero real reports and leaving the rm -f below with
           # nothing to replace what it just deleted.
-          find ci-reports/ -name "verify-*-pass*.txt" -exec cp {} references/verification-results/ \; 2>/dev/null || true
+          #
+          # LDM-#1625: keyed on `linux-workstation-`, the prefix every
+          # verify-linux report carries and no macOS/Windows one does (theirs
+          # begin verify-apple-silicon- / verify-windows-pc-). Manual reports
+          # for those platforms therefore stay untouched even though the step
+          # above downloads their artifacts.
+          #
+          # Collected with a read loop rather than `mapfile` so the step body
+          # runs unchanged on bash 3.2, which is what macOS ships -- this is
+          # the only way to exercise it outside a real workflow run.
+          fresh=()
+          while IFS= read -r report; do
+            fresh+=("$report")
+          done < <(find ci-reports/ -name 'verify-linux-workstation-*-pass*.txt' -print | sort)
+          if [ ${#fresh[@]} -eq 0 ]; then
+            echo "::error::No passing Linux verification report was downloaded, so there is nothing to publish. Refusing to clear the committed Linux reports (LDM-#1625)."
+            exit 1
+          fi
+          echo "Publishing ${#fresh[@]} Linux verification report(s):"
+          printf '  %s\n' "${fresh[@]}"
+          # Remove the CI-managed Linux reports this run supersedes, so a
+          # distro whose version moved (fedora-43 -> fedora-44) leaves one row
+          # rather than two. Every arm has passed by the time this job runs --
+          # it is gated on verify-linux succeeding as a whole -- so each
+          # deleted report is replaced by the copy below.
+          rm -f references/verification-results/verify-linux-workstation-*.txt
+          cp "${fresh[@]}" references/verification-results/
           echo "Reports now in references/verification-results/:"
           ls -1 references/verification-results/verify-*.txt 2>/dev/null || echo "  (none found)"
 
