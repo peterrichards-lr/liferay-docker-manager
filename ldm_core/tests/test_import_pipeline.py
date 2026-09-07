@@ -12,11 +12,36 @@ from ldm_core.pipelines.import_pipeline import (
 
 def test_import_pipeline_initialization():
     pipeline = ImportPipeline()
-    assert len(pipeline.stages) == 9
+    assert len(pipeline.stages) == 10
     from ldm_core.pipelines.validation import ValidationStage as SharedValidationStage
 
     assert isinstance(pipeline.stages[0], SharedValidationStage)
     assert isinstance(pipeline.stages[1], ImportValidationStage)
+
+
+def test_package_verification_runs_before_anything_is_written():
+    """LDM-#1621: the manifest controls are only safe if nothing exists yet.
+
+    ProjectSetupStage creates the project directory and writes its meta, and
+    UI.die raises SystemExit, which Pipeline.run's `except Exception` does not
+    catch -- so no rollback runs. A refusal after that point would leave a
+    half-created project behind. The behavioural half of this is asserted in
+    test_local_package_verification.py; this pins the ordering that makes it
+    true.
+    """
+    from ldm_core.pipelines.import_pipeline import (
+        ExtractionStage,
+        PackageVerificationStage,
+        ProjectSetupStage,
+    )
+
+    names = [type(s).__name__ for s in ImportPipeline().stages]
+    assert names.index(ExtractionStage.__name__) < names.index(
+        PackageVerificationStage.__name__
+    )
+    assert names.index(PackageVerificationStage.__name__) < names.index(
+        ProjectSetupStage.__name__
+    )
 
 
 @patch("ldm_core.pipelines.import_pipeline.UI")
