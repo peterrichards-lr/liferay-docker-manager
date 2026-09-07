@@ -487,6 +487,27 @@ powershell -ExecutionPolicy Bypass -File scripts/verify_e2e_refactor.ps1
   re-run would pick, rather than telling you to go stop a process (LDM-#1350).
 * Teardown of resources and network isolation.
 
+### **What the scripts cannot verify**
+
+Some behaviour is only reachable through a dependency the scripts can neither
+create nor clean up. Extending E2E coverage onto one of those would produce a
+check that reports a third party's state rather than LDM's, so the coverage
+lives in the unit suite instead. Recorded here so the gap stays visible:
+
+* **A package manifest that under-reports being corrected from its payload**
+  (LDM-#1579). The recovery sits behind
+  `_import_ldm_package`, and `cmd_import` routes there from exactly one input:
+  a GitHub **repo** URL whose latest release carries a `.ldmp` asset. A local
+  `.ldmp` goes to the import pipeline and a `.ldmp` **URL** goes to the plain
+  archive download -- neither reaches manifest verification -- and the API host
+  is hardcoded, so an end-to-end exercise would mean publishing a deliberately
+  malformed package to a real release (LDM-#1588).
+
+  Covered instead by `ldm_core/tests/test_package_listing_recovery.py`, which
+  drives the real download, checksum, extraction, verification and hydration
+  over a `.ldmp` built in the test with only `requests.get` mocked, and which
+  measures the routing above rather than asserting it in prose.
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-03* | *Last Reviewed: 2026-09-03*
+*Last Updated: 2026-09-07* | *Last Reviewed: 2026-09-07*
