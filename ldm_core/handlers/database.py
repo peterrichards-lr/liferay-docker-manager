@@ -10,6 +10,7 @@ from ldm_core.handlers.base import BaseHandler
 from ldm_core.ui import UI
 from ldm_core.utils import (
     SHARED_DB_CONTAINERS,
+    last_command_failure,
     shared_database_container,
     shared_database_name,
 )
@@ -52,8 +53,29 @@ def _docker_failure_detail(res):
     `run_command(check=False)` returns None on a non-zero exit **and** on
     TimeoutExpired, so `res is None` is itself worth reporting rather than
     glossing -- it narrows the cause to those two.
+
+    LDM-#1615: as first written this function could never report docker's
+    stderr at a real call site. `DockerService.start`/`.stop` return
+    `run_command(...)`, whose type is `str | None` -- never a
+    `subprocess.CompletedProcess` -- so the `getattr(res, "stderr", ...)`
+    branches below are reachable only from a test double. Observed: a mocked
+    `docker stop` exiting 1 with "Error response from daemon: cannot stop
+    container xyz: permission denied" yielded the detail line "no output was
+    captured", because `run_command` had already discarded stderr.
+
+    `last_command_failure()` (LDM-#1615) is where that discarded stderr now
+    lives, so the `res is None` case -- the only one a real caller reaches --
+    finally has something to report. The recorded command string is included
+    because the record holds the *last* failure, which is not guaranteed to be
+    the one this caller issued; naming it lets a reader tell.
     """
     if res is None:
+        recorded = last_command_failure()
+        if recorded is not None:
+            failed_cmd, failure = recorded
+            said = failure.stderr or failure.stdout
+            outcome = f"docker said: {said}" if said else "docker said nothing."
+            return f"`{failed_cmd}` exited {failure.returncode}; {outcome}"
         return (
             "The docker command failed or timed out; no output was captured. "
             "(run_command returns None for both.)"
@@ -68,6 +90,28 @@ def _docker_failure_detail(res):
         return f"docker said: {stdout}"
 
     return "docker exited without producing any output."
+
+
+def _report_swallowed_docker_failure(action: str, db_name: str, res) -> None:
+    """Reports a docker start/stop that failed while the LDM-#1547 guard passed.
+
+    LDM-#1615: `res is None` means docker's `start`/`stop` exited non-zero or
+    timed out. When the container nonetheless reaches the wanted state the
+    guard does not trip, so the command printed a green success line and threw
+    the failure away -- the same silent-success shape LDM-#1547 existed to end,
+    one layer further down.
+
+    The *outcome* genuinely is a success, so this warns rather than dying: the
+    point is only that the evidence survives. It is deliberately `UI.warning`
+    and not `UI.detail`, because `UI.detail` is gated behind --info/--verbose
+    and the CI verification script passes neither.
+    """
+    if res is not None:
+        return
+    UI.warning(
+        f"`docker {action} {db_name}` reported a failure even though the "
+        f"container reached the expected state: {_docker_failure_detail(res)}"
+    )
 
 
 class DatabaseService(BaseHandler):
@@ -232,6 +276,7 @@ class DatabaseService(BaseHandler):
                     exit_code=3,
                 )
 
+            _report_swallowed_docker_failure("start", db_name, res)
             UI.success(f"Global shared database '{db_name}' started.")
 
     def cmd_stop(self):
@@ -279,6 +324,7 @@ class DatabaseService(BaseHandler):
                     exit_code=3,
                 )
 
+            _report_swallowed_docker_failure("stop", db_name, res)
             UI.success(f"Global shared database '{db_name}' stopped.")
 
     def cmd_query(  # noqa: C901, PLR0911, PLR0912, PLR0915

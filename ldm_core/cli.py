@@ -3256,7 +3256,18 @@ def _execute_command(args, current_cmd, cmds):
         print(f"\n{UI.WHITE}Aborted.{UI.COLOR_OFF}")
         sys.exit(130)
     except Exception as e:
-        UI.die("An unexpected error occurred.", details=e)
+        # LDM-#1615: `details=e` loses the exception TYPE, and str(e) is empty
+        # for several of the ones that matter (MemoryError, a bare OSError),
+        # so this printed "Details:" followed by nothing -- an exit 1 with no
+        # usable evidence. This is the catch-all non-zero exit path out of
+        # every command, including `ldm db stop`, whose three CI failures
+        # produced no diagnosis at all. The traceback goes to the trace log
+        # (~/.ldm/last-command.log) rather than the terminal, so the
+        # user-facing output gains only the exception type.
+        import traceback
+
+        UI.trace(traceback.format_exc())
+        UI.die("An unexpected error occurred.", details=f"{type(e).__name__}: {e}")
 
     is_completion = args.command == "system" and getattr(args, "subcommand", None) in [
         "completion",

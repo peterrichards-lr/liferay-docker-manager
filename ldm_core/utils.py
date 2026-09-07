@@ -1051,6 +1051,74 @@ class CommandResult(NamedTuple):
     stderr: str
 
 
+_LAST_COMMAND_FAILURE: tuple[str, CommandResult] | None = None
+
+
+def last_command_failure() -> tuple[str, CommandResult] | None:
+    """The most recent `run_command(check=False)` failure, or None.
+
+    LDM-#1615: `check=False` returns `None` on a non-zero exit and on a
+    timeout, and threw `result.stderr` away without recording it anywhere --
+    so docker's own explanation of a failure could not reach the caller even
+    when the caller wanted it.
+
+    That is why LDM-#1603's `_docker_failure_detail`
+    (`ldm_core/handlers/database.py`) never fired as intended: its
+    `docker said:` branches read `.stderr`/`.stdout` off a
+    `subprocess.CompletedProcess`, while `run_command` returns `str | None`.
+    Observed against a mocked `docker stop` exiting 1 with
+    "Error response from daemon: cannot stop container xyz: permission
+    denied" -- `DockerService.stop` returned `None` and the detail line read
+    "no output was captured". The branch was unreachable at every real call
+    site; only the tests, which passed a `MagicMock` with a `.stderr`
+    attribute, ever reached it.
+
+    Returns `(command_string, CommandResult)`. The command string is included
+    deliberately: a caller reading this after the fact needs to know *which*
+    command the record belongs to, because it holds the last failure and not
+    necessarily the one the caller just issued.
+    """
+    return _LAST_COMMAND_FAILURE
+
+
+def _record_command_failure(
+    display_cmd: str,
+    returncode: int,
+    stdout: Any,
+    stderr: Any,
+) -> None:
+    """Records a `check=False` command failure for `last_command_failure()`.
+
+    Also traces the exit code and stderr. `check=False` failures previously
+    left nothing in `~/.ldm/last-command.log` beyond the `[CMD]` line, so a
+    trace log from a failed run was indistinguishable from a successful one.
+    """
+    global _LAST_COMMAND_FAILURE  # noqa: PLW0603
+
+    def _text(value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        try:
+            return value.decode("utf-8", errors="ignore")
+        except Exception:
+            return str(value)
+
+    result = CommandResult(
+        returncode=returncode,
+        stdout=_text(stdout).strip(),
+        stderr=_text(stderr).strip(),
+    )
+    _LAST_COMMAND_FAILURE = (display_cmd, result)
+
+    UI.trace(f"[EXIT {returncode}] {display_cmd}")
+    if result.stderr:
+        UI.trace(f"[STDERR] {result.stderr}")
+    if result.stdout:
+        UI.trace(f"[STDOUT] {result.stdout}")
+
+
 class CommandRunner:
     def __init__(self, env: dict[str, str] | None = None):
         self.env = env
@@ -1130,6 +1198,11 @@ class CommandRunner:
             )
 
             if result.returncode != 0 and not check:
+                # LDM-#1615: record before discarding. This is the branch that
+                # made `ldm db stop`'s CI failures undiagnosable.
+                _record_command_failure(
+                    display_cmd, result.returncode, result.stdout, result.stderr
+                )
                 return None
 
             if stdout_file:
@@ -1149,12 +1222,31 @@ class CommandRunner:
 
         except subprocess.TimeoutExpired as e:
             if not check:
+                # LDM-#1615: `check=False` returns None for a timeout exactly
+                # as it does for a non-zero exit, so the caller cannot tell
+                # them apart. Record which it was.
+                _record_command_failure(
+                    display_cmd,
+                    124,
+                    e.stdout,
+                    f"Command timed out after {e.timeout}s.",
+                )
                 return None
             cmd_str = UI.redact(" ".join(cmd) if isinstance(cmd, list) else cmd)
             UI.error(f"Command timed out after {e.timeout}s: {cmd_str}")
             UI.trace(f"[ERROR] Timeout after {e.timeout}s")
             sys.exit(124)
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            # LDM-#1615: this branch sits OUTSIDE the `if check:` guard below,
+            # which reads as deliberate but is unreachable under `check=False`:
+            # `subprocess.run(check=False)` never raises CalledProcessError, so
+            # a child exiting 130 returns normally and is handled by the
+            # `returncode != 0 and not check` branch above. It fires only for
+            # `check=True` callers. Recorded rather than moved -- relocating it
+            # would change control flow on the interrupt path, which is one of
+            # the paths under investigation, for no behavioural gain. The
+            # `FileNotFoundError` half of the tuple genuinely does arrive under
+            # `check=False`, and correctly falls through to `return None`.
             if isinstance(e, subprocess.CalledProcessError) and e.returncode == 130:
                 raise KeyboardInterrupt()
 
@@ -1214,7 +1306,14 @@ class CommandRunner:
             return None
         except KeyboardInterrupt:
             # Standardize exit behavior on Ctrl+C to 130
-            UI.detail("\nExecution interrupted by user.")
+            #
+            # LDM-#1615: this was `UI.detail`, which prints only under
+            # --info/--verbose (ldm_core/ui.py), so exit 130 from here
+            # produced *no output at all* under a plain invocation. It is one
+            # of the silent non-zero exit paths out of `ldm db stop`, and a
+            # non-zero exit with nothing on either stream is undiagnosable by
+            # construction. `UI.warning` is unconditional.
+            UI.warning("Execution interrupted by user; exiting 130.")
             sys.exit(130)
 
 

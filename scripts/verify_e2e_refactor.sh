@@ -2477,9 +2477,56 @@ echo ">> Verifying 'ldm db start' / 'ldm db stop' (LDM-#1400)..."
 # work. Fully within this script's control: no boot, no timing dependency.
 DB_GLOBAL="liferay-db-global"
 DB_CMD_OK=true
+DB_CMD_LOG="${LDM_WORKSPACE}/db-cmd-${TIMESTAMP}.log"
+mkdir -p "$LDM_WORKSPACE"
 
-if ! "$LDM_CMD" -y db start >/dev/null 2>&1; then
-    echo "❌ ERROR: 'ldm db start' exited non-zero (LDM-#1400)." | tee -a "$RESULTS_FILE_TMP"
+# LDM-#1615: capture the output. Both invocations below used to run
+# `>/dev/null 2>&1`, and `UI.error` writes every LDM failure message -- the
+# message, the `Details:` line and the `Tip:` line -- to STDERR
+# (ldm_core/ui.py). So the LDM-#1603 instrumentation added specifically to
+# explain these failures went to /dev/null even when it fired, and three
+# `ldm db stop` failures in the containerised CI matrix produced no evidence
+# whatsoever. Discarding stderr made every occurrence undiagnosable regardless
+# of how well instrumented LDM was.
+#
+# The exit CODE is evidence in its own right, so it is reported too. Per
+# .agents/skills/ldm-architecture/SKILL.md and the paths audited in LDM-#1615:
+#   3   the LDM-#1547 start/stop guard tripped (cmd_start/cmd_stop UI.die)
+#   1   cli.py's catch-all `An unexpected error occurred.`
+#   124 a run_command timeout with check=True
+#   127 command not found
+#   130 interrupted
+db_cmd_failed() {
+    # $1 = command label, $2 = exit code
+    {
+        echo "❌ ERROR: '$1' exited non-zero (LDM-#1400)."
+        echo "   exit code: $2 (LDM-#1615: 3=start/stop guard, 1=unexpected exception, 124=timeout, 130=interrupt)"
+        echo "   --- ldm stdout+stderr ---"
+        if [ -s "$DB_CMD_LOG" ]; then
+            sed 's/^/   | /' "$DB_CMD_LOG"
+        else
+            echo "   | (ldm produced no output on either stream)"
+        fi
+        echo "   --- ldm trace log (commands it ran, and their stderr) ---"
+        if [ -f "${LDM_HOME:-$HOME}/.ldm/last-command.log" ]; then
+            sed 's/^/   | /' "${LDM_HOME:-$HOME}/.ldm/last-command.log"
+        else
+            echo "   | (no trace log at ${LDM_HOME:-$HOME}/.ldm/last-command.log)"
+        fi
+        echo "   --- docker's own view of ${DB_GLOBAL} ---"
+        docker inspect "$DB_GLOBAL" \
+            --format '   | status={{.State.Status}} exitcode={{.State.ExitCode}} oomkilled={{.State.OOMKilled}} error={{.State.Error}} finished={{.State.FinishedAt}}' 2>&1 \
+            || echo "   | (docker inspect failed)"
+    } | tee -a "$RESULTS_FILE_TMP"
+}
+
+set +e
+"$LDM_CMD" -y db start > "$DB_CMD_LOG" 2>&1
+DB_START_RC=$?
+set -e
+
+if [ "$DB_START_RC" -ne 0 ]; then
+    db_cmd_failed "ldm db start" "$DB_START_RC"
     DB_CMD_OK=false
 elif ! docker ps --filter "name=^${DB_GLOBAL}$" --format '{{.Names}}' | grep -q "$DB_GLOBAL"; then
     echo "❌ ERROR: 'ldm db start' returned 0 but ${DB_GLOBAL} is not running." | tee -a "$RESULTS_FILE_TMP"
@@ -2490,16 +2537,43 @@ fi
 # Idempotence: a second start must not fail, and must say something. A command
 # that succeeds silently is indistinguishable from one that did nothing.
 if [ "$DB_CMD_OK" = true ]; then
+    # LDM-#1615: `set -e` is in force, so a non-zero second `db start` used to
+    # abort the whole script here -- before the check below could say anything
+    # about it. Capture the code and let the assertion report.
+    set +e
     DB_AGAIN_OUT=$("$LDM_CMD" -y db start 2>&1)
-    if ! echo "$DB_AGAIN_OUT" | grep -qi "already running"; then
-        echo "❌ ERROR: a second 'ldm db start' did not report the container was already running." | tee -a "$RESULTS_FILE_TMP"
+    DB_AGAIN_RC=$?
+    set -e
+    if [ "$DB_AGAIN_RC" -ne 0 ]; then
+        printf '%s\n' "$DB_AGAIN_OUT" > "$DB_CMD_LOG"
+        db_cmd_failed "ldm db start (second, idempotence)" "$DB_AGAIN_RC"
+        DB_CMD_OK=false
+    elif ! echo "$DB_AGAIN_OUT" | grep -qi "already running"; then
+        {
+            echo "❌ ERROR: a second 'ldm db start' did not report the container was already running."
+            # LDM-#1615: it said *something* -- print it. Asserting on output
+            # and then not showing it on failure is the same blind spot the
+            # `>/dev/null 2>&1` invocations had.
+            echo "   --- what it said instead ---"
+            printf '%s\n' "$DB_AGAIN_OUT" | while IFS= read -r db_again_line; do
+                echo "   | ${db_again_line}"
+            done
+        } | tee -a "$RESULTS_FILE_TMP"
         DB_CMD_OK=false
     fi
 fi
 
 if [ "$DB_CMD_OK" = true ]; then
-    if ! "$LDM_CMD" -y db stop >/dev/null 2>&1; then
-        echo "❌ ERROR: 'ldm db stop' exited non-zero (LDM-#1400)." | tee -a "$RESULTS_FILE_TMP"
+    # LDM-#1615: this is the invocation that has failed three times in the CI
+    # matrix (v2.21.0-pre.2 debian, then the v2.21.0 tag on ubuntu, both
+    # passing on a re-run with no code change). Do not discard its output.
+    set +e
+    "$LDM_CMD" -y db stop > "$DB_CMD_LOG" 2>&1
+    DB_STOP_RC=$?
+    set -e
+
+    if [ "$DB_STOP_RC" -ne 0 ]; then
+        db_cmd_failed "ldm db stop" "$DB_STOP_RC"
         DB_CMD_OK=false
     elif docker ps --filter "name=^${DB_GLOBAL}$" --format '{{.Names}}' | grep -q "$DB_GLOBAL"; then
         echo "❌ ERROR: 'ldm db stop' returned 0 but ${DB_GLOBAL} is still running." | tee -a "$RESULTS_FILE_TMP"
@@ -2510,6 +2584,13 @@ fi
 # LDM-#1419: leave the machine as we found it. If this check provisioned the
 # global database, remove it -- including its volume, which would otherwise
 # survive as an orphan (see #1414).
+#
+# LDM-#1615: this runs BEFORE the verdict and OUTSIDE it, unconditionally, and
+# must stay that way. The PowerShell half had the same cleanup nested inside
+# its success branch, so a FAILED Windows verification leaked the container and
+# its volume -- and a failed run is precisely when the machine most needs
+# putting back, since the operator is about to re-run. Parity between the two
+# halves was being maintained by habit; it had already drifted here.
 if [ "$DB_GLOBAL_PREEXISTED" = false ]; then
     echo "ℹ  Removing the global database this check provisioned..."
     docker rm -f "$DB_GLOBAL" >/dev/null 2>&1 || true

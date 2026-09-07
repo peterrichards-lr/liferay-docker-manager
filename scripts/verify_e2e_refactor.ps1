@@ -2609,10 +2609,62 @@ assert db_part == db_part.lower(), (
     # could not work.
     $dbGlobal = "liferay-db-global"
     $dbCmdOk = $true
+    $dbCmdLog = Join-Path $LDM_WORKSPACE "db-cmd-${Timestamp}.log"
+    New-Item -ItemType Directory -Path $LDM_WORKSPACE -Force | Out-Null
 
-    & $LDM_CMD -y db start *> $null
+    # LDM-#1615: capture the output. Both invocations below used to run
+    # `*> $null`, and UI.error writes every LDM failure message -- the message,
+    # the "Details:" line and the "Tip:" line -- to STDERR (ldm_core/ui.py). So
+    # the LDM-#1603 instrumentation added specifically to explain these
+    # failures was discarded even when it fired, and three 'ldm db stop'
+    # failures in the containerised CI matrix produced no evidence whatsoever.
+    # Throwing stderr away made every occurrence undiagnosable regardless of
+    # how well instrumented LDM was.
+    #
+    # The exit CODE is evidence in its own right, so it is reported too. Per
+    # .agents/skills/ldm-architecture/SKILL.md and the paths audited in
+    # LDM-#1615:
+    #   3   the LDM-#1547 start/stop guard tripped (cmd_start/cmd_stop UI.die)
+    #   1   cli.py's catch-all "An unexpected error occurred."
+    #   124 a run_command timeout with check=True
+    #   127 command not found
+    #   130 interrupted
+    #
+    # Write-Verdict, not Write-Host: the diagnostic has to reach the durable
+    # report the way the bash half's `tee -a` does, or the Windows artefact is
+    # as empty as the Linux one was (LDM-#1327).
+    function Write-DbCmdFailure {
+        param(
+            [string]$Label,
+            [int]$ExitCode,
+            [string]$LogPath,
+            [string]$GlobalContainer
+        )
+        Write-Verdict "[ERROR] '$Label' exited non-zero (LDM-#1400)."
+        Write-Verdict "   exit code: $ExitCode (LDM-#1615: 3=start/stop guard, 1=unexpected exception, 124=timeout, 130=interrupt)"
+        Write-Verdict "   --- ldm stdout+stderr ---"
+        if ((Test-Path $LogPath) -and ((Get-Item $LogPath).Length -gt 0)) {
+            Get-Content $LogPath | ForEach-Object { Write-Verdict "   | $_" }
+        } else {
+            Write-Verdict "   | (ldm produced no output on either stream)"
+        }
+        $traceHome = if ($env:LDM_HOME) { $env:LDM_HOME } else { $env:USERPROFILE }
+        $tracePath = Join-Path $traceHome ".ldm\last-command.log"
+        Write-Verdict "   --- ldm trace log (commands it ran, and their stderr) ---"
+        if (Test-Path $tracePath) {
+            Get-Content $tracePath | ForEach-Object { Write-Verdict "   | $_" }
+        } else {
+            Write-Verdict "   | (no trace log at $tracePath)"
+        }
+        Write-Verdict "   --- docker's own view of $GlobalContainer ---"
+        $inspectFmt = 'status={{.State.Status}} exitcode={{.State.ExitCode}} oomkilled={{.State.OOMKilled}} error={{.State.Error}} finished={{.State.FinishedAt}}'
+        $inspect = docker inspect $GlobalContainer --format $inspectFmt 2>&1 | Out-String
+        Write-Verdict "   | $($inspect.Trim())"
+    }
+
+    & $LDM_CMD -y db start *> $dbCmdLog
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "[ERROR] 'ldm db start' exited non-zero (LDM-#1400)." -ForegroundColor Red
+        Write-DbCmdFailure -Label "ldm db start" -ExitCode $LASTEXITCODE -LogPath $dbCmdLog -GlobalContainer $dbGlobal
         $dbCmdOk = $false
     } else {
         $running = docker ps --filter "name=^$dbGlobal$" --format "{{.Names}}"
@@ -2626,16 +2678,31 @@ assert db_part == db_part.lower(), (
     # that succeeds silently is indistinguishable from one that did nothing.
     if ($dbCmdOk) {
         $dbAgain = & $LDM_CMD -y db start 2>&1 | Out-String
-        if ($dbAgain -notmatch "already running") {
-            Write-Host "[ERROR] A second 'ldm db start' did not report the container was already running." -ForegroundColor Red
+        $dbAgainRc = $LASTEXITCODE
+        if ($dbAgainRc -ne 0) {
+            # LDM-#1615: a non-zero second start was previously indistinguishable
+            # from output that merely lacked the phrase.
+            $dbAgain | Out-File -FilePath $dbCmdLog -Encoding utf8
+            Write-DbCmdFailure -Label "ldm db start (second, idempotence)" -ExitCode $dbAgainRc -LogPath $dbCmdLog -GlobalContainer $dbGlobal
+            $dbCmdOk = $false
+        } elseif ($dbAgain -notmatch "already running") {
+            Write-Verdict "[ERROR] A second 'ldm db start' did not report the container was already running."
+            # LDM-#1615: it said *something* -- show it. Asserting on output and
+            # then not printing it on failure is the same blind spot the
+            # discarded-stream invocations had.
+            Write-Verdict "   --- what it said instead ---"
+            ($dbAgain -split "`r?`n") | ForEach-Object { Write-Verdict "   | $_" }
             $dbCmdOk = $false
         }
     }
 
     if ($dbCmdOk) {
-        & $LDM_CMD -y db stop *> $null
+        # LDM-#1615: this is the invocation that has failed three times in the
+        # CI matrix (v2.21.0-pre.2 debian, then the v2.21.0 tag on ubuntu, both
+        # passing on a re-run with no code change). Do not discard its output.
+        & $LDM_CMD -y db stop *> $dbCmdLog
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "[ERROR] 'ldm db stop' exited non-zero (LDM-#1400)." -ForegroundColor Red
+            Write-DbCmdFailure -Label "ldm db stop" -ExitCode $LASTEXITCODE -LogPath $dbCmdLog -GlobalContainer $dbGlobal
             $dbCmdOk = $false
         } else {
             $stillUp = docker ps --filter "name=^$dbGlobal$" --format "{{.Names}}"
@@ -2646,15 +2713,25 @@ assert db_part == db_part.lower(), (
         }
     }
 
+    # LDM-#1419: leave the machine as we found it. If this check provisioned
+    # the global database, remove it -- including its volume, which would
+    # otherwise survive as an orphan (see #1414).
+    #
+    # LDM-#1615: this runs BEFORE the verdict and OUTSIDE it, unconditionally.
+    # It used to be nested inside the success branch below, so a FAILED
+    # verification leaked the container and its volume -- and a failed run is
+    # precisely when the machine most needs putting back, since the operator is
+    # about to re-run. The bash half has always done it unconditionally
+    # (verify_e2e_refactor.sh), so this is the proven arrangement rather than a
+    # third one; cross-platform parity is a hard rule in
+    # .agents/skills/testing-and-ci/SKILL.md and this pair was violating it.
+    if (-not $dbGlobalPreexisted) {
+        Write-Host "[INFO]  Removing the global database this check provisioned..."
+        docker rm -f $dbGlobal 2>$null | Out-Null
+        docker volume rm liferay-db-global-data 2>$null | Out-Null
+    }
+
     if ($dbCmdOk) {
-        # LDM-#1419: leave the machine as we found it. If this check provisioned
-        # the global database, remove it -- including its volume, which would
-        # otherwise survive as an orphan (see #1414).
-        if (-not $dbGlobalPreexisted) {
-            Write-Host "[INFO]  Removing the global database this check provisioned..."
-            docker rm -f $dbGlobal 2>$null | Out-Null
-            docker volume rm liferay-db-global-data 2>$null | Out-Null
-        }
         Write-Verdict "[SUCCESS] 'ldm db start'/'db stop' drive the real global container, idempotently (LDM-#1400)."
     } else {
         throw "Shared database start/stop verification failed."
