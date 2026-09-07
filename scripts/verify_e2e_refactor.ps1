@@ -123,11 +123,28 @@ if (-not (Test-Path $VENV_PYTEST)) {
     & $VENV_PYTHON -m pip install pytest requests PyYAML --quiet --disable-pip-version-check
 }
 
+# LDM-#1614: parity with verify_e2e_refactor.sh's print_env_label_line.
+#
+# Lets the caller declare which environment a run represents, so
+# scripts/sync_compatibility.py does not have to infer it from a platform
+# string. On Linux that inference collapsed Debian, Rocky and Alpine onto one
+# compatibility-matrix row; the Windows arms are already distinguished by the
+# PowerShell edition (LDM-#1563), but the mechanism has to exist in both halves
+# or a labelled run on one platform silently produces an unlabelled report on
+# the other.
+function Get-EnvLabelLine {
+    param([string]$EnvLabel)
+    if ([string]::IsNullOrWhiteSpace($EnvLabel)) { return $null }
+    return "Env Label: $EnvLabel"
+}
+
 # Header
 & {
     Write-Output "=== LDM BINARY VERIFICATION REPORT ==="
     Write-Output "Timestamp: $(Get-Date)"
     Write-Output "Platform:  $($PSVersionTable.OS)"
+    $envLabelLine = Get-EnvLabelLine -EnvLabel $env:LDM_ENV_LABEL
+    if ($envLabelLine) { Write-Output $envLabelLine }
     # $PSVersionTable.OS does not exist on Windows PowerShell 5.1 -- it arrived
     # in PowerShell 6 -- so the line above renders empty there and a 5.1 report
     # was distinguishable from a 7 report only by that absence, which reads as a

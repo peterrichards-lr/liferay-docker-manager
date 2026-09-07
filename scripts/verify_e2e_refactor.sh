@@ -88,11 +88,38 @@ fi
 
 INSTALLED_VERSION_RAW=$("$LDM_CMD" --version 2>/dev/null || echo "unknown")
 
+# LDM-#1614: let the caller declare which environment this run represents.
+#
+# scripts/sync_compatibility.py derives the compatibility-matrix row from the
+# report's CONTENT, and it only recognises Fedora and Ubuntu by name -- every
+# other distro fell through to a generic "Linux Workstation / Linux". The five
+# verify-linux CI jobs run each distro as a container on one ubuntu-latest
+# host, so Debian, Rocky and Alpine all resolved to the same canonical report
+# name and each silently overwrote the previous: three genuine passes went in,
+# one row came out, and it misidentified itself.
+#
+# The workflow already knows the answer as `matrix.distro`, so it passes it in
+# here rather than having the sync tool guess from a PRETTY_NAME it may not
+# recognise (or, on a minimal image, may not have at all). Emitted as its own
+# header line so it survives into the committed report, the way the version
+# headers do -- a value only present in the runner's environment would not.
+#
+# Kept as a named function for the same reason as print_version_banner below:
+# so it can be executed in a test without a full Docker/ldm E2E run
+# (ldm_core/tests/test_verify_scripts.py).
+print_env_label_line() {
+    local label="${1:-}"
+    if [ -n "$label" ]; then
+        echo "Env Label:    $label"
+    fi
+}
+
 {
     echo "=== LDM BINARY VERIFICATION REPORT ==="
     echo "Timestamp:    $(date)"
     echo "Hostname:     $HOSTNAME"
     echo "Platform:     $PLATFORM_INFO"
+    print_env_label_line "${LDM_ENV_LABEL:-}"
     echo "Binary:       $(which "$LDM_CMD")"
 } >"$RESULTS_FILE_TMP"
 

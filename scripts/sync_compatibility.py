@@ -98,6 +98,135 @@ def _report_mismatched_checkout(stale, fatal=True):
     UI.info("[dry-run] continuing the preview; these reports were left alone.")
 
 
+def _find_name_collisions(metas):
+    """Raw reports from *different* environments that resolve to one matrix row.
+
+    LDM-#1614. The environment name is derived from the report's content, and
+    only Fedora and Ubuntu were recognised by name -- every other distro fell
+    through to a generic "Linux Workstation / Linux". The five verify-linux CI
+    jobs run each distro as a container on one ubuntu-latest host, so Debian,
+    Rocky and Alpine all produced the same `internal_slug`. `latest_by_env`
+    below is a dict keyed on that slug, so the last one parsed won and the rest
+    were archived under indistinguishable hash names: three genuine passes went
+    in, one row came out, and it misidentified itself.
+
+    Two cases have to stay apart, and the distinguishing evidence is the
+    identity each report states about itself -- its declared `Env Label:` and
+    its `Platform:` line:
+
+    - repeat runs of ONE environment (the same rig verified twice, both raw
+      reports dropped in together). Latest-wins is correct there and stays.
+    - distinct environments collapsing onto one name. There is no correct
+      survivor, so refuse rather than pick one silently.
+
+    Reports already sitting at their canonical name are excluded: a fresh raw
+    report superseding the committed one for its environment is the ordinary
+    path, not a collision.
+    """
+    by_slug = {}
+    for meta in metas:
+        canonical = f"verify-{meta['internal_slug']}-{meta['status_slug']}.txt"
+        if meta["report_path"].name == canonical:
+            continue
+        by_slug.setdefault(meta["internal_slug"], []).append(meta)
+
+    collisions = []
+    for slug, group in sorted(by_slug.items()):
+        if len(group) < 2:
+            continue
+        identities = {(m["env_label"] or "", m["platform"]) for m in group}
+        if len(identities) < 2:
+            continue
+        collisions.append(
+            (
+                slug,
+                [
+                    (
+                        m["report_path"].name,
+                        m["env_label"] or "(none declared)",
+                        m["platform"],
+                    )
+                    for m in sorted(group, key=lambda m: m["report_path"].name)
+                ],
+            )
+        )
+    return collisions
+
+
+def _report_name_collisions(collisions, fatal=True):
+    """Refuses to sync when distinct environments claim one matrix row.
+
+    LDM-#1614, following the LDM-#1390 precedent: name every report and the
+    values that prove they are different environments, and exit non-zero
+    *before* anything is moved. Silently keeping one of several genuine passes
+    is worse than failing -- the surviving row asserts something untrue about
+    the environment it names, and the losers become indistinguishable files in
+    archived_findings/.
+    """
+    UI.error(
+        f"Refusing to sync: {len(collisions)} environment name(s) are claimed by "
+        "more than one raw report, from environments that are not the same. One "
+        "would silently replace the other."
+    )
+    for slug, members in collisions:
+        # UI._print() strips its argument, so a line's own leading indent is
+        # lost -- only indentation after an embedded newline survives. Hence
+        # the bracket/dash markers rather than plain spaces.
+        UI.raw(f"[{slug}]")
+        for name, label, platform in members:
+            UI.raw(
+                f"  - {name}\n        Env Label: {label}\n        Platform:  {platform}"
+            )
+    UI.raw("")
+    UI.info(
+        "Each environment must declare its own identity. Set LDM_ENV_LABEL when "
+        "running scripts/verify_e2e_refactor.sh / .ps1 (the CI matrix passes its "
+        "distro key) and re-run the verification, or sync the reports one at a "
+        "time so nothing is displaced without you seeing it."
+    )
+    if fatal:
+        sys.exit(1)
+    UI.info("[dry-run] continuing the preview; nothing was moved.")
+
+
+# LDM-#1614: display names for the environment labels a runner can declare, for
+# the ones whose label is not simply their title-cased name. Anything absent
+# falls back to title-casing the label, so an unlisted distro still gets its own
+# row rather than being merged into a generic one.
+_ENV_LABEL_DISPLAY = {
+    "alpine": "Alpine",
+    "arch": "Arch Linux",
+    "archlinux": "Arch Linux",
+    "centos": "CentOS",
+    "debian": "Debian",
+    "opensuse": "openSUSE",
+    "rhel": "RHEL",
+    "rocky": "Rocky Linux",
+    "rockylinux": "Rocky Linux",
+}
+
+
+def _declared_linux_os(env_label, platform_str):
+    """Names a Linux distro from the label its runner declared (LDM-#1614).
+
+    Returns None when nothing was declared, so the caller keeps the previous
+    generic "Linux" fallback -- a report predating this mechanism must not
+    change the row it has always produced.
+
+    The label answers *which distro*; the version still comes from the report's
+    own `Platform:` line (a PRETTY_NAME such as "Debian GNU/Linux 12
+    (bookworm)"), because the CI matrix key carries no version. A platform line
+    with no version at all -- a minimal image with no /etc/os-release, where
+    this mechanism matters most -- yields the bare distro name.
+    """
+    if not env_label:
+        return None
+    key = env_label.strip().lower()
+    name = _ENV_LABEL_DISPLAY.get(key) or env_label.strip().replace("-", " ").title()
+    version_match = re.search(r"\d+(?:\.\d+)*", platform_str or "")
+    return f"{name} {version_match.group(0)}" if version_match else name
+
+
 # Paths that scripts/release.py's `--promote` can *only* ever touch when
 # bumping a pre-release to stable: docs, version metadata, and the
 # release/verification tooling itself -- never anything that ends up
@@ -392,6 +521,17 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
         if cand and not cand.startswith("$("):
             script_version = cand
 
+    # 4.6 LDM-#1614: the environment identity the runner declared for itself,
+    # via LDM_ENV_LABEL. Authoritative for *which* environment this is, because
+    # it comes from the caller that knows (the CI matrix key) rather than from
+    # a platform string this script has to recognise by name.
+    env_label = None
+    env_label_match = re.search(r"^Env Label:\s*([^\n]+)", content, re.M)
+    if env_label_match:
+        cand = env_label_match.group(1).strip()
+        if cand and not cand.startswith("$"):
+            env_label = cand
+
     # 5. Extract Docker Engine version
     engine_v = "Unknown"
     # Try header first
@@ -568,7 +708,10 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
         host_os = f"Ubuntu {ubuntu_match.group(1) if ubuntu_match else ''}".strip()
     else:
         arch = "Linux Workstation"
-        host_os = "Linux"
+        # LDM-#1614: every distro this script does not recognise by name used to
+        # land here as a generic "Linux", so Debian, Rocky and Alpine shared one
+        # row and one canonical filename. A declared label names them apart.
+        host_os = _declared_linux_os(env_label, platform_str) or "Linux"
 
     # Standardize slugs
     clean_arch = arch.lower().replace(" ", "-")
@@ -590,6 +733,8 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
     return {
         "arch": arch,
         "os": host_os,
+        "platform": platform_str,
+        "env_label": env_label,
         "provider": provider,
         "engine_v": engine_v,
         "provider_v": provider_v,
@@ -711,6 +856,14 @@ def sync_reports(results_dir=None, table_file=None):  # noqa: C901, PLR0912, PLR
             report_metas.append(meta)
         except Exception as e:
             UI.warning(f"Failed to parse {r.name}: {e}")
+
+    # LDM-#1614: checked here, ahead of the staleness block, because nothing has
+    # been moved at this point -- the loop above only parsed. Under
+    # --archive-stale the block below starts moving files, so a refusal placed
+    # after it would already have mutated the directory it refused to touch.
+    collisions = _find_name_collisions(report_metas)
+    if collisions:
+        _report_name_collisions(collisions, fatal=not DRY_RUN)
 
     if stale_reports:
         if not ARCHIVE_STALE:

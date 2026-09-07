@@ -1,3 +1,4 @@
+import os
 import shutil
 import sys
 import typing
@@ -363,3 +364,378 @@ class TestSandboxedPaths:
             sync_compatibility.sync_reports(results_dir=results, table_file=table)
 
         assert stale.exists(), "refusing must leave the report where it was"
+
+
+def _no_docs_sync():
+    """Keeps a sandboxed sync from reaching the REAL docs.
+
+    sync_reports() ends by calling sync_docs.sync_table(), which rewrites
+    docs/TESTING.md and README.md from the real compatibility table regardless
+    of --table. A test must never reach it (LDM-#1391).
+    """
+    return patch.dict(sys.modules, {"sync_docs": MagicMock()})
+
+
+def _linux_report(directory, name, platform, version, env_label=None, passed=True):
+    """Writes a report shaped like a real verify_e2e_refactor.sh one.
+
+    The version matters: a report whose version does not match this checkout is
+    diverted by the LDM-#1390 staleness path and never reaches the collision
+    check, so these fixtures normally claim the current VERSION.
+    """
+    lines = [
+        "=== LDM BINARY VERIFICATION REPORT ===",
+        "Timestamp:    Sun Sep  6 22:16:18 UTC 2026",
+        "Hostname:     runner",
+        f"Platform:     {platform}",
+    ]
+    if env_label:
+        lines.append(f"Env Label:    {env_label}")
+    lines += [
+        "Binary:       /usr/local/bin/ldm",
+        f"Version:      ldm {version}",
+        f"Script Ver:   {version}",
+        "Docker:       28.0.4",
+        "",
+    ]
+    if passed:
+        lines.append("ALL E2E VERIFICATIONS PASSED!")
+    path = directory / name
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+class TestDeclaredEnvironmentLabel:
+    """LDM-#1614: the environment name came from the report's content, and only
+    Fedora and Ubuntu were recognised by name -- every other distro fell through
+    to a generic "Linux Workstation / Linux". LDM_ENV_LABEL lets the runner that
+    knows (the CI matrix key) declare the identity instead of leaving this
+    script to infer one from a string it may not recognise."""
+
+    def test_a_declared_label_names_the_distro(self, tmp_path):
+        report = _linux_report(
+            tmp_path,
+            "verify-raw-20260906-000000-pass.txt",
+            "Debian GNU/Linux 12 (bookworm)",
+            sync_compatibility.VERSION,
+            env_label="debian",
+        )
+        meta = sync_compatibility.get_report_metadata(report)
+        assert meta["os"] == "Debian 12"
+        assert meta["internal_slug"] == "linux-workstation-debian-12-native-docker"
+
+    def test_the_matrix_key_is_translated_to_a_display_name(self, tmp_path):
+        """`rockylinux` is what the workflow calls it; "Rocky Linux" is what a
+        reader of the published matrix needs to see."""
+        report = _linux_report(
+            tmp_path,
+            "verify-raw-20260906-000000-pass.txt",
+            "Rocky Linux 9.6 (Blue Onyx)",
+            sync_compatibility.VERSION,
+            env_label="rockylinux",
+        )
+        assert sync_compatibility.get_report_metadata(report)["os"] == "Rocky Linux 9.6"
+
+    def test_a_label_with_no_version_in_the_platform_line_still_resolves(
+        self, tmp_path
+    ):
+        """A minimal image with no usable /etc/os-release is exactly where this
+        mechanism matters most, so it must not depend on the platform line."""
+        report = _linux_report(
+            tmp_path,
+            "verify-raw-20260906-000000-pass.txt",
+            "linux-gnu",
+            sync_compatibility.VERSION,
+            env_label="alpine",
+        )
+        assert sync_compatibility.get_report_metadata(report)["os"] == "Alpine"
+
+    def test_an_unlabelled_linux_report_keeps_its_historical_name(self, tmp_path):
+        """Reports predating the label must produce the row they always have."""
+        report = _linux_report(
+            tmp_path,
+            "verify-raw-20260906-000000-pass.txt",
+            "Debian GNU/Linux 12 (bookworm)",
+            sync_compatibility.VERSION,
+        )
+        meta = sync_compatibility.get_report_metadata(report)
+        assert meta["os"] == "Linux"
+        assert meta["internal_slug"] == "linux-workstation-linux-native-docker"
+
+    @pytest.mark.parametrize(
+        ("label", "platform", "expected_slug"),
+        [
+            (
+                "ubuntu",
+                "Ubuntu 24.04.4 LTS",
+                "linux-workstation-ubuntu-24.04-native-docker",
+            ),
+            (
+                "fedora",
+                "Fedora Linux 44 (Container Image)",
+                "linux-workstation-fedora-44-native-docker",
+            ),
+        ],
+    )
+    def test_the_two_already_working_distros_are_unchanged(
+        self, tmp_path, label, platform, expected_slug
+    ):
+        """These slugs are the names of two committed canonical reports. If a
+        label changed them, the next real sync would rename real evidence."""
+        report = _linux_report(
+            tmp_path,
+            "verify-raw-20260906-000000-pass.txt",
+            platform,
+            sync_compatibility.VERSION,
+            env_label=label,
+        )
+        assert (
+            sync_compatibility.get_report_metadata(report)["internal_slug"]
+            == expected_slug
+        )
+
+
+class TestNameCollisionGuard:
+    """LDM-#1614: three containerised distros resolved to
+    verify-linux-workstation-linux-native-docker-pass.txt and each silently
+    overwrote the previous. Three genuine passes went in, one row came out --
+    labelled "Linux Workstation / Linux" while actually being one of them -- and
+    the two losers landed in archived_findings/ under hash names indistinguishable
+    from each other. Following LDM-#1390: refuse, naming every report and the
+    values that prove they are different environments, before moving anything."""
+
+    def teardown_method(self):
+        UI.QUIET_MODE = False
+        sync_compatibility.ARCHIVE_STALE = False
+        sync_compatibility.DRY_RUN = False
+
+    @staticmethod
+    def _sandbox(tmp_path):
+        """LDM-#1391: never the real results dir or the real table."""
+        results = tmp_path / "results"
+        results.mkdir()
+        table = tmp_path / "compatibility.md"
+        shutil.copy(sync_compatibility.DEFAULT_TABLE_FILE, table)
+        return results, table
+
+    @staticmethod
+    def _three_unlabelled_distros(results):
+        """The real v2.21.0-pre.2 artifact set: Debian, Rocky and Alpine, each
+        reporting its own PRETTY_NAME and none of them recognised by name."""
+        return [
+            _linux_report(
+                results,
+                "verify-linux-workstation-linux-native-docker-20260906-2201-pass.txt",
+                "Debian GNU/Linux 12 (bookworm)",
+                sync_compatibility.VERSION,
+            ),
+            _linux_report(
+                results,
+                "verify-linux-workstation-linux-native-docker-20260906-2215-pass.txt",
+                "Rocky Linux 9.6 (Blue Onyx)",
+                sync_compatibility.VERSION,
+            ),
+            _linux_report(
+                results,
+                "verify-linux-workstation-linux-native-docker-20260906-2230-pass.txt",
+                "Alpine Linux v3.22.2",
+                sync_compatibility.VERSION,
+            ),
+        ]
+
+    def test_it_refuses_instead_of_letting_one_distro_displace_another(self, tmp_path):
+        results, table = self._sandbox(tmp_path)
+        reports = self._three_unlabelled_distros(results)
+        table_before = table.read_text()
+
+        with _no_docs_sync(), pytest.raises(SystemExit) as exc:
+            sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        assert exc.value.code != 0, "must be a failing exit so CI/tooling notices"
+        for report in reports:
+            assert report.exists(), f"{report.name} was moved despite the refusal"
+        assert not list((results / "archived_findings").glob("*.txt")), (
+            "nothing may be archived before the refusal"
+        )
+        assert not (
+            results / "verify-linux-workstation-linux-native-docker-pass.txt"
+        ).exists(), "no canonical report may be written from an ambiguous set"
+        assert table.read_text() == table_before, "the table must be untouched"
+
+    def test_the_message_names_every_report_and_the_colliding_values(
+        self, tmp_path, capsys
+    ):
+        """The whole point is that the operator can see which environments
+        collided, and on what -- the archived hash names could not say."""
+        results, table = self._sandbox(tmp_path)
+        self._three_unlabelled_distros(results)
+
+        with _no_docs_sync(), pytest.raises(SystemExit):
+            sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        captured = capsys.readouterr()
+        combined = captured.out + captured.err
+        assert "Refusing to sync" in combined
+        assert "linux-workstation-linux-native-docker" in combined
+        for name in (
+            "verify-linux-workstation-linux-native-docker-20260906-2201-pass.txt",
+            "verify-linux-workstation-linux-native-docker-20260906-2215-pass.txt",
+            "verify-linux-workstation-linux-native-docker-20260906-2230-pass.txt",
+        ):
+            assert name in combined, f"{name} not named"
+        for platform in (
+            "Debian GNU/Linux 12 (bookworm)",
+            "Rocky Linux 9.6 (Blue Onyx)",
+            "Alpine Linux v3.22.2",
+        ):
+            assert platform in combined, f"{platform} not shown as a colliding value"
+        assert "LDM_ENV_LABEL" in combined, "must name the fix"
+
+    def test_quiet_never_hides_the_refusal(self, tmp_path, capsys):
+        results, table = self._sandbox(tmp_path)
+        self._three_unlabelled_distros(results)
+        UI.QUIET_MODE = True
+
+        with _no_docs_sync(), pytest.raises(SystemExit):
+            sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        captured = capsys.readouterr()
+        assert "Refusing to sync" in (captured.out + captured.err)
+
+    def test_dry_run_previews_the_collision_without_failing(self, tmp_path):
+        """A preview must stay safe to run from tooling."""
+        results, table = self._sandbox(tmp_path)
+        reports = self._three_unlabelled_distros(results)
+        sync_compatibility.DRY_RUN = True
+
+        with _no_docs_sync():
+            sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        for report in reports:
+            assert report.exists()
+
+    def test_archive_stale_does_not_move_anything_before_the_refusal(self, tmp_path):
+        """--archive-stale is the LDM-#1390 opt-out for a version mismatch. It
+        is not consent to resolve a collision by picking a survivor, and the
+        moves it authorises must not happen before the collision is reported."""
+        results, table = self._sandbox(tmp_path)
+        reports = self._three_unlabelled_distros(results)
+        stale = _linux_report(
+            results,
+            "verify-macos-raw-20260906-2240-pass.txt",
+            "darwin25-arm64",
+            "9.9.9-pre.1",
+        )
+        sync_compatibility.ARCHIVE_STALE = True
+
+        with _no_docs_sync(), pytest.raises(SystemExit):
+            sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        assert stale.exists(), "the stale report was archived before the refusal"
+        for report in reports:
+            assert report.exists()
+
+    def test_repeat_runs_of_one_environment_still_supersede(self, tmp_path):
+        """Latest-wins is correct for the same rig verified twice. Refusing
+        there would break the ordinary contributor workflow, so the guard keys
+        on the identity each report states, not merely on the shared name."""
+        results, table = self._sandbox(tmp_path)
+        older = _linux_report(
+            results,
+            "verify-linux-workstation-linux-native-docker-20260906-2201-pass.txt",
+            "Debian GNU/Linux 12 (bookworm)",
+            sync_compatibility.VERSION,
+        )
+        newer = _linux_report(
+            results,
+            "verify-linux-workstation-linux-native-docker-20260906-2230-pass.txt",
+            "Debian GNU/Linux 12 (bookworm)",
+            sync_compatibility.VERSION,
+        )
+        # Identical header timestamps, so the mtime fallback orders them.
+        os.utime(older, (1, 1))
+        os.utime(newer, (2, 2))
+
+        with patch.dict(sys.modules, {"sync_docs": MagicMock()}):
+            sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        assert (
+            results / "verify-linux-workstation-linux-native-docker-pass.txt"
+        ).exists()
+        assert len(list((results / "archived_findings").glob("*.txt"))) == 1
+
+    def test_an_existing_canonical_report_is_not_a_collision(self, tmp_path):
+        """A fresh raw report superseding the committed one for its environment
+        is the ordinary path, not an ambiguity."""
+        results, table = self._sandbox(tmp_path)
+        _linux_report(
+            results,
+            "verify-linux-workstation-linux-native-docker-pass.txt",
+            "Debian GNU/Linux 12 (bookworm)",
+            sync_compatibility.VERSION,
+        )
+        _linux_report(
+            results,
+            "verify-linux-workstation-linux-native-docker-20260906-2230-pass.txt",
+            "Rocky Linux 9.6 (Blue Onyx)",
+            sync_compatibility.VERSION,
+        )
+
+        with patch.dict(sys.modules, {"sync_docs": MagicMock()}):
+            sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+    def test_labelled_distros_no_longer_collide_at_all(self, tmp_path):
+        """The primary fix: once each run declares its distro, three passes
+        produce three rows instead of one that misidentifies itself."""
+        results, table = self._sandbox(tmp_path)
+        fixtures = [
+            (
+                "verify-raw-a-20260906-2201-pass.txt",
+                "Debian GNU/Linux 12 (bookworm)",
+                "debian",
+            ),
+            (
+                "verify-raw-b-20260906-2215-pass.txt",
+                "Rocky Linux 9.6 (Blue Onyx)",
+                "rockylinux",
+            ),
+            (
+                "verify-raw-c-20260906-2230-pass.txt",
+                "Alpine Linux v3.22.2",
+                "alpine",
+            ),
+        ]
+        for name, platform, label in fixtures:
+            _linux_report(
+                results, name, platform, sync_compatibility.VERSION, env_label=label
+            )
+
+        with patch.dict(sys.modules, {"sync_docs": MagicMock()}):
+            sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        assert sorted(p.name for p in results.glob("*.txt")) == [
+            "verify-linux-workstation-alpine-3.22.2-native-docker-pass.txt",
+            "verify-linux-workstation-debian-12-native-docker-pass.txt",
+            "verify-linux-workstation-rocky-linux-9.6-native-docker-pass.txt",
+        ]
+        assert not list((results / "archived_findings").glob("*.txt"))
+        table_text = table.read_text()
+        for os_name in ("Debian 12", "Rocky Linux 9.6", "Alpine 3.22.2"):
+            assert os_name in table_text, f"{os_name} missing from the table"
+
+    def test_the_real_verification_record_is_never_touched(self, tmp_path):
+        """LDM-#1391. These reports are an honest account of what was actually
+        tested; a test that rewrites them destroys real data."""
+        results, table = self._sandbox(tmp_path)
+        self._three_unlabelled_distros(results)
+        real_before = sorted(
+            p.name for p in sync_compatibility.DEFAULT_RESULTS_DIR.rglob("*")
+        )
+
+        with _no_docs_sync(), pytest.raises(SystemExit):
+            sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        assert (
+            sorted(p.name for p in sync_compatibility.DEFAULT_RESULTS_DIR.rglob("*"))
+            == real_before
+        )
