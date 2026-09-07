@@ -471,3 +471,73 @@ class TestSharedDbAssertionCanFail(unittest.TestCase):
             func,
             "restoring the alternative makes the assertion unfailable again",
         )
+
+
+def _run_bash_env_label(label):
+    func_text = _extract_function(
+        BASH_SCRIPT,
+        re.compile(r"^print_env_label_line\s*\(\)\s*\{.*?^\}", re.M | re.S),
+    )
+    script = f'{func_text}\nprint_env_label_line "{label}"\n'
+    res = subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, check=False
+    )
+    assert res.returncode == 0, f"bash exited {res.returncode}: {res.stderr}"
+    return res.stdout
+
+
+def _run_powershell_env_label(binary, label):
+    func_text = _extract_function(
+        PS1_SCRIPT,
+        re.compile(r"^function Get-EnvLabelLine\s*\{.*?^\}", re.M | re.S),
+    )
+    script = (
+        f"{func_text}\n"
+        f"$line = Get-EnvLabelLine -EnvLabel '{label}'\n"
+        "if ($line) { Write-Output $line }\n"
+    )
+    res = subprocess.run(
+        [binary, "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0, f"{binary} exited {res.returncode}: {res.stderr}"
+    return res.stdout
+
+
+class TestBashEnvLabelLine(unittest.TestCase):
+    """LDM-#1614: the declared environment identity has to reach the committed
+    report. sync_compatibility.py derives the compatibility-matrix row from the
+    report's CONTENT, so a value that exists only in the runner's environment
+    would not survive -- three containerised distros collapsed onto one row
+    precisely because nothing in the report distinguished them."""
+
+    def test_a_label_becomes_a_header_line(self):
+        out = _run_bash_env_label("debian")
+        self.assertIn("Env Label:    debian", out)
+
+    def test_no_label_emits_nothing(self):
+        """Every existing local run has no label, and must produce a report
+        byte-identical to the one it produced before."""
+        self.assertEqual(_run_bash_env_label("").strip(), "")
+
+
+@unittest.skipUnless(_powershell_binaries(), "no PowerShell available")
+class TestPowerShellEnvLabelLine(unittest.TestCase):
+    """LDM-#1614 parity: the mechanism has to exist in both halves, or a
+    labelled run on one platform silently produces an unlabelled report on the
+    other (the .sh/.ps1 parity rule)."""
+
+    def test_a_label_becomes_a_header_line(self):
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                self.assertIn(
+                    "Env Label: alpine", _run_powershell_env_label(binary, "alpine")
+                )
+
+    def test_blank_and_whitespace_labels_emit_nothing(self):
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                self.assertEqual(_run_powershell_env_label(binary, "").strip(), "")
+                self.assertEqual(_run_powershell_env_label(binary, "   ").strip(), "")

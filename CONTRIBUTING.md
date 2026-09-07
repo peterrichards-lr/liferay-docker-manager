@@ -170,6 +170,7 @@ All significant changes to the orchestration or infrastructure handlers MUST be 
     - Execute `bash scripts/verify_e2e_refactor.sh` (or `.\scripts\verify_e2e_refactor.ps1` on Windows) on a machine with a running Docker engine.
     - Place the generated `verify-*.txt` report into the `references/verification-results/` directory.
     - Run `python3 scripts/sync_compatibility.py` to automatically archive older reports, update the project's compatibility matrix, and generate working hyperlinks to your raw report files.
+    - If you are verifying a distro this project has not seen before, set `LDM_ENV_LABEL` (e.g. `LDM_ENV_LABEL=debian bash scripts/verify_e2e_refactor.sh`). Without it, anything other than Fedora or Ubuntu is recorded as a generic "Linux" and shares one matrix row with every other unlabelled distro. `sync_compatibility.py` now refuses rather than letting one displace another (LDM-#1614).
 
 ## ⚖️ License
 
@@ -177,4 +178,4 @@ By contributing, you agree that your contributions will be licensed under its **
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*
+*Last Updated: 2026-09-07* | *Last Reviewed: 2026-09-07*

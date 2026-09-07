@@ -496,6 +496,41 @@ Run the PowerShell E2E verification script (ensure your PowerShell ExecutionPoli
 powershell -ExecutionPolicy Bypass -File scripts/verify_e2e_refactor.ps1
 ```
 
+### **Declaring which environment a run represents**
+
+`scripts/sync_compatibility.py` builds the compatibility matrix from the
+report's **content**, and it recognises only Fedora and Ubuntu by name. Every
+other Linux distro used to fall through to a generic "Linux Workstation /
+Linux", so Debian, Rocky and Alpine all produced the *same* canonical report
+name and each silently overwrote the previous — three genuine CI passes went in
+and one row came out, labelled as none of them (LDM-#1614).
+
+Set `LDM_ENV_LABEL` so the run declares its own identity. It becomes an
+`Env Label:` line in the report, which is what survives into the committed
+record:
+
+```bash
+LDM_ENV_LABEL=debian bash scripts/verify_e2e_refactor.sh
+```
+
+```powershell
+$env:LDM_ENV_LABEL = "debian"
+powershell -ExecutionPolicy Bypass -File scripts/verify_e2e_refactor.ps1
+```
+
+The label names the *distro*; the version still comes from the report's own
+`Platform:` line, so `debian` on Debian 12 becomes a **Debian 12** row. The
+`verify-linux` CI matrix passes its `matrix.distro` key automatically, so all
+five of its arms are distinguished without anything to remember. Leaving the
+variable unset keeps the previous behaviour exactly, and Fedora and Ubuntu are
+unaffected either way.
+
+Should two reports still resolve to one environment name from genuinely
+different environments, `sync_compatibility.py` **refuses and exits non-zero
+before moving anything**, naming each report and its platform — the same
+approach LDM-#1390 took to a version mismatch. Repeat runs of the *same*
+environment continue to supersede one another as before.
+
 ### **What the scripts verify**
 
 * Docker daemon connectivity and registry cleanups.
