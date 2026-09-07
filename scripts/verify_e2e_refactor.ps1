@@ -122,6 +122,7 @@ $SSHFAIL_TEST_NODE = "sshfail-node-${TEST_PORT}"
 $SSHFAIL_TEST_PROJ = "sshfail-proj-${TEST_PORT}"
 $PORTCONFLICT_PROJ = "portconflict-${TEST_PORT}"
 $PORT_HOLDER = "ldm-e2e-port-holder-${TEST_PORT}"
+$LDMP_REFUSAL_PROJECT = "ldmp-refusal-${TEST_PORT}"
 # Kibana publishes this host port unconditionally (composer.py
 # _build_kibana_service). It is the LDM-#1350 lever -- see that check below.
 $KIBANA_HOST_PORT = 5601
@@ -301,6 +302,13 @@ function Remove-Ldm1383Artifacts {
     Invoke-Cleanup $LDM_CMD "-y rm $PORTCONFLICT_PROJ --delete"
     $conflictDir = Join-Path $LDM_WORKSPACE $PORTCONFLICT_PROJ
     if (Test-Path $conflictDir) { Remove-Item -Recurse -Force $conflictDir -ErrorAction SilentlyContinue }
+    # LDM-#1621: Test-LdmpManifestRefusal tears its own fixture down before it
+    # asserts, so this only matters if the run is killed between the import and
+    # that cleanup. Nothing is created when the control is working.
+    Invoke-Cleanup $LDM_CMD "-y rm $LDMP_REFUSAL_PROJECT --delete"
+    foreach ($stale in @((Join-Path $LDM_WORKSPACE $LDMP_REFUSAL_PROJECT), (Join-Path $LDM_WORKSPACE ".ldm_temp"))) {
+        if (Test-Path $stale) { Remove-Item -Recurse -Force $stale -ErrorAction SilentlyContinue }
+    }
 }
 
 function Finalize-Verification {
@@ -677,6 +685,117 @@ function Get-PortHolderDiagnostic {
     }
 }
 
+# LDM-#1621: a local .ldmp whose manifest cannot be parsed must be refused.
+#
+# Functional twin of verify_ldmp_manifest_refusal() in verify_e2e_refactor.sh.
+# Until #1621, manifest verification was reachable from exactly one input -- a
+# GitHub repo URL whose latest release carries a .ldmp -- and the API host is
+# hardcoded, so LDM-#1588 recorded the whole area as un-assertable from this
+# script. That is no longer true for the parse control: it needs no network, no
+# release, and no Docker beyond what is already running, because the refusal
+# happens in PackageVerificationStage before ProjectSetupStage creates
+# anything. A tarball this function builds itself is the entire fixture.
+#
+# What it protects: the manifest is where 'tag' and 'db_type' come from. An
+# unreadable one used to import "successfully" and silently drop both, so the
+# database dump was restored into whichever engine the defaults picked.
+#
+# The .sh half builds the archive with tar and printf; this half uses the venv
+# python's tarfile instead. Same archive either way -- Windows tar is bsdtar and
+# its gzip handling is not something this script can verify, whereas
+# $VENV_PYTHON is created at the top of this script and is already how every
+# other fixture here is built. The two paths are handed over as environment
+# variables rather than interpolated into the Python source, because a Windows
+# path inside a Python string literal is a pile of invalid escape sequences.
+#
+# Kept as a named function for the same reason as Get-VersionBannerLines above,
+# so it can be executed without a full Docker/ldm E2E run
+# (ldm_core/tests/test_verify_scripts.py).
+function Test-LdmpManifestRefusal {
+    param(
+        [string]$LdmCmd,
+        [string]$VenvPython,
+        [string]$WorkDir,
+        [string]$ProjectName
+    )
+
+    $pkgSrc = Join-Path $WorkDir "ldmp-manifest-src"
+    $ldmp = Join-Path $WorkDir "bad-manifest.ldmp"
+
+    if (Test-Path $pkgSrc) { Remove-Item -Recurse -Force $pkgSrc }
+    if (Test-Path $ldmp) { Remove-Item -Force $ldmp }
+
+    $env:LDM_E2E_PKG_SRC = $pkgSrc
+    $env:LDM_E2E_LDMP = $ldmp
+    # Valid JSON followed by a trailing line after the closing brace: the exact
+    # shape LDM-#1522 was reported against, and the one read_meta's non-strict
+    # path degrades to an empty dict.
+    & $VenvPython -c @"
+import json, os, tarfile
+src = os.environ['LDM_E2E_PKG_SRC']
+out = os.environ['LDM_E2E_LDMP']
+os.makedirs(os.path.join(src, 'payload'), exist_ok=True)
+manifest = json.dumps({'tag': '7.4.13-u108', 'db_type': 'mysql',
+                       'github_repository': 'acme/widget'})
+with open(os.path.join(src, 'meta'), 'w', encoding='utf-8') as fh:
+    fh.write(manifest + '\ntrailing junk\n')
+dump = os.path.join(src, 'payload', 'dump.sql')
+with open(dump, 'w', encoding='utf-8') as fh:
+    fh.write('SELECT 1;\n')
+with tarfile.open(os.path.join(src, 'files.tar.gz'), 'w:gz') as tar:
+    tar.add(dump, arcname='dump.sql')
+with tarfile.open(out, 'w:gz') as tar:
+    for name in ('meta', 'files.tar.gz'):
+        tar.add(os.path.join(src, name), arcname=name)
+"@
+    $buildCode = $LASTEXITCODE
+    Remove-Item Env:LDM_E2E_PKG_SRC -ErrorAction SilentlyContinue
+    Remove-Item Env:LDM_E2E_LDMP -ErrorAction SilentlyContinue
+    if ($buildCode -ne 0) {
+        return @{ Ok = $false; Message = "[ERROR] ERROR: could not build the .ldmp fixture." }
+    }
+
+    $prev = Get-Location
+    Set-Location $WorkDir
+    try {
+        $out = & $LdmCmd -y import $ldmp $ProjectName --no-run 2>&1 | Out-String
+        $code = $LASTEXITCODE
+    } finally {
+        Set-Location $prev
+    }
+
+    # Cleanup BEFORE asserting, so a failed assertion leaves nothing behind
+    # either. When the control is working there is no project to remove: the
+    # refusal precedes both the project directory and the registry entry
+    # (measured -- registry.json stays byte-identical and never mentions the
+    # name). The 'ldm rm' and the directory removal are for the case this check
+    # exists to catch: against a binary without #1621 the import runs on into
+    # ProjectSetupStage and a project IS created (observed). The empty
+    # .ldm_temp shell the pipeline leaves in the working directory is ours to
+    # remove too -- the extraction directory inside it is already gone,
+    # discarded by the refusal itself. Do NOT copy the pre-existing db_type
+    # refusal, which leaves .ldm_temp/import_<ts>/ behind.
+    & $LdmCmd -y rm $ProjectName --delete *> $null
+    foreach ($stale in @($pkgSrc, $ldmp, (Join-Path $WorkDir ".ldm_temp"), (Join-Path $WorkDir $ProjectName))) {
+        if (Test-Path $stale) { Remove-Item -Recurse -Force $stale -ErrorAction SilentlyContinue }
+    }
+
+    # The exit code AND the reason, because either alone is weak. Exit 1 is the
+    # validation code in LDM's contract, but almost anything that goes wrong
+    # this early also exits 1 -- observed for real while writing this: against a
+    # binary without #1621 the same package reached verify_runtime_environment
+    # and exited 1 on "VOLUME MOUNTING IS BROKEN", which a bare code check would
+    # have called a pass.
+    if ($code -ne 1) {
+        return @{ Ok = $false; Message = "[ERROR] ERROR: expected exit 1 (validation) for an unparseable .ldmp manifest, got ${code}.`n   Output was: ${out}" }
+    }
+    if ($out -notmatch "manifest 'meta' could not be parsed") {
+        return @{ Ok = $false; Message = "[ERROR] ERROR: the .ldmp was refused with exit 1, but not for the manifest parse.`n   Output was: ${out}" }
+    }
+
+    return @{ Ok = $true; Message = "[SUCCESS] Unparseable .ldmp manifest refused (exit 1, before any project was created)." }
+}
+
 function Log-AndRun {
     param($msg, $cmd, $args_list)
     Write-Host ">> $msg"
@@ -771,6 +890,15 @@ try {
         Write-Verdict "[SUCCESS] Dev Guardrails verified."
     } else { 
         Write-Host "[ERROR] ERROR: Dev Guardrails failed! Output was: $res" -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying local .ldmp manifest verification (LDM-#1621)..."
+    $ldmpRefusal = Test-LdmpManifestRefusal -LdmCmd $LDM_CMD -VenvPython $VENV_PYTHON -WorkDir $LDM_WORKSPACE -ProjectName $LDMP_REFUSAL_PROJECT
+    if ($ldmpRefusal.Ok) {
+        Write-Verdict $ldmpRefusal.Message
+    } else {
+        Write-Host $ldmpRefusal.Message -ForegroundColor Red
         exit 1
     }
 

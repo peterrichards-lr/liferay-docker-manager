@@ -598,18 +598,34 @@ lives in the unit suite instead. Recorded here so the gap stays visible:
   over a `.ldmp` built in the test with only `requests.get` mocked, and which
   measures the routing above rather than asserting it in prose.
 
-  **The same recovery on a local `.ldmp` is no longer in this category.**
-  LDM-#1621 put manifest verification on the import pipeline, so a package the
-  script builds itself now exercises the parse refusal, the listing recovery
-  and the origin reporting with no network dependency at all. That E2E
-  assertion is not yet written -- adding an assertion to
-  `scripts/verify_e2e_refactor.{sh,ps1}` without first observing it on a real
-  run is how two release tags were burned (see *Assertions About Runtime
-  Behaviour* in `.agents/skills/testing-and-ci/SKILL.md`), and the environment
-  to observe it was not available when #1621 landed. Until it is,
-  `ldm_core/tests/test_local_package_verification.py` drives the real
+  **The manifest PARSE refusal on a local `.ldmp` is no longer in this
+  category, and is now asserted E2E.** LDM-#1621 put manifest verification on
+  the import pipeline, and the parse refusal fires in
+  `PackageVerificationStage` before `ProjectSetupStage` creates anything -- so
+  it needs no network, no published release and no Liferay boot. Both scripts
+  build the package themselves and assert the refusal:
+  `verify_ldmp_manifest_refusal()` in the `.sh`, `Test-LdmpManifestRefusal` in
+  the `.ps1`.
+
+  Both assert the exit code **and** the reason, which is not belt-and-braces.
+  Measured on 2026-09-07 against a binary without #1621: the same package
+  reached `verify_runtime_environment` and exited `1` on
+  `FATAL: VOLUME MOUNTING IS BROKEN`. A check that looked only at the exit code
+  would have reported that as a pass.
+
+  What is still not asserted E2E is the **recovery** and the **origin
+  reporting**. Both continue past the manifest into `cmd_restore`, so exercising
+  them needs a real database restore and a Liferay boot against a package the
+  script would have to build from a running project. Covered by
+  `ldm_core/tests/test_local_package_verification.py`, which drives the real
   `cmd_import` through the real pipeline over a package built in the test, with
   only `cmd_restore`, `cmd_run` and the shared doctor preflight stubbed.
+
+  The two script functions are named, rather than inlined, so their own
+  assertion logic is testable without Docker or an `ldm` binary:
+  `ldm_core/tests/test_verify_scripts.py` drives each half against a stub `ldm`
+  that returns a chosen exit code and message, and checks the parity of the two
+  halves.
 
 ### **Exit status, and why CI cross-checks the report**
 
