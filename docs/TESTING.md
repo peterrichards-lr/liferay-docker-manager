@@ -525,6 +525,18 @@ five of its arms are distinguished without anything to remember. Leaving the
 variable unset keeps the previous behaviour exactly, and Fedora and Ubuntu are
 unaffected either way.
 
+The label also settles the matrix's **Docker Provider** column. That was
+derived by looking for the literal word `linux` in the `Platform:` line, and
+every containerised arm satisfied it only by luck — `Fedora Linux 44 (Container
+Image)`, `Rocky Linux 9.3 (Blue Onyx)`, `Alpine Linux v3.24`, `Debian
+GNU/Linux 12 (bookworm)`. Upstream shortening any of those (Alpine to
+`Alpine 3.25`, say) would have published a user-facing row reading provider
+`Unknown` and renamed the canonical report `…-unknown-pass.txt`. A declared
+label is now sufficient on its own, so the column no longer depends on a
+vendor's `PRETTY_NAME` wording (LDM-#1631). The platform-string match remains
+as the fallback for a hand-run with no `LDM_ENV_LABEL` set, and a run without
+a label is never refused.
+
 Should two reports still resolve to one environment name from genuinely
 different environments, `sync_compatibility.py` **refuses and exits non-zero
 before moving anything**, naming each report and its platform — the same
@@ -667,4 +679,4 @@ and the three false passes above were 608–794 b.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-07* | *Last Reviewed: 2026-09-07*
+*Last Updated: 2026-09-08* | *Last Reviewed: 2026-09-08*
