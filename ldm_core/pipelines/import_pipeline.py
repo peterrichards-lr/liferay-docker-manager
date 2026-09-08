@@ -127,6 +127,28 @@ class ExtractionStage(PipelineStage):
         else:
             context.set("extracted_source", source)
 
+    def rollback(self, context: PipelineContext) -> None:
+        """Discard the extraction directory this stage created.
+
+        LDM-#1630: the temp-directory cleanup used to live only on
+        BackupStateStage, which runs *after* ProjectSetupStage -- so the
+        refusal that actually leaks (`Unsupported database type ...`, raised in
+        ProjectSetupStage) happened before the stage that owns the cleanup had
+        ever executed, and rollback therefore had nothing registered to undo.
+        The stage that creates the scratch directory is the one that must be
+        able to remove it. `parse_package_manifest` still discards it by hand
+        before its own `UI.die` calls, which is now belt-and-braces rather than
+        the only cleanup there is.
+
+        Only directories this stage created are touched: a directory *source*
+        registers no temp_dirs at all, so the user's own workspace is never a
+        candidate here.
+        """
+        for d in context.get("temp_dirs", []):
+            if isinstance(d, Path) and d.exists():
+                UI.detail(f"Cleaning up temporary directory: {d}")
+                shutil.rmtree(d, ignore_errors=True)
+
 
 def _note_unverifiable_origin(manifest) -> None:
     """Report, and never refuse on, a package origin nothing can confirm.
@@ -370,6 +392,20 @@ class BackupStateStage(PipelineStage):
         is_brand_new = context.get("is_brand_new")
         project_path = context.get("project_path")
 
+        # LDM-#1630: FinalizationStage runs `ldm run` against the finished
+        # project, prompts and all. Now that a `UI.die` or a Ctrl-C anywhere in
+        # that nested pipeline reaches this rollback, an aborted post-import
+        # start-up would otherwise delete the project the import had already
+        # completed -- destroying a successful import over a failure that
+        # happened after it. `import_committed` is the commit point, mirroring
+        # `init_success` in pipelines/run.py.
+        if context.get("import_committed"):
+            UI.detail(
+                "The project was already imported; leaving it in place. "
+                "Start it with 'ldm run'."
+            )
+            return
+
         if is_brand_new and project_path and project_path.exists():
             UI.detail(f"Removing newly created project directory: {project_path}")
             manager.safe_rmtree(project_path)
@@ -586,6 +622,13 @@ class FinalizationStage(PipelineStage):
 
         project_path = context.get("project_path")
         UI.success(f"Project created/imported at: {project_path}")
+
+        # LDM-#1630: past this line the import has happened, and nothing below
+        # is allowed to undo it. `cmd_run` re-enters the whole run pipeline,
+        # which prompts and refuses via `UI.die` in several places; without
+        # this the SystemExit that a refusal or a Ctrl-C raises there would
+        # reach BackupStateStage.rollback and delete the finished project.
+        context.set("import_committed", True)
 
         no_run = context.get("no_run")
         if no_run is None:

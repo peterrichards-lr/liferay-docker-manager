@@ -20,14 +20,15 @@ def test_import_pipeline_initialization():
 
 
 def test_package_verification_runs_before_anything_is_written():
-    """LDM-#1621: the manifest controls are only safe if nothing exists yet.
+    """LDM-#1621: the manifest controls are cheapest if nothing exists yet.
 
-    ProjectSetupStage creates the project directory and writes its meta, and
-    UI.die raises SystemExit, which Pipeline.run's `except Exception` does not
-    catch -- so no rollback runs. A refusal after that point would leave a
-    half-created project behind. The behavioural half of this is asserted in
-    test_local_package_verification.py; this pins the ordering that makes it
-    true.
+    ProjectSetupStage creates the project directory and writes its meta, so a
+    refusal after that point has something to undo. LDM-#1630 made
+    `Pipeline.run` roll back on the `SystemExit` that `UI.die` raises, so such
+    a refusal is now cleaned up rather than leaked -- but refusing before
+    anything is written is still strictly better than refusing and unwinding,
+    and this pins that ordering. The behavioural half is asserted in
+    test_local_package_verification.py.
     """
     from ldm_core.pipelines.import_pipeline import (
         ExtractionStage,
