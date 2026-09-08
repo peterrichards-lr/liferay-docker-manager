@@ -130,8 +130,9 @@ class ExtractionStage(PipelineStage):
     def rollback(self, context: PipelineContext) -> None:
         """Discard the extraction directory this stage created.
 
-        LDM-#1630: the temp-directory cleanup used to live only on
-        BackupStateStage, which runs *after* ProjectSetupStage -- so the
+        LDM-#1630: the temp-directory cleanup used to live only on the former
+        BackupStateStage (removed in LDM-#1635), which ran *after*
+        ProjectSetupStage -- so the
         refusal that actually leaks (`Unsupported database type ...`, raised in
         ProjectSetupStage) happened before the stage that owns the cleanup had
         ever executed, and rollback therefore had nothing registered to undo.
@@ -364,33 +365,27 @@ class ProjectSetupStage(PipelineStage):
         )
         manager.write_meta(project_path, project_meta)
 
-
-class BackupStateStage(PipelineStage):
-    """Captures current database/volume state and implements rollback."""
-
-    def execute(self, context: PipelineContext) -> None:
-        context = typing.cast(ImportPipelineContext, context)
-        # For simplicity, if it's brand new, rollback is just deleting the directory.
-        # If it existed, we could snapshot it, but LDM already relies on snapshot.cmd_restore
-        # which overwrites.
-        # In a real implementation, we would call cmd_snapshot here if not is_brand_new.
-        # For now, we set the rollback point.
-        pass
-
     def rollback(self, context: PipelineContext) -> None:
+        """Remove the project directory this stage brought into existence.
+
+        LDM-#1635: this lived on `BackupStateStage`, whose `execute` was an
+        empty `pass` -- the stage existed only to host cleanup for state that
+        other stages created. That is the arrangement LDM-#1630 identified as
+        the structural cause of the scratch-directory leak, and `base.py`
+        already states the rule it broke: undo what THIS stage created, on this
+        stage. `project_path` and `is_brand_new` are both set here, so this is
+        where the undo belongs.
+
+        Behaviour is unchanged by the move, which is why it is safe. For a
+        failure in any *later* stage both arrangements delete the project, and
+        for a failure inside this stage neither does -- a raising stage is
+        never appended to `executed_stages`, so its own rollback does not run
+        (measured; see test_stage_owns_its_rollback.py). The `db_type` refusal
+        that LDM-#1630 was reported against raises before this stage's `mkdir`,
+        so there is no directory to leak at that point either way.
+        """
         context = typing.cast(ImportPipelineContext, context)
         manager = context.manager
-        UI.detail("Rolling back ImportPipeline...")
-
-        # Resource Cleanup
-        temp_dirs = context.get("temp_dirs", [])
-        for d in temp_dirs:
-            if isinstance(d, Path) and d.exists():
-                UI.detail(f"Cleaning up temporary directory: {d}")
-                shutil.rmtree(d, ignore_errors=True)
-
-        is_brand_new = context.get("is_brand_new")
-        project_path = context.get("project_path")
 
         # LDM-#1630: FinalizationStage runs `ldm run` against the finished
         # project, prompts and all. Now that a `UI.die` or a Ctrl-C anywhere in
@@ -406,12 +401,11 @@ class BackupStateStage(PipelineStage):
             )
             return
 
+        is_brand_new = context.get("is_brand_new")
+        project_path = context.get("project_path")
         if is_brand_new and project_path and project_path.exists():
             UI.detail(f"Removing newly created project directory: {project_path}")
             manager.safe_rmtree(project_path)
-
-        # DB Container Verification and dropping tables could be done here if needed
-        # but since we drop the container/volume on brand new, it's sufficient for now.
 
 
 class DatabaseRestoreStage(PipelineStage):
@@ -627,7 +621,7 @@ class FinalizationStage(PipelineStage):
         # is allowed to undo it. `cmd_run` re-enters the whole run pipeline,
         # which prompts and refuses via `UI.die` in several places; without
         # this the SystemExit that a refusal or a Ctrl-C raises there would
-        # reach BackupStateStage.rollback and delete the finished project.
+        # reach ProjectSetupStage.rollback and delete the finished project.
         context.set("import_committed", True)
 
         no_run = context.get("no_run")
@@ -652,7 +646,6 @@ class ImportPipeline(Pipeline):
                 ExtractionStage(),
                 PackageVerificationStage(),
                 ProjectSetupStage(),
-                BackupStateStage(),
                 DatabaseRestoreStage(),
                 VolumeSyncStage(),
                 BuildWorkspaceStage(),

@@ -51,7 +51,16 @@ class PipelineStage(abc.ABC):
           for stages that already executed, so cleanup parked on a later stage
           never fires for an earlier failure. The import pipeline's scratch
           directory leaked for exactly that reason: it was created by
-          ExtractionStage and removed by BackupStateStage, three stages later.
+          ExtractionStage and removed by the former BackupStateStage, three
+          stages later (dissolved into the owning stages in LDM-#1635).
+        * **Know the limit of that rule: a stage that RAISES does not roll
+          itself back.** ``executed_stages.append`` runs only after ``execute``
+          returns, so the failing stage is never in the rollback walk -- only
+          the stages before it are. Cleanup on the stage that owns the state
+          therefore covers a failure in any *later* stage, but not a failure
+          part-way through the owning stage itself. If that matters, guard the
+          creation inside ``execute`` with its own ``try``. Measured in
+          test_stage_owns_its_rollback.py; do not assume otherwise.
         * **Delete only what this run brought into existence.** Rollback fires
           on ordinary validation refusals now, not just on unexpected
           exceptions, so a rollback that removes a directory the user supplied

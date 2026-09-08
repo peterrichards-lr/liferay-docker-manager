@@ -103,7 +103,15 @@ follow for anyone adding a stage:
   visits stages that executed, so cleanup parked on a later stage never fires
   for an earlier failure. `ldm import` leaked `.ldm_temp/import_<timestamp>/`
   for exactly that reason -- created by `ExtractionStage`, removed by
-  `BackupStateStage`, three stages further on.
+  `BackupStateStage`, three stages further on. That stage was dissolved in
+  LDM-#1635: its `execute` was an empty `pass` and it existed only to host
+  other stages' cleanup, so it was the rule's standing counter-example.
+- **A stage that raises does not roll itself back.** `executed_stages.append`
+  runs only after `execute` returns, so the failing stage is never in the
+  rollback walk. Owning the cleanup covers a failure in any *later* stage, not
+  a failure part-way through your own `execute` -- guard that with a `try`
+  inside `execute` if it matters. Measured, not assumed
+  (`test_stage_owns_its_rollback.py`).
 - **Delete only what this run created.** Rollback now fires on routine
   validation refusals, so removing a directory the user supplied is data loss,
   not cleanup. Record the fact when you create it -- `root_existed` in
