@@ -543,6 +543,32 @@ before moving anything**, naming each report and its platform — the same
 approach LDM-#1390 took to a version mismatch. Repeat runs of the *same*
 environment continue to supersede one another as before.
 
+### **A blank header field reads as `Unknown`, not as the next line**
+
+Every header field is parsed with a pattern bounded to its own line. That is
+worth stating because it was not always true: the patterns used `\s`, which
+matches a newline, so a **blank** field skipped the line break and captured the
+*following* header line (LDM-#1633).
+
+It was not hypothetical. `verify_e2e_refactor.ps1` does not populate
+`Platform:` on PowerShell 5.1 — `$PSVersionTable.OS` does not exist there — so
+the committed PowerShell 5.1 report recorded its platform as
+`PowerShell: 5.1.22621.6133 (Desktop)`, the line beneath it. Across the
+archive, 19 reports recorded a platform of `Binary: …\ldm.exe` and one recorded
+a Docker engine version of `running`.
+
+The canonical names and matrix rows were unaffected — the filename and the
+declared label carry the identity — but the collision guard above compares the
+identity each report *states about itself*, and that comparison must not be fed
+a string belonging to a different line.
+
+A field that is present but empty now reports `Unknown` (or nothing at all,
+where the caller has a fallback to fall through to, as `Docker:` does to the
+doctor section). The PowerShell 5.1 report's blank `Platform:` is a **report-side
+gap that remains open**: the `.ps1` should populate the field as the `.sh` half
+does. Until it does, that row's platform reads `Unknown` — which is accurate,
+where the previous value was not.
+
 ### **How a CI pass reaches the published matrix**
 
 On a **stable** tag push, the `sync-compatibility` job downloads the
