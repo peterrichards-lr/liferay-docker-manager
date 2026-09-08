@@ -2,6 +2,12 @@ import abc
 import logging
 from typing import Any
 
+# LDM-#1094's "idempotent no-op": the command found nothing to do because the
+# requested state already holds. It travels as a `SystemExit` like every other
+# refusal, but it is the only one that does not mean something failed --
+# see `Pipeline.run` (LDM-#1636).
+IDEMPOTENT_NO_OP_EXIT_CODE = 5
+
 
 class PipelineContext:
     """Shared state container for pipeline execution."""
@@ -86,6 +92,10 @@ class Pipeline:
           what every ``UI.die`` raises, and ``KeyboardInterrupt``. Rollback
           runs and the original is **re-raised unchanged**.
 
+        The one exception is ``SystemExit(5)``, the idempotent no-op of
+        LDM-#1094: it is re-raised **without** rolling back, because nothing
+        failed (LDM-#1636).
+
         The re-raise is the whole point (LDM-#1630). ``UI.die`` is
         ``UI.error(...)`` followed by ``sys.exit(exit_code)``, and this method
         used to catch only ``Exception`` -- which ``SystemExit`` is not -- so
@@ -121,6 +131,23 @@ class Pipeline:
                 # two mean "the process is stopping", and catching the rest
                 # (GeneratorExit, a bare BaseException from a C extension)
                 # would be interfering rather than cleaning up.
+                if isinstance(e, SystemExit) and e.code == IDEMPOTENT_NO_OP_EXIT_CODE:
+                    # LDM-#1636. Exit 5 is the one code in the contract that
+                    # stops the pipeline without anything having gone wrong:
+                    # per LDM-#1094 it means "nothing to do, it is already in
+                    # the requested state". Rolling back would undo work that
+                    # legitimately exists -- `RuntimeValidationStage` refuses
+                    # this way for an already-running project, two stages
+                    # after `ProjectInitializationStage` has registered it.
+                    #
+                    # It is not appended to `context.errors` either. A no-op is
+                    # not a failure, and that list is what a caller would
+                    # inspect to find out what went wrong.
+                    self.logger.debug(
+                        f"Stage {stage.name} reported an idempotent no-op "
+                        f"(exit {IDEMPOTENT_NO_OP_EXIT_CODE}); not rolling back"
+                    )
+                    raise
                 self.logger.error(f"Stage {stage.name} aborted: {e!r}", exc_info=True)
                 context.errors.append(e)
                 self._rollback(context)

@@ -114,7 +114,7 @@ wrong when writing automation or E2E assertions:
 > [!IMPORTANT]
 > **`5` (Idempotent No-Op) is only returned in non-interactive mode.**
 > `ldm run`/`ldm up` against an already-running project returns `5` *only* when
-> `-y`/`--non-interactive` is in effect (`ldm_core/pipelines/run.py:246`);
+> `-y`/`--non-interactive` is in effect (`ldm_core/pipelines/run.py:371`);
 > interactively it prompts to reconfigure and restart instead. Automation that
 > omits `-y` will hang on a prompt rather than receive the code.
 
@@ -181,4 +181,4 @@ up:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-31* | *Last Reviewed: 2026-08-31*
+*Last Updated: 2026-09-08* | *Last Reviewed: 2026-09-08*

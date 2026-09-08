@@ -99,9 +99,13 @@ def test_a_dying_stage_rolls_back_the_stages_that_succeeded():
     assert later.executed is False
 
 
-@pytest.mark.parametrize("code", [1, 2, 3, 4, 5, 126])
+@pytest.mark.parametrize("code", [1, 2, 3, 4, 126])
 def test_the_exit_code_survives_the_rollback(code):
-    """Every code in LDM's contract must reach the caller unchanged."""
+    """Every failing code in LDM's contract must reach the caller unchanged.
+
+    5 is absent on purpose: it is the idempotent no-op and does not roll back
+    at all (LDM-#1636). Its exit code is asserted separately, below.
+    """
     context = PipelineContext()
     pipeline = Pipeline(f"exit-{code}")
     first = _RecordingStage("First")
@@ -493,3 +497,112 @@ def test_run_rollback_still_removes_a_project_it_did_create(tmp_path):
     manager.safe_rmtree.assert_called_once_with(created)
     assert not created.exists()
     manager.unregister_project.assert_called_once_with("half-made")
+
+
+# --- The idempotent no-op, which is not a failure (LDM-#1636) --------------
+
+
+def test_an_idempotent_no_op_does_not_roll_anything_back():
+    """Exit 5 means "already in the requested state", so there is nothing to undo.
+
+    LDM-#1636. LDM-#1630 made `Pipeline.run` roll back on `SystemExit`, which
+    is right for a refusal and wrong for this one code: per LDM-#1094, exit 5
+    is `ldm run` finding the project already up. Rolling back would undo work
+    that legitimately exists -- and the stage that would run it,
+    `ProjectInitializationStage`, sits two stages before the refusal.
+    """
+    context = PipelineContext()
+    pipeline = Pipeline("no-op")
+
+    first = _RecordingStage("First")
+    second = _RecordingStage("Second")
+    for stage in (first, second, _DyingStage("NoOp", exit_code=5)):
+        pipeline.add_stage(stage)
+
+    with pytest.raises(SystemExit) as excinfo:
+        pipeline.run(context)
+
+    assert excinfo.value.code == 5, "the no-op exit code was not preserved"
+    assert first.rolled_back is False, "an idempotent no-op rolled back a stage"
+    assert second.rolled_back is False, "an idempotent no-op rolled back a stage"
+
+
+def test_an_idempotent_no_op_is_not_recorded_as_an_error():
+    """`context.errors` is where a caller looks to find out what went wrong.
+
+    Nothing went wrong, so nothing belongs there.
+    """
+    context = PipelineContext()
+    pipeline = Pipeline("no-op-errors")
+    pipeline.add_stage(_RecordingStage("First"))
+    pipeline.add_stage(_DyingStage("NoOp", exit_code=5))
+
+    with pytest.raises(SystemExit):
+        pipeline.run(context)
+
+    assert context.errors == []
+
+
+def test_the_no_op_exemption_is_keyed_on_the_code_not_on_being_a_systemexit():
+    """Guards against the fix being written too broadly.
+
+    Every other `SystemExit` must still roll back. A fix that skipped rollback
+    for `SystemExit` generally would pass the two tests above and silently
+    reinstate the whole of LDM-#1630.
+    """
+    # 0 and a bare `sys.exit()` are deliberately absent: no stage raises
+    # either, and pinning what they should do here would decide a question
+    # LDM-#1636 did not ask.
+    for code in (1, 2, 3, 4, 6, 50, 126):
+        context = PipelineContext()
+        pipeline = Pipeline(f"not-a-no-op-{code}")
+        first = _RecordingStage("First")
+        pipeline.add_stage(first)
+        pipeline.add_stage(_DyingStage("Refuser", exit_code=code))
+
+        with pytest.raises(SystemExit):
+            pipeline.run(context)
+
+        assert first.rolled_back is True, (
+            f"exit {code!r} was wrongly treated as an idempotent no-op"
+        )
+
+
+def test_the_real_already_running_refusal_rolls_nothing_back():
+    """The mechanism at its real site, not a stand-in for it.
+
+    Drives the actual `RuntimeValidationStage` through an actual `Pipeline`
+    with the actual `UI.die`, so what is asserted is the refusal LDM-#1094
+    added rather than a `SystemExit(5)` this test invented. Only
+    `DockerService.is_running` is stubbed -- that is the boundary that would
+    otherwise need a live container.
+    """
+    from ldm_core.pipelines.run import RunPipelineContext, RuntimeValidationStage
+
+    manager = MagicMock()
+    manager.non_interactive = True
+    manager.args.force = False
+    manager.args.no_up = False
+
+    context = RunPipelineContext(manager)
+    context.set("project_id", "already-up")
+    context.set("is_new_project", False)
+    context.set("is_restart", False)
+    context.set("no_up", False)
+    context.set("project_meta", {"container_name": "already-up"})
+
+    initialization = _RecordingStage("ProjectInitializationStand-In")
+    pipeline = Pipeline("run")
+    pipeline.add_stage(initialization)
+    pipeline.add_stage(RuntimeValidationStage())
+
+    with patch("ldm_core.docker_service.DockerService.is_running", return_value=True):
+        with pytest.raises(SystemExit) as excinfo:
+            pipeline.run(context)
+
+    assert excinfo.value.code == 5, (
+        "the already-running refusal no longer carries LDM-#1094's exit 5"
+    )
+    assert initialization.rolled_back is False, (
+        "the already-running no-op rolled back the initialization stage"
+    )
