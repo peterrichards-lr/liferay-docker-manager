@@ -716,7 +716,10 @@ function Test-LdmpManifestRefusal {
         [string]$LdmCmd,
         [string]$VenvPython,
         [string]$WorkDir,
-        [string]$ProjectName
+        [string]$ProjectName,
+        # Which corruption to build. Defaults to the LDM-#1522 shape so the
+        # existing callers are unchanged.
+        [string]$Shape = "trailing-junk"
     )
 
     $pkgSrc = Join-Path $WorkDir "ldmp-manifest-src"
@@ -727,18 +730,29 @@ function Test-LdmpManifestRefusal {
 
     $env:LDM_E2E_PKG_SRC = $pkgSrc
     $env:LDM_E2E_LDMP = $ldmp
-    # Valid JSON followed by a trailing line after the closing brace: the exact
-    # shape LDM-#1522 was reported against, and the one read_meta's non-strict
-    # path degrades to an empty dict.
+    $env:LDM_E2E_MANIFEST_SHAPE = $Shape
+    # Two corruptions, because they take different branches of read_meta.
+    # 'trailing-junk' is valid JSON followed by a line after the closing brace
+    # -- the exact shape LDM-#1522 was reported against, rejected by
+    # json.loads. 'html-error-page' is a download that 404'd and was saved
+    # without a status check; it does not start with '{', so it fell through to
+    # the legacy flat parser, which skipped every line without an '=' and
+    # handed back an empty dict -- strict raised nothing and the package
+    # imported (LDM-#1629).
     & $VenvPython -c @"
 import json, os, tarfile
 src = os.environ['LDM_E2E_PKG_SRC']
 out = os.environ['LDM_E2E_LDMP']
+shape = os.environ.get('LDM_E2E_MANIFEST_SHAPE', 'trailing-junk')
 os.makedirs(os.path.join(src, 'payload'), exist_ok=True)
-manifest = json.dumps({'tag': '7.4.13-u108', 'db_type': 'mysql',
-                       'github_repository': 'acme/widget'})
+if shape == 'html-error-page':
+    manifest = '<html><head><title>404 Not Found</title></head></html>\n'
+else:
+    manifest = json.dumps({'tag': '7.4.13-u108', 'db_type': 'mysql',
+                           'github_repository': 'acme/widget'})
+    manifest = manifest + '\ntrailing junk\n'
 with open(os.path.join(src, 'meta'), 'w', encoding='utf-8') as fh:
-    fh.write(manifest + '\ntrailing junk\n')
+    fh.write(manifest)
 dump = os.path.join(src, 'payload', 'dump.sql')
 with open(dump, 'w', encoding='utf-8') as fh:
     fh.write('SELECT 1;\n')
@@ -751,6 +765,7 @@ with tarfile.open(out, 'w:gz') as tar:
     $buildCode = $LASTEXITCODE
     Remove-Item Env:LDM_E2E_PKG_SRC -ErrorAction SilentlyContinue
     Remove-Item Env:LDM_E2E_LDMP -ErrorAction SilentlyContinue
+    Remove-Item Env:LDM_E2E_MANIFEST_SHAPE -ErrorAction SilentlyContinue
     if ($buildCode -ne 0) {
         return @{ Ok = $false; Message = "[ERROR] ERROR: could not build the .ldmp fixture." }
     }
@@ -789,13 +804,13 @@ with tarfile.open(out, 'w:gz') as tar:
     # and exited 1 on "VOLUME MOUNTING IS BROKEN", which a bare code check would
     # have called a pass.
     if ($code -ne 1) {
-        return @{ Ok = $false; Message = "[ERROR] ERROR: expected exit 1 (validation) for an unparseable .ldmp manifest, got ${code}.`n   Output was: ${out}" }
+        return @{ Ok = $false; Message = "[ERROR] ERROR: expected exit 1 (validation) for an unparseable .ldmp manifest (${Shape}), got ${code}.`n   Output was: ${out}" }
     }
     if ($out -notmatch "manifest 'meta' could not be parsed") {
-        return @{ Ok = $false; Message = "[ERROR] ERROR: the .ldmp was refused with exit 1, but not for the manifest parse.`n   Output was: ${out}" }
+        return @{ Ok = $false; Message = "[ERROR] ERROR: the .ldmp was refused with exit 1, but not for the manifest parse (${Shape}).`n   Output was: ${out}" }
     }
 
-    return @{ Ok = $true; Message = "[SUCCESS] Unparseable .ldmp manifest refused (exit 1, before any project was created)." }
+    return @{ Ok = $true; Message = "[SUCCESS] Unparseable .ldmp manifest refused (${Shape}; exit 1, before any project was created)." }
 }
 
 function Log-AndRun {
@@ -901,6 +916,20 @@ try {
         Write-Verdict $ldmpRefusal.Message
     } else {
         Write-Host $ldmpRefusal.Message -ForegroundColor Red
+        exit 1
+    }
+
+    # LDM-#1629: the same refusal, on the manifest shape the strict read used
+    # to miss entirely. Run separately rather than folded into the check above
+    # because the two corruptions take different branches of read_meta -- the
+    # one above fails in json.loads, this one has to be caught by the flat
+    # parser -- so a single fixture cannot cover both.
+    Write-Host ">> Verifying the .ldmp manifest refusal on a saved HTTP error page (LDM-#1629)..."
+    $ldmpHtmlRefusal = Test-LdmpManifestRefusal -LdmCmd $LDM_CMD -VenvPython $VENV_PYTHON -WorkDir $LDM_WORKSPACE -ProjectName $LDMP_REFUSAL_PROJECT -Shape "html-error-page"
+    if ($ldmpHtmlRefusal.Ok) {
+        Write-Verdict $ldmpHtmlRefusal.Message
+    } else {
+        Write-Host $ldmpHtmlRefusal.Message -ForegroundColor Red
         exit 1
     }
 

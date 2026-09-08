@@ -269,6 +269,39 @@ class TestAnUnparseableManifestIsRefused(unittest.TestCase):
                 "the refusal left its extraction directory behind",
             )
 
+    def test_a_downloaded_404_page_aborts_the_import(self):
+        """LDM-#1629: the manifest shape the strict read used to miss.
+
+        The refusal above works because trailing junk after a closing brace
+        still starts with `{`, so `json.loads` raised. A saved 404 page does
+        not, so it went to the legacy flat parser, which skipped every line
+        without an `=` and handed back `{}` -- `strict=True` raised nothing
+        and this package imported. Measured against master at f0c85cdf: it
+        was not aborted, and the stage that should have refused it wrote a
+        project carrying neither `tag` nor `db_type`.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            outcome = _import(
+                Path(d),
+                "<html><head><title>404 Not Found</title></head></html>\n",
+                ["data/dump.sql"],
+            )
+
+            self.assertTrue(
+                outcome.aborted,
+                "an HTML error page was accepted as a package manifest",
+            )
+            self.assertEqual(outcome.exit_code, 1)
+            self.assertIn(
+                "could not be parsed",
+                " ".join(outcome.errors),
+                f"refused for the wrong reason: {outcome.errors}",
+            )
+            self.assertEqual(outcome.restore_calls, [])
+            self.assertIsNone(
+                outcome.project_meta, "a refused package still wrote project metadata"
+            )
+
     def test_a_flat_format_manifest_is_still_accepted(self):
         """`read_meta` supports a legacy `k=v` manifest, and strict must too.
 

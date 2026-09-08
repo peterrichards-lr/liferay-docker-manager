@@ -2103,6 +2103,24 @@ def try_parse_json(val_str: str) -> Any:
     return val_str
 
 
+def flat_meta_significant_lines(content: str) -> list[str]:
+    """The lines of a legacy flat meta file that were meant to carry a key.
+
+    Blank lines and `#` comments are part of the flat format and are expected
+    to yield nothing, so a file made only of them is *silent*, not malformed.
+    Every other line was supposed to hold a key and an `=` sign.
+
+    LDM-#1629: this is the distinction between "this meta file says nothing"
+    and "this is not a meta file", which the legacy parser could not draw --
+    it skipped any line without an `=`, so a downloaded 404 page parsed to {}.
+    """
+    return [
+        stripped
+        for line in content.splitlines()
+        if (stripped := line.strip()) and not stripped.startswith("#")
+    ]
+
+
 class MetaReadError(Exception):
     """A metadata file exists but could not be parsed.
 
@@ -2118,7 +2136,21 @@ class MetaReadError(Exception):
 
 
 def read_meta(path, strict=False):  # noqa: C901, PLR0912, PLR0915
-    """Reads LDM project metadata from a file (supports JSON and Flat formats)."""
+    """Reads LDM project metadata from a file (supports JSON and Flat formats).
+
+    `path` is the metadata **file**, not the project directory -- use
+    `resolve_meta_file_path()` or `BaseHandler.read_meta()` if you have a root.
+
+    Three outcomes, and they are deliberately distinct (LDM-#1629):
+
+    - **Absent** -- no file. `{}` non-strict, `MetaReadError` under strict.
+    - **Silent** -- present but holding nothing to parse (empty, or only
+      blanks and `#` comments). Always `{}`, in both modes: a zero-byte meta
+      is a real state, and `snapshot/archive.py` reads its truthiness as
+      "does this project carry metadata".
+    - **Unparseable** -- present, holding content, and in neither supported
+      format. `MetaReadError` under strict; a warning and `{}` otherwise.
+    """
     meta: dict[str, Any] = {}
     path = Path(path)
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
@@ -2161,37 +2193,52 @@ def read_meta(path, strict=False):  # noqa: C901, PLR0912, PLR0915
 
     try:
         content = path.read_text(encoding="utf-8").strip()
-        is_legacy = False
         if content.startswith("{"):
             meta = json.loads(content)
         else:
-            is_legacy = True
-            with path.open(encoding="utf-8") as f:
-                for line in f:
-                    stripped_line = line.strip()
-                    if (
-                        stripped_line
-                        and not stripped_line.startswith("#")
-                        and "=" in stripped_line
-                    ):
-                        k, v_str = stripped_line.split("=", 1)
-                        k, v_str = k.strip(), v_str.strip()
-                        v: Any = v_str
-                        if v_str == "None":
-                            v = None
-                        elif v_str.lower() == "true":
-                            v = True
-                        elif v_str.lower() == "false":
-                            v = False
-                        else:
-                            v = try_parse_json(v_str)
-                        meta[k] = v
-            if is_legacy:
+            for line in content.splitlines():
+                stripped_line = line.strip()
+                if (
+                    stripped_line
+                    and not stripped_line.startswith("#")
+                    and "=" in stripped_line
+                ):
+                    k, v_str = stripped_line.split("=", 1)
+                    k, v_str = k.strip(), v_str.strip()
+                    v: Any = v_str
+                    if v_str == "None":
+                        v = None
+                    elif v_str.lower() == "true":
+                        v = True
+                    elif v_str.lower() == "false":
+                        v = False
+                    else:
+                        v = try_parse_json(v_str)
+                    meta[k] = v
+            if meta:
                 # Silently auto-upgrade the legacy flat file to JSON format
                 try:
                     write_meta(path, meta)
                 except Exception:
                     pass
+            elif flat_meta_significant_lines(content):
+                # LDM-#1629: the file had lines that were supposed to be
+                # `key=value` and none of them were, so this is not a meta
+                # file in either format -- a downloaded 404 page being the
+                # case that matters. Raised into the handler below so strict
+                # and non-strict callers are dispatched exactly as they
+                # already are for malformed JSON: strict gets a
+                # MetaReadError, non-strict gets a warning and {}.
+                #
+                # Deliberately *before* the auto-upgrade above rather than
+                # after: writing {} over content LDM could not parse
+                # destroys the evidence, and until now it did (measured on
+                # `<html>404</html>`, which was replaced with `{}` on read).
+                # The JSON branch has always left an unparseable file alone.
+                raise MetaReadError(
+                    "content is in neither the JSON object format nor the "
+                    "legacy flat key-value format"
+                )
     except Exception as e:
         if strict:
             raise MetaReadError(f"Could not read metadata at {path}: {e}") from e

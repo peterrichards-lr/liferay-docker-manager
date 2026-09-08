@@ -78,6 +78,17 @@ Two notes on the differences:
   restored into whichever engine the defaults happened to pick. If you hit this,
   fix the `meta` file inside the archive or rebuild the package with
   `ldm package` on this version of LDM.
+* **"Cannot be parsed" now includes content that is not metadata at all.**
+  The manifest may be either JSON or the legacy flat `key` + `=` + `value`
+  format, and until LDM-#1629 anything that was neither — most importantly a
+  saved HTTP error page, from a download that 404'd and was written without a
+  status check — was read as an *empty* manifest rather than a broken one. On
+  the GitHub Release path that surfaced as the misleading
+  `Security Violation: Manifest is missing 'github_repository'`. It is now
+  refused as the parse failure it is, and the file is no longer overwritten
+  by LDM's format auto-upgrade, so the archive still contains the evidence.
+  A `meta` file that is genuinely *empty* — zero bytes, or nothing but blank
+  lines and `#` comments — is still read as empty, not refused.
 
 ---
 
@@ -181,4 +192,4 @@ This scaffolds a `.github/workflows/ldm-package-release.yml` file which:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-07* | *Last Reviewed: 2026-09-07*
+*Last Updated: 2026-09-08* | *Last Reviewed: 2026-09-08*
