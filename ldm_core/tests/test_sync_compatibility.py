@@ -739,3 +739,192 @@ class TestNameCollisionGuard:
             sorted(p.name for p in sync_compatibility.DEFAULT_RESULTS_DIR.rglob("*"))
             == real_before
         )
+
+
+class TestProviderDerivedFromTheDeclaredLabel:
+    """LDM-#1631: the Docker Provider column was derived by looking for the
+    literal word "linux" in the report's `Platform:` line, falling back to
+    "Unknown".
+
+    Every containerised verify-linux arm satisfied that only by luck, because
+    each image's /etc/os-release PRETTY_NAME happens to contain the word --
+    `Fedora Linux 44 (Container Image)`, `Rocky Linux 9.3 (Blue Onyx)`,
+    `Alpine Linux v3.24`, `Debian GNU/Linux 12 (bookworm)` (all read off the
+    v2.21.0 tag run's artifacts, run 34063433007). Alpine is one upstream
+    rewording away from `Alpine 3.25`, at which point the published,
+    user-facing matrix grows a row reading provider `Unknown` and the canonical
+    report is renamed ...-alpine-3.25-unknown-pass.txt.
+
+    LDM-#1614 already plumbs the distro identity through explicitly as an
+    `Env Label:` header, so the provider can be derived from what the runner
+    declared instead of from an upstream vendor's marketing string.
+    """
+
+    def teardown_method(self):
+        UI.QUIET_MODE = False
+        sync_compatibility.ARCHIVE_STALE = False
+        sync_compatibility.DRY_RUN = False
+
+    # Read off the five artifacts of run 34063433007 (the v2.21.0 tag run), not
+    # invented: `gh run download 34063433007` then the `Platform:` header of
+    # each verify-*.txt. The same five strings are recorded in
+    # test_ci_verification_reporting.OBSERVED_PLATFORM_LINES.
+    REAL_CONTAINERISED_ARMS = (
+        ("fedora", "Fedora Linux 44 (Container Image)"),
+        ("rockylinux", "Rocky Linux 9.3 (Blue Onyx)"),
+        ("alpine", "Alpine Linux v3.24"),
+        ("debian", "Debian GNU/Linux 12 (bookworm)"),
+    )
+
+    def test_a_platform_string_without_the_word_linux_still_names_the_provider(
+        self, tmp_path
+    ):
+        """The regression this exists for. `Alpine 3.25` is the shortening the
+        issue names; the label says which distro, so the provider no longer
+        depends on the vendor spelling it out."""
+        report = _linux_report(
+            tmp_path,
+            "verify-raw-20260906-000000-pass.txt",
+            "Alpine 3.25",
+            sync_compatibility.VERSION,
+            env_label="alpine",
+        )
+        meta = sync_compatibility.get_report_metadata(report)
+        assert meta["provider"] == "Native Docker"
+        assert meta["internal_slug"] == "linux-workstation-alpine-3.25-native-docker"
+
+    @pytest.mark.parametrize(("label", "platform"), REAL_CONTAINERISED_ARMS)
+    def test_the_real_containerised_arms_resolve_exactly_as_before(
+        self, tmp_path, label, platform
+    ):
+        """Preservation, not a new capability: these four already resolved to
+        Native Docker off the word "linux", and must still."""
+        report = _linux_report(
+            tmp_path,
+            "verify-raw-20260906-000000-pass.txt",
+            platform,
+            sync_compatibility.VERSION,
+            env_label=label,
+        )
+        assert sync_compatibility.get_report_metadata(report)["provider"] == (
+            "Native Docker"
+        )
+
+    def test_an_unlabelled_report_still_falls_back_to_the_platform_string(
+        self, tmp_path
+    ):
+        """The label is an additional signal, never a replacement. A contributor
+        running scripts/verify_e2e_refactor.sh by hand sets no LDM_ENV_LABEL, so
+        removing the string match would have broken every hand-run report and
+        renamed the two committed Linux rows."""
+        report = _linux_report(
+            tmp_path,
+            "verify-raw-20260906-000000-pass.txt",
+            "Alpine Linux v3.24",
+            sync_compatibility.VERSION,
+        )
+        meta = sync_compatibility.get_report_metadata(report)
+        assert meta["provider"] == "Native Docker"
+        assert meta["internal_slug"] == "linux-workstation-linux-native-docker"
+
+    def test_a_hand_run_with_no_label_is_never_refused(self, tmp_path):
+        """With neither a label nor the word "linux" there is nothing to derive
+        from, so the historical "Unknown" stands -- deliberately. Refusing, or
+        guessing, would break the hand-run path that has no LDM_ENV_LABEL."""
+        results = tmp_path / "results"
+        results.mkdir()
+        table = tmp_path / "compatibility.md"
+        shutil.copy(sync_compatibility.DEFAULT_TABLE_FILE, table)
+        report = _linux_report(
+            results,
+            "verify-raw-20260906-000000-pass.txt",
+            "Alpine 3.25",
+            sync_compatibility.VERSION,
+        )
+
+        meta = sync_compatibility.get_report_metadata(report)
+        assert meta["arch"] == "Linux Workstation"
+        assert meta["provider"] == "Unknown"
+
+        with _no_docs_sync():
+            sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        assert list(results.glob("*.txt")), "the hand-run report must still sync"
+
+    @pytest.mark.parametrize(
+        ("filename", "platform", "label", "expected_provider"),
+        [
+            # Real platform lines from run 34063433007's macOS and Windows
+            # artifacts. A label must not pull any of these onto the Linux
+            # branch: the macOS (Colima/OrbStack/Docker Desktop), Windows
+            # (Docker Desktop) and WSL2 rows are published documentation.
+            (
+                "verify-apple-silicon-macos-16-tahoe-colima-20260906-2215-pass.txt",
+                "darwin25",
+                "macos",
+                "Colima",
+            ),
+            (
+                "verify-windows-pc-windows-11-docker-desktop-20260906-2215-pass.txt",
+                "Microsoft Windows 10.0.26100",
+                "windows",
+                "Docker Desktop",
+            ),
+            (
+                "verify-windows-pc-windows-11-native-wsl2-20260906-2215-pass.txt",
+                "Ubuntu 24.04.4 LTS",
+                "wsl2",
+                "Native WSL2",
+            ),
+        ],
+    )
+    def test_a_label_does_not_pull_a_non_linux_row_onto_the_linux_branch(
+        self, tmp_path, filename, platform, label, expected_provider
+    ):
+        report = _linux_report(
+            tmp_path,
+            filename,
+            platform,
+            sync_compatibility.VERSION,
+            env_label=label,
+        )
+        assert (
+            sync_compatibility.get_report_metadata(report)["provider"]
+            == expected_provider
+        )
+
+    def test_the_published_row_and_canonical_filename_say_native_docker(self, tmp_path):
+        """End to end, through a sandboxed sync (LDM-#1391): the visible effect
+        of the defect is a matrix row and a report filename, so assert those."""
+        results = tmp_path / "results"
+        results.mkdir()
+        table = tmp_path / "compatibility.md"
+        shutil.copy(sync_compatibility.DEFAULT_TABLE_FILE, table)
+        _linux_report(
+            results,
+            "verify-raw-20260906-000000-pass.txt",
+            "Alpine 3.25",
+            sync_compatibility.VERSION,
+            env_label="alpine",
+        )
+        real_before = sorted(
+            p.name for p in sync_compatibility.DEFAULT_RESULTS_DIR.rglob("*")
+        )
+
+        with _no_docs_sync():
+            sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        assert [p.name for p in results.glob("*.txt")] == [
+            "verify-linux-workstation-alpine-3.25-native-docker-pass.txt"
+        ]
+        row = next(
+            line
+            for line in table.read_text().splitlines()
+            if "Alpine 3.25" in line and line.startswith("|")
+        )
+        assert "**Native Docker**" in row
+        assert "Unknown" not in row
+        assert (
+            sorted(p.name for p in sync_compatibility.DEFAULT_RESULTS_DIR.rglob("*"))
+            == real_before
+        ), "LDM-#1391: the real verification record must be untouched"

@@ -596,6 +596,21 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
         ("windows" in p_low or "win32" in p_low) and "linux" not in p_low
     ) or ("windows" in fn_low and "wsl" not in fn_low)
 
+    # LDM-#1631: the report declared its own environment identity (LDM-#1614),
+    # and the three branches below have already ruled out macOS, WSL2 and native
+    # Windows -- so a declared label reaching the Linux branch is a Linux arm
+    # whatever its vendor put in PRETTY_NAME. Before this, the only Linux signal
+    # was the literal word "linux" in the platform string, and all four
+    # containerised CI arms satisfied it only by luck: `Alpine Linux v3.24`
+    # shortened upstream to `Alpine 3.25` would have published a user-facing
+    # matrix row reading provider `Unknown`, and renamed the canonical report to
+    # verify-linux-workstation-alpine-3.25-unknown-pass.txt.
+    #
+    # It is an additional signal, never a replacement: a contributor running
+    # scripts/verify_e2e_refactor.sh by hand sets no LDM_ENV_LABEL, so the
+    # string match stays and their report resolves exactly as it always has.
+    declares_own_env = bool(env_label)
+
     # 4.1 Force Provider standardization
     if is_mac:
         if provider in {"Unknown", "Docker Desktop"}:
@@ -619,7 +634,9 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
             provider = "Native WSL2"
     elif is_windows_native and provider in {"Unknown", "desktop-linux"}:
         provider = "Docker Desktop"
-    elif (is_fedora or is_ubuntu or "linux" in p_low) and provider in {
+    elif (
+        is_fedora or is_ubuntu or declares_own_env or "linux" in p_low
+    ) and provider in {
         "Unknown",
         "desktop-linux",
     }:
