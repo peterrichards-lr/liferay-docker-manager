@@ -804,6 +804,9 @@ verify_ldmp_manifest_refusal() {
     local ldm_cmd="$1"
     local work_dir="$2"
     local project_name="$3"
+    # Which corruption to build. Defaults to the LDM-#1522 shape so the
+    # existing three-argument callers are unchanged.
+    local shape="${4:-trailing-junk}"
 
     local pkg_src="${work_dir}/ldmp-manifest-src"
     local ldmp="${work_dir}/bad-manifest.ldmp"
@@ -811,13 +814,25 @@ verify_ldmp_manifest_refusal() {
     rm -rf "$pkg_src" "$ldmp"
     mkdir -p "${pkg_src}/payload"
 
-    # Valid JSON followed by a trailing line after the closing brace: the exact
-    # shape LDM-#1522 was reported against, and the one read_meta's non-strict
-    # path degrades to {}. Built with tar/printf rather than the venv python so
-    # the fixture has no dependency of its own.
-    printf '%s\n%s\n' \
-        '{"tag":"7.4.13-u108","db_type":"mysql","github_repository":"acme/widget"}' \
-        'trailing junk' >"${pkg_src}/meta"
+    # Built with tar/printf rather than the venv python so the fixture has no
+    # dependency of its own.
+    if [ "$shape" = "html-error-page" ]; then
+        # LDM-#1629: a download that 404s and is saved without a status check.
+        # This one does NOT start with `{`, so it never reached json.loads --
+        # it fell through to the legacy flat parser, which skipped every line
+        # without an `=` and handed back {}. strict=True raised nothing and
+        # the package imported. Distinct from the shape below, which json.loads
+        # always rejected, so it is a separate run rather than a variant.
+        printf '%s\n' '<html><head><title>404 Not Found</title></head></html>' \
+            >"${pkg_src}/meta"
+    else
+        # Valid JSON followed by a trailing line after the closing brace: the
+        # exact shape LDM-#1522 was reported against, and the one read_meta's
+        # non-strict path degrades to {}.
+        printf '%s\n%s\n' \
+            '{"tag":"7.4.13-u108","db_type":"mysql","github_repository":"acme/widget"}' \
+            'trailing junk' >"${pkg_src}/meta"
+    fi
     echo "SELECT 1;" >"${pkg_src}/payload/dump.sql"
     tar -czf "${pkg_src}/files.tar.gz" -C "${pkg_src}/payload" dump.sql || return 1
     tar -czf "$ldmp" -C "$pkg_src" meta files.tar.gz || return 1
@@ -848,17 +863,17 @@ verify_ldmp_manifest_refusal() {
     # and exited 1 on "VOLUME MOUNTING IS BROKEN", which a bare code check would
     # have called a pass.
     if [ "$code" -ne 1 ]; then
-        echo "❌ ERROR: expected exit 1 (validation) for an unparseable .ldmp manifest, got ${code}."
+        echo "❌ ERROR: expected exit 1 (validation) for an unparseable .ldmp manifest (${shape}), got ${code}."
         echo "   Output was: ${out}"
         return 1
     fi
     if ! echo "$out" | grep -q "manifest 'meta' could not be parsed"; then
-        echo "❌ ERROR: the .ldmp was refused with exit 1, but not for the manifest parse."
+        echo "❌ ERROR: the .ldmp was refused with exit 1, but not for the manifest parse (${shape})."
         echo "   Output was: ${out}"
         return 1
     fi
 
-    echo "✅ Unparseable .ldmp manifest refused (exit 1, before any project was created)."
+    echo "✅ Unparseable .ldmp manifest refused (${shape}; exit 1, before any project was created)."
     return 0
 }
 
@@ -867,6 +882,19 @@ if LDMP_REFUSAL_OUT=$(verify_ldmp_manifest_refusal "$LDM_CMD" "$LDM_WORKSPACE" "
     report_ok "$LDMP_REFUSAL_OUT"
 else
     echo "$LDMP_REFUSAL_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+# LDM-#1629: the same refusal, on the manifest shape the strict read used to
+# miss entirely. Run separately rather than folded into the check above because
+# the two corruptions take different branches of read_meta -- the one above
+# fails in json.loads, this one has to be caught by the flat parser -- so a
+# single fixture cannot cover both.
+echo ">> Verifying the .ldmp manifest refusal on a saved HTTP error page (LDM-#1629)..."
+if LDMP_HTML_REFUSAL_OUT=$(verify_ldmp_manifest_refusal "$LDM_CMD" "$LDM_WORKSPACE" "$LDMP_REFUSAL_PROJECT" "html-error-page"); then
+    report_ok "$LDMP_HTML_REFUSAL_OUT"
+else
+    echo "$LDMP_HTML_REFUSAL_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
 

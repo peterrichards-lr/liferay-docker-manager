@@ -731,14 +731,38 @@ PARSE_REFUSAL = "Invalid LDM Package: manifest 'meta' could not be parsed. Extra
 WRONG_REASON = "FATAL: VOLUME MOUNTING IS BROKEN"
 
 
-def _run_bash_ldmp_refusal(work, ldm_path):
+def _capturing_stub_ldm(directory, exit_code, message, capture_to):
+    """A stub `ldm` that also writes out the manifest of the .ldmp it was given.
+
+    LDM-#1629 added a `shape` argument that changes which corruption the check
+    builds, and a parameter that silently did nothing would leave the new
+    assertion passing against unfixed code. The only way to observe what was
+    built is from inside the fake `ldm`: the function tears its fixture down
+    before it returns, deliberately, so nothing is inspectable afterwards.
+    """
+    path = directory / "ldm"
+    path.write_text(
+        "#!/bin/sh\n"
+        'if [ "$2" = "import" ]; then\n'
+        f'  tar -xzOf "$3" meta >"{capture_to}" 2>/dev/null || true\n'
+        "fi\n"
+        f'echo "{message}"\n'
+        f"exit {exit_code}\n"
+    )
+    path.chmod(0o755)
+    return path
+
+
+def _run_bash_ldmp_refusal(work, ldm_path, shape=None):
     func = _extract_function(
         BASH_SCRIPT,
         re.compile(r"^verify_ldmp_manifest_refusal\s*\(\)\s*\{.*?^\}", re.M | re.S),
     )
+    shape_arg = f" '{shape}'" if shape else ""
     script = (
         f"{func}\n"
-        f"verify_ldmp_manifest_refusal '{ldm_path}' '{work}' 'ldmp-refusal-unit'\n"
+        f"verify_ldmp_manifest_refusal '{ldm_path}' '{work}' 'ldmp-refusal-unit'"
+        f"{shape_arg}\n"
     )
     return subprocess.run(
         ["bash", "-c", script], capture_output=True, text=True, check=False
@@ -810,6 +834,50 @@ class TestBashLdmpManifestRefusal(unittest.TestCase):
                     [],
                     "the check left its fixture behind",
                 )
+
+    def test_the_shape_argument_changes_the_manifest_that_is_built(self):
+        """LDM-#1629: the two corruptions must really be two corruptions.
+
+        The `shape` argument exists because the shapes take different branches
+        of `read_meta` -- trailing junk after a closing brace is rejected by
+        `json.loads`, while a saved HTTP error page has to be caught by the
+        flat parser. If the argument were ignored, the new check would build
+        the old fixture and assert nothing new, so this observes what the
+        function actually handed to `ldm`.
+        """
+        expectations = (
+            (None, "{"),
+            ("trailing-junk", "{"),
+            ("html-error-page", "<html>"),
+        )
+        for shape, prefix in expectations:
+            with self.subTest(shape=shape), tempfile.TemporaryDirectory() as d:
+                work = Path(d) / "workspace"
+                work.mkdir()
+                captured = Path(d) / "captured-meta"
+                stub = _capturing_stub_ldm(Path(d), 1, PARSE_REFUSAL, captured)
+                res = _run_bash_ldmp_refusal(work, stub, shape=shape)
+
+                self.assertEqual(res.returncode, 0, res.stdout)
+                self.assertTrue(
+                    captured.exists(), "the stub never saw a manifest at all"
+                )
+                self.assertTrue(
+                    captured.read_text(encoding="utf-8").startswith(prefix),
+                    f"shape {shape!r} built the wrong manifest: "
+                    f"{captured.read_text(encoding='utf-8')!r}",
+                )
+
+    def test_the_failure_message_names_the_shape(self):
+        """Two runs of one check need to be distinguishable when one fails."""
+        with tempfile.TemporaryDirectory() as d:
+            work = Path(d) / "workspace"
+            work.mkdir()
+            stub = _stub_ldm(Path(d), 0, "imported fine")
+            res = _run_bash_ldmp_refusal(work, stub, shape="html-error-page")
+
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("html-error-page", res.stdout)
 
 
 @unittest.skipUnless(_powershell_binaries(), "no PowerShell available")
