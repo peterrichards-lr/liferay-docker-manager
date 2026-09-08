@@ -111,6 +111,24 @@ class TestFragments(unittest.TestCase):
         self.mock_req = self.req_patcher.start()
         self.mock_req.return_value = MagicMock(status_code=200)
 
+        # LDM-#1644: `requests.get` was the only transport mocked here, but the
+        # fragments Headless calls go through `urllib.request.urlopen`
+        # (runtime/fragments.py:582). Any test in this class reaching the API
+        # phase therefore opened a REAL socket to
+        # http://localhost:<liferay port>. On a machine with a Liferay running
+        # there -- a local bundle, or another project -- the request landed on
+        # it: `_patch_fragment_overrides` is a write, and `_api_request`
+        # swallows every exception, so nothing ever reported it. The suite was
+        # green both ways, and took 19m40s instead of seconds.
+        #
+        # Patched for the whole class rather than per test, so a future test
+        # cannot reintroduce the leak by omitting a decorator. Tests needing
+        # specific responses still patch `urllib.request.urlopen` themselves;
+        # a method-level patch simply replaces this one for its duration.
+        self.urlopen_patcher = patch("urllib.request.urlopen")
+        self.mock_urlopen = self.urlopen_patcher.start()
+        self.mock_urlopen.return_value.__enter__.return_value.read.return_value = b"{}"
+
         self.update_patcher = patch(
             "ldm_core.diagnostics.doctor.check_for_updates", return_value=(None, None)
         )
@@ -121,6 +139,7 @@ class TestFragments(unittest.TestCase):
 
     def tearDown(self):
         self.req_patcher.stop()
+        self.urlopen_patcher.stop()
         self.update_patcher.stop()
 
     @patch("ldm_core.ui.UI.debug")
@@ -910,15 +929,30 @@ class TestFragments(unittest.TestCase):
                 patch("ldm_core.ui.UI.die") as mock_die,
                 patch("ldm_core.ui.UI.warning"),
             ):
-                # Run — if "ignore" works it won't die; it will proceed to API
-                # (which will fail quickly since there's no real Liferay).
-                try:
-                    self.handler.handler.fragments._patch_fragment_overrides(
-                        project_meta, paths
-                    )
-                except Exception:
-                    pass
+                # LDM-#1644: this used to read "it will proceed to API (which
+                # will fail quickly since there's no real Liferay)" and swallow
+                # everything with `except Exception: pass`. That is an
+                # assumption about the developer's machine, not about the code,
+                # and it was false on any host running a Liferay -- the call
+                # went to the real one. It also meant the test passed whether
+                # the API phase was reached or execution stopped for a wholly
+                # unrelated reason, so it never really tested the ignore policy.
+                #
+                # The transport is mocked in setUp now, so nothing leaves the
+                # process, and reaching the API phase is asserted rather than
+                # hoped for.
+                self.handler.handler.fragments._patch_fragment_overrides(
+                    project_meta, paths
+                )
+
                 mock_die.assert_not_called()
+                self.assertTrue(
+                    self.mock_urlopen.called,
+                    "the 'ignore' policy must let execution continue past "
+                    "validation into the API phase; nothing called the "
+                    "Headless transport, so this test would pass even if "
+                    "execution had stopped for an unrelated reason (LDM-#1644)",
+                )
 
     @patch("time.sleep")
     def test_namespaced_fragment_key_matching(self, mock_sleep):
