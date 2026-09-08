@@ -410,9 +410,46 @@ def anonymize_content(content):
     home = str(Path.home())
     content = content.replace(home, "[HOME]")
     # Redact hostname if detected in report headers
-    content = re.sub(r"Hostname:\s+[^\n]+", "Hostname:  [ANONYMIZED]", content)
+    # LDM-#1633: `[ \t]`, not `\s`. `\s` crosses the newline, so a blank
+    # `Hostname:`/`Binary:` would match through the line break and REPLACE the
+    # following header line with the redaction marker -- deleting it from the
+    # archived report rather than merely misreading it. No committed report has
+    # a blank one today, so this is latent, not observed.
+    content = re.sub(r"Hostname:[ \t]+[^\n]*", "Hostname:  [ANONYMIZED]", content)
     # Redact binary path
-    return re.sub(r"Binary:\s+[^\n]+", "Binary:    [ANONYMIZED]", content)
+    return re.sub(r"Binary:[ \t]+[^\n]*", "Binary:    [ANONYMIZED]", content)
+
+
+def _header_value(pattern, content, flags=0):
+    r"""Returns a report header field's value, or None if absent or blank.
+
+    LDM-#1633. Every field here was read with `Field:\s+([^\n]+)`, and `\s`
+    matches a newline -- so against a *blank* field the whitespace class skips
+    the line break and the capture takes the NEXT header line. The committed
+    PowerShell 5.1 report recorded its platform as
+    `'PowerShell: 5.1.22621.6133 (Desktop)'` for exactly this reason (the .ps1
+    half does not populate `Platform:`), and 20 archived reports carry a value
+    lifted off the following line -- 19 platforms reading
+    `'Binary: C:\\Users\\...\\ldm.exe'`, and one Docker engine version
+    reading `'running'`.
+
+    Callers pass `[ \t]` rather than `\s`, so a capture cannot leave its own
+    line. This helper then collapses the two ways a field can carry nothing --
+    absent, or present but empty -- into `None`, so a blank field falls through
+    to the caller's fallback instead of yielding an empty string. Without that
+    the tightened pattern would trade a wrong value for a blank one, since
+    these headers are space-padded and `[ \t]+` leaves the padding in the
+    capture.
+
+    Why it matters beyond a mis-read: LDM-#1614 made `sync_compatibility.py`
+    refuse on a canonical-name collision, and that refusal keys on the identity
+    each report states about itself. That comparison must not be fed a string
+    taken from a different line.
+    """
+    match = re.search(pattern, content, flags)
+    if not match:
+        return None
+    return match.group(1).strip() or None
 
 
 def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
@@ -445,8 +482,7 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
     status_slug = "pass" if passed else "fail"
 
     # 2. Extract Timestamp
-    ts_match = re.search(r"Timestamp:\s+([^\n]+)", content)
-    timestamp_str = ts_match.group(1).strip() if ts_match else ""
+    timestamp_str = _header_value(r"Timestamp:[ \t]+([^\n]+)", content) or ""
     dt = None
     if timestamp_str:
         try:
@@ -480,33 +516,31 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
         dt = datetime.fromtimestamp(report_path.stat().st_mtime)
 
     # 3. Extract Platform/OS info
-    platform_match = re.search(r"Platform\s+(?:✅|\[OK\])\s+([^\n]+)", content)
-    if not platform_match:
-        platform_match = re.search(r"Platform:\s+([^\n]+)", content)
-
-    platform_str = platform_match.group(1).strip() if platform_match else "Unknown"
+    platform_str = (
+        _header_value(r"Platform[ \t]+(?:✅|\[OK\])[ \t]+([^\n]+)", content)
+        or _header_value(r"Platform:[ \t]+([^\n]+)", content)
+        or "Unknown"
+    )
 
     # 4. Extract Docker Provider
-    provider_match = re.search(r"Docker Provider\s+(?:✅|\[OK\])\s+([^\n]+)", content)
-    if not provider_match:
-        provider_match = re.search(r"Docker Provider\s+([^\n]+)", content)
-
-    provider = provider_match.group(1).strip() if provider_match else "Unknown"
+    provider = (
+        _header_value(r"Docker Provider[ \t]+(?:✅|\[OK\])[ \t]+([^\n]+)", content)
+        or _header_value(r"Docker Provider[ \t]+([^\n]+)", content)
+        or "Unknown"
+    )
 
     # 4. Extract LDM Version
     version = "Unknown"
-    version_match = re.search(r"Version:\s+ldm\s+([^\n]+)", content)
-    if not version_match:
-        version_match = re.search(r"Version:\s+([^\n]+)", content)
+    version_cand = _header_value(
+        r"Version:[ \t]+ldm[ \t]+([^\n]+)", content
+    ) or _header_value(r"Version:[ \t]+([^\n]+)", content)
 
-    if version_match:
-        cand = version_match.group(1).strip()
-        if not cand.startswith("$("):  # Ignore malformed PS output
-            version = cand
+    if version_cand and not version_cand.startswith("$("):  # Ignore malformed PS output
+        version = version_cand
 
     if version == "Unknown" or version.startswith("$("):
         # Fallback: Extract from doctor output
-        v_doctor_match = re.search(r"LDM Version\s+.*?v([0-9a-z.-]+)", content)
+        v_doctor_match = re.search(r"LDM Version[ \t]+.*?v([0-9a-z.-]+)", content)
         if v_doctor_match:
             version = v_doctor_match.group(1).strip()
 
@@ -515,55 +549,52 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
     # that script's version, even if the *binary* under test is current --
     # this is a distinct risk from the binary-version mismatch checked below.
     script_version = None
-    script_version_match = re.search(r"Script Ver:\s+([^\n]+)", content)
-    if script_version_match:
-        cand = script_version_match.group(1).strip()
-        if cand and not cand.startswith("$("):
-            script_version = cand
+    script_cand = _header_value(r"Script Ver:[ \t]+([^\n]+)", content)
+    if script_cand and not script_cand.startswith("$("):
+        script_version = script_cand
 
     # 4.6 LDM-#1614: the environment identity the runner declared for itself,
     # via LDM_ENV_LABEL. Authoritative for *which* environment this is, because
     # it comes from the caller that knows (the CI matrix key) rather than from
     # a platform string this script has to recognise by name.
     env_label = None
-    env_label_match = re.search(r"^Env Label:\s*([^\n]+)", content, re.M)
-    if env_label_match:
-        cand = env_label_match.group(1).strip()
-        if cand and not cand.startswith("$"):
-            env_label = cand
+    label_cand = _header_value(r"^Env Label:[ \t]*([^\n]*)", content, re.M)
+    if label_cand and not label_cand.startswith("$"):
+        env_label = label_cand
 
     # 5. Extract Docker Engine version
-    engine_v = "Unknown"
-    # Try header first
-    hev_match = re.search(r"Docker:\s+([^\n]+)", content)
-    if hev_match:
-        engine_v = hev_match.group(1).strip()
+    # A blank `Docker:` header used to capture the following line -- one
+    # archived report recorded its engine version as 'running' (LDM-#1633).
+    # It now falls through to the doctor-section fallback below.
+    engine_v = _header_value(r"Docker:[ \t]+([^\n]+)", content) or "Unknown"
 
     if engine_v == "Unknown" or engine_v.startswith("$"):
-        engine_match = re.search(r"Docker Engine\s+.*?v([0-9.]+)", content)
+        engine_match = re.search(r"Docker Engine[ \t]+.*?v([0-9.]+)", content)
         if engine_match:
             engine_v = f"v{engine_match.group(1)}"
 
     # 6. Extract specific provider versions (OrbStack/Colima)
     provider_v = ""
     # Try header first (new scripts)
-    hv_match = re.search(r"(?:Colima|OrbStack):\s+([^\n]+)", content)
-    if hv_match:
-        cand = hv_match.group(1).strip()
-        if cand and cand != "v" and not cand.startswith("$"):
-            provider_v = cand if cand.startswith("v") else f"v{cand}"
+    provider_cand = _header_value(r"(?:Colima|OrbStack):[ \t]+([^\n]+)", content)
+    if provider_cand and provider_cand != "v" and not provider_cand.startswith("$"):
+        provider_v = (
+            provider_cand if provider_cand.startswith("v") else f"v{provider_cand}"
+        )
 
     if not provider_v:
         # Fallback to doctor section
-        ov_match = re.search(r"OrbStack Version\s+.*?v([0-9.]+)", content)
+        ov_match = re.search(r"OrbStack Version[ \t]+.*?v([0-9.]+)", content)
         if ov_match:
             provider_v = f"v{ov_match.group(1)}"
         else:
-            cv_match = re.search(r"Colima Version\s+.*?v([0-9.]+)", content)
+            cv_match = re.search(r"Colima Version[ \t]+.*?v([0-9.]+)", content)
             if cv_match:
                 provider_v = f"v{cv_match.group(1)}"
             else:
-                dd_match = re.search(r"Docker Desktop Version\s+.*?v([0-9.]+)", content)
+                dd_match = re.search(
+                    r"Docker Desktop Version[ \t]+.*?v([0-9.]+)", content
+                )
                 if dd_match:
                     provider_v = f"v{dd_match.group(1)}"
 
@@ -702,7 +733,13 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
         # Only reports that state it are split. A WSL2 run has no PowerShell
         # line and keeps its existing slug, so no historical row is orphaned.
         ps_match = re.search(
-            r"^PowerShell:\s*([0-9][^\s(]*)\s*\(([A-Za-z]+)\)", content, re.M
+            # LDM-#1633: `[ \t]`, not `\s`. This is the check that decides
+            # whether a Windows report is the 5.1 or the 7 row, and a blank
+            # `PowerShell:` line with `\s*` would let it match digits on the
+            # NEXT line and mislabel the row.
+            r"^PowerShell:[ \t]*([0-9][^\s(]*)[ \t]*\(([A-Za-z]+)\)",
+            content,
+            re.M,
         )
         if ps_match:
             # Edition, not version number: Desktop is always 5.1 and Core is 7+,

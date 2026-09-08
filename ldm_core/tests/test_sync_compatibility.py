@@ -928,3 +928,220 @@ class TestProviderDerivedFromTheDeclaredLabel:
             sorted(p.name for p in sync_compatibility.DEFAULT_RESULTS_DIR.rglob("*"))
             == real_before
         ), "LDM-#1391: the real verification record must be untouched"
+
+
+def _report_with_blank(directory, name, blank_field):
+    """A report shaped like a real one, with exactly one header field blank.
+
+    Blank means "the label and its padding, then the line ends" -- which is what
+    `verify_e2e_refactor.ps1` emits for `Platform:` on PowerShell 5.1, since
+    `$PSVersionTable.OS` does not exist there.
+    """
+    fields = [
+        ("Timestamp", "Sun Sep  6 22:16:18 UTC 2026"),
+        ("Hostname", "runner"),
+        ("Platform", "Ubuntu 24.04"),
+        ("Env Label", "ubuntu"),
+        ("Binary", "/usr/local/bin/ldm"),
+        ("Version", f"ldm {sync_compatibility.VERSION}"),
+        ("Script Ver", sync_compatibility.VERSION),
+        ("Docker", "28.0.4"),
+    ]
+    lines = ["=== LDM BINARY VERIFICATION REPORT ==="]
+    for label, value in fields:
+        lines.append(
+            f"{label}:{' ' * (14 - len(label))}{'' if label == blank_field else value}"
+        )
+    lines += ["", "ALL E2E VERIFICATIONS PASSED!"]
+    path = directory / name
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+class TestAHeaderCaptureCannotLeaveItsLine:
+    """LDM-#1633: `\\s` matches a newline, so `Field:\\s+([^\\n]+)` against a
+    blank field skipped the line break and captured the NEXT header line.
+
+    Measured against the committed
+    `verify-windows-pc-windows-11-powershell-5.1-docker-desktop-pass.txt`, whose
+    `Platform:` really is blank: it recorded its platform as
+    `'PowerShell: 5.1.22621.6133 (Desktop)'`. Nineteen archived reports recorded
+    `'Binary: C:\\Users\\...\\ldm.exe'`, and one recorded a Docker engine version
+    of `'running'`.
+    """
+
+    # The value each field must report when it says nothing. `Unknown` where the
+    # caller has a fallback string, `None` where it has none -- what matters is
+    # that it is never a value belonging to the next line.
+    @pytest.mark.parametrize(
+        ("blank_field", "key", "expected"),
+        [
+            ("Platform", "platform", "Unknown"),
+            ("Version", "version", "Unknown"),
+            ("Script Ver", "script_version", None),
+            ("Docker", "engine_v", "Unknown"),
+            ("Env Label", "env_label", None),
+        ],
+    )
+    def test_a_blank_field_reports_nothing_rather_than_the_following_line(
+        self, tmp_path, blank_field, key, expected
+    ):
+        report = _report_with_blank(tmp_path, "verify-blank.txt", blank_field)
+
+        meta = sync_compatibility.get_report_metadata(report)
+
+        assert meta[key] == expected, (
+            f"a blank {blank_field}: was read as {meta[key]!r}"
+        )
+
+    def test_no_field_is_ever_read_as_another_field_s_line(self, tmp_path):
+        """Belt and braces, and it covers `Timestamp:` too.
+
+        A blank timestamp is invisible in the returned metadata -- it fails
+        `strptime` and falls through to the file mtime either way -- so it is
+        only observable as the absence of a stray label in the record.
+        """
+        labels = (
+            "Timestamp:",
+            "Hostname:",
+            "Platform:",
+            "Env Label:",
+            "Binary:",
+            "Version:",
+            "Script Ver:",
+            "Docker:",
+        )
+        for blank_field in ("Timestamp", "Hostname", "Platform", "Binary", "Docker"):
+            report = _report_with_blank(
+                tmp_path, f"verify-blank-{blank_field}.txt", blank_field
+            )
+
+            meta = sync_compatibility.get_report_metadata(report)
+
+            for key, value in meta.items():
+                if key == "content" or not isinstance(value, str):
+                    continue
+                assert not value.startswith(labels), (
+                    f"a blank {blank_field}: left {key}={value!r}, "
+                    "which is another field's line"
+                )
+
+    def test_a_blank_platform_reads_as_unknown_not_as_the_next_line(self, tmp_path):
+        """The reported case, reduced.
+
+        `Unknown` is the right answer for a field that says nothing. An empty
+        string is not: `[ \\t]+` alone leaves the header's padding inside the
+        capture, so tightening the class without collapsing blank-to-None would
+        trade a wrong value for a meaningless one.
+        """
+        report = _report_with_blank(tmp_path, "verify-blank-platform.txt", "Platform")
+        meta = sync_compatibility.get_report_metadata(report)
+
+        assert meta["platform"] == "Unknown"
+
+    def test_a_blank_docker_header_falls_through_to_the_doctor_section(self, tmp_path):
+        """One archived report recorded its engine version as 'running'.
+
+        With the capture bounded to its own line the header contributes nothing,
+        so the doctor-section fallback below it gets to answer instead -- which
+        is what it was written for.
+        """
+        report = _report_with_blank(tmp_path, "verify-blank-docker.txt", "Docker")
+        report.write_text(
+            report.read_text() + "\nDocker Engine   ok   v28.1.2\n", encoding="utf-8"
+        )
+
+        meta = sync_compatibility.get_report_metadata(report)
+
+        assert meta["engine_v"] == "v28.1.2"
+
+    def test_a_blank_env_label_does_not_absorb_the_next_line(self, tmp_path):
+        """`Env Label` used `\\s*`, which crosses a newline just as `\\s+` does.
+
+        This one is load-bearing beyond a mis-read: LDM-#1614's collision guard
+        refuses on a canonical-name clash, and it keys on the identity each
+        report declares about itself. Feeding it a string lifted off the
+        following line is how that guard gets a wrong answer.
+        """
+        report = _report_with_blank(tmp_path, "verify-blank-label.txt", "Env Label")
+        meta = sync_compatibility.get_report_metadata(report)
+
+        assert meta["env_label"] is None
+
+    def test_the_committed_powershell_51_report_no_longer_misreads_its_platform(self):
+        """Against the real artifact, not a fixture of one."""
+        report = (
+            sync_compatibility.DEFAULT_RESULTS_DIR
+            / "verify-windows-pc-windows-11-powershell-5.1-docker-desktop-pass.txt"
+        )
+        if not report.exists():  # pragma: no cover - the record may be pruned
+            pytest.skip("the PowerShell 5.1 report is not in this checkout")
+
+        meta = sync_compatibility.get_report_metadata(report)
+
+        assert not meta["platform"].startswith("PowerShell:")
+        # The identity that names its file and its matrix row is unaffected --
+        # the platform string was wrong, but nothing downstream depended on it.
+        assert meta["os"] == "Windows 11 PowerShell 5.1"
+        assert meta["provider"] == "Docker Desktop"
+
+    def test_a_blank_powershell_line_does_not_borrow_digits_from_the_next(
+        self, tmp_path
+    ):
+        """The edition check decides whether a report is the 5.1 row or the 7 row."""
+        report = tmp_path / "verify-windows-blank-ps.txt"
+        report.write_text(
+            "=== LDM BINARY VERIFICATION REPORT ===\n"
+            "Platform:     Windows 11\n"
+            "PowerShell:   \n"
+            "7.4.1 (Core)\n"
+            f"Version:      ldm {sync_compatibility.VERSION}\n"
+            "\nALL E2E VERIFICATIONS PASSED!\n",
+            encoding="utf-8",
+        )
+
+        meta = sync_compatibility.get_report_metadata(report)
+
+        assert meta["os"] != "Windows 11 PowerShell 7", (
+            "a blank PowerShell line was read as an edition from the next line"
+        )
+
+
+class TestRedactionCannotDeleteTheFollowingLine:
+    """`anonymize_content` had the same defect, and there it destroys rather
+    than misreads.
+
+    `re.sub(r"Hostname:\\s+[^\\n]+", ...)` against a blank `Hostname:` matches
+    through the line break and replaces the *following* header line with the
+    redaction marker, removing it from the archived report entirely. No
+    committed report has a blank one, so this is latent rather than observed --
+    but the archive is the permanent record, and a redaction that eats a line is
+    not recoverable from it.
+    """
+
+    def test_a_blank_hostname_does_not_swallow_the_platform_line(self):
+        content = (
+            "Hostname:     \nPlatform:     macOS 26 Tahoe\nBinary:       /usr/bin/ldm\n"
+        )
+
+        out = sync_compatibility.anonymize_content(content)
+
+        assert "Platform:     macOS 26 Tahoe" in out
+        assert "[ANONYMIZED]" in out
+
+    def test_a_blank_binary_does_not_swallow_the_version_line(self):
+        content = "Binary:       \nVersion:      ldm v2.21.0\n"
+
+        out = sync_compatibility.anonymize_content(content)
+
+        assert "Version:      ldm v2.21.0" in out
+
+    def test_a_populated_field_is_still_redacted(self):
+        """The guard must not cost the redaction its job."""
+        content = "Hostname:     my-laptop\nBinary:       /home/me/bin/ldm\n"
+
+        out = sync_compatibility.anonymize_content(content)
+
+        assert "my-laptop" not in out
+        assert "/home/me/bin/ldm" not in out
+        assert out.count("[ANONYMIZED]") == 2
