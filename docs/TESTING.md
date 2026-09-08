@@ -550,9 +550,9 @@ worth stating because it was not always true: the patterns used `\s`, which
 matches a newline, so a **blank** field skipped the line break and captured the
 *following* header line (LDM-#1633).
 
-It was not hypothetical. `verify_e2e_refactor.ps1` does not populate
-`Platform:` on PowerShell 5.1 — `$PSVersionTable.OS` does not exist there — so
-the committed PowerShell 5.1 report recorded its platform as
+It was not hypothetical. Until LDM-#1639 `verify_e2e_refactor.ps1` did not
+populate `Platform:` on PowerShell 5.1 — `$PSVersionTable.OS` does not exist
+there — so the committed PowerShell 5.1 report recorded its platform as
 `PowerShell: 5.1.22621.6133 (Desktop)`, the line beneath it. Across the
 archive, 19 reports recorded a platform of `Binary: …\ldm.exe` and one recorded
 a Docker engine version of `running`.
@@ -564,10 +564,15 @@ a string belonging to a different line.
 
 A field that is present but empty now reports `Unknown` (or nothing at all,
 where the caller has a fallback to fall through to, as `Docker:` does to the
-doctor section). The PowerShell 5.1 report's blank `Platform:` is a **report-side
-gap that remains open**: the `.ps1` should populate the field as the `.sh` half
-does. Until it does, that row's platform reads `Unknown` — which is accurate,
-where the previous value was not.
+doctor section).
+
+The report-side half is closed too. `verify_e2e_refactor.ps1` populated
+`Platform:` from `$PSVersionTable.OS`, which arrived in PowerShell 6, so on
+Windows PowerShell 5.1 the field was blank at source. It now falls back to
+`[System.Environment]::OSVersion.VersionString`, which exists on 5.1 and 7
+alike and needs no CIM/WMI call (LDM-#1639). Reports committed *before* that
+change still carry a blank field, and read as `Unknown` — accurate, where the
+previous value was not.
 
 ### **How a CI pass reaches the published matrix**
 

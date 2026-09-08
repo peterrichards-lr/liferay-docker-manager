@@ -428,7 +428,8 @@ def _header_value(pattern, content, flags=0):
     the line break and the capture takes the NEXT header line. The committed
     PowerShell 5.1 report recorded its platform as
     `'PowerShell: 5.1.22621.6133 (Desktop)'` for exactly this reason (the .ps1
-    half does not populate `Platform:`), and 20 archived reports carry a value
+    half did not populate `Platform:` until LDM-#1639), and 20 archived reports
+    carry a value
     lifted off the following line -- 19 platforms reading
     `'Binary: C:\\Users\\...\\ldm.exe'`, and one Docker engine version
     reading `'running'`.
