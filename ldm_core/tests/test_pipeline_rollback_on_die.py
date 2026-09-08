@@ -401,7 +401,8 @@ def test_a_ctrl_c_mid_pipeline_removes_its_extraction_directory(tmp_path):
 def test_a_completed_import_survives_an_aborted_post_import_run(tmp_path):
     """FinalizationStage runs `ldm run`, and that must not be able to undo it.
 
-    `BackupStateStage.rollback` deletes a brand-new project directory, and
+    `ProjectSetupStage.rollback` deletes a brand-new project directory
+    (LDM-#1635 moved it there from the dissolved BackupStateStage), and
     `FinalizationStage` calls `manager.runtime.cmd_run` -- the entire run
     pipeline, prompts included. Rollback now fires on `SystemExit`, so without
     a commit point a refusal or a Ctrl-C inside that post-import run would

@@ -3,16 +3,20 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from ldm_core.pipelines.import_pipeline import (
-    BackupStateStage,
     ImportPipeline,
     ImportPipelineContext,
     ImportValidationStage,
+    ProjectSetupStage,
 )
 
 
 def test_import_pipeline_initialization():
     pipeline = ImportPipeline()
-    assert len(pipeline.stages) == 10
+    # LDM-#1635: was 10 until BackupStateStage was dissolved. Its `execute` was
+    # an empty `pass`; it existed only to host cleanup for state that other
+    # stages created, which is the arrangement LDM-#1630 traced the scratch-dir
+    # leak to.
+    assert len(pipeline.stages) == 9
     from ldm_core.pipelines.validation import ValidationStage as SharedValidationStage
 
     assert isinstance(pipeline.stages[0], SharedValidationStage)
@@ -63,15 +67,16 @@ def test_validation_stage_file_not_found(mock_sha, mock_ui, tmp_path):
 
 
 @patch("ldm_core.pipelines.import_pipeline.UI")
-@patch("ldm_core.pipelines.import_pipeline.shutil.rmtree")
-def test_backup_state_stage_rollback(mock_rmtree, mock_ui, tmp_path):
-    stage = BackupStateStage()
+def test_project_setup_stage_rollback_removes_the_project_it_created(mock_ui, tmp_path):
+    """LDM-#1635: the project directory is undone by the stage that creates it.
+
+    `ProjectSetupStage` is where `project_path` and `is_brand_new` are set, so
+    it is where the undo belongs. This assertion previously named
+    `BackupStateStage`, whose `execute` did nothing at all.
+    """
+    stage = ProjectSetupStage()
     manager = MagicMock()
     context = ImportPipelineContext(manager=manager)
-
-    temp_dir = tmp_path / ".ldm_temp"
-    temp_dir.mkdir()
-    context.set("temp_dirs", [temp_dir])
 
     project_dir = tmp_path / "myproject"
     project_dir.mkdir()
@@ -80,9 +85,48 @@ def test_backup_state_stage_rollback(mock_rmtree, mock_ui, tmp_path):
 
     stage.rollback(context)
 
-    # Assert cleanup was called
-    mock_rmtree.assert_any_call(temp_dir, ignore_errors=True)
     manager.safe_rmtree.assert_called_once_with(project_dir)
+
+
+@patch("ldm_core.pipelines.import_pipeline.UI")
+def test_project_setup_rollback_spares_a_project_the_user_already_had(
+    mock_ui, tmp_path
+):
+    """`is_brand_new` false means this run did not create it -- leave it alone."""
+    stage = ProjectSetupStage()
+    manager = MagicMock()
+    context = ImportPipelineContext(manager=manager)
+
+    project_dir = tmp_path / "preexisting"
+    project_dir.mkdir()
+    context.set("project_path", project_dir)
+    context.set("is_brand_new", False)
+
+    stage.rollback(context)
+
+    manager.safe_rmtree.assert_not_called()
+
+
+@patch("ldm_core.pipelines.import_pipeline.UI")
+def test_project_setup_rollback_honours_the_commit_point(mock_ui, tmp_path):
+    """LDM-#1630's guard has to survive the move, or a finished import is lost.
+
+    `FinalizationStage` calls the whole run pipeline, prompts included. Once
+    `import_committed` is set, nothing below is allowed to undo the import.
+    """
+    stage = ProjectSetupStage()
+    manager = MagicMock()
+    context = ImportPipelineContext(manager=manager)
+
+    project_dir = tmp_path / "myproject"
+    project_dir.mkdir()
+    context.set("project_path", project_dir)
+    context.set("is_brand_new", True)
+    context.set("import_committed", True)
+
+    stage.rollback(context)
+
+    manager.safe_rmtree.assert_not_called()
 
 
 def test_project_setup_stage_loads_workspace_ldmrc(tmp_path):
