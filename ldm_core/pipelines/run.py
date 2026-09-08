@@ -42,6 +42,10 @@ class RunPipelineContext(PipelineContext):
         self.set("total_start", kwargs.get("total_start") or time.time())
         self.set("is_new_project", False)
         self.set("init_success", False)
+        # LDM-#1630: fail safe. Until ProjectInitializationStage has measured
+        # it, assume the project directory was already there, so a rollback
+        # can never delete a directory LDM has not proven it created.
+        self.set("root_existed", True)
         paths = kwargs.get("paths")
         if paths and not isinstance(paths, dict):
             paths = self.manager.setup_paths(paths)
@@ -251,6 +255,14 @@ class ProjectInitializationStage(PipelineStage):
         is_new_project = not any(
             (root / f).exists() for f in ["meta", ".liferay-docker.meta", ".ldm.meta"]
         )
+        # LDM-#1630: `is_new_project` says only that the directory holds no LDM
+        # metadata -- a pre-existing folder of the user's own files satisfies
+        # it, because `ldm run <name>` deliberately adopts a directory that is
+        # already there. `root_existed` is the narrower fact the rollback below
+        # needs: whether this run is the thing that created the directory. It
+        # matters now because rollback fires on `UI.die`, and the refusals in
+        # RuntimeValidationStage/ConfigResolutionStage all sit after this stage.
+        context.set("root_existed", root.exists())
         if is_new_project:
             UI.print_banner()
             if getattr(manager.args, "vanilla", False):
@@ -300,7 +312,17 @@ class ProjectInitializationStage(PipelineStage):
         project_id = context.get("project_id")
 
         if is_new_project and not init_success:
-            if root and root.exists():
+            # LDM-#1630: only remove a directory this run created. Rollback now
+            # runs on `UI.die`, and every refusal in RuntimeValidationStage and
+            # ConfigResolutionStage -- an unknown `--archetype`, `--samples`
+            # with no hostname, a failed tag lookup -- happens after this stage
+            # has succeeded. `is_new_project` is true for a pre-existing folder
+            # that merely lacks LDM metadata, which is the normal shape of
+            # "adopt this directory", so keying the delete on it alone would
+            # turn those refusals into data loss. `verify_safe_to_delete`
+            # already refuses a git repository and the working directory; this
+            # covers the folder that is neither.
+            if root and root.exists() and not context.get("root_existed", True):
                 UI.detail(f"Cleaning up failed initialization: {root}")
                 context.manager.safe_rmtree(root)
             if project_id:

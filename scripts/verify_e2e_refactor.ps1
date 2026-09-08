@@ -773,8 +773,10 @@ with tarfile.open(out, 'w:gz') as tar:
     # ProjectSetupStage and a project IS created (observed). The empty
     # .ldm_temp shell the pipeline leaves in the working directory is ours to
     # remove too -- the extraction directory inside it is already gone,
-    # discarded by the refusal itself. Do NOT copy the pre-existing db_type
-    # refusal, which leaves .ldm_temp/import_<ts>/ behind.
+    # discarded by the refusal itself. LDM-#1630 made that true of every
+    # refusal, not just this one: Pipeline.run now rolls back on the SystemExit
+    # that UI.die raises, so the db_type refusal in ProjectSetupStage no longer
+    # leaves .ldm_temp/import_<ts>/ behind either.
     & $LdmCmd -y rm $ProjectName --delete *> $null
     foreach ($stale in @($pkgSrc, $ldmp, (Join-Path $WorkDir ".ldm_temp"), (Join-Path $WorkDir $ProjectName))) {
         if (Test-Path $stale) { Remove-Item -Recurse -Force $stale -ErrorAction SilentlyContinue }

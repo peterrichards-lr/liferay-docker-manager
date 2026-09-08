@@ -74,6 +74,41 @@ Both are already implemented by the `Spinner` engine (`ldm_core/ui.py:244`,
 line-clearing at `:283-296`, truncation at `:273-279`). Route new progress
 reporting through that engine rather than hand-rolling carriage returns.
 
+## Pipeline Rollback
+
+`Pipeline.run` (`ldm_core/pipelines/base.py`) rolls back the stages that
+already executed, in reverse order, when a stage fails. A stage fails in two
+shapes and both roll back, but they end differently:
+
+- an `Exception` -- rollback runs, `run()` returns `False`, the caller decides.
+- a `SystemExit` (which is what **every** `UI.die` raises) or a
+  `KeyboardInterrupt` -- rollback runs and the original is **re-raised
+  unchanged**, so the exit code, and Ctrl-C's `130`, survive.
+
+That second clause exists because it did not (LDM-#1630). `SystemExit` derives
+from `BaseException`, so the original `except Exception` never saw it and no
+`UI.die` in any stage of any pipeline had ever triggered a rollback. Four rules
+follow for anyone adding a stage:
+
+- **Undo what your stage created, in your stage's `rollback`.** Rollback only
+  visits stages that executed, so cleanup parked on a later stage never fires
+  for an earlier failure. `ldm import` leaked `.ldm_temp/import_<timestamp>/`
+  for exactly that reason -- created by `ExtractionStage`, removed by
+  `BackupStateStage`, three stages further on.
+- **Delete only what this run created.** Rollback now fires on routine
+  validation refusals, so removing a directory the user supplied is data loss,
+  not cleanup. Record the fact when you create it -- `root_existed` in
+  `pipelines/run.py`, not "has no LDM `meta`", which is also true of any folder
+  the user asked LDM to adopt.
+- **Mark the commit point.** Once a pipeline's work has actually landed,
+  nothing later may undo it. `FinalizationStage` runs `ldm run` *after* the
+  import is complete, and a refusal inside that nested pipeline would otherwise
+  delete the finished project: `import_committed` (import) and `init_success`
+  (run) are those markers.
+- **Never `UI.die` inside a `rollback`.** `Pipeline.run` swallows a
+  `SystemExit` raised there to protect the original exit code, which means the
+  remaining stages then silently do not roll back.
+
 ## Automation Standards
 
 To support CI/CD pipelines and headless automation, all LDM commands MUST adhere to a standardized exit code contract:
@@ -162,4 +197,4 @@ When LDM generates, deploys, or reasons about Client Extensions:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*
+*Last Updated: 2026-09-08* | *Last Reviewed: 2026-09-08*

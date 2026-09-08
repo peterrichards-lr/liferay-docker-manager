@@ -834,8 +834,10 @@ verify_ldmp_manifest_refusal() {
     # ProjectSetupStage and a project IS created (observed). The empty
     # .ldm_temp shell the pipeline leaves in the CWD is ours to remove too --
     # the extraction directory inside it is already gone, discarded by the
-    # refusal itself. Do NOT copy the pre-existing db_type refusal, which
-    # leaves .ldm_temp/import_<ts>/ behind.
+    # refusal itself. LDM-#1630 made that true of every refusal, not just this
+    # one: `Pipeline.run` now rolls back on the SystemExit that UI.die raises,
+    # so the db_type refusal in ProjectSetupStage no longer leaves
+    # .ldm_temp/import_<ts>/ behind either.
     "$ldm_cmd" -y rm "$project_name" --delete >/dev/null 2>&1 || true
     rm -rf "$pkg_src" "$ldmp" "${work_dir:?}/.ldm_temp" "${work_dir:?}/${project_name:?}"
 
