@@ -85,6 +85,15 @@ shapes and both roll back, but they end differently:
   `KeyboardInterrupt` -- rollback runs and the original is **re-raised
   unchanged**, so the exit code, and Ctrl-C's `130`, survive.
 
+**`SystemExit(5)` is the one exception: it is re-raised without rolling back**
+(LDM-#1636). Exit `5` is the idempotent no-op (see *Automation Standards*
+below) -- the desired state already held, so nothing failed and there is
+nothing to undo. `RuntimeValidationStage` refuses this way for an
+already-running project, two stages after `ProjectInitializationStage` has
+registered it, so treating it as a failure would run a rollback over work that
+is legitimately there. It is not recorded in `context.errors` either, because
+nothing went wrong. Every other exit code still rolls back.
+
 That second clause exists because it did not (LDM-#1630). `SystemExit` derives
 from `BaseException`, so the original `except Exception` never saw it and no
 `UI.die` in any stage of any pipeline had ever triggered a rollback. Four rules
@@ -139,10 +148,12 @@ To support CI/CD pipelines and headless automation, all LDM commands MUST adhere
   branching on "did this actually change anything" needs a code that isn't
   the same generic bucket as a real validation failure. Added per
   [#1094](https://github.com/peterrichards-lr/liferay-docker-manager/issues/1094).
-  **Only returned in non-interactive mode** (`ldm_core/pipelines/run.py:246`):
+  **Only returned in non-interactive mode** (`ldm_core/pipelines/run.py:371`):
   interactively LDM prompts to reconfigure and restart instead, so a caller
   that omits `-y`/`--non-interactive` gets a prompt rather than this code.
   Automation and E2E assertions on this contract must pass `-y`.
+  Because it is not a failure, a stage refusing with `5` does **not** trigger
+  a pipeline rollback -- see *Pipeline Rollback* above (LDM-#1636).
 - **Low-level subprocess wrapper exception**: `ldm_core/utils.py`'s
   `run_command()` helper -- called from a very large number of sites across
   the codebase -- intentionally uses POSIX-standard shell conventions instead

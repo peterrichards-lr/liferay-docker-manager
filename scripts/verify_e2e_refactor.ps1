@@ -1685,7 +1685,7 @@ zf.close()
 
     Write-Host ">> Verifying Idempotent Exit Code 5 (#1094)..."
     # Exit 5 is only returned in non-interactive mode
-    # (ldm_core/pipelines/run.py:246); interactively LDM prompts instead, so
+    # (ldm_core/pipelines/run.py:371); interactively LDM prompts instead, so
     # '-y' is required.
     #
     # The project is STOPPED at this point -- "Stopping project to release file
