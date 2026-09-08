@@ -934,8 +934,11 @@ def _report_with_blank(directory, name, blank_field):
     """A report shaped like a real one, with exactly one header field blank.
 
     Blank means "the label and its padding, then the line ends" -- which is what
-    `verify_e2e_refactor.ps1` emits for `Platform:` on PowerShell 5.1, since
-    `$PSVersionTable.OS` does not exist there.
+    `verify_e2e_refactor.ps1` emitted for `Platform:` on PowerShell 5.1 before
+    LDM-#1639, since `$PSVersionTable.OS` does not exist there. The .ps1 now
+    falls back, so no *new* report has a blank field for that reason; this stays
+    a generic blank-field harness, and the reports committed before the fix
+    still exercise it.
     """
     fields = [
         ("Timestamp", "Sun Sep  6 22:16:18 UTC 2026"),

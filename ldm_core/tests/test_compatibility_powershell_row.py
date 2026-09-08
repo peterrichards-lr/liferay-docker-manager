@@ -94,5 +94,55 @@ class TestPowerShellEditionsGetDistinctRows(unittest.TestCase):
         self.assertIn("wsl2", slug)
 
 
+class TestPopulatingPlatformDoesNotMoveTheRow(unittest.TestCase):
+    """LDM-#1639's hard constraint: filling `Platform:` must not move the row.
+
+    The .ps1 left the field blank on Windows PowerShell 5.1 and now falls back
+    to `[System.Environment]::OSVersion.VersionString`. The published matrix
+    links to each report by its canonical filename, so a slug that shifted
+    would break those links -- and the constraint was argued from reading
+    `sync_compatibility.py` rather than measured, which this repository treats
+    as the same error as asserting from reading.
+
+    The mechanism it pins: a Windows report's identity comes from the
+    `PowerShell:` line's edition, NOT from the platform string. The platform
+    string feeds only `is_windows_native` (already true from the filename) and
+    `is_wsl` (which needs `linux` in the string, so `Microsoft Windows NT ...`
+    leaves it false).
+    """
+
+    NAME = "verify-windows-pc-windows-11-docker-desktop-pass.txt"
+    PS_51 = "PowerShell: 5.1.22621.6133 (Desktop)\n"
+
+    def test_a_populated_platform_yields_the_same_slug_as_a_blank_one(self):
+        with tempfile.TemporaryDirectory() as d:
+            blank = _slug_for(d, self.NAME, self.PS_51, platform="")
+            populated = _slug_for(
+                d,
+                self.NAME,
+                self.PS_51,
+                # Exactly what the fallback renders on a real 5.1 host.
+                platform="Microsoft Windows NT 10.0.22621.0",
+            )
+        self.assertEqual(
+            blank,
+            populated,
+            "populating Platform: changed the canonical slug, which would "
+            "break every link in the published matrix (LDM-#1639)",
+        )
+        self.assertIn("powershell-5.1", populated)
+
+    def test_the_populated_platform_is_not_mistaken_for_wsl(self):
+        """`is_wsl` needs `linux`; a native Windows string must not trip it."""
+        with tempfile.TemporaryDirectory() as d:
+            slug = _slug_for(
+                d,
+                self.NAME,
+                self.PS_51,
+                platform="Microsoft Windows NT 10.0.22621.0",
+            )
+        self.assertNotIn("wsl", slug)
+
+
 if __name__ == "__main__":
     unittest.main()

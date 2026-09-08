@@ -171,13 +171,29 @@ function Get-EnvLabelLine {
 & {
     Write-Output "=== LDM BINARY VERIFICATION REPORT ==="
     Write-Output "Timestamp: $(Get-Date)"
-    Write-Output "Platform:  $($PSVersionTable.OS)"
-    # $PSVersionTable.OS does not exist on Windows PowerShell 5.1 -- it arrived
-    # in PowerShell 6 -- so the line above renders empty there and a 5.1 report
-    # was distinguishable from a 7 report only by that absence, which reads as a
-    # bug rather than a data point. These reports are committed and feed the
-    # compatibility matrix, so the edition has to be stated. PSVersion and
-    # PSEdition both exist on 5.1 (5.1.x / Desktop) and on 7 (7.x / Core).
+    # LDM-#1639: $PSVersionTable.OS arrived in PowerShell 6, so on Windows
+    # PowerShell 5.1 it does not exist and this line rendered as a bare
+    # "Platform:" with nothing after it. The .sh half always emits a value
+    # (from $OSTYPE, refined by PRETTY_NAME on Linux), so a Windows 5.1 report
+    # carried strictly less than a Unix one -- and until LDM-#1633 the empty
+    # field was actively harmful, because sync_compatibility.py's capture
+    # crossed the newline and recorded the NEXT line as the platform.
+    #
+    # System.Environment has been in .NET since 1.1, so OSVersion.VersionString
+    # is available on 5.1 and on 7 alike. It is preferred over
+    # (Get-CimInstance Win32_OperatingSystem).Caption because it needs no
+    # CIM/WMI call, which can be slow or blocked by policy on a locked-down
+    # host -- and this runs in the report header, before any verification work.
+    $platformInfo = $PSVersionTable.OS
+    if ([string]::IsNullOrWhiteSpace($platformInfo)) {
+        $platformInfo = [System.Environment]::OSVersion.VersionString
+    }
+    Write-Output "Platform:  $platformInfo"
+    # The edition is still stated separately. It is what distinguishes the 5.1
+    # row from the 7 row in the compatibility matrix, and it stays stable when
+    # the host upgrades 7.6 -> 7.7 instead of spawning a row per patch release.
+    # PSVersion and PSEdition both exist on 5.1 (5.1.x / Desktop) and on 7
+    # (7.x / Core).
     Write-Output "PowerShell: $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))"
     $envLabelLine = Get-EnvLabelLine -EnvLabel $env:LDM_ENV_LABEL
     if ($envLabelLine) { Write-Output $envLabelLine }

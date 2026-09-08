@@ -987,3 +987,110 @@ class TestLdmpRefusalParity(unittest.TestCase):
             with self.subTest(script=script.name):
                 self.assertIn("bad-manifest.ldmp", text)
                 self.assertIn("ldmp-manifest-src", text)
+
+
+class TestPowerShellPlatformHeader(unittest.TestCase):
+    """LDM-#1639: the .ps1 read its platform from `$PSVersionTable.OS`.
+
+    That property arrived in PowerShell 6, so on Windows PowerShell 5.1 it does
+    not exist and the header rendered as a bare `Platform:` with nothing after
+    it -- which is what the committed
+    `verify-windows-pc-windows-11-powershell-5.1-docker-desktop-pass.txt` has.
+    The `.sh` half always emits a value (from `$OSTYPE`, refined by
+    `PRETTY_NAME` on Linux), so a Windows report carried strictly less than a
+    Unix one.
+
+    Until LDM-#1633 the empty field was worse than missing: `sync_compatibility`
+    captured across the newline and recorded the FOLLOWING line as the platform.
+    """
+
+    PLATFORM_BLOCK = re.compile(
+        r"^\s*\$platformInfo = \$PSVersionTable\.OS.*?"
+        r'^\s*Write-Output "Platform:.*?$',
+        re.M | re.S,
+    )
+
+    def test_the_platform_line_is_never_empty_in_any_powershell_present(self):
+        """Runs the shipped block, under every PowerShell on this machine.
+
+        This is the one place the 5.1 branch can be exercised honestly. The
+        block cannot be driven with a synthetic `$PSVersionTable` -- PowerShell
+        refuses to shadow it in any scope, it is a read-only variable -- but on
+        a real 5.1 host the genuine table simply has no `OS` key, so running the
+        block unmodified there takes the fallback for real. On a pwsh 7 host the
+        same run exercises the pass-through branch instead. Between a Windows
+        CI runner and a developer machine, both branches get covered.
+        """
+        binaries = _powershell_binaries()
+        if not binaries:
+            self.skipTest("no PowerShell available on this machine")
+
+        block = _extract_function(PS1_SCRIPT, self.PLATFORM_BLOCK)
+
+        for name, binary in binaries:
+            with self.subTest(shell=name):
+                res = subprocess.run(
+                    [binary, "-NoProfile", "-NonInteractive", "-Command", block],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(
+                    res.returncode, 0, f"{name} exited {res.returncode}: {res.stderr}"
+                )
+                line = res.stdout.strip()
+                self.assertTrue(
+                    line.startswith("Platform:"),
+                    f"{name} emitted {line!r} rather than a Platform: line",
+                )
+                value = line[len("Platform:") :].strip()
+                self.assertTrue(
+                    value,
+                    f"{name} emitted an empty Platform: line -- the header field "
+                    "that LDM-#1639 exists to populate (LDM-#1639)",
+                )
+
+    # The fallback must be reached ONLY when the PowerShell 6+ property is
+    # absent or blank, so this asserts the shape of the whole block rather than
+    # the relative offsets of two substrings. Comparing offsets passed against
+    # an *unconditional* fallback -- the one regression the test exists to
+    # catch -- because a straight-line pair of assignments is still "primary
+    # before fallback". It also read the fallback's offset with `str.index`
+    # over the entire file, which is unique only by luck: the explanatory
+    # comment above the block names `OSVersion.VersionString` unqualified, and
+    # writing it fully-qualified there (the natural edit) would have matched
+    # the comment instead and failed a correct script.
+    GUARDED_FALLBACK = re.compile(
+        r"\$platformInfo = \$PSVersionTable\.OS[ \t]*\n"
+        r"[ \t]*if \(\[string\]::IsNullOrWhiteSpace\(\$platformInfo\)\) \{[ \t]*\n"
+        r"[ \t]*\$platformInfo = \[System\.Environment\]::OSVersion\.VersionString[ \t]*\n"
+        r"[ \t]*\}",
+        re.M,
+    )
+
+    def test_the_powershell_6_property_is_still_preferred(self):
+        """The fallback must not displace the value PowerShell 7 already gives.
+
+        Always using `OSVersion.VersionString` would change the PowerShell 7
+        row's platform string for no reason, and that row is published. On this
+        macOS host the two differ -- `$PSVersionTable.OS` gives `macOS 26.6.2`
+        where `OSVersion.VersionString` gives `Unix 26.6.2` -- so the ordering
+        is load-bearing, not cosmetic.
+        """
+        self.assertRegex(
+            _extract_function(PS1_SCRIPT, self.PLATFORM_BLOCK),
+            self.GUARDED_FALLBACK,
+            "the fallback must sit inside an IsNullOrWhiteSpace guard AFTER the "
+            "$PSVersionTable.OS read, not replace it",
+        )
+
+    def test_both_halves_emit_a_platform_line(self):
+        """Parity, at the level the failure actually took: one half, not both."""
+        self.assertIn(
+            'Write-Output "Platform:  $platformInfo"',
+            PS1_SCRIPT.read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            'echo "Platform:     $PLATFORM_INFO"',
+            BASH_SCRIPT.read_text(encoding="utf-8"),
+        )
