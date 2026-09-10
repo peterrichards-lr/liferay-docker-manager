@@ -563,6 +563,12 @@ class ConfigResolutionStage(PipelineStage):
             if rt.lower() == "latest":
                 rt = "any"
 
+            # LDM-#1647: `--refresh` was a declared flag with no consumer
+            # anywhere, and `discover_latest_tag(refresh=...)` was never passed
+            # True outside tests -- so a discovery answer, including a wrong
+            # one, was pinned for 24h with no user-facing way to re-ask.
+            force_refresh = bool(getattr(manager.args, "refresh", False))
+
             if not can_discover:
                 if manager.verbose:
                     UI.detail(
@@ -573,6 +579,7 @@ class ConfigResolutionStage(PipelineStage):
                     release_type=rt,
                     prefix_filter=prefix,
                     verbose=manager.verbose,
+                    refresh=force_refresh,
                 )
                 ans = UI.ask(
                     "Release type (lts|u|qr|nightly|master|latest), prefix, or specific tag",
@@ -593,7 +600,10 @@ class ConfigResolutionStage(PipelineStage):
                     if manager.verbose:
                         UI.detail(f"Discovering latest {ans.upper()} release...")
                     tag = discover_latest_tag(
-                        api_base, release_type=release_type, verbose=manager.verbose
+                        api_base,
+                        release_type=release_type,
+                        verbose=manager.verbose,
+                        refresh=force_refresh,
                     )
                     if not tag:
                         # LDM-#996: a failed external API lookup (Docker Hub tag
@@ -610,6 +620,7 @@ class ConfigResolutionStage(PipelineStage):
                         release_type="any",
                         prefix_filter=ans,
                         verbose=manager.verbose,
+                        refresh=force_refresh,
                     )
                     if not tag:
                         tag = ans
@@ -621,6 +632,7 @@ class ConfigResolutionStage(PipelineStage):
                     release_type=rt,
                     prefix_filter=prefix,
                     verbose=manager.verbose,
+                    refresh=force_refresh,
                 )
                 if not tag:
                     # LDM-#996: same external-API-failure category as the

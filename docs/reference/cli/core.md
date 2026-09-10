@@ -73,6 +73,41 @@ Use `--scale SERVICE=N` to boot a scaled stack without having to run `ldm scale`
 ldm run demo --scale liferay=2 --scale my-ext=3
 ```
 
+### Tag Discovery & Release Types
+
+When you do not name a tag with `-t/--tag`, LDM discovers one from the container
+registry. `--tag-latest`, `--release-type <channel>`, `--tag-prefix <prefix>` and the
+interactive `Release type (lts|u|qr|nightly|master|latest), prefix, or specific tag`
+prompt all feed the same resolver.
+
+| Channel | Means | Resolves to (verified 2026-09-10) |
+| :--- | :--- | :--- |
+| `lts` | Long-Term Support quarterly (the default when nothing is specified) | `2026.q1.12-lts` |
+| `qr` | Quarterly Release — the newest quarterly, LTS or not | `2026.q3.2` |
+| `latest` / `any` | The newest release of any family, quarterly preferred | `2026.q3.2` |
+| `u` | The legacy `7.4.13-uNNN` update line | `7.4.13-u999` (see [#1649](https://github.com/peterrichards-lr/liferay-docker-manager/issues/1649)) |
+| `nightly` / `master` | The floating nightly tag, not a timestamped build | `7.4.13.nightly` |
+| a prefix (e.g. `2025.q1`) | The newest patch within that prefix | `2025.q1.27-lts` |
+
+```bash
+# The newest quarterly release, whatever quarter that currently is
+ldm run demo --tag-latest --release-type qr
+
+# The newest patch of a specific quarter
+ldm run demo --tag-prefix 2025.q1
+```
+
+> [!IMPORTANT]
+> **`--portal` has only one usable channel.** `liferay/portal` publishes no quarterly,
+> LTS (`*-lts`), update (`*-u`), `*-qr` or `nightly` tags at all — its releases are named
+> `7.4.3.132-ga132`. Only `latest`/`any` (or an explicit `-t`) can resolve for a Portal
+> CE project; every other release type correctly reports that nothing was found.
+
+Results are cached in `~/.liferay_docker_cache.json` for 24 hours per
+`(repository, release type, prefix)` combination. Pass `--refresh` to force a live
+lookup — worth knowing, because a cached answer for one channel can make an unrelated
+broken channel look healthy (LDM-#1647).
+
 ### `--vanilla` Switch ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue)
 
 Bypasses downloading the pre-warmed database seed from GitHub releases. Spawns the Liferay project stack with a pristine, empty database.
@@ -503,4 +538,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-03* | *Last Reviewed: 2026-09-03*
+*Last Updated: 2026-09-10* | *Last Reviewed: 2026-09-10*

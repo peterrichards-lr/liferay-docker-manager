@@ -39,6 +39,26 @@ MIN_META_VERSION = 2
 PROJECT_META_FILE = "meta"
 REGISTRY_FILE = "registry.json"
 TAG_PATTERN = r"^(dxp-|portal-)?\d{4}\.q[1-4]\.\d+(-u\d+|-lts)?$"
+
+# --- Tag Discovery (LDM-#1647) ---
+# TAG_PATTERN above only accepts the quarterly naming scheme, which is correct
+# for validating a modern tag but leaves two whole families unresolvable by
+# `discover_latest_tag`: the legacy `7.4.13-uNNN` update releases (594 of them
+# on liferay/dxp) and portal's `7.4.3.132-ga132` GA releases -- and
+# `liferay/portal` carries *no* quarterly tags at all, so before these
+# patterns every `--portal` discovery returned nothing.
+LEGACY_TAG_PATTERN = r"^(dxp-|portal-)?\d+\.\d+\.\d+(\.\d+)?(-u\d+|-ga\d+|-sp\d+)?$"
+
+# The floating nightly tag (`7.4.13.nightly`), not the thousands of decorated
+# builds beside it (`7.4.13.nightly-slim-d10.0.85-20260909193502`).
+NIGHTLY_TAG_PATTERN = r"^(dxp-|portal-)?[\d.]+\.nightly$"
+
+# Docker Hub caps `page_size` at 100 regardless of what we ask for, so this is
+# a 800-tag ceiling. It is sized to enumerate a whole *filtered* family in one
+# sweep -- 186 `-lts`, 594 `-u`, 602 quarterly, 667 portal tags today -- which
+# is what makes the local natural sort authoritative rather than dependent on
+# the order the registry happens to return.
+TAG_DISCOVERY_MAX_PAGES = 8
 SCRIPT_DIR = Path(__file__).parent.parent.resolve()
 ELASTICSEARCH_VERSION = "8.19.1"
 ELASTICSEARCH7_VERSION = "7.17.24"
