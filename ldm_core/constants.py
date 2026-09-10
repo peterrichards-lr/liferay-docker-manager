@@ -13,9 +13,13 @@ IMAGE_NAME_DXP = "liferay/dxp"
 IMAGE_NAME_PORTAL = "liferay/portal"
 API_BASE_DXP = "https://hub.docker.com/v2/repositories/liferay/dxp/tags?page_size=200&ordering=name"
 API_BASE_PORTAL = "https://hub.docker.com/v2/repositories/liferay/portal/tags?page_size=200&ordering=name"
-LIFERAY_PRODUCT_INFO_URL = (
-    "https://releases-cdn.liferay.com/tools/workspace/.product_info.json"
-)
+# LDM-#1648: the tag-discovery fallback used to read
+# `releases-cdn.liferay.com/tools/workspace/.product_info.json`, which stopped
+# at DXP 7.4-u112 / Portal 7.4-ga112 in early 2024 and lists no quarterly
+# release at all -- it could never answer the lookups that matter. This is the
+# same document `resolve_liferay_docker_tag` already consumes, and every entry's
+# `url` ends in exactly the Docker tag.
+LIFERAY_RELEASES_JSON_URL = "https://releases.liferay.com/releases.json"
 
 # --- Repository & External URLs ---
 REPO_OWNER = os.getenv("LDM_REPO_OWNER", "peterrichards-lr")
@@ -66,6 +70,13 @@ NIGHTLY_TAG_PATTERN = r"^(dxp-|portal-)?[\d.]+\.nightly$"
 # away from the failure `any` had already hit. Costs nothing for a family that
 # fits, since paging stops when the registry reports no `next` page.
 TAG_DISCOVERY_MAX_PAGES = 12
+
+# LDM-#1649: `liferay/dxp` carries a `7.4.13-u999` placeholder (pushed
+# 2025-05-14, one amd64-only image, `tag_status: inactive`) that outranks the
+# real newest update release `7.4.13-u152` on any version sort. The winner of
+# a legacy `-uNNN` lookup is therefore checked against the registry, and this
+# bounds how far down the ranking that check will walk.
+MAX_INACTIVE_TAG_CHECKS = 3
 SCRIPT_DIR = Path(__file__).parent.parent.resolve()
 ELASTICSEARCH_VERSION = "8.19.1"
 ELASTICSEARCH7_VERSION = "7.17.24"
