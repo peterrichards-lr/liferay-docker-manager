@@ -596,7 +596,11 @@ def get_parser():  # noqa: PLR0915
         help="Release channel to discover the latest tag from when no -t/--tag-prefix is given (LDM-#1061: kept in sync with the interactive prompt's own advertised options).",
     )
     run.add_argument("--portal", action="store_true")
-    run.add_argument("--refresh", action="store_true")
+    run.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Ignore the 24h tag discovery cache and re-query the registry (LDM-#1647)",
+    )
     run.add_argument(
         "--sidecar",
         action="store_true",

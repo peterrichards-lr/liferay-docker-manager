@@ -19,7 +19,14 @@ try:
 except ImportError:
     keyring = None  # type: ignore[assignment]
 
-from ldm_core.constants import ASCII_TRANSCODE_MAP, SCRIPT_DIR, TAG_PATTERN
+from ldm_core.constants import (
+    ASCII_TRANSCODE_MAP,
+    LEGACY_TAG_PATTERN,
+    NIGHTLY_TAG_PATTERN,
+    SCRIPT_DIR,
+    TAG_DISCOVERY_MAX_PAGES,
+    TAG_PATTERN,
+)
 from ldm_core.ui import UI
 
 _DRY_RUN_VFS: dict[str, str] = {}
@@ -1887,6 +1894,58 @@ def resolve_liferay_docker_tag(tag, manager=None):  # noqa: C901, PLR0912, PLR09
     return None, None
 
 
+def _tag_discovery_sweeps(release_type, prefix_filter):
+    """Server-side `&name=` filters to try, in order (LDM-#1647).
+
+    `&name=` is a substring match, and each sweep is sized so that one pass
+    enumerates a whole family rather than a recency window of it. Two of the
+    old filters were simply wrong about the data:
+
+    - `-qr` matches **zero** `liferay/dxp` tags. A Quarterly Release is
+      named `2026.q3.2`; there is no `-qr` suffix anywhere in the registry,
+      so the option could never resolve. Quarterly tags share no suffix
+      either, hence the `.q` sweep.
+    - the unfiltered sweep is 7049 tags deep, far past any page ceiling, so
+      `any` must look for quarterly tags explicitly instead of hoping they
+      appear in the window.
+    """
+    if prefix_filter:
+        return [prefix_filter]
+    if release_type in ("lts", "u"):
+        return [f"-{release_type}"]
+    if release_type in ("nightly", "master"):
+        return ["nightly"]
+    if release_type == "qr":
+        return [".q"]
+    # `any`: quarterly first, then everything (portal has no quarterly tags).
+    return [".q", None]
+
+
+def _accept_discovered_tag(name, release_type, prefix_filter):
+    """Whether `name` is a releasable tag of the requested family.
+
+    Rejects the decorated variants that sit beside every real tag
+    (`-slim`, `-d10.0.84-20260903131313`) by anchoring on the tag patterns,
+    which is also why `nightly` needs its own: the old
+    `"nightly" in name` test admitted 3596 build-stamped nightlies and let
+    the natural sort crown one from 2021.
+    """
+    if prefix_filter and not name.startswith(prefix_filter):
+        return False
+
+    if release_type in ("nightly", "master"):
+        return bool(re.match(NIGHTLY_TAG_PATTERN, name))
+
+    is_release = bool(re.match(TAG_PATTERN, name) or re.match(LEGACY_TAG_PATTERN, name))
+    if release_type == "lts":
+        return is_release and "-lts" in name
+    if release_type == "u":
+        return is_release and "-u" in name
+    if release_type == "qr":
+        return bool(re.match(TAG_PATTERN, name))
+    return is_release
+
+
 def discover_latest_tag(  # noqa: C901, PLR0912, PLR0915
     api_url, release_type="any", prefix_filter=None, verbose=False, refresh=False
 ):
@@ -1915,7 +1974,19 @@ def discover_latest_tag(  # noqa: C901, PLR0912, PLR0915
 
     # Strategy:
     # 1. Fetch from Liferay Product Info (CDN) as a robust secondary/fast source
-    from ldm_core.constants import LIFERAY_PRODUCT_INFO_URL
+    from ldm_core.constants import (
+        IMAGE_NAME_DXP,
+        IMAGE_NAME_PORTAL,
+        LIFERAY_PRODUCT_INFO_URL,
+    )
+
+    # LDM-#1647: `.product_info.json` lists dxp *and* portal images in one
+    # flat document, so it must be filtered by repository. Unfiltered, a
+    # `--portal` lookup with no portal candidates fell back onto the CDN and
+    # answered with `liferay/dxp:7.4.13-u112`.
+    expected_image = (
+        IMAGE_NAME_PORTAL if "portal" in api_url.lower() else IMAGE_NAME_DXP
+    )
 
     cdn_tags = []
     try:
@@ -1925,83 +1996,90 @@ def discover_latest_tag(  # noqa: C901, PLR0912, PLR0915
             for entry in cdn_data.values():
                 image = entry.get("liferayDockerImage")
                 if image and ":" in image:
-                    cdn_tags.append(image.split(":", 1)[1])
+                    image_repo, _, image_tag = image.partition(":")
+                    if image_repo.strip().lower() == expected_image:
+                        cdn_tags.append(image_tag)
     except Exception:
         pass
 
     # 2. Fetch from Primary API (Docker Hub or releases.liferay.com)
-    url = api_url.replace("ordering=name", "ordering=-last_updated")
+    #
+    # LDM-#1647: newest-first is `ordering=last_updated`, NOT
+    # `ordering=-last_updated`. Docker Hub inverts the DRF convention, so the
+    # signed form asked for the *oldest* tags: the window was 300 tags from
+    # 2018-2020, none of which any discovery pattern accepts. `lts` survived
+    # only because `&name=-lts` narrows the repository to 186 tags, so the
+    # window covered the whole family and the order stopped mattering.
+    base_url = api_url.replace("ordering=name", "ordering=last_updated")
 
-    api_filter = prefix_filter
-    if not api_filter and release_type in ["lts", "u", "qr"]:
-        api_filter = f"-{release_type}"
-    elif not api_filter and release_type in ["nightly", "master"]:
-        api_filter = "nightly"
-
-    if api_filter:
-        url += f"&name={api_filter}"
-
-    tags = []
+    tags: list[str] = []
     page = 0
-    max_pages = 1 if prefix_filter else 3  # Depth for global search
 
-    while url and page < max_pages:
-        page += 1
-        if verbose:
-            sys.stdout.write(f"\rFetching page {page}...")
-            sys.stdout.flush()
+    for api_filter in _tag_discovery_sweeps(release_type, prefix_filter):
+        url = base_url + (f"&name={api_filter}" if api_filter else "")
 
-        raw_data = get_raw(url)
-        if not raw_data:
-            break
+        sweep_page = 0
+        while url and sweep_page < TAG_DISCOVERY_MAX_PAGES:
+            sweep_page += 1
+            page += 1
+            if verbose:
+                sys.stdout.write(f"\rFetching page {page}...")
+                sys.stdout.flush()
 
-        current_page_tags = []
-        next_url = None
-
-        if raw_data.strip().startswith("{"):
-            # 1. Handle JSON (Docker Hub)
-            try:
-                data = json.loads(raw_data)
-                for result in data.get("results", []):
-                    current_page_tags.append(result["name"])
-                next_url = data.get("next")
-            except Exception:
+            raw_data = get_raw(url)
+            if not raw_data:
                 break
-        else:
-            # 2. Handle HTML (releases.liferay.com)
-            # Find all links that look like version tags (directories)
-            # Example: <li><a href="/dxp/7.4.13-u103" ...
-            matches = re.findall(r'href="[^"]*/([^"/]+)"', raw_data)
-            for m in matches:
-                current_page_tags.append(m)
-            # HTML listings usually don't have "next" pages in the same way
+
+            current_page_tags = []
             next_url = None
 
-        if page == 1:
-            current_page_tags.extend(cdn_tags)
+            if raw_data.strip().startswith("{"):
+                # 1. Handle JSON (Docker Hub)
+                try:
+                    data = json.loads(raw_data)
+                    for result in data.get("results", []):
+                        current_page_tags.append(result["name"])
+                    next_url = data.get("next")
+                except Exception:
+                    break
+            else:
+                # 2. Handle HTML (releases.liferay.com)
+                # Find all links that look like version tags (directories)
+                # Example: <li><a href="/dxp/7.4.13-u103" ...
+                matches = re.findall(r'href="[^"]*/([^"/]+)"', raw_data)
+                for m in matches:
+                    current_page_tags.append(m)
+                # HTML listings usually don't have "next" pages in the same way
+                next_url = None
 
-        for name in current_page_tags:
-            # 1. Local prefix check
-            if prefix_filter and not name.startswith(prefix_filter):
-                continue
-
-            # 2. Local release type check
-            if release_type == "lts" and "-lts" not in name:
-                continue
-            if release_type == "u" and "-u" not in name:
-                continue
-            if release_type == "qr" and "-qr" not in name:
-                continue
-            if release_type in ["nightly", "master"] and "nightly" not in name:
-                continue
-
-            is_valid = bool(re.match(TAG_PATTERN, name)) or (
-                release_type in ["nightly", "master"] and "nightly" in name
+            tags.extend(
+                name
+                for name in current_page_tags
+                if _accept_discovered_tag(name, release_type, prefix_filter)
             )
-            if is_valid:
-                tags.append(name)
 
-        url = next_url
+            url = next_url
+
+        if tags:
+            # The first sweep that yields anything wins; `any` only falls
+            # through to the unfiltered sweep for a repository with no
+            # quarterly tags at all (`liferay/portal`).
+            break
+        if verbose and sweep_page >= TAG_DISCOVERY_MAX_PAGES:
+            print(
+                f"\nSweep '{api_filter}' hit the {TAG_DISCOVERY_MAX_PAGES}-page "
+                "ceiling without a match; results may be incomplete."
+            )
+
+    if not tags:
+        # LDM-#1647: the CDN list used to be merged inside the fetch loop,
+        # *after* the `if not raw_data: break` -- so a dead primary API
+        # discarded the secondary source, the one case it exists for.
+        tags = [
+            name
+            for name in cdn_tags
+            if _accept_discovered_tag(name, release_type, prefix_filter)
+        ]
 
     # Deduplicate tags
     tags = list(set(tags))
@@ -2018,8 +2096,11 @@ def discover_latest_tag(  # noqa: C901, PLR0912, PLR0915
 
     latest_tag = ""
     if tags:
-        tags.sort(key=natural_sort_key)
-        latest_tag = tags[-1]
+        # Rank by family before version: a quarterly release always wins over
+        # a legacy `7.x` tag, so mixed candidate pools cannot be decided by
+        # numeric coincidence.
+        quarterly = [name for name in tags if re.match(TAG_PATTERN, name)]
+        latest_tag = sorted(quarterly or tags, key=natural_sort_key)[-1]
 
     if latest_tag:
         try:

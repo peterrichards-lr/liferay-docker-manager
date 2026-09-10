@@ -6,7 +6,10 @@ from datetime import datetime
 
 import requests
 
-API_BASE = "https://hub.docker.com/v2/repositories/liferay/dxp/tags?page_size=100&ordering=-last_updated"
+# LDM-#1647: Docker Hub inverts the DRF ordering convention -- bare
+# `last_updated` is newest-first, `-last_updated` is oldest-first. The
+# signed form paged through the *oldest* tags of each quarter.
+API_BASE = "https://hub.docker.com/v2/repositories/liferay/dxp/tags?page_size=100&ordering=last_updated"
 GITHUB_API = "https://api.github.com/repos/peterrichards-lr/liferay-docker-manager/releases/tags/seeded-states"
 
 

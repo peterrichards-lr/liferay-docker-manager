@@ -425,6 +425,50 @@ class TestRunPipeline(unittest.TestCase):
         mock_discover.assert_called_once()
         self.assertEqual(mock_discover.call_args.kwargs.get("release_type"), "any")
 
+    # LDM-#1647: `--refresh` was declared on the `run` parser and consumed by
+    # nothing, while `discover_latest_tag(refresh=...)` was never passed True
+    # outside tests. A discovery answer -- including the five-year-stale
+    # nightly tag the old ordering produced -- was therefore pinned in
+    # ~/.liferay_docker_cache.json for 24h with no way to re-ask short of
+    # deleting the file by hand.
+    @patch("ldm_core.utils.discover_latest_tag", return_value="2026.q3.2")
+    def test_resolve_tag_forwards_refresh_flag(self, mock_discover):
+        manager = MagicMock()
+        manager.non_interactive = True
+        manager.verbose = False
+        manager.args.tag_latest = True
+        manager.args.tag_prefix = None
+        manager.args.tag = None
+        manager.args.nightly = False
+        manager.args.master = False
+        manager.args.release_type = None
+        manager.args.refresh = True
+        manager.defaults.get.return_value = None
+
+        stage = ConfigResolutionStage()
+        stage._resolve_tag(manager, {}, is_samples=False, is_portal=False)
+
+        self.assertTrue(mock_discover.call_args.kwargs.get("refresh"))
+
+    @patch("ldm_core.utils.discover_latest_tag", return_value="2026.q3.2")
+    def test_resolve_tag_uses_cache_without_refresh_flag(self, mock_discover):
+        manager = MagicMock()
+        manager.non_interactive = True
+        manager.verbose = False
+        manager.args.tag_latest = True
+        manager.args.tag_prefix = None
+        manager.args.tag = None
+        manager.args.nightly = False
+        manager.args.master = False
+        manager.args.release_type = None
+        manager.args.refresh = False
+        manager.defaults.get.return_value = None
+
+        stage = ConfigResolutionStage()
+        stage._resolve_tag(manager, {}, is_samples=False, is_portal=False)
+
+        self.assertFalse(mock_discover.call_args.kwargs.get("refresh"))
+
     # --- Named-volume ownership regression tests (LDM-#817) ---
     # Locks in that the plain run/import pipeline explicitly (re-)chowns
     # Named Volumes before containers boot, not just the snapshot-restore
