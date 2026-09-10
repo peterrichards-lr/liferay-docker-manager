@@ -19,15 +19,25 @@ try:
 except ImportError:
     keyring = None  # type: ignore[assignment]
 
+from urllib.parse import urlparse
+
 from ldm_core.constants import (
     ASCII_TRANSCODE_MAP,
     LEGACY_TAG_PATTERN,
+    LIFERAY_RELEASES_JSON_URL,
+    MAX_INACTIVE_TAG_CHECKS,
     NIGHTLY_TAG_PATTERN,
     SCRIPT_DIR,
     TAG_DISCOVERY_MAX_PAGES,
     TAG_PATTERN,
 )
 from ldm_core.ui import UI
+
+# The legacy `7.4.13-uNNN` update line, the only family with a withdrawn tag
+# ranking above its real newest release (LDM-#1649).
+LEGACY_UPDATE_TAG_SUFFIX = re.compile(r"-u\d+$")
+
+DOCKER_HUB_HOST = "hub.docker.com"
 
 _DRY_RUN_VFS: dict[str, str] = {}
 
@@ -1743,7 +1753,7 @@ def validate_liferay_tag(tag):
     if not tag:
         return False
 
-    url = "https://releases.liferay.com/releases.json"
+    url = LIFERAY_RELEASES_JSON_URL
     try:
         # Use a short timeout so we don't delay the CLI experience
         response = requests.get(url, headers={"User-Agent": "LDM-CLI"}, timeout=5)
@@ -1822,7 +1832,7 @@ def resolve_liferay_docker_tag(tag, manager=None):  # noqa: C901, PLR0912, PLR09
             pass
 
     # 2. Fetch releases.json online
-    url = "https://releases.liferay.com/releases.json"
+    url = LIFERAY_RELEASES_JSON_URL
     online_resolved_tag = None
     is_portal = False
 
@@ -1946,6 +1956,95 @@ def _accept_discovered_tag(name, release_type, prefix_filter):
     return is_release
 
 
+def _fallback_release_tags(api_url, release_type, prefix_filter):
+    """Candidate tags from `releases.json`, when the registry answered nothing.
+
+    LDM-#1648: the previous fallback read
+    `releases-cdn.liferay.com/tools/workspace/.product_info.json`, described in
+    the code as "a robust secondary/fast source". It could not be one: fetched
+    2026-09-10 it held 322 entries ending at DXP 7.4-u112 / Portal 7.4-ga112
+    (bundle URLs dated 2024-02), and **zero** of its 321 image tags match any
+    quarterly release. It was also one flat document of dxp *and* portal
+    images, so it answered `--portal` lookups with `liferay/dxp` tags.
+
+    `releases.json` is the document `resolve_liferay_docker_tag` already
+    consumes. Each entry's `url` ends in exactly the Docker tag -- verified
+    across all four families, which is why nothing here reconstructs a tag from
+    parts (`releaseKey` would get portal wrong: `portal-7.4-ga132` against a
+    registry tag of `7.4.3.132-ga132`):
+
+        dxp/2026.q3.2         dxp/2026.q1.12-lts
+        dxp/7.4.13-u112       portal/7.4.3.132-ga132
+
+    It cannot serve `nightly` (unpublished builds are not releases) and lags
+    the `-u` line, which is inherent to a release index rather than a fix owed.
+    """
+    expected_product = "portal" if "portal" in api_url.lower() else "dxp"
+
+    tags = []
+    try:
+        raw = get_raw(LIFERAY_RELEASES_JSON_URL)
+        if not raw:
+            return []
+        for entry in json.loads(raw):
+            if not isinstance(entry, dict):
+                continue
+            if str(entry.get("product", "")).strip().lower() != expected_product:
+                continue
+            tag = str(entry.get("url", "")).rstrip("/").rsplit("/", 1)[-1]
+            if tag and _accept_discovered_tag(tag, release_type, prefix_filter):
+                tags.append(tag)
+    except Exception:
+        return []
+    return tags
+
+
+def _is_inactive_registry_tag(api_url, tag):
+    """Whether the registry reports `tag` as withdrawn (LDM-#1649).
+
+    `liferay/dxp:7.4.13-u999` is a real tag, published 2025-05-14 between the
+    u12x releases, carrying a single amd64 image. On a version sort it beats
+    the true newest update release `7.4.13-u152`, and nothing about the *name*
+    says it should not. The registry does say so, explicitly:
+
+        7.4.13-u999   tag_status='inactive'   images=['inactive']  (1 image)
+        7.4.13-u152   tag_status='active'     images=['active']    (2 images)
+
+    **Fails open by design.** Every uncertain outcome -- a non-Docker-Hub
+    source, an unreachable registry, an unparseable body, a tag with no image
+    list -- returns False and keeps the candidate. A network hiccup discarding
+    the correct answer would be a worse bug than the one this fixes, so this
+    only ever rejects on a positive statement of inactivity.
+    """
+    # Compare the parsed hostname rather than searching the string for it:
+    # `hub.docker.com` can sit anywhere in a URL (a path, a query parameter,
+    # a look-alike host), so a substring test is not a host test.
+    if urlparse(api_url).hostname != DOCKER_HUB_HOST:
+        return False
+
+    base, _, _ = api_url.partition("/tags")
+    raw = get_raw(f"{base}/tags/{tag}")
+
+    data = None
+    if raw:
+        with contextlib.suppress(Exception):
+            data = json.loads(raw)
+    if not isinstance(data, dict):
+        return False
+
+    if str(data.get("tag_status", "")).strip().lower() == "inactive":
+        return True
+
+    images = data.get("images")
+    if not isinstance(images, list) or not images:
+        return False
+    return all(
+        isinstance(image, dict)
+        and str(image.get("status", "")).strip().lower() == "inactive"
+        for image in images
+    )
+
+
 def discover_latest_tag(  # noqa: C901, PLR0912, PLR0915
     api_url, release_type="any", prefix_filter=None, verbose=False, refresh=False
 ):
@@ -1972,37 +2071,11 @@ def discover_latest_tag(  # noqa: C901, PLR0912, PLR0915
     if prefix_filter:
         prefix_filter = prefix_filter.lower()
 
-    # Strategy:
-    # 1. Fetch from Liferay Product Info (CDN) as a robust secondary/fast source
-    from ldm_core.constants import (
-        IMAGE_NAME_DXP,
-        IMAGE_NAME_PORTAL,
-        LIFERAY_PRODUCT_INFO_URL,
-    )
-
-    # LDM-#1647: `.product_info.json` lists dxp *and* portal images in one
-    # flat document, so it must be filtered by repository. Unfiltered, a
-    # `--portal` lookup with no portal candidates fell back onto the CDN and
-    # answered with `liferay/dxp:7.4.13-u112`.
-    expected_image = (
-        IMAGE_NAME_PORTAL if "portal" in api_url.lower() else IMAGE_NAME_DXP
-    )
-
-    cdn_tags = []
-    try:
-        raw_cdn = get_raw(LIFERAY_PRODUCT_INFO_URL)
-        if raw_cdn:
-            cdn_data = json.loads(raw_cdn)
-            for entry in cdn_data.values():
-                image = entry.get("liferayDockerImage")
-                if image and ":" in image:
-                    image_repo, _, image_tag = image.partition(":")
-                    if image_repo.strip().lower() == expected_image:
-                        cdn_tags.append(image_tag)
-    except Exception:
-        pass
-
-    # 2. Fetch from Primary API (Docker Hub or releases.liferay.com)
+    # Fetch from the Primary API (Docker Hub or releases.liferay.com). The
+    # releases.json fallback below is consulted only if this finds nothing --
+    # LDM-#1648: it used to be fetched eagerly on every single discovery, one
+    # guaranteed request whose result was thrown away whenever the registry
+    # answered normally (which is almost always).
     #
     # LDM-#1647: newest-first is `ordering=last_updated`, NOT
     # `ordering=-last_updated`. Docker Hub inverts the DRF convention, so the
@@ -2072,14 +2145,10 @@ def discover_latest_tag(  # noqa: C901, PLR0912, PLR0915
             )
 
     if not tags:
-        # LDM-#1647: the CDN list used to be merged inside the fetch loop,
+        # LDM-#1647: the fallback list used to be merged inside the fetch loop,
         # *after* the `if not raw_data: break` -- so a dead primary API
         # discarded the secondary source, the one case it exists for.
-        tags = [
-            name
-            for name in cdn_tags
-            if _accept_discovered_tag(name, release_type, prefix_filter)
-        ]
+        tags = _fallback_release_tags(api_url, release_type, prefix_filter)
 
     # Deduplicate tags
     tags = list(set(tags))
@@ -2094,13 +2163,29 @@ def discover_latest_tag(  # noqa: C901, PLR0912, PLR0915
             for text in re.split("([0-9]+)", s)
         ]
 
+    # Rank by family before version: a quarterly release always wins over a
+    # legacy `7.x` tag, so mixed candidate pools cannot be decided by numeric
+    # coincidence.
+    quarterly = [name for name in tags if re.match(TAG_PATTERN, name)]
+    ranked = sorted(quarterly or tags, key=natural_sort_key)
+
     latest_tag = ""
-    if tags:
-        # Rank by family before version: a quarterly release always wins over
-        # a legacy `7.x` tag, so mixed candidate pools cannot be decided by
-        # numeric coincidence.
-        quarterly = [name for name in tags if re.match(TAG_PATTERN, name)]
-        latest_tag = sorted(quarterly or tags, key=natural_sort_key)[-1]
+    inactive_checks = 0
+    while ranked:
+        candidate = ranked.pop()
+        if (
+            inactive_checks < MAX_INACTIVE_TAG_CHECKS
+            and LEGACY_UPDATE_TAG_SUFFIX.search(candidate)
+            and _is_inactive_registry_tag(api_url, candidate)
+        ):
+            # LDM-#1649: a real tag that upstream has withdrawn. Skipping it is
+            # only safe because the check fails *open* -- see the helper.
+            inactive_checks += 1
+            if verbose:
+                UI.detail(f"Skipping {candidate}: withdrawn upstream (inactive).")
+            continue
+        latest_tag = candidate
+        break
 
     if latest_tag:
         try:
