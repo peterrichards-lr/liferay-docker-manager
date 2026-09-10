@@ -1,0 +1,129 @@
+# LDM-#1650: the guard that would have caught LDM-#1647.
+#
+# Every unit test of tag discovery mocks the registry, so nothing observed that
+# `ordering=-last_updated` returns Docker Hub's OLDEST tags, that the `-qr`
+# sweep matched zero tags, or that a tag family had outgrown the page ceiling.
+# All three fail silently and all three are properties of upstream data.
+#
+# Deliberately NOT a PR check. It fails when the registry changes, not when the
+# diff does, so gating pull requests on it would block unrelated work on
+# somebody else's release schedule. It reports by opening (or updating) one
+# issue instead.
+name: Tag Discovery Canary
+
+on:
+  workflow_dispatch: # Allow manual trigger
+  schedule:
+    - cron: '0 6 * * 1' # Mondays at 06:00 UTC
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    name: Live tag discovery invariants
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install LDM
+        run: |
+          python -m pip install --upgrade pip
+          pip install --disable-pip-version-check .
+
+      # `|| true` deliberately: the report is wanted either way, and the
+      # recorded status drives the two steps below. A canary that aborts the
+      # job before it can file its finding reports nothing to anyone.
+      - name: Run the canary
+        id: canary
+        run: |
+          set -o pipefail
+          if python3 scripts/tag_discovery_canary.py 2>&1 | tee canary-report.txt; then
+            echo "status=pass" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=fail" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tag-discovery-canary-report
+          path: canary-report.txt
+          retention-days: 30
+
+      - name: Open or update the finding
+        if: steps.canary.outputs.status == 'fail'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "Tag discovery no longer satisfies its invariants against the live registry."
+            echo
+            echo "\`\`\`"
+            cat canary-report.txt
+            echo "\`\`\`"
+            echo
+            echo "Run: ${RUN_URL}"
+            echo
+            echo "This is a canary finding, not a regression in a pull request:"
+            echo "it fires when upstream tag data moves. See LDM-#1650 for what"
+            echo "each invariant protects."
+          } > issue-body.md
+
+          existing=$(gh issue list \
+            --label tag-discovery-canary --state open --limit 1 \
+            --json number --jq '.[0].number // empty')
+
+          if [ -n "$existing" ]; then
+            echo "Commenting on existing finding #${existing}"
+            gh issue comment "$existing" --body-file issue-body.md
+          else
+            # The label may not exist yet on a fresh clone of the repository.
+            gh label create tag-discovery-canary \
+              --description "Filed by the scheduled tag discovery canary" \
+              --color B60205 || true
+            gh issue create \
+              --title "Tag discovery canary: an invariant no longer holds" \
+              --label tag-discovery-canary \
+              --body-file issue-body.md
+          fi
+
+      # Close the loop. Without this the first finding stays open forever and
+      # every later run comments on a stale issue, which is how a monitor stops
+      # meaning anything.
+      - name: Close a finding that has cleared
+        if: steps.canary.outputs.status == 'pass'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          existing=$(gh issue list \
+            --label tag-discovery-canary --state open --limit 1 \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" \
+              --body "Every invariant holds again as of ${RUN_URL}. Closing."
+            gh issue close "$existing" --reason completed
+          fi
+
+      - name: Fail the job if the canary failed
+        if: steps.canary.outputs.status == 'fail'
+        run: |
+          echo "::error::Tag discovery canary failed; see the report artifact and the filed issue."
+          exit 1

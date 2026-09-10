@@ -46,6 +46,34 @@
 
 ---
 
+## Scheduled Monitors (Upstream Data)
+
+Some invariants depend on data LDM does not own — the tag families published to
+`liferay/dxp` and `liferay/portal`. These cannot be asserted in the unit suite (every
+test there mocks the registry, by design) and must not gate pull requests, because they
+fail when upstream changes rather than when the diff does.
+
+| Monitor | Runs | Asserts | On failure |
+| :-- | :-- | :-- | :-- |
+| `scripts/tag_discovery_canary.py`<br>(`.github/workflows/tag-discovery-canary.yml`) | Mondays 06:00 UTC, plus manual dispatch | Every advertised release channel resolves to a tag matching LDM's own patterns; the resolved tag is one the registry still serves (not withdrawn, not a name LDM mis-derived); no tag family has outgrown `TAG_DISCOVERY_MAX_PAGES` | Opens — or comments on — a single issue labelled `tag-discovery-canary`, and closes it when the invariants hold again |
+
+Run it by hand against the live registry at any time:
+
+```bash
+python3 scripts/tag_discovery_canary.py    # exit 0 = all invariants hold
+```
+
+It writes nothing outside a temporary directory: `LDM_HOME` is redirected before
+`ldm_core` is imported, so neither the real `~/.ldm` nor the 24-hour tag cache is
+touched.
+
+Deliberately **no assertions on specific tag values** — those change every few weeks,
+and a canary that needs updating on every Liferay release is a canary that gets switched
+off. The sweep-headroom check warns from 70% of the ceiling, because the families only
+ever grow and that warning is the only advance notice anyone gets (LDM-#1650).
+
+---
+
 ## Phase 2: Global Infrastructure
 
 ### 🤖 Automated (E2E)
@@ -710,4 +738,4 @@ and the three false passes above were 608–794 b.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-08* | *Last Reviewed: 2026-09-08*
+*Last Updated: 2026-09-10* | *Last Reviewed: 2026-09-10*
