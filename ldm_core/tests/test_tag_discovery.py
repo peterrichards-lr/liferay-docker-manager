@@ -15,8 +15,39 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from ldm_core.constants import API_BASE_DXP, API_BASE_PORTAL
+from ldm_core.constants import (
+    API_BASE_DXP,
+    API_BASE_PORTAL,
+    MAX_INACTIVE_TAG_CHECKS,
+)
 from ldm_core.utils import discover_latest_tag
+
+# Shaped from the real https://releases.liferay.com/releases.json (2026-09-10):
+# 524 entries, newest first, `url` ending in exactly the Docker tag. Only
+# `product` and `url` are read; `targetPlatformVersion` is kept to show what
+# reconstructing a tag from parts would have produced instead.
+RELEASES_JSON = [
+    {
+        "product": "dxp",
+        "targetPlatformVersion": "2026.q3.2",
+        "url": "https://releases-cdn.liferay.com/dxp/2026.q3.2",
+    },
+    {
+        "product": "dxp",
+        "targetPlatformVersion": "2026.q1.12",
+        "url": "https://releases-cdn.liferay.com/dxp/2026.q1.12-lts",
+    },
+    {
+        "product": "dxp",
+        "targetPlatformVersion": "7.4.13.u112",
+        "url": "https://releases-cdn.liferay.com/dxp/7.4.13-u112",
+    },
+    {
+        "product": "portal",
+        "targetPlatformVersion": "7.4.3.132",
+        "url": "https://releases-cdn.liferay.com/portal/7.4.3.132-ga132",
+    },
+]
 
 
 def _page(names, next_url=None):
@@ -26,18 +57,28 @@ def _page(names, next_url=None):
 
 
 class FakeHub:
-    """Minimal Docker Hub stand-in that records every URL it is asked for."""
+    """Minimal registry stand-in that records every URL it is asked for.
 
-    def __init__(self, pages_by_filter, cdn=""):
+    Serves three endpoints LDM talks to: the paged tag listing, one tag's
+    detail document (`/tags/<name>`, for the inactive check), and
+    `releases.json` (the fallback source).
+    """
+
+    def __init__(self, pages_by_filter, releases=None, tag_details=None):
         # {name filter or None: [ [page 1 names], [page 2 names], ... ]}
         self.pages_by_filter = pages_by_filter
-        self.cdn = cdn
+        self.releases = releases
+        self.tag_details = tag_details or {}
         self.urls = []
 
     def __call__(self, url):
         self.urls.append(url)
-        if "product_info" in url:
-            return self.cdn
+        if "releases.json" in url:
+            return json.dumps(self.releases) if self.releases is not None else None
+
+        if "?" not in url and "/tags/" in url:
+            detail = self.tag_details.get(url.rsplit("/tags/", 1)[1])
+            return json.dumps(detail) if detail is not None else None
 
         page = 1
         if "&page=" in url:
@@ -59,7 +100,7 @@ class FakeHub:
 
     @property
     def hub_urls(self):
-        return [u for u in self.urls if "product_info" not in u]
+        return [u for u in self.urls if "hub.docker.com" in u]
 
 
 class TagDiscoveryTests(unittest.TestCase):
@@ -180,61 +221,117 @@ class TagDiscoveryTests(unittest.TestCase):
         )
         self.assertEqual(self._discover(hub, prefix_filter="2026"), "2026.q3.2")
 
-    def test_cdn_fallback_survives_a_dead_primary_api(self):
-        """The CDN list was merged inside the loop, after the `break`.
+    def test_releases_json_fallback_survives_a_dead_primary_api(self):
+        """The fallback list was merged inside the loop, after the `break`.
 
         A primary API returning nothing therefore discarded the secondary
-        source entirely -- the one situation it exists for.
+        source entirely -- the one situation it exists for (LDM-#1647).
         """
-        hub = FakeHub(
-            {},
-            cdn=json.dumps(
-                {
-                    "dxp-2026.q3.2": {"liferayDockerImage": "liferay/dxp:2026.q3.2"},
-                    "dxp-7.4-u112": {"liferayDockerImage": "liferay/dxp:7.4.13-u112"},
-                }
-            ),
-        )
-        hub.pages_by_filter = {}
+        hub = FakeHub({}, releases=RELEASES_JSON)
 
-        def dead(url):
-            if "product_info" in url:
-                return hub.cdn
-            return None
-
-        with patch("ldm_core.utils.get_raw", dead):
+        with patch("ldm_core.utils.get_raw", hub):
             tag = discover_latest_tag(API_BASE_DXP, release_type="any", refresh=True)
         self.assertEqual(tag, "2026.q3.2")
 
-    def test_cdn_fallback_does_not_leak_across_repositories(self):
-        """`.product_info.json` lists dxp and portal images in one document.
+    def test_releases_json_fallback_reads_the_tag_from_the_url(self):
+        """LDM-#1648: `releaseKey` is not the Docker tag; the `url` tail is.
+
+        `portal-7.4-ga132` would be wrong twice over -- the registry tag is
+        `7.4.3.132-ga132` -- and `dxp-2026.q1.12-lts` carries the `-lts`
+        suffix that `targetPlatformVersion` (`2026.q1.12`) drops.
+        """
+        hub = FakeHub({}, releases=RELEASES_JSON)
+
+        with patch("ldm_core.utils.get_raw", hub):
+            self.assertEqual(
+                discover_latest_tag(API_BASE_DXP, release_type="lts", refresh=True),
+                "2026.q1.12-lts",
+            )
+            self.assertEqual(
+                discover_latest_tag(API_BASE_PORTAL, release_type="any", refresh=True),
+                "7.4.3.132-ga132",
+            )
+
+    def test_releases_json_fallback_filters_by_product(self):
+        """One flat document holds dxp *and* portal releases.
 
         `liferay/portal` has no `-u` tags, so the sweep finds nothing and the
-        CDN fallback runs -- it must not answer a portal query with a dxp
-        image's tag.
+        fallback runs -- it must not answer a portal query with a dxp tag.
         """
-        cdn = json.dumps(
-            {
-                "dxp-7.4-u112": {"liferayDockerImage": "liferay/dxp:7.4.13-u112"},
-                "portal-7.4-ga112": {
-                    "liferayDockerImage": "liferay/portal:7.4.3.112-ga112"
-                },
-            }
-        )
-        hub = FakeHub({}, cdn=cdn)
+        hub = FakeHub({}, releases=RELEASES_JSON)
 
         with patch("ldm_core.utils.get_raw", hub):
             self.assertIsNone(
                 discover_latest_tag(API_BASE_PORTAL, release_type="u", refresh=True)
             )
             self.assertEqual(
-                discover_latest_tag(API_BASE_PORTAL, release_type="any", refresh=True),
-                "7.4.3.112-ga112",
-            )
-            self.assertEqual(
                 discover_latest_tag(API_BASE_DXP, release_type="u", refresh=True),
                 "7.4.13-u112",
             )
+
+    def test_fallback_is_not_fetched_when_the_registry_answers(self):
+        """LDM-#1648: it used to be fetched eagerly on every discovery.
+
+        One guaranteed request per lookup whose result was discarded whenever
+        the registry answered normally, which is almost always.
+        """
+        hub = FakeHub({".q": [["2026.q3.2"]]}, releases=RELEASES_JSON)
+        self.assertEqual(self._discover(hub, release_type="any"), "2026.q3.2")
+        self.assertEqual([u for u in hub.urls if "releases.json" in u], [])
+
+    def test_inactive_legacy_tag_is_skipped(self):
+        """LDM-#1649: `7.4.13-u999` outranks `7.4.13-u152` but is withdrawn."""
+        hub = FakeHub(
+            {"-u": [["7.4.13-u999", "7.4.13-u152", "7.4.13-u151"]]},
+            tag_details={
+                "7.4.13-u999": {
+                    "tag_status": "inactive",
+                    "images": [{"status": "inactive"}],
+                },
+                "7.4.13-u152": {
+                    "tag_status": "active",
+                    "images": [{"status": "active"}],
+                },
+            },
+        )
+        self.assertEqual(self._discover(hub, release_type="u"), "7.4.13-u152")
+
+    def test_inactive_check_reads_image_status_when_tag_status_absent(self):
+        hub = FakeHub(
+            {"-u": [["7.4.13-u999", "7.4.13-u152"]]},
+            tag_details={
+                "7.4.13-u999": {"images": [{"status": "inactive"}]},
+                "7.4.13-u152": {"images": [{"status": "active"}]},
+            },
+        )
+        self.assertEqual(self._discover(hub, release_type="u"), "7.4.13-u152")
+
+    def test_inactive_check_fails_open(self):
+        """An unreachable detail endpoint must not discard the candidate.
+
+        Losing the right answer to a network hiccup would be a worse bug than
+        the withdrawn tag this check exists to skip.
+        """
+        hub = FakeHub({"-u": [["7.4.13-u152", "7.4.13-u151"]]}, tag_details={})
+        self.assertEqual(self._discover(hub, release_type="u"), "7.4.13-u152")
+
+    def test_inactive_check_is_skipped_for_non_legacy_winners(self):
+        """No extra request on the paths users actually take."""
+        hub = FakeHub({".q": [["2026.q3.2", "2026.q1.12-lts"]]})
+        self.assertEqual(self._discover(hub, release_type="any"), "2026.q3.2")
+        self.assertEqual([u for u in hub.urls if "/tags/2026" in u], [])
+
+    def test_inactive_check_is_bounded(self):
+        """A registry reporting everything inactive must still terminate."""
+        names = [f"7.4.13-u{n}" for n in range(140, 153)]
+        hub = FakeHub(
+            {"-u": [names]},
+            tag_details={n: {"tag_status": "inactive"} for n in names},
+        )
+        with patch("ldm_core.utils.get_raw", hub):
+            discover_latest_tag(API_BASE_DXP, release_type="u", refresh=True)
+        detail_calls = [u for u in hub.urls if "?" not in u and "/tags/" in u]
+        self.assertEqual(len(detail_calls), MAX_INACTIVE_TAG_CHECKS)
 
     def test_no_candidates_returns_none(self):
         hub = FakeHub({None: [["latest", "no-such-tag"]], ".q": [[]]})
