@@ -19,6 +19,8 @@ try:
 except ImportError:
     keyring = None  # type: ignore[assignment]
 
+from urllib.parse import urlparse
+
 from ldm_core.constants import (
     ASCII_TRANSCODE_MAP,
     LEGACY_TAG_PATTERN,
@@ -34,6 +36,8 @@ from ldm_core.ui import UI
 # The legacy `7.4.13-uNNN` update line, the only family with a withdrawn tag
 # ranking above its real newest release (LDM-#1649).
 LEGACY_UPDATE_TAG_SUFFIX = re.compile(r"-u\d+$")
+
+DOCKER_HUB_HOST = "hub.docker.com"
 
 _DRY_RUN_VFS: dict[str, str] = {}
 
@@ -2012,7 +2016,10 @@ def _is_inactive_registry_tag(api_url, tag):
     the correct answer would be a worse bug than the one this fixes, so this
     only ever rejects on a positive statement of inactivity.
     """
-    if "hub.docker.com" not in api_url:
+    # Compare the parsed hostname rather than searching the string for it:
+    # `hub.docker.com` can sit anywhere in a URL (a path, a query parameter,
+    # a look-alike host), so a substring test is not a host test.
+    if urlparse(api_url).hostname != DOCKER_HUB_HOST:
         return False
 
     base, _, _ = api_url.partition("/tags")

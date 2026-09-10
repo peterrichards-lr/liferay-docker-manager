@@ -100,7 +100,7 @@ class FakeHub:
 
     @property
     def hub_urls(self):
-        return [u for u in self.urls if "hub.docker.com" in u]
+        return [u for u in self.urls if "/repositories/" in u]
 
 
 class TagDiscoveryTests(unittest.TestCase):
@@ -332,6 +332,26 @@ class TagDiscoveryTests(unittest.TestCase):
             discover_latest_tag(API_BASE_DXP, release_type="u", refresh=True)
         detail_calls = [u for u in hub.urls if "?" not in u and "/tags/" in u]
         self.assertEqual(len(detail_calls), MAX_INACTIVE_TAG_CHECKS)
+
+    def test_inactive_check_only_talks_to_the_real_registry_host(self):
+        """A host test, not a substring search.
+
+        `hub.docker.com` can sit anywhere in a URL -- a path segment, a query
+        parameter, a look-alike domain -- so `"hub.docker.com" in url` is not
+        evidence about who answers it (CodeQL py/incomplete-url-substring-
+        sanitization). The check must decline anything that is not the
+        registry rather than probe it.
+        """
+        from ldm_core.utils import _is_inactive_registry_tag
+
+        for url in (
+            "https://evil.example.com/hub.docker.com/tags?page_size=200",
+            "https://hub.docker.com.evil.example.com/v2/tags?page_size=200",
+            "https://releases.liferay.com/dxp",
+        ):
+            with patch("ldm_core.utils.get_raw") as mock_raw:
+                self.assertFalse(_is_inactive_registry_tag(url, "7.4.13-u999"))
+                mock_raw.assert_not_called()
 
     def test_no_candidates_returns_none(self):
         hub = FakeHub({None: [["latest", "no-such-tag"]], ".q": [[]]})

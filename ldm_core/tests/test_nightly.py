@@ -41,7 +41,7 @@ class TestNightlyBuilds(unittest.TestCase):
         # fetched first, on every discovery -- so it broke the moment that
         # request became conditional, for a reason unrelated to nightlies.
         def by_url(url):
-            if "hub.docker.com" in url:
+            if "/repositories/" in url:
                 return (
                     '{"results": [{"name": "7.4.13.nightly"},'
                     ' {"name": "2026.q1.4-lts"}]}'
