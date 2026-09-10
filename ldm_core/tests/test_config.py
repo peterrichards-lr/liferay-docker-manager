@@ -1543,6 +1543,51 @@ class TestCmdConfigTargetKeyCollision(unittest.TestCase):
         written = json.loads(self._config_path().read_text())
         self.assertNotIn("target", written)
 
+    # LDM-#1651: `ldm config set` writes the root of ~/.ldmrc, but
+    # DefaultsManager reads the `defaults` block whenever the file has one --
+    # so setting a cascading default this way lands somewhere nothing reads,
+    # while `ldm config` lists it back as though it applied. The docs
+    # (conventions_and_config.md, nightly_master_builds.md) advertised exactly
+    # that, for `port` and `release_type`.
+    @patch("ldm_core.handlers.config.UI.die", side_effect=SystemExit)
+    def test_setting_a_cascading_default_is_rejected_with_guidance(self, mock_die):
+        with self.assertRaises(SystemExit):
+            self.config.cmd_config(key="port", value="8081")
+
+        mock_die.assert_called_once()
+        message = mock_die.call_args[0][0]
+        self.assertIn("ldm defaults port 8081", message)
+        self.assertFalse(self._config_path().exists())
+
+    @patch("ldm_core.handlers.config.UI.die", side_effect=SystemExit)
+    def test_the_invisible_write_is_what_is_being_prevented(self, mock_die):
+        """The refusal is not pedantry: the write really was unreadable.
+
+        Proves the mechanism rather than asserting the message -- a root-level
+        `release_type` is invisible to the resolver once a `defaults` block
+        exists, which is the normal state of the file.
+        """
+        from ldm_core.defaults import DefaultsManager
+
+        self._config_path().write_text(
+            json.dumps({"defaults": {"db_type": "mysql"}, "release_type": "nightly"})
+        )
+        with patch("ldm_core.defaults.get_actual_home", return_value=self.fake_home):
+            resolved = DefaultsManager().get("release_type")
+
+        self.assertEqual(resolved, "lts", "root-level key was expected to be ignored")
+
+    @patch("ldm_core.handlers.config.UI.die", side_effect=SystemExit)
+    def test_removing_a_cascading_default_is_still_allowed(self, mock_die):
+        self._config_path().write_text(json.dumps({"port": "8081"}))
+        self.manager.args.remove = True
+
+        self.config.cmd_config(key="port", value="8081")
+
+        mock_die.assert_not_called()
+        written = json.loads(self._config_path().read_text())
+        self.assertNotIn("port", written)
+
     @patch("ldm_core.handlers.config.UI.die", side_effect=SystemExit)
     def test_unsetting_target_via_value_is_still_allowed(self, mock_die):
         self._config_path().write_text(json.dumps({"target": "localhost"}))

@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
+from ldm_core.defaults import CONVENTION_DEFAULTS
 from ldm_core.ui import UI
 from ldm_core.utils import (
     atomic_copy,
@@ -1329,6 +1330,25 @@ class ConfigService:
                     "which node commands run against. Use 'ldm target use "
                     f"{value}' to change the default target, or 'ldm target set "
                     f"{value} -p <project>' (or 'cd <project> && ldm target set {value}') to pin a specific project."
+                )
+
+            # LDM-#1651: a key that CONVENTION_DEFAULTS owns is read through
+            # DefaultsManager, which loads `~/.ldmrc`'s `defaults` block when
+            # one exists and the document root only otherwise
+            # (`ldm_core/defaults.py:51`). `ldm config set` writes the root, so
+            # on any file that has a `defaults` block -- the normal state, since
+            # `ldm config database-mode` and friends create one -- the value
+            # lands where the resolver cannot see it, and `ldm config` lists it
+            # back afterwards, which reads as applied. That is the same failure
+            # as `target` above: a convincing success with no effect. Removal
+            # stays allowed, for the same reason it does there.
+            if not is_removal and key in CONVENTION_DEFAULTS:
+                UI.die(
+                    f"'{key}' is a cascading default, not a plain config value. "
+                    "'ldm config set' writes the root of ~/.ldmrc, which the "
+                    "defaults resolver ignores whenever a 'defaults' block "
+                    f"exists -- so this would have no effect. Use 'ldm defaults {key} "
+                    f"{value}' instead (add --global to write /etc/ldmrc)."
                 )
 
             # Set specific key
