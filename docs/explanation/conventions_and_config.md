@@ -5,26 +5,44 @@
 
 ---
 
-## 🎛️ 1. The 3 Configuration Precedence Levels
+## 🎛️ 1. Configuration Precedence Levels
 
-LDM evaluates settings using a strict 3-tier precedence hierarchy. Higher levels override lower levels without exception:
+LDM evaluates settings using a strict precedence hierarchy. Higher levels override lower levels without exception:
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │ 1. CLI Flags & Runtime Arguments (Highest Precedence)       │
 │    e.g. ldm run --port 9090 --db postgresql                 │
 ├─────────────────────────────────────────────────────────────┤
-│ 2. Project Local Metadata (.liferay-docker.meta)            │
-│    e.g. ldm config set port 8080 (Scoped to current workspace)│
+│ 2. Project Local Metadata (<project>/meta)                  │
+│    written by ldm run/up; scoped to that one project        │
 ├─────────────────────────────────────────────────────────────┤
-│ 3. Global User Configuration (~/.liferay-docker/config.json)│
-│    e.g. ldm config set --global default_db postgresql       │
+│ 3. User Defaults (~/.ldmrc, "defaults" block)               │
+│    e.g. ldm defaults port 9090                              │
+├─────────────────────────────────────────────────────────────┤
+│ 4. Machine Defaults (/etc/ldmrc, "defaults" block)          │
+│    e.g. ldm defaults db_type postgresql --global            │
+├─────────────────────────────────────────────────────────────┤
+│ 5. Convention Defaults (in LDM itself; not a file)          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-1. **CLI Flags & Arguments (Level 1)**: Command-line parameters passed directly to commands (e.g. `ldm run --port 9090`) take precedence over all stored configurations for that single invocation.
-2. **Project Local Metadata (Level 2)**: Stored in `.liferay-docker.meta` inside the project root directory. Manages workspace-specific ports, database types, search modes, and attached client extension mappings.
-3. **Global User Configuration (Level 3)**: Stored in `~/.liferay-docker/config.json`. Defines global developer defaults (e.g. preferred default database, telemetry preferences, ngrok/lfr-tunnel tokens).
+1. **CLI Flags & Arguments (Level 1)**: Command-line parameters passed directly to commands (e.g. `ldm run --port 9090`) take precedence over all stored configuration. They are not merely for one invocation: `ldm run` persists what it resolved into the project's `meta`, so the value survives into later `ldm up` calls that omit the flag.
+2. **Project Local Metadata (Level 2)**: Stored as `meta` inside the project root directory (the older `.liferay-docker.meta` and `.ldm.meta` names are still read). Manages project-specific ports, database engine and mode, search modes, and attached client extension mappings.
+3. **User Defaults (Level 3)**: The `defaults` block of `~/.ldmrc`. Set with `ldm defaults <key> <value>`; view the whole resolved cascade, and where each value came from, with `ldm defaults`.
+4. **Machine Defaults (Level 4)**: The `defaults` block of `/etc/ldmrc`, for shared workstation images and CI agents. Set with `ldm defaults <key> <value> --global`.
+5. **Convention Defaults (Level 5)**: `CONVENTION_DEFAULTS` in `ldm_core/defaults.py`. Not a file and not editable — the values that apply when nobody has chosen one.
+
+> [!IMPORTANT]
+> **`ldm defaults <key>` and `ldm config set <key>` are not interchangeable** (LDM-#1651).
+> `ldm config set` writes the *root* of `~/.ldmrc`, which is the right home for
+> credentials and machine-local settings (`ngrok_authtoken`, `share_provider`).
+> Cascading defaults are read from the `defaults` block, so a cascading key written to
+> the root is invisible to every command that resolves it. LDM now refuses that write
+> and names the command that works, rather than reporting a success with no effect.
+
+Both files are plain JSON and can be inspected directly, but prefer the commands —
+`ldm defaults` reports which level each effective value came from.
 
 ---
 
@@ -53,4 +71,4 @@ LDM uses a hybrid storage architecture to maximize performance while preventing 
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*
+*Last Updated: 2026-09-10* | *Last Reviewed: 2026-09-10*

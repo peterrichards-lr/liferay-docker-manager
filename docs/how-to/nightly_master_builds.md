@@ -40,17 +40,20 @@ LDM resolves settings using the following precedence hierarchy (lowest to highes
 1. **Machine Level (`/etc/ldmrc`)**: System-wide default for workstation setups or CI build agents.
 
    ```bash
-   ldm defaults set-global release_type nightly
+   ldm defaults release_type nightly --global
    ```
 
 2. **User Level (`~/.ldmrc`)**: Developer user preference across all local projects.
 
    ```bash
-   ldm config set release_type nightly
-   ldm config set auto_pull_nightly prompt
+   ldm defaults release_type nightly
+   ldm defaults auto_pull_nightly prompt
    ```
 
-3. **Project Level (`[project]/.liferay-docker.meta`)**: Project-specific metadata overriding user/machine defaults.
+   Not `ldm config set release_type nightly` — that writes the root of `~/.ldmrc`, which
+   the defaults resolver ignores whenever a `defaults` block exists (LDM-#1651).
+
+3. **Project Level (`[project]/meta`)**: Project-specific metadata overriding user/machine defaults.
 
    ```json
    {
@@ -98,4 +101,4 @@ When accepting a nightly build update, LDM's version upgrade pipeline ensures da
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-09-10*
+*Last Updated: 2026-09-10* | *Last Reviewed: 2026-09-10*
