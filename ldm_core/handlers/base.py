@@ -819,7 +819,12 @@ class BaseHandler:
             )
             output = res.stderr
 
-            match = re.search(r'version\s+"(\d+)\.', output)
+            # LDM-#1660: the dot must be OPTIONAL. OpenJDK GA releases print no
+            # dotted component until their first update lands -- `openjdk
+            # version "25" 2025-09-16` -- and requiring `\.` made that string
+            # match nothing at all, so the code below reported a version
+            # mismatch for a JDK *newer* than required.
+            match = re.search(r'version\s+"(\d+)(?:[._]|")', output)
             if match:
                 actual_version = int(match.group(1))
                 if actual_version >= int(expected):
@@ -851,7 +856,9 @@ class BaseHandler:
                 [str(gradlew_path), "-v"], capture_output=True, text=True, check=True
             )
             output = res.stdout
-            match = re.search(r"JVM:\s+(\d+)\.", output)
+            # LDM-#1660: same optional dot as _check_java_version above --
+            # Gradle reports `JVM: 25 (Eclipse Adoptium 25+36)` for a GA build.
+            match = re.search(r"JVM:\s+(\d+)(?:[.\s]|$)", output)
             if match:
                 actual_version = int(match.group(1))
                 if actual_version >= int(expected):
