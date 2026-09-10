@@ -54,11 +54,18 @@ LEGACY_TAG_PATTERN = r"^(dxp-|portal-)?\d+\.\d+\.\d+(\.\d+)?(-u\d+|-ga\d+|-sp\d+
 NIGHTLY_TAG_PATTERN = r"^(dxp-|portal-)?[\d.]+\.nightly$"
 
 # Docker Hub caps `page_size` at 100 regardless of what we ask for, so this is
-# a 800-tag ceiling. It is sized to enumerate a whole *filtered* family in one
+# a 1200-tag ceiling. It is sized to enumerate a whole *filtered* family in one
 # sweep -- 186 `-lts`, 594 `-u`, 602 quarterly, 667 portal tags today -- which
 # is what makes the local natural sort authoritative rather than dependent on
 # the order the registry happens to return.
-TAG_DISCOVERY_MAX_PAGES = 8
+#
+# Raised from 8 (800 tags) by LDM-#1650, whose canary measures the margin: the
+# unfiltered portal sweep was already at 83% of the old ceiling and the
+# quarterly sweep at 75%. Crossing it degrades silently -- the sweep still
+# returns tags, just not all of them -- which is how `lts` sat one growth spurt
+# away from the failure `any` had already hit. Costs nothing for a family that
+# fits, since paging stops when the registry reports no `next` page.
+TAG_DISCOVERY_MAX_PAGES = 12
 SCRIPT_DIR = Path(__file__).parent.parent.resolve()
 ELASTICSEARCH_VERSION = "8.19.1"
 ELASTICSEARCH7_VERSION = "7.17.24"
