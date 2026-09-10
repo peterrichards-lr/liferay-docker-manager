@@ -85,7 +85,7 @@ prompt all feed the same resolver.
 | `lts` | Long-Term Support quarterly (the default when nothing is specified) | `2026.q1.12-lts` |
 | `qr` | Quarterly Release — the newest quarterly, LTS or not | `2026.q3.2` |
 | `latest` / `any` | The newest release of any family, quarterly preferred | `2026.q3.2` |
-| `u` | The legacy `7.4.13-uNNN` update line | `7.4.13-u999` (see [#1649](https://github.com/peterrichards-lr/liferay-docker-manager/issues/1649)) |
+| `u` | The legacy `7.4.13-uNNN` update line | `7.4.13-u152` |
 | `nightly` / `master` | The floating nightly tag, not a timestamped build | `7.4.13.nightly` |
 | a prefix (e.g. `2025.q1`) | The newest patch within that prefix | `2025.q1.27-lts` |
 
@@ -107,6 +107,17 @@ Results are cached in `~/.liferay_docker_cache.json` for 24 hours per
 `(repository, release type, prefix)` combination. Pass `--refresh` to force a live
 lookup — worth knowing, because a cached answer for one channel can make an unrelated
 broken channel look healthy (LDM-#1647).
+
+A withdrawn tag is skipped rather than offered. `liferay/dxp` publishes a
+`7.4.13-u999` placeholder whose only image the registry reports as `inactive`, and on a
+version sort it beats the real newest update release — so the winner of a legacy
+`*-uNNN` lookup is checked against the registry before being used (LDM-#1649). The check
+fails open: an unreachable registry keeps the candidate rather than discarding it.
+
+If the registry cannot be reached at all, discovery falls back to
+[`releases.json`](https://releases.liferay.com/releases.json), which covers every
+quarterly and GA release but not nightlies — an unpublished build is not a release
+(LDM-#1648).
 
 ### `--vanilla` Switch ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue)
 

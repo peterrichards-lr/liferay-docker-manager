@@ -35,12 +35,20 @@ class TestNightlyBuilds(unittest.TestCase):
     def test_discover_latest_tag_nightly(self, mock_get_raw, mock_home):
         """Verify discover_latest_tag handles release_type='nightly'."""
         mock_home.return_value.exists.return_value = False
-        mock_get_raw.side_effect = [
-            # CDN response (empty or non-matching)
-            '{"entry": {"liferayDockerImage": "liferay/dxp:2026.q1.4-lts"}}',
-            # Docker Hub API response
-            '{"results": [{"name": "7.4.13.nightly"}, {"name": "2026.q1.4-lts"}]}',
-        ]
+
+        # LDM-#1648: answer by URL, not by call order. This used to be a
+        # two-item `side_effect` list that assumed the fallback source was
+        # fetched first, on every discovery -- so it broke the moment that
+        # request became conditional, for a reason unrelated to nightlies.
+        def by_url(url):
+            if "/repositories/" in url:
+                return (
+                    '{"results": [{"name": "7.4.13.nightly"},'
+                    ' {"name": "2026.q1.4-lts"}]}'
+                )
+            return None
+
+        mock_get_raw.side_effect = by_url
 
         tag = discover_latest_tag(
             "https://hub.docker.com/v2/repositories/liferay/dxp/tags",
