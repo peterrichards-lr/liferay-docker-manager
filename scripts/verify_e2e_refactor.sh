@@ -877,6 +877,76 @@ verify_ldmp_manifest_refusal() {
     return 0
 }
 
+# LDM-#1651: `ldm config set` writes the ROOT of ~/.ldmrc, while every
+# cascading default is read from its `defaults` block whenever that block
+# exists (`DefaultsManager._load`). A key set the first way therefore landed
+# where nothing reads it, and `ldm config` listed it back afterwards, so it
+# looked applied. Both halves are asserted here: the cascading key is refused
+# with the working command named, and a non-cascading key still writes, because
+# a guard that swallowed those would be its own regression.
+#
+# Runs against an isolated LDM_HOME on purpose. The failure being checked for is
+# a SUCCESSFUL write, so against a binary without the guard this would otherwise
+# modify the operator's real ~/.ldmrc -- and this suite runs against the real
+# home everywhere else.
+verify_cascading_default_guard() {
+    local ldm_cmd="$1"
+    local work_dir="$2"
+
+    local iso_home="${work_dir}/ldmrc-guard-home"
+    rm -rf "$iso_home"
+    mkdir -p "$iso_home" || return 1
+
+    local out code
+    out=$(LDM_HOME="$iso_home" "$ldm_cmd" config set port 8081 2>&1) && code=0 || code=$?
+    local wrote_after_refusal="no"
+    [ -f "${iso_home}/.ldmrc" ] && wrote_after_refusal="yes"
+
+    if [ "$code" -eq 0 ]; then
+        rm -rf "$iso_home"
+        echo "❌ ERROR: 'ldm config set port 8081' reported success. It writes the root of ~/.ldmrc, which the defaults resolver ignores, so the value has no effect (LDM-#1651)."
+        echo "   Output was: $out"
+        return 1
+    fi
+    if ! echo "$out" | grep -q "ldm defaults port 8081"; then
+        rm -rf "$iso_home"
+        echo "❌ ERROR: the write was refused but the message did not name the command that works ('ldm defaults port 8081')."
+        echo "   Output was: $out"
+        return 1
+    fi
+    if [ "$wrote_after_refusal" = "yes" ]; then
+        rm -rf "$iso_home"
+        echo "❌ ERROR: the write was refused but ~/.ldmrc was still created."
+        return 1
+    fi
+
+    # The other half: a key the defaults resolver does not own must still write.
+    local plain_out plain_code
+    plain_out=$(LDM_HOME="$iso_home" "$ldm_cmd" config set share_domain e2e.example.com 2>&1) && plain_code=0 || plain_code=$?
+    local plain_written="no"
+    if [ -f "${iso_home}/.ldmrc" ] && grep -q "e2e.example.com" "${iso_home}/.ldmrc"; then
+        plain_written="yes"
+    fi
+    rm -rf "$iso_home"
+
+    if [ "$plain_code" -ne 0 ] || [ "$plain_written" != "yes" ]; then
+        echo "❌ ERROR: 'ldm config set share_domain' should still write ~/.ldmrc (exit ${plain_code}, written=${plain_written}). The guard is too broad."
+        echo "   Output was: $plain_out"
+        return 1
+    fi
+
+    echo "✅ Cascading default write refused with the working command named; non-cascading keys still write."
+    return 0
+}
+
+echo ">> Verifying the cascading-default write guard (LDM-#1651)..."
+if CASCADING_GUARD_OUT=$(verify_cascading_default_guard "$LDM_CMD" "$LDM_WORKSPACE"); then
+    report_ok "$CASCADING_GUARD_OUT"
+else
+    echo "$CASCADING_GUARD_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
 echo ">> Verifying local .ldmp manifest verification (LDM-#1621)..."
 if LDMP_REFUSAL_OUT=$(verify_ldmp_manifest_refusal "$LDM_CMD" "$LDM_WORKSPACE" "$LDMP_REFUSAL_PROJECT"); then
     report_ok "$LDMP_REFUSAL_OUT"

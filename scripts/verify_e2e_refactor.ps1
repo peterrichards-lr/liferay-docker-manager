@@ -727,6 +727,64 @@ function Get-PortHolderDiagnostic {
 # Kept as a named function for the same reason as Get-VersionBannerLines above,
 # so it can be executed without a full Docker/ldm E2E run
 # (ldm_core/tests/test_verify_scripts.py).
+function Test-CascadingDefaultGuard {
+    # LDM-#1651: 'ldm config set' writes the ROOT of ~/.ldmrc, while every
+    # cascading default is read from its 'defaults' block whenever that block
+    # exists (DefaultsManager._load). A key set the first way therefore landed
+    # where nothing reads it, and 'ldm config' listed it back afterwards, so it
+    # looked applied. Both halves are asserted here: the cascading key is
+    # refused with the working command named, and a non-cascading key still
+    # writes, because a guard that swallowed those would be its own regression.
+    #
+    # Runs against an isolated LDM_HOME on purpose. The failure being checked
+    # for is a SUCCESSFUL write, so against a binary without the guard this
+    # would otherwise modify the operator's real ~/.ldmrc -- and this suite
+    # runs against the real home everywhere else.
+    #
+    # Parity with verify_cascading_default_guard in verify_e2e_refactor.sh.
+    param($LdmCmd, $WorkDir)
+
+    $isoHome = Join-Path $WorkDir "ldmrc-guard-home"
+    if (Test-Path $isoHome) { Remove-Item -Recurse -Force $isoHome -ErrorAction SilentlyContinue }
+    New-Item -ItemType Directory -Path $isoHome -Force | Out-Null
+    $ldmrc = Join-Path $isoHome ".ldmrc"
+
+    $prevHome = $env:LDM_HOME
+    $env:LDM_HOME = $isoHome
+    try {
+        $out = & $LdmCmd config set port 8081 2>&1 | Out-String
+        $code = $LASTEXITCODE
+        $wroteAfterRefusal = Test-Path $ldmrc
+
+        if ($code -eq 0) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm config set port 8081' reported success. It writes the root of ~/.ldmrc, which the defaults resolver ignores, so the value has no effect (LDM-#1651).`n   Output was: ${out}" }
+        }
+        if ($out -notmatch "ldm defaults port 8081") {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: the write was refused but the message did not name the command that works ('ldm defaults port 8081').`n   Output was: ${out}" }
+        }
+        if ($wroteAfterRefusal) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: the write was refused but ~/.ldmrc was still created." }
+        }
+
+        # The other half: a key the defaults resolver does not own must still write.
+        $plainOut = & $LdmCmd config set share_domain e2e.example.com 2>&1 | Out-String
+        $plainCode = $LASTEXITCODE
+        $plainWritten = (Test-Path $ldmrc) -and ((Get-Content -Raw $ldmrc) -match "e2e.example.com")
+        if ($plainCode -ne 0 -or -not $plainWritten) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm config set share_domain' should still write ~/.ldmrc (exit ${plainCode}, written=${plainWritten}). The guard is too broad.`n   Output was: ${plainOut}" }
+        }
+    } finally {
+        if ($null -eq $prevHome) {
+            Remove-Item Env:LDM_HOME -ErrorAction SilentlyContinue
+        } else {
+            $env:LDM_HOME = $prevHome
+        }
+        if (Test-Path $isoHome) { Remove-Item -Recurse -Force $isoHome -ErrorAction SilentlyContinue }
+    }
+
+    return @{ Ok = $true; Message = "[SUCCESS] Cascading default write refused with the working command named; non-cascading keys still write." }
+}
+
 function Test-LdmpManifestRefusal {
     param(
         [string]$LdmCmd,
@@ -923,6 +981,15 @@ try {
         Write-Verdict "[SUCCESS] Dev Guardrails verified."
     } else { 
         Write-Host "[ERROR] ERROR: Dev Guardrails failed! Output was: $res" -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying the cascading-default write guard (LDM-#1651)..."
+    $cascadingGuard = Test-CascadingDefaultGuard -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE
+    if ($cascadingGuard.Ok) {
+        Write-Verdict $cascadingGuard.Message
+    } else {
+        Write-Host $cascadingGuard.Message -ForegroundColor Red
         exit 1
     }
 
