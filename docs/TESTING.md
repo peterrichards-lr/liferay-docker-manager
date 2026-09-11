@@ -736,6 +736,47 @@ this issue of all issues would repeat the mistake.
 Report size is a usable smoke signal alongside this: a genuine pass is ~4 kB,
 and the three false passes above were 608–794 b.
 
+### **Which platforms CI actually verifies (LDM-#1662)**
+
+Making those jobs honest revealed what they had been hiding: they had *never*
+passed. The red that followed PR #1622 was not a regression — it was the true
+state arriving. The runner images were identical on the last "green" run
+(`34063433007`, v2.21.0) and the first red one, so nothing about the
+environment changed; only the reporting did.
+
+The arms were therefore split:
+
+| Workflow | Arms | May be red? |
+|---|---|---|
+| `LDM Platform Verification (Multi-OS)` | `verify-linux` (ubuntu, fedora, rockylinux, alpine, debian) | **No** — it publishes the matrix |
+| `LDM Platform Verification (Best Effort)` | `verify-macos` (Colima) | **Yes** — diagnostic only |
+
+**The Windows arms were deleted, not demoted.** GitHub-hosted Windows runners
+run Windows containers, and every LDM image is a Linux image, so the job failed
+at `no matching manifest for windows(10.0.26100)/amd64` and then at
+`docker network create liferay-net`. No workflow-level change makes that pass.
+Windows coverage is the manual PowerShell 5.1 / 7 / WSL2 runs in the table at
+the top of this document — which is where it always genuinely came from, since
+`sync-compatibility` has only ever published reports carrying the
+`linux-workstation-` prefix.
+
+**`verify-macos` is expected to be red for now.** Colima does not start on
+`macos-26-arm64`, so the suite finds no daemon at
+`unix:///var/run/docker.sock`. It is kept running because the report and debug
+logs it uploads are the only standing signal on that platform, and because the
+failure is plausibly recoverable in a way the Windows one is not.
+
+**Do not "fix" a red best-effort arm with `continue-on-error: true` on the
+job.** That makes it report `success`, which is precisely the LDM-#1611 defect
+described above. Best effort means *red in a workflow allowed to be red*, never
+*green in one that is not*. `test_ci_verification_reporting.py` asserts this,
+along with the moved job keeping its report cross-check and not drifting back
+into the Linux workflow.
+
+(The `continue-on-error` on the macOS `Start Colima` **step** is unrelated and
+deliberate: it lets the suite step fail on its own and produce a report plus
+debug logs, instead of aborting the job on a bare brew/colima trace.)
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-10* | *Last Reviewed: 2026-09-10*
+*Last Updated: 2026-09-11* | *Last Reviewed: 2026-09-11*
