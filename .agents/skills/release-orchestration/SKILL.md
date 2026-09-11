@@ -163,6 +163,18 @@ To prevent "version fatigue" and ensure the stability of the main release channe
   - Only *raw* (non-canonically-named) reports are version-checked. Reports already at their canonical `verify-<slug>-<status>.txt` name are never staleness-tested, so an existing matrix entry cannot be archived by a mismatched run -- it is freshly-dropped reports that are at risk.
 - **Raw Verification Reports Are Immutable (The Honesty Rule)**: `references/verification-results/*.txt` files are a verbatim, honest historical record of what was actually tested. **NEVER** hand-edit their content -- including the `Version:`/`Script Ver:` lines -- to make `sync_compatibility.py` accept a report, not even "just this once" when you're confident the underlying logic didn't change. If `sync_compatibility.py` incorrectly rejects a report over a provably cosmetic version mismatch (e.g. the standalone verify-script lagging the binary between refreshes -- a normal, expected drift in the real verification workflow, since binaries and the verify script are upgraded independently and not via git checkout), fix the *sync tool's* logic (see `_is_verify_script_diff_cosmetic_only`/`_is_metadata_only_diff` in `scripts/sync_compatibility.py` for the existing pattern) or have the user genuinely re-run verification -- never falsify the raw record to route around the check.
 - **Release Announcements Gate**: Before initiating or promoting any release, verify that `RELEASE_ANNOUNCEMENTS` in `ldm_core/constants.py` has an active, non-empty entry for the current minor release series (`X.Y`) with current feature highlights. This is enforced by `test_release_announcements_contract` in `ldm_core/tests/test_architectural_contracts.py`.
+- **Release Notes Gate (the CHANGELOG entry and the upgrade banner)**: BEFORE running `python3 scripts/release.py --bump beta` **and again before `--promote`**, confirm the user is actually told what changed. Two surfaces, both of which fail silently:
+
+  1. **The `CHANGELOG.md` entry for the version being tagged must describe the change set.** `_apply_version_update` (`ldm_core/handlers/dev.py:327-345`) prepends an empty `### Added` / `-` stub on *every* bump and nothing ever fills it. Measured on 2026-09-11: **292 of 356 entries were empty**, the newest populated one was `v2.15.16-pre.11` (2026-07-14), and **20 stable releases** shipped a blank entry -- v2.16.0 through v2.21.0 inclusive. No hook objects; `pre-commit` passes with every entry blank.
+
+     **`--promote` is itself a bump**, so it prepends a *fresh empty* `## [vX.Y.Z]` block above whatever the `-pre.N` entries say. Populating the pre-release entry does **not** carry over. The stable entry has to be written at promotion time, which is why this gate names both commands.
+
+  2. **`RELEASE_ANNOUNCEMENTS` must have an entry for the exact version, not merely its series.** See the Release Announcements Gate below for the series requirement. That requirement is necessary and not sufficient: `check_and_display_upgrade_banner` (`ldm_core/cli.py:2660`) tries `RELEASE_ANNOUNCEMENTS[VERSION]` **before** falling back to `RELEASE_ANNOUNCEMENTS[X.Y]`, so a patch release with no key of its own re-prints the minor series' feature list -- highlights the user already saw on the release they are upgrading *from*. v2.21.1 was about to ship announcing five v2.21.0 features and nothing about the tag-discovery fix that was the whole reason to upgrade (LDM-#1663).
+
+     A patch entry only ever displays at the **stable** version: during the cycle `VERSION` is `X.Y.Z-pre.N`, whose series prefix is `X.Y`, so the fallback serves. It therefore **cannot be verified by pre-release manual E2E** -- its coverage must be a unit test on the lookup. `ldm_core/tests/test_patch_release_announcements.py` is that test; it drives the real banner and was confirmed to fail when the key is removed.
+
+  Neither surface is covered by CI today. Until one is, this gate is the only thing standing between a release and a silent, undocumented upgrade -- so answer it explicitly rather than assuming the orchestrator handled it. The orchestrator writes the stub; it has never written the content.
+
 - **Stable Promotion**: Stable releases (`[release]`) MUST be reserved for hardened features and verified bugfixes.
 
 ## Release Pull Request Naming Conventions
@@ -178,4 +190,4 @@ To ensure clarity and prevent title drift across multi-commit pre-release iterat
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-01* | *Last Reviewed: 2026-09-01*
+*Last Updated: 2026-09-11* | *Last Reviewed: 2026-09-11*
