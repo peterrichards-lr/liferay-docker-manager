@@ -208,6 +208,14 @@ class PackageVerificationStage(PipelineStage):
       {}, and the strict parse above is what fixes that.
     * The origin checks cannot be applied at all. See
       _note_unverifiable_origin.
+
+    Creates no filesystem state, so it owns no rollback (LDM-#1643). Everything
+    here is read-only: `parse_package_manifest` parses, `reconcile_package_listings`
+    mutates the manifest dict *in memory*, and `_note_unverifiable_origin` warns.
+    The scratch directories it is handed belong to ExtractionStage, which
+    created them and cleans them up. LDM-#1643 listed this stage as a gap; that
+    was wrong, and it was removed from the ratchet's allowlist rather than
+    given a rollback that would have had nothing to undo.
     """
 
     def execute(self, context: PipelineContext) -> None:
@@ -429,7 +437,36 @@ class DatabaseRestoreStage(PipelineStage):
 
 
 class VolumeSyncStage(PipelineStage):
-    """Synchronizes files and artifacts from the source workspace to the project paths."""
+    """Synchronizes files and artifacts from the source workspace to the project paths.
+
+    **Known rollback gap, deliberately still open (LDM-#1643).**
+
+    Everything written here lands inside the project directory, and
+    `ProjectSetupStage.rollback` removes that directory -- but only when
+    `is_brand_new`. So the leak has one trigger and one only: importing into a
+    project directory that ALREADY EXISTED. A later stage then fails, that
+    rollback declines to delete a directory it did not create, and the client
+    extensions, fragments and services copied here remain.
+
+    A faithful rollback is not currently achievable, which is why this is
+    documented rather than patched. The copy loop below does:
+
+        if dest.exists() and overwrite:
+            shutil.rmtree(dest)
+        if not dest.exists():
+            shutil.copytree(item, dest, copy_function=safe_copy)
+
+    Nothing is backed up before that `rmtree`, so by the time any rollback
+    could run, the user's prior content is already gone and unrecoverable. A
+    rollback could therefore only delete what was *added* -- into a directory
+    the user owns -- which risks removing content they wanted while still not
+    restoring what was overwritten. One write also happens inside
+    `snapshot._restore_from_cloud_layout`, out of this stage's reach.
+
+    Closing this properly means capturing the overwrite targets first, so a
+    rollback can restore rather than merely delete. That is LDM-#1677; adding
+    deletion logic alone would turn a leak into data loss.
+    """
 
     def execute(self, context: PipelineContext) -> None:  # noqa: C901, PLR0912, PLR0915
         import os
@@ -603,7 +640,24 @@ class BuildWorkspaceStage(PipelineStage):
 
 
 class FinalizationStage(PipelineStage):
-    """Handles post-import cleanup and starts the stack if needed."""
+    """Handles post-import cleanup and starts the stack if needed.
+
+    **Must not define a rollback** (LDM-#1643), and this is a correctness
+    constraint rather than an omission.
+
+    `import_committed` is set here, before `cmd_run`, and it is the commit
+    point: `ProjectSetupStage.rollback` checks it and declines to delete the
+    project once it is set. A rollback on this stage would run *inside* that
+    committed region and undo an import that has already succeeded -- exactly
+    the failure LDM-#1630 introduced the commit point to prevent, where an
+    aborted post-import `ldm run` destroyed the finished project.
+
+    The state `cmd_run` creates is not this stage's to undo either. It belongs
+    to the run pipeline, whose own stages own their own rollbacks.
+
+    `test_stage_owns_its_rollback.py` asserts this stage defines no rollback,
+    so a future attempt to "finish" LDM-#1643 by adding one fails loudly.
+    """
 
     def execute(self, context: PipelineContext) -> None:
         context = typing.cast(ImportPipelineContext, context)
