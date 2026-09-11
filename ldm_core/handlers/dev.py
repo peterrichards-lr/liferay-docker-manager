@@ -27,6 +27,94 @@ def find_changelog_insert_index(lines):
     return 0
 
 
+# Keep a Changelog's section order. Anything unrecognised keeps its first-seen
+# position after these, rather than being dropped.
+_CHANGELOG_SECTIONS = ("Added", "Changed", "Deprecated", "Removed", "Fixed", "Security")
+
+
+def _cycle_prerelease_blocks(content, prefix):
+    """The body lines of each `-pre.N` entry belonging to this cycle.
+
+    Entries are newest-first in the file. Collection stops at the first
+    heading that is not one of this cycle's pre-releases -- that is the
+    previous stable release, and everything below belongs to an earlier cycle.
+    """
+    blocks: list[list[str]] = []
+    current: list[str] | None = None
+    for line in content.splitlines():
+        if line.startswith("## ["):
+            if line.startswith(prefix):
+                current = []
+                blocks.append(current)
+                continue
+            if blocks:
+                break
+            current = None
+            continue
+        if current is not None:
+            current.append(line)
+    return blocks
+
+
+def _merge_sections(blocks):
+    """Merge `### Section` bullets across blocks, oldest first, de-duplicated.
+
+    A fix is usually restated in each subsequent pre-release, so identical
+    bullets collapse to one.
+    """
+    sections: dict[str, list[str]] = {}
+    order: list[str] = []
+    for block in reversed(blocks):  # oldest pre-release first
+        section = None
+        for line in block:
+            if line.startswith("### "):
+                section = line[4:].strip()
+                if section not in sections:
+                    sections[section] = []
+                    order.append(section)
+            elif section and line.startswith("- ") and line.strip() != "-":
+                if line not in sections[section]:
+                    sections[section].append(line)
+    return sections, order
+
+
+def collect_prerelease_changelog_body(content, new_version):
+    """Merge this cycle's `-pre.N` entries into the body for a stable release.
+
+    LDM-#1671. `--promote` is itself a version bump, so it used to prepend the
+    same empty `### Added` / `-` stub every other bump writes. The content of
+    the pre-releases -- which is exactly what the stable release contains --
+    did not carry over, so a stable entry shipped blank even when every
+    pre-release in the cycle had been written up. Twenty stable releases went
+    out that way before anyone counted (LDM-#1663).
+
+    Returns the rendered body, or None when there is nothing to carry (a
+    pre-release bump, or a stable one with no documented pre-releases), in
+    which case the caller writes the usual stub.
+    """
+    if "-" in new_version:
+        return None  # a pre-release bump carries nothing forward
+
+    blocks = _cycle_prerelease_blocks(content, f"## [v{new_version}-pre.")
+    if not blocks:
+        return None
+
+    sections, order = _merge_sections(blocks)
+    rendered = [s for s in _CHANGELOG_SECTIONS if sections.get(s)] + [
+        s for s in order if s not in _CHANGELOG_SECTIONS and sections.get(s)
+    ]
+    if not rendered:
+        return None
+
+    out = []
+    for section in rendered:
+        out.append(f"### {section}")
+        out.append("")
+        out.extend(sections[section])
+        out.append("")
+    return "\n".join(out).rstrip() + "\n"
+
+
 class DevService:
     """Service for development-only utilities (versioning, internal tools)."""
 
@@ -323,19 +411,28 @@ class DevService:
 
             if header not in content:
                 UI.detail("Prepending version header to CHANGELOG.md...")
+                # LDM-#1671: a stable release carries its cycle's pre-release
+                # entries forward; anything else gets the usual empty stub.
+                carried = collect_prerelease_changelog_body(content, new_version)
+                body = carried if carried else "### Added\n\n- \n"
+                if carried:
+                    UI.detail(
+                        "Carrying this cycle's pre-release entries into the "
+                        "stable CHANGELOG entry..."
+                    )
                 # Insert after the initial boilerplate (first few lines)
                 lines = content.splitlines()
                 insert_idx = find_changelog_insert_index(lines)
 
                 if insert_idx == 0:
                     # Fallback: append after the intro text
-                    new_block = f"\n{header}\n\n### Added\n\n- \n"
+                    new_block = f"\n{header}\n\n{body}"
                     content = content.replace(
                         "Semantic Versioning](https://semver.org/spec/v2.0.0.html).",
                         f"Semantic Versioning](https://semver.org/spec/v2.0.0.html).\n{new_block}",
                     )
                 else:
-                    new_block = f"{header}\n\n### Added\n\n- \n"
+                    new_block = f"{header}\n\n{body}"
                     lines.insert(insert_idx, new_block)
                     content = "\n".join(lines).strip() + "\n"
                     # Final safety: remove trailing spaces from the empty list item
