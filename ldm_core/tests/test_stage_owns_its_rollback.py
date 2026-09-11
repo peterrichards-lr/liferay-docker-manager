@@ -37,16 +37,27 @@ _FS_CREATORS = frozenset(
 # This is a RATCHET, not an approval: it records the gap that existed when
 # LDM-#1635 landed so the invariant can be enforced for everything else. Adding
 # a name here is a deliberate act that needs an issue; removing one is progress.
-# Tracked as LDM-#1643 -- a single follow-up rather than one issue per stage,
-# per the repo's rule against unsolicited audit cascades. Note LDM-#1643 also
-# records that FinalizationStage may legitimately need no rollback at all: it
-# runs after `import_committed`, and the commit point exists so that nothing
-# below it undoes a finished import.
+#
+# LDM-#1643 examined all three original entries and two were wrong:
+#
+# * PackageVerificationStage creates NOTHING. It parses, reconciles the manifest
+#   dict in memory, and warns; the scratch dirs it is handed belong to
+#   ExtractionStage. Removed -- a rollback there would have had nothing to undo.
+# * FinalizationStage must NEVER define a rollback. It sets `import_committed`
+#   before `cmd_run`, and that is the commit point ProjectSetupStage.rollback
+#   checks before declining to delete a finished import. Removed, and pinned by
+#   TestFinalizationStageMustNotRollBack below so nobody "completes" LDM-#1643
+#   by adding one.
+#
+# VolumeSyncStage remains, and its gap is real but narrow: the leak occurs only
+# when importing into a project directory that ALREADY EXISTED, because
+# ProjectSetupStage.rollback deletes the project only when `is_brand_new`. A
+# faithful rollback is not achievable today -- the stage rmtree's the overwrite
+# target before copying, with no backup, so prior content is unrecoverable by
+# the time a rollback could run. See the stage docstring.
 _KNOWN_UNCOVERED = frozenset(
     {
-        "PackageVerificationStage",
         "VolumeSyncStage",
-        "FinalizationStage",
     }
 )
 
@@ -161,6 +172,35 @@ class TestImportStagesOwnTheirCleanup(unittest.TestCase):
             "define the rollback that removes them (LDM-#1635)",
         )
 
+    def test_finalization_stage_must_not_define_a_rollback(self):
+        """LDM-#1643: the one stage where adding a rollback is the bug.
+
+        `FinalizationStage.execute` sets `import_committed` and then calls
+        `cmd_run`. That flag is the commit point: `ProjectSetupStage.rollback`
+        reads it and declines to delete the project once it is set, which is
+        what LDM-#1630 added to stop an aborted post-import `ldm run` from
+        destroying a successful import.
+
+        A rollback on this stage would run inside that committed region and
+        undo the very thing the commit point protects. The state `cmd_run`
+        creates belongs to the run pipeline, whose stages own their own
+        rollbacks.
+
+        Asserted because LDM-#1643's title invites the opposite fix, and
+        "every stage should own a rollback" is a plausible-sounding way to
+        reintroduce LDM-#1630.
+        """
+        stages = dict(_stage_classes(self.source))
+        self.assertIn("FinalizationStage", stages, "the stage was renamed or removed")
+        self.assertNotIn(
+            "rollback",
+            _methods(stages["FinalizationStage"]),
+            "FinalizationStage defines a rollback. It runs after "
+            "`import_committed` is set, so its rollback would undo a completed "
+            "import -- the exact regression the commit point prevents "
+            "(LDM-#1630, LDM-#1643).",
+        )
+
     def test_every_state_creating_stage_owns_a_rollback_or_is_a_known_gap(self):
         """The ratchet: a NEW stage cannot leak silently.
 
@@ -182,6 +222,13 @@ class TestImportStagesOwnTheirCleanup(unittest.TestCase):
                 offenders.append(name)
             if has_rollback and name in _KNOWN_UNCOVERED:
                 stale.append(name)
+            # LDM-#1643: a third direction. An entry that creates no filesystem
+            # state was never a gap, and the original list carried two of them
+            # for weeks precisely because nothing objected. The allowlist is
+            # supposed to shrink; an entry that could never have belonged is
+            # noise that makes the real one harder to see.
+            if not creates and name in _KNOWN_UNCOVERED:
+                stale.append(name)
 
         self.assertEqual(
             offenders,
@@ -193,8 +240,10 @@ class TestImportStagesOwnTheirCleanup(unittest.TestCase):
         self.assertEqual(
             stale,
             [],
-            f"{stale} now define rollback -- remove them from _KNOWN_UNCOVERED "
-            "so the ratchet keeps tightening (LDM-#1635).",
+            f"{stale} are listed in _KNOWN_UNCOVERED but do not belong there -- "
+            "either they now define a rollback, or they create no filesystem "
+            "state and never needed one. Remove them so the ratchet keeps "
+            "tightening (LDM-#1635, LDM-#1643).",
         )
 
 
