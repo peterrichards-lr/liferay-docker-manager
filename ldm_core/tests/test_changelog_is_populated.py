@@ -12,15 +12,36 @@ Why a boundary rather than a 292-entry allowlist: `release.py` always
 *prepends* (see `find_changelog_insert_index`), so the file is strictly
 newest-first and a single mark expresses the same rule far more legibly.
 
-The case this exists to catch is immediate rather than hypothetical:
-`--promote` is itself a version bump, so it writes a *fresh empty*
-`## [vX.Y.Z]` block above the populated `-pre.N` entries. The content does not
-carry forward, and nothing but this test notices.
+## Why the entry being released right now is exempt
+
+`scripts/release.py` writes the stub, commits it and pushes the tag in one
+atomic run, so there is no moment at which the entry for the version being
+released could already have been filled in. A check that demanded it would fail
+the tag's own CI, and because `build: needs: [lint-and-test, smoke-test]` and
+`release: needs: build`, that means **no release assets would ever publish** --
+for pre-releases *and* for `--promote`.
+
+That is not theoretical: it burned `v2.21.1-pre.3`. The first version of this
+test omitted the exemption, the bump created its stub, and the tag run failed
+before `build`.
+
+So the rule is one release behind: the entry for the **current** `VERSION` is
+exempt, and every other entry above the mark must be populated. You cannot cut
+two releases in a row leaving the previous one undocumented, which is what
+allowed 292 empty entries to accumulate.
+
+**Residual gap, deliberately accepted**: the entry for the release being cut
+can still ship empty, and is only caught when the *next* one is cut. Closing
+that properly means teaching `--promote` to carry the accumulated `-pre.N`
+entries forward into the stable entry, which is tracked on LDM-#1663 and is a
+change to release machinery, not to a test.
 """
 
 import re
 import unittest
 from pathlib import Path
+
+from ldm_core.constants import VERSION
 
 CHANGELOG_PATH = Path(__file__).resolve().parents[2] / "CHANGELOG.md"
 
@@ -111,7 +132,16 @@ class TestChangelogRatchet(unittest.TestCase):
         versions = [v for v, _ in self.entries]
         cutoff = versions.index(GRANDFATHERED_THROUGH)
 
-        empty = [v for v, body in self.entries[:cutoff] if not is_populated(body)]
+        # The entry for the version being released right now is exempt -- see
+        # the module docstring. release.py stubs, commits and tags atomically,
+        # so it cannot have been written yet, and failing here would stop the
+        # release job publishing any assets at all.
+        being_released = f"v{VERSION}"
+        empty = [
+            v
+            for v, body in self.entries[:cutoff]
+            if not is_populated(body) and v != being_released
+        ]
 
         self.assertEqual(
             empty,
