@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.21.1-pre.3] - 2026-09-11
 
-### Added
+### Fixed
 
--
+- **Controlled Refusals No Longer Look Like Crashes**: a deliberate `UI.die` inside a pipeline stage printed a full Python traceback on top of its own message, so a clean refusal -- a missing JDK, a port already in use -- was presented to the user as a crash. Introduced in this cycle by LDM-#1630 and not present in v2.21.0 (LDM-#1668).
+
+### Changed
+
+- **Platform Verification Split**: the Windows arms are removed (GitHub-hosted Windows runners run Windows containers, so a Linux image can never start there) and macOS moves to a separate best-effort workflow, leaving the Linux workflow -- the one that publishes the compatibility matrix -- meaningfully green or red. Windows coverage remains the manually verified PowerShell 5.1 / 7 / WSL2 runs (LDM-#1662).
+- **Release Notes**: a patch release now carries its own upgrade-banner highlights instead of repeating the minor series', and the man page documents the full value sets for `--database-mode` and `--search-mode` (LDM-#1663, LDM-#1664).
 
 ## [v2.21.1-pre.2] - 2026-09-11
 
