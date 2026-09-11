@@ -157,7 +157,26 @@ class Pipeline:
                         f"(exit {IDEMPOTENT_NO_OP_EXIT_CODE}); not rolling back"
                     )
                     raise
-                self.logger.error(f"Stage {stage.name} aborted: {e!r}", exc_info=True)
+                # LDM-#1668: debug, NOT error. `UI.die` is the controlled way a
+                # stage reports a user-facing refusal -- no JDK, a port already
+                # taken -- and it has already printed a proper message by the
+                # time this runs. Logging it at error with exc_info dumped a
+                # full traceback on top of that message, so a clean refusal
+                # read as a crash.
+                #
+                # It is unsuppressable at error level, which is what made this
+                # a defect rather than a nuisance: LDM configures no logging
+                # handlers at all, so `logging.lastResort` emits WARNING and
+                # above straight to stderr and no flag turns it off
+                # (`-v/--verbose` sets `UI.VERBOSE`, which is unrelated to the
+                # logging module). See LDM-#1669.
+                #
+                # `exc_info` is kept deliberately: the traceback stays attached
+                # to the record and becomes available the moment a handler
+                # exists, rather than being thrown away. The `except Exception`
+                # handler below stays at error -- an *unexpected* exception is
+                # a genuine crash and a traceback is wanted there.
+                self.logger.debug(f"Stage {stage.name} aborted: {e!r}", exc_info=True)
                 context.errors.append(e)
                 self._rollback(context)
                 raise
