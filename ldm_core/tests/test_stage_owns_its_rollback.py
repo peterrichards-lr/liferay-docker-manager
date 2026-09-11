@@ -49,17 +49,15 @@ _FS_CREATORS = frozenset(
 #   TestFinalizationStageMustNotRollBack below so nobody "completes" LDM-#1643
 #   by adding one.
 #
-# VolumeSyncStage remains, and its gap is real but narrow: the leak occurs only
-# when importing into a project directory that ALREADY EXISTED, because
-# ProjectSetupStage.rollback deletes the project only when `is_brand_new`. A
-# faithful rollback is not achievable today -- the stage rmtree's the overwrite
-# target before copying, with no backup, so prior content is unrecoverable by
-# the time a rollback could run. See the stage docstring.
-_KNOWN_UNCOVERED = frozenset(
-    {
-        "VolumeSyncStage",
-    }
-)
+# * VolumeSyncStage gained a rollback in LDM-#1677. It snapshots the artifact
+#   directories before anything writes to them and restores them wholesale,
+#   rather than journalling individual writes -- much of the copying happens
+#   inside workspace/hydration.py, which this stage never sees, so a journal
+#   would have covered about half the writes while appearing to succeed.
+#
+# The allowlist is now EMPTY, and that is the point of a ratchet. Adding a name
+# back requires a tracking issue and a deliberate decision.
+_KNOWN_UNCOVERED: frozenset = frozenset()
 
 
 def _stage_classes(source: str):

@@ -439,33 +439,38 @@ class DatabaseRestoreStage(PipelineStage):
 class VolumeSyncStage(PipelineStage):
     """Synchronizes files and artifacts from the source workspace to the project paths.
 
-    **Known rollback gap, deliberately still open (LDM-#1643).**
+    Rollback restores the artifact directories to the state they were found in
+    (LDM-#1677).
 
-    Everything written here lands inside the project directory, and
+    The leak this closes had one trigger: importing into a project directory
+    that ALREADY EXISTED. Everything written here lands inside the project, and
     `ProjectSetupStage.rollback` removes that directory -- but only when
-    `is_brand_new`. So the leak has one trigger and one only: importing into a
-    project directory that ALREADY EXISTED. A later stage then fails, that
-    rollback declines to delete a directory it did not create, and the client
-    extensions, fragments and services copied here remain.
+    `is_brand_new`. For an existing project it correctly declines to delete a
+    directory it did not create, so a failure in a later stage used to leave
+    the copied client extensions, fragments and services behind.
 
-    A faithful rollback is not currently achievable, which is why this is
-    documented rather than patched. The copy loop below does:
+    **Why a snapshot rather than a journal of individual writes.** The obvious
+    fix -- record each destination as it is written, undo them in reverse --
+    cannot work here, because the writes are not all in this method. Much of
+    the copying happens inside `workspace._hydrate_from_workspace`, which calls
+    four further sync helpers in `workspace/hydration.py`. A journal threaded
+    through this stage alone would cover roughly half the writes and leave the
+    directory *not* as it was found, while looking like it had succeeded. That
+    is the "declare a leak fixed while it still leaks" failure the rollback
+    ratchet exists to prevent.
 
-        if dest.exists() and overwrite:
-            shutil.rmtree(dest)
-        if not dest.exists():
-            shutil.copytree(item, dest, copy_function=safe_copy)
+    So the whole target set is copied aside up front and restored wholesale.
+    That covers writes made by code this stage never sees.
 
-    Nothing is backed up before that `rmtree`, so by the time any rollback
-    could run, the user's prior content is already gone and unrecoverable. A
-    rollback could therefore only delete what was *added* -- into a directory
-    the user owns -- which risks removing content they wanted while still not
-    restoring what was overwritten. One write also happens inside
-    `snapshot._restore_from_cloud_layout`, out of this stage's reach.
+    Cost is paid only where the leak exists: `is_brand_new` projects are
+    skipped entirely, because `ProjectSetupStage.rollback` already deletes the
+    whole directory for them. The snapshot covers artifact directories only --
+    `deploy`, `files`, `scripts`, `osgi/configs`, `osgi/modules`,
+    `osgi/client-extensions`, `client-extensions` and `services` -- and never
+    `root/data`, where document-library content lives.
 
-    Closing this properly means capturing the overwrite targets first, so a
-    rollback can restore rather than merely delete. That is LDM-#1677; adding
-    deletion logic alone would turn a leak into data loss.
+    The saved copy is registered in `temp_dirs`, so a successful import
+    discards it in `FinalizationStage` like any other scratch directory.
     """
 
     def execute(self, context: PipelineContext) -> None:  # noqa: C901, PLR0912, PLR0915
@@ -488,6 +493,13 @@ class VolumeSyncStage(PipelineStage):
         workspace_root = context.get("extracted_source")
         paths = context.get("paths")
         overwrite = context.get("overwrite", True)
+
+        # LDM-#1677: capture the artifact directories before anything writes to
+        # them, so rollback can restore rather than merely delete. Must happen
+        # before the first write below AND before _hydrate_from_workspace at the
+        # end, whose writes this stage cannot otherwise see.
+        self._snapshot_targets(context, paths)
+
         is_cloud = (
             manager.workspace._is_lcp_workspace(workspace_root)
             if hasattr(manager.workspace, "_is_lcp_workspace")
@@ -603,6 +615,119 @@ class VolumeSyncStage(PipelineStage):
             manager.workspace._hydrate_from_workspace(
                 workspace_root, paths, overwrite=overwrite
             )
+
+    # Artifact directories this stage and its callees write into. `root/data`
+    # is deliberately absent: document-library content lives there, it is not
+    # written by this stage, and copying it would make every import into an
+    # existing project pay for a snapshot of the whole document library.
+    _SNAPSHOT_KEYS = (
+        "deploy",
+        "files",
+        "scripts",
+        "configs",
+        "modules",
+        "cx",
+        "ce_dir",
+    )
+
+    def _snapshot_targets(self, context, paths) -> None:
+        """Copy the artifact directories aside so rollback can restore them."""
+        import shutil
+        from datetime import datetime
+        from pathlib import Path
+
+        if not paths:
+            return
+
+        # A brand-new project needs no snapshot: ProjectSetupStage.rollback
+        # deletes the entire directory it created, which subsumes anything
+        # written here. Paying for a copy there would be pure cost.
+        if context.get("is_brand_new"):
+            return
+
+        scratch = (
+            Path.cwd()
+            / ".ldm_temp"
+            / f"volsync_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+        )
+
+        saved: dict = {}
+        for key in self._SNAPSHOT_KEYS:
+            target = paths.get(key)
+            if not target:
+                continue
+            if target.exists():
+                dest = scratch / key
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(target, dest)
+                saved[key] = dest
+            else:
+                # Recorded as absent, so rollback removes it rather than
+                # leaving a directory the import brought into existence.
+                saved[key] = None
+
+        services = paths.get("root") / "services" if paths.get("root") else None
+        if services is not None:
+            if services.exists():
+                dest = scratch / "__services__"
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(services, dest)
+                saved["__services__"] = dest
+            else:
+                saved["__services__"] = None
+
+        if not saved:
+            return
+
+        context.set("volume_sync_saved", saved)
+        # Registered so a SUCCESSFUL import discards it in FinalizationStage,
+        # like every other scratch directory.
+        temp_dirs = context.get("temp_dirs", [])
+        temp_dirs.append(scratch)
+        context.set("temp_dirs", temp_dirs)
+
+    def rollback(self, context: PipelineContext) -> None:
+        """Restore the artifact directories to their pre-import state.
+
+        LDM-#1677. Only reachable for a failure in a LATER stage -- a stage that
+        raises is never appended to `executed_stages`, so this does not run for
+        a failure part-way through this stage's own `execute` (measured in
+        test_stage_owns_its_rollback.py).
+        """
+        import shutil
+        import typing
+
+        context = typing.cast(ImportPipelineContext, context)
+
+        # Mirrors ProjectSetupStage: past the commit point the import has
+        # happened and nothing below may undo it (LDM-#1630).
+        if context.get("import_committed"):
+            return
+
+        saved = context.get("volume_sync_saved")
+        if not saved:
+            return
+
+        paths = context.get("paths")
+        if not paths:
+            return
+
+        manager = context.manager
+        UI.detail("Restoring project artifact directories to their previous state...")
+
+        for key, backup in saved.items():
+            target = (
+                paths.get("root") / "services"
+                if key == "__services__"
+                else paths.get(key)
+            )
+            if not target:
+                continue
+            if target.exists():
+                manager.safe_rmtree(target)
+            if backup is not None and backup.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(backup, target)
 
 
 class BuildWorkspaceStage(PipelineStage):
