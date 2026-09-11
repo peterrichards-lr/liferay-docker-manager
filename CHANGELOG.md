@@ -7,15 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.21.1-pre.2] - 2026-09-11
 
-### Added
+### Fixed
 
--
+- **Java Version Detection**: `_check_java_version` and the Gradle JVM check required a dotted component, so a General Availability JDK string with none -- `openjdk version "25"` -- matched nothing and was reported as a version *mismatch* for a JDK newer than required (LDM-#1660).
+
+### Changed
+
+- **Platform Verification**: Every arm of the multi-OS verification workflow now installs JDK 21; previously none did, which is why the matrix was red on all arms from 2026-09-07 (LDM-#1659).
 
 ## [v2.21.1-pre.1] - 2026-09-10
 
 ### Added
 
--
+- **Package Manifest Verification**: `ldm import` now verifies a local or downloaded `.ldmp` manifest before acting on it, and both E2E verification scripts assert the refusal (LDM-#1621).
+- **Tag Discovery Canary**: A scheduled workflow exercises tag discovery against the live Docker Hub registry every Monday, so a systemic upstream outage is detectable. Every unit test of discovery mocks the registry, so nothing previously observed a real failure (LDM-#1650).
+
+### Fixed
+
+- **Tag Discovery**: Discovery asked Docker Hub for its *oldest* tags rather than its newest, so `latest`, `--tag-latest`, `qr`, `u`, `nightly` and every `--portal` lookup resolved to a years-old image. This is the principal reason to take this release (LDM-#1647).
+- **Stale Tag Fallback**: The bundled `.product_info.json` fallback was two and a half years out of date and contained no quarterly releases, so a discovery failure fell back to an unusable list (LDM-#1648).
+- **Withdrawn Tags**: `--release-type u` resolved to `7.4.13-u999`, an upstream placeholder tag whose images are not served. Withdrawn tags are now skipped (LDM-#1649).
+- **Rollback on Fatal Error**: A pipeline stage calling `UI.die` bypassed rollback entirely, because `SystemExit` is not an `Exception`. Rollback now runs and the original exit code is preserved (LDM-#1630).
+- **Idempotent No-Op**: Exit code 5 -- returned when a non-interactive `ldm run`/`ldm up` finds the project already running -- triggered a rollback as though the run had failed (LDM-#1636).
+- **Stage-Owned Rollback**: Each import stage now owns the rollback of the filesystem state it creates, instead of one stage hosting another's cleanup (LDM-#1635).
+- **Meta File Validation**: `read_meta` now refuses a meta file that is in neither supported format, rather than silently returning an empty mapping (LDM-#1629).
+- **`ldm db stop` Diagnostics**: A failure now names the container and the cause instead of exiting quietly (LDM-#1615).
+- **Cascading Default Writes**: A cascading-default write that nothing would ever read is refused rather than silently accepted, and the configuration documentation no longer names paths and command scopes that do not exist (LDM-#1651).
+- **Report Header Parsing**: Every verification-report header capture is bounded to its own line, so a blank `Platform:` no longer absorbs the header beneath it (LDM-#1633).
+- **Windows PowerShell 5.1**: The verification report's `Platform:` header was empty on Windows PowerShell 5.1, because `$PSVersionTable.OS` arrived in PowerShell 6 (LDM-#1639).
+
+### Changed
+
+- **Verification Reporting**: A failed platform verification now fails its job. Previously the Windows and macOS arms swallowed the verify script's exit status and reported success while uploading a failure report, manufacturing coverage that did not exist.
+- **Compatibility Matrix**: Each Linux distribution gets its own row, every Linux verification arm is published rather than two of five, and the Provider column is derived from the declared environment label.
+
+### Internal
+
+- **Test Isolation**: `test_fragments.py` mocked the wrong transport, so its tests could open real sockets to a Liferay running on localhost. The full test gate went from 19m40s to roughly 7m as a result (LDM-#1644).
+- **Manifest Recovery**: The package-listing recovery path is now driven through a real import rather than asserted in isolation (LDM-#1588).
 
 ## [v2.21.0] - 2026-09-06
 
