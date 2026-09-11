@@ -1,4 +1,5 @@
 import contextlib
+import logging
 import os
 import sys
 
@@ -28,6 +29,34 @@ except ImportError:
         UNDERLINE = ""
 
 
+class _TraceLogHandler(logging.Handler):
+    """Routes `logging` records into LDM's existing trace log (LDM-#1669).
+
+    `docs/reference/logging-strategy.md` already defines a silent file tier --
+    `UI.trace()` -> `~/.ldm/last-command.log`. The `logging` calls in
+    `ldm_core/pipelines/base.py` were never connected to it, so their records
+    were either discarded (`debug`) or handled by `logging.lastResort`: a bare
+    stderr `StreamHandler` fixed at WARNING, with no formatter and no way to
+    suppress it. That is what printed a full traceback over a controlled
+    `UI.die` (LDM-#1668).
+
+    Installing ANY handler stops `lastResort` firing, so attaching this also
+    ends the raw stderr dumps -- the console goes back to belonging entirely to
+    `UI.*`, which is what the tier architecture says.
+
+    `exc_info` is formatted and kept: the traceback demoted in LDM-#1668 now
+    has somewhere to go rather than being silently dropped.
+    """
+
+    def emit(self, record):
+        try:
+            UI.trace(self.format(record))
+        except Exception:
+            # A logging handler must never take the process down, and there is
+            # nowhere to report a failure to anyway -- the trace log IS the sink.
+            pass
+
+
 # --- UI Helpers ---
 class UI:
     COLOR_OFF = UIColors.COLOR_OFF
@@ -55,6 +84,7 @@ class UI:
 
     TRACE_LOG_PATH = None
     _trace_handle = None
+    _log_bridge = None
 
     @classmethod
     def reset(cls):
@@ -66,6 +96,7 @@ class UI:
         cls.NO_COLOR = False
         cls.NO_UNICODE = False
         cls.TRACE_LOG_PATH = None
+        cls._remove_log_bridge()
         if cls._trace_handle:
             try:
                 cls._trace_handle.close()
@@ -122,9 +153,52 @@ class UI:
             UI._trace_handle.write(f"Python: {sys.version.split()[0]}\n")
             UI._trace_handle.write("-" * 50 + "\n")
             UI._trace_handle.flush()
+            UI._install_log_bridge()
         except Exception:
             # Silently ignore trace log failures
             UI._trace_handle = None
+
+    @classmethod
+    def _install_log_bridge(cls):
+        """Send `logging` records to the trace log instead of raw stderr.
+
+        LDM-#1669. Idempotent: re-installing replaces the previous handler
+        rather than stacking duplicates, which would write every record twice.
+
+        Levels are set deliberately:
+
+        * the `pipeline` logger at DEBUG, so LDM's own records reach the file
+          (they are the only `logging` calls in `ldm_core/`)
+        * the root logger left at WARNING, so docker, urllib3, werkzeug and the
+          rest do not flood a per-invocation trace log with their DEBUG chatter
+
+        Third-party WARNING and above therefore moves from raw stderr into the
+        trace log. That is the intended direction: per
+        `docs/reference/logging-strategy.md` the console belongs to `UI.*`, and
+        the file tier takes everything else.
+        """
+        root = logging.getLogger()
+        if cls._log_bridge is not None:
+            root.removeHandler(cls._log_bridge)
+            cls._log_bridge = None
+
+        handler = _TraceLogHandler()
+        handler.setLevel(logging.DEBUG)
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)-8s %(name)s: %(message)s")
+        )
+        root.addHandler(handler)
+        if root.level > logging.WARNING or root.level == logging.NOTSET:
+            root.setLevel(logging.WARNING)
+        logging.getLogger("pipeline").setLevel(logging.DEBUG)
+        cls._log_bridge = handler
+
+    @classmethod
+    def _remove_log_bridge(cls):
+        """Detach the bridge. Test isolation only -- see `reset`."""
+        if cls._log_bridge is not None:
+            logging.getLogger().removeHandler(cls._log_bridge)
+            cls._log_bridge = None
 
     @staticmethod
     def trace(msg):
