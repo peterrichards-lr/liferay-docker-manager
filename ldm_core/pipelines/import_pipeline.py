@@ -603,14 +603,20 @@ class VolumeSyncStage(PipelineStage):
                         manager.safe_rmtree(dest)
                     shutil.copytree(item, dest, copy_function=safe_copy)
 
-        backup_dir = context.get("backup_dir")
-        if backup_dir and hasattr(manager, "snapshot"):
-            if hasattr(manager.snapshot, "_restore_from_cloud_layout"):
-                project_meta = manager.read_meta(context.get("project_path"))
-                manager.snapshot._restore_from_cloud_layout(
-                    backup_dir, paths, project_meta
-                )
-
+        # LDM-#1679: a call to `manager.snapshot._restore_from_cloud_layout`
+        # stood here, guarded by `hasattr`. The method has never existed on the
+        # snapshot service -- no commit in the repository's history defines it
+        # there -- and every definition that ever existed anywhere was an
+        # ellipsis stub on LiferayManager, returning None. So the branch could
+        # not execute, and would have done nothing if it had. Removed rather
+        # than repointed: there is no implementation to point it at.
+        #
+        # It was not harmless. LDM-#1677 and the VolumeSyncStage docstring
+        # added in LDM-#1643 both cited it as an external write a rollback
+        # could not reach -- one of two stated reasons for believing the
+        # directory could not be restored. `hasattr` around a call makes a
+        # permanently-false branch look like a legitimate conditional, which is
+        # how it survived three refactors.
         if hasattr(manager.workspace, "_hydrate_from_workspace"):
             manager.workspace._hydrate_from_workspace(
                 workspace_root, paths, overwrite=overwrite
