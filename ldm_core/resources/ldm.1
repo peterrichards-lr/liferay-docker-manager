@@ -258,12 +258,18 @@ Set virtual hostname (defaults to localhost).
 \fB\-\-db\fR \fI{mysql|postgresql|hypersonic}\fR
 Select database type.
 .TP
-\fB\-\-database\-mode\fR \fI{isolated|shared}\fR
-Give this project its own database container, or point it at the shared global
-one. Overrides the configured default for a single run.
+\fB\-\-database\-mode\fR \fI{isolated|shared|external|embedded}\fR
+Choose who owns the database, independently of the engine chosen with
+\fB\-\-db\fR. \fIisolated\fR gives the project its own container; \fIshared\fR
+points it at the one global container for that engine; \fIexternal\fR targets a
+server LDM does not manage, writing only the JDBC details; \fIembedded\fR runs
+in\-JVM and is Hypersonic only. Overrides the configured default for a single
+run. Note \fBldm config database\-mode\fR accepts only \fIisolated\fR and
+\fIshared\fR, since the other two are per\-run choices.
 .TP
-\fB\-\-search\-mode\fR \fI{sidecar|shared}\fR
-Run Elasticsearch alongside the project, or use the global search container.
+\fB\-\-search\-mode\fR \fI{sidecar|shared|remote}\fR
+Run Elasticsearch alongside the project, use the global search container, or
+point the project at a remote Elasticsearch that LDM does not manage.
 .TP
 \fB\-\-jvm\-heap\-min\fR \fISIZE\fR, \fB\-\-jvm\-heap\-max\fR \fISIZE\fR
 Set the JVM heap floor and ceiling (\fB\-Xms\fR / \fB\-Xmx\fR). Accepts a

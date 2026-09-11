@@ -212,6 +212,45 @@ RELEASE_ANNOUNCEMENTS = {
             "than dumped as a raw fatal",
         ),
     ],
+    # LDM-#1663: keyed on the exact patch version, not the "2.21" minor series.
+    # check_and_display_upgrade_banner tries RELEASE_ANNOUNCEMENTS[VERSION]
+    # before falling back to the series, so without this a v2.21.0 -> v2.21.1
+    # upgrade re-printed the five v2.21.0 feature highlights and said nothing
+    # about the release the user was actually taking.
+    #
+    # Only ever displayed at the stable version: during the cycle VERSION is
+    # "2.21.1-pre.N", whose series prefix is "2.21", so the fallback serves and
+    # this entry is unreachable. Its coverage is therefore a unit test on the
+    # lookup, not the pre-release manual E2E.
+    "2.21.1": [
+        (
+            "ldm run --tag-latest",
+            "Tag discovery asked Docker Hub for its OLDEST tags, so this "
+            "resolved to a years-old image. 'latest', 'qr', 'u', 'nightly' "
+            "and every --portal lookup were wrong the same way and are fixed",
+        ),
+        (
+            "ldm run --release-type u",
+            "No longer resolves to 7.4.13-u999, an upstream placeholder tag "
+            "whose images are not served; withdrawn tags are skipped",
+        ),
+        (
+            "ldm import",
+            "A stage that fails now rolls back the filesystem state it "
+            "created, and an idempotent no-op no longer rolls back as though "
+            "it had failed",
+        ),
+        (
+            "ldm db stop",
+            "A failure names the container and the cause instead of exiting quietly",
+        ),
+        (
+            "ldm run (Java gate)",
+            "A GA JDK version string with no dotted component -- openjdk "
+            'version "25" -- is read correctly instead of being reported '
+            "as too old",
+        ),
+    ],
     "2.20": [
         (
             "ldm ai",
