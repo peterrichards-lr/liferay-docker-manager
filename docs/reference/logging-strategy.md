@@ -369,6 +369,47 @@ When reviewing PRs, flag any log call that:
 
 ---
 
+## The Python `logging` module
+
+The tiers above are LDM's own output. A handful of call sites — currently only
+`ldm_core/pipelines/base.py` — use Python's `logging` module instead, because they
+report on pipeline stage machinery rather than on anything a user asked for.
+
+**Those records go to the trace log, never to the console.** `UI.init_trace_log()`
+installs `_TraceLogHandler` on the root logger, which formats each record — including
+`exc_info` tracebacks — and writes it via `UI.trace()`.
+
+| Logger | Level | Where it lands |
+|:---|:---|:---|
+| `pipeline.*` (LDM's own) | `DEBUG` | `~/.ldm/last-command.log` |
+| everything else (docker, urllib3, werkzeug) | `WARNING` | `~/.ldm/last-command.log` |
+| anything | — | **never the console** |
+
+### Why this exists (LDM-#1669)
+
+Before it, nothing connected `logging` to LDM at all. Records at `DEBUG` were discarded
+outright, and `WARNING`+ were handled by `logging.lastResort` — a bare stderr
+`StreamHandler`, fixed at `WARNING`, with no formatter and no way to switch it off.
+
+That is why LDM-#1668 could print a full Python traceback over a controlled `UI.die`,
+and why no flag suppressed it: `-v/--verbose` sets `UI.VERBOSE`, which belongs to the
+tier system above and has nothing to do with the `logging` module.
+
+**Installing any handler retires `lastResort`**, so attaching the bridge is what keeps
+`logging` output off the console — not a separate suppression step.
+
+### Rules
+
+- **Prefer the `UI.*` tiers.** They are the documented interface, and they reach the
+  trace log anyway via `UI._print()`. Reach for `logging` only for machinery a user
+  would never be shown.
+- **Never raise a record above `DEBUG` to make it visible.** It will not appear on the
+  console regardless, and at `WARNING`+ it merely becomes noise in a shared file. If a
+  user needs to see something, that is what `UI.info()` / `UI.warning()` are for.
+- **Do not add a second logging destination.** The trace log is truncated per
+  invocation and already carries a header (timestamp, command line, platform, Python
+  version). A parallel log would split the evidence needed to diagnose one run.
+
 ## Related Issues
 
 - [#754 — Surface `--info` flag as documented CLI option](https://github.com/peterrichards-lr/liferay-docker-manager/issues/754)
@@ -379,4 +420,4 @@ When reviewing PRs, flag any log call that:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-07* | *Last Reviewed: 2026-09-07*
+*Last Updated: 2026-09-11* | *Last Reviewed: 2026-09-11*
