@@ -1,0 +1,131 @@
+# LDM-#1662: the best-effort half of platform verification.
+#
+# Split out of `LDM Platform Verification (Multi-OS)`, which is now Linux-only.
+# The arms here cannot currently pass on GitHub-hosted runners, and the reason is
+# a property of the runner rather than of LDM:
+#
+#   * macOS -- Colima does not start on `macos-26-arm64`, so the suite finds no
+#     Docker daemon at unix:///var/run/docker.sock.
+#
+# They were never passing. Until LDM-#1611 (PR #1622) they swallowed the verify
+# script's exit status and reported `success` while uploading a `-fail.txt`
+# report; #1622 made that honest, and this split stops the resulting permanent
+# red from drowning the Linux signal that does work.
+#
+# WHY A SEPARATE WORKFLOW rather than `continue-on-error: true` on the job:
+# that flag makes the job report `success`, which is precisely the LDM-#1611
+# defect -- a green job that verified nothing and so manufactured the appearance
+# of coverage. "Best effort" must mean *red in a workflow allowed to be red*,
+# never *green over there*. The per-report assertion below is kept for the same
+# reason, and `ldm_core/tests/test_ci_verification_reporting.py` guards it here
+# exactly as it does in the Linux workflow.
+#
+# This workflow publishes NOTHING. macOS and Windows rows in the compatibility
+# matrix are curated by hand from the maintainer's own runs; `sync-compatibility`
+# in the Linux workflow filters on the `linux-workstation-` prefix and has never
+# published an arm from here. Its output is diagnostic only.
+name: LDM Platform Verification (Best Effort)
+
+on:
+  workflow_dispatch: # Allow manual trigger
+  schedule:
+    - cron: '0 2 * * *' # Run nightly at 2 AM UTC, alongside the Linux workflow
+  push:
+    tags: ["v*"] # Run on every release
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify-macos:
+    name: Verify macOS (Colima)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # LDM-#1659: see the equivalent step in verify-linux.
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Install Colima and Docker
+        run: |
+          export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
+          brew install colima docker docker-compose || true
+
+      # The continue-on-error here is NOT the LDM-#1611 defect and is kept
+      # deliberately: if Colima cannot start, the suite step below fails on
+      # its own (and now says so), which produces a report and the failure
+      # debug logs instead of aborting the job with only a brew/colima trace.
+      - name: Start Colima
+        continue-on-error: true
+        run: |
+          colima start --cpu 2 --memory 4 --vm-type=vfkit || colima start --cpu 2 --memory 4
+
+      # LDM-#1611: `continue-on-error: true` was here, and it is the whole bug
+      # on this platform. The bash script propagates its own failure correctly
+      # (`set -e` plus explicit `exit 1`), so nothing else was swallowing it --
+      # the step simply declared the failure unimportant. Runs 33752742268
+      # (v2.21.0-pre.2) and 34063433007 (v2.21.0) reported `success` while
+      # uploading a `-fail.txt` report containing a header, "Docker: running"
+      # and "--- FAILURE DEBUG LOGS ---": no verification step ever ran.
+      #
+      # The macOS runner's Docker being unusable is a runner defect, not an
+      # LDM defect, and fixing that is out of scope here. But a job that
+      # cannot report failure is worse than an absent one, because it
+      # manufactures the evidence the compatibility matrix is built from.
+      # A red job says "unverified"; a green one said "verified" and was wrong.
+      - name: Run E2E Verification Suite (macOS)
+        env:
+          GITHUB_ACTIONS: "true"
+        run: |
+          python3 -m venv .venv
+          source .venv/bin/activate
+          pip install .
+          bash scripts/verify_e2e_refactor.sh --ci
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: verification-results-macos
+          path: verify-*.txt
+          retention-days: 7
+
+      # LDM-#1611: see the equivalent step in verify-linux.
+      - name: Assert the verification report says it passed
+        if: always()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          reports=(verify-*.txt)
+          if [ ${#reports[@]} -eq 0 ]; then
+            echo "::error::No verification report was produced by scripts/verify_e2e_refactor.sh."
+            exit 1
+          fi
+          rc=0
+          for report in "${reports[@]}"; do
+            if [[ "$report" == *-fail.txt ]]; then
+              echo "::error::${report} is a FAILURE report; this job did not verify anything."
+              rc=1
+            elif ! grep -q "ALL E2E VERIFICATIONS PASSED" "$report"; then
+              echo "::error::${report} has no 'ALL E2E VERIFICATIONS PASSED' marker; the suite did not run to completion."
+              rc=1
+            else
+              echo "OK: ${report}"
+            fi
+          done
+          exit "$rc"
+

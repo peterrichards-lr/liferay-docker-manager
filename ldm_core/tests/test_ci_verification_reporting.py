@@ -21,6 +21,21 @@ independent defects produced that:
 Both were invisible: the run was green and the compatibility record showed the
 platforms as verified.
 
+LDM-#1662: the arms were split. `verify-windows` is **gone** -- not demoted --
+because GitHub-hosted Windows runners run Windows containers and every LDM
+image is a Linux image, so the arm failed at `docker network create` and no
+workflow-level change could fix it. Windows coverage is, and always really was,
+the maintainer's manual PowerShell 5.1 / 7 / WSL2 runs: the CI arm never
+published a row. `test_windows_step_propagates_the_child_shell_exit_code` was
+removed with it -- there is no step left to guard. The .ps1 exit-status
+behaviour it protected is still covered, by execution rather than by parsing,
+in TestPowerShellSuiteExitStatus in test_verify_scripts.py.
+
+`verify-macos` moved to `best-effort-verification.yml`, and the LDM-#1611
+guards below follow it there. That is the load-bearing part of the split: had
+they stayed behind, moving the job would have quietly removed the very
+protection #1622 added.
+
 Scope: this module covers the **workflow** half only, and does so by parsing
 the YAML and asserting on the resulting structure -- a workflow file cannot be
 executed locally, so its shape is the strongest available signal.
@@ -46,13 +61,29 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "scheduled-verification.yml"
+# LDM-#1662: the best-effort arms live in their own workflow now, so that the
+# Linux workflow's red/green means something again. The honesty guards below
+# MUST follow them there -- a split that leaves the guards behind silently
+# re-creates LDM-#1611 for the moved job.
+BEST_EFFORT_WORKFLOW = (
+    REPO_ROOT / ".github" / "workflows" / "best-effort-verification.yml"
+)
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import sync_compatibility  # noqa: E402
 
-# The jobs whose whole purpose is to report a verification outcome.
-VERIFY_JOBS = ("verify-linux", "verify-windows", "verify-macos")
+# The jobs whose whole purpose is to report a verification outcome, mapped to
+# the workflow each must live in. LDM-#1662 removed `verify-windows` outright
+# (GitHub-hosted Windows runners run Windows containers; every LDM image is a
+# Linux image, so no workflow change makes it pass) and moved `verify-macos`
+# into the best-effort workflow. Windows coverage is the maintainer's manual
+# PowerShell 5.1 / 7 / WSL2 runs, which is where it has always actually come
+# from -- the CI arm never published a row.
+VERIFY_JOBS = {
+    "verify-linux": WORKFLOW,
+    "verify-macos": BEST_EFFORT_WORKFLOW,
+}
 
 # LDM-#1625: the `Platform:` line each verify-linux arm actually emitted, read
 # out of the artifacts of run 34063433007 (the v2.21.0 stable tag run, the last
@@ -128,18 +159,29 @@ class TestVerificationFailuresAreReported(unittest.TestCase):
 
     workflow: ClassVar[dict[str, Any]]
 
+    workflows: ClassVar[dict[Path, dict[str, Any]]]
+
     @classmethod
     def setUpClass(cls):
         cls.workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        cls.workflows = {
+            path: yaml.safe_load(path.read_text(encoding="utf-8"))
+            for path in {WORKFLOW, BEST_EFFORT_WORKFLOW}
+        }
 
-    def _steps(self, job_name):
+    def _job(self, job_name):
+        path = VERIFY_JOBS[job_name]
+        jobs = self.workflows[path]["jobs"]
         self.assertIn(
             job_name,
-            self.workflow["jobs"],
-            f"Job '{job_name}' has disappeared from {WORKFLOW.name}; this guard "
+            jobs,
+            f"Job '{job_name}' has disappeared from {path.name}; this guard "
             "needs updating rather than deleting.",
         )
-        return self.workflow["jobs"][job_name].get("steps", [])
+        return jobs[job_name]
+
+    def _steps(self, job_name):
+        return self._job(job_name).get("steps", [])
 
     def test_verification_steps_do_not_continue_on_error(self):
         """A step that runs the suite must let its failure fail the job.
@@ -191,22 +233,54 @@ class TestVerificationFailuresAreReported(unittest.TestCase):
                     "exists to catch.",
                 )
 
-    def test_windows_step_propagates_the_child_shell_exit_code(self):
-        """The Windows step launches a *second* shell; its status must be forwarded.
+    def test_no_verify_job_is_demoted_with_job_level_continue_on_error(self):
+        """LDM-#1662: the tempting "fix" for a permanently red arm, which is the bug.
 
-        Relying on the runner's implicit `exit $LASTEXITCODE` epilogue leaves
-        the whole chain resting on an undeclared default.
+        `continue-on-error: true` on a *job* makes it report `success`, which
+        is exactly LDM-#1611 -- a green job that verified nothing and therefore
+        manufactured the appearance of coverage. A best-effort arm must be red
+        in a workflow that is allowed to be red, never green in one that is not.
+
+        The `continue-on-error` on the macOS `Start Colima` *step* is a
+        different thing and deliberate: it lets the suite step below fail on
+        its own and produce a report plus debug logs, rather than aborting the
+        job on a bare brew/colima trace. This asserts on the job, not on steps.
         """
-        steps = self._steps("verify-windows")
-        suite = [s for s in steps if "Verification Suite" in (s.get("name") or "")]
-        self.assertTrue(suite, "verify-windows no longer runs the suite at all.")
-        for step in suite:
-            run = step.get("run") or ""
-            self.assertIn(
-                "$LASTEXITCODE",
-                run,
-                "The Windows suite step must capture and re-raise the exit code "
-                "of the shell it launches (LDM-#1611).",
+        for job_name in VERIFY_JOBS:
+            self.assertNotEqual(
+                self._job(job_name).get("continue-on-error"),
+                True,
+                f"Job '{job_name}' carries job-level continue-on-error: true, "
+                "so it would report success no matter what it verified "
+                "(LDM-#1611 / LDM-#1662).",
+            )
+
+    def test_the_moved_arm_is_not_still_in_the_linux_workflow(self):
+        """A re-merge would put a permanently red arm back on the Linux signal."""
+        self.assertNotIn(
+            "verify-macos",
+            self.workflows[WORKFLOW]["jobs"],
+            "verify-macos is back in the Linux workflow. LDM-#1662 moved it to "
+            f"{BEST_EFFORT_WORKFLOW.name} precisely so an arm that cannot pass "
+            "on a hosted runner stops failing the workflow that publishes the "
+            "compatibility matrix.",
+        )
+
+    def test_the_best_effort_workflow_publishes_nothing(self):
+        """It is diagnostic only; the matrix rows it touches are curated by hand.
+
+        If this workflow ever grows a sync/commit step it would start writing
+        the record that `sync-compatibility` deliberately restricts to the
+        `linux-workstation-` prefix.
+        """
+        text = BEST_EFFORT_WORKFLOW.read_text(encoding="utf-8")
+        for forbidden in ("sync_compatibility.py", "git commit", "gh pr create"):
+            self.assertNotIn(
+                forbidden,
+                text,
+                f"{BEST_EFFORT_WORKFLOW.name} contains {forbidden!r}. This "
+                "workflow must stay diagnostic -- macOS and Windows rows are "
+                "curated by hand (LDM-#1662).",
             )
 
 
