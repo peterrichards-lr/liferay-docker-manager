@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.21.1-pre.4] - 2026-09-11
 
-### Added
+Carries everything in `v2.21.1-pre.3`, which published no release assets (see below).
 
--
+### Fixed
+
+- **Release Tagging**: the CHANGELOG ratchet introduced in LDM-#1663 had no exemption for the version being released. Because `scripts/release.py` writes the entry stub, commits it and pushes the tag in a single run, the check could never be satisfied at tag time -- it failed `lint-and-test`, which `build` and then `release` depend on, so **`v2.21.1-pre.3` published no binaries**. The rule is now "one release behind": the entry for the current version is exempt, every earlier entry must be populated (LDM-#1673).
 
 ## [v2.21.1-pre.3] - 2026-09-11
 
