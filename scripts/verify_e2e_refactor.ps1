@@ -809,8 +809,14 @@ function Test-CascadingDefaultGuard {
 #   2. infrastructure directories are NOT   (backup/ carries its own LCP.json
 #      and Dockerfile, so a naive walk takes it)
 #   3. cloud_project_id is recorded         (--cloud-project was inert)
-#   4. configs arrive from <repo>/liferay/  (proves the nested descent; without
-#      it the import reads an empty repository root and copies nothing)
+#   4. liferay/deploy/<marker> reaches       (proves the nested descent; without
+#      <project>/deploy/                     it the import reads an empty
+#      repository root and copies nothing)
+#
+# Assertion 4 deliberately uses 'deploy' rather than 'configs'. Both prove the
+# descent, but workspace_root/configs is copied wholesale into
+# osgi/configs/<env>/ -- a path Liferay never scans, tracked as LDM-#1692.
+# Asserting on that would pin a defect in place and break when it is fixed.
 #
 # Observed on 2026-09-13 against the fix, and against 32bea3f3 without it, where
 # it correctly failed on assertion 1.
@@ -830,6 +836,7 @@ function Test-CloudWorkspaceImport {
 
     foreach ($dir in @(
             (Join-Path $repo "liferay\configs\local"),
+            (Join-Path $repo "liferay\deploy"),
             (Join-Path $repo "webcrawler"),
             (Join-Path $repo "backup"))) {
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -839,6 +846,11 @@ function Test-CloudWorkspaceImport {
     Set-Content -Path (Join-Path $repo "liferay\LCP.json") -Value '{"id": "liferay"}' -Encoding ascii
     Set-Content -Path (Join-Path $repo "liferay\gradle.properties") -Value 'liferay.workspace.product=dxp-2026.q1.7' -Encoding ascii
     Set-Content -Path (Join-Path $repo "liferay\configs\local\portal-ext.properties") -Value 'a=1' -Encoding ascii
+    # The descent marker. 'deploy' is the mapping to assert on, NOT 'configs':
+    # workspace_root/deploy -> <project>/deploy is correct and unambiguous,
+    # whereas 'configs' is copied wholesale into osgi/configs/<env>/, which is
+    # its own bug (LDM-#1692). Asserting on that would pin the defect.
+    Set-Content -Path (Join-Path $repo "liferay\deploy\ldm-descent-marker.txt") -Value 'marker' -Encoding ascii
     # The repository-root LCP.json is where the cloud project ID comes from.
     Set-Content -Path (Join-Path $repo "LCP.json") -Value '{"id": "lctverifyproj"}' -Encoding ascii
     # A standalone service: a sibling of liferay/ with both marker files.
@@ -873,8 +885,8 @@ function Test-CloudWorkspaceImport {
         $failure = "meta records no cloud_project_id -- the root LCP.json id was not read"
     } elseif ($meta -notmatch 'lctverifyproj') {
         $failure = "cloud_project_id is present but is not the root LCP.json id"
-    } elseif (-not (Test-Path (Join-Path $projectDir "osgi\configs\local"))) {
-        $failure = "osgi/configs/local is absent -- code was read from the repository root, not <repo>/liferay"
+    } elseif (-not (Test-Path (Join-Path $projectDir "deploy\ldm-descent-marker.txt"))) {
+        $failure = "deploy/ldm-descent-marker.txt is absent -- code was read from the repository root, not <repo>/liferay"
     }
 
     # Teardown before asserting, so a failed assertion leaves nothing behind.

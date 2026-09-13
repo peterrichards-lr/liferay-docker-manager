@@ -824,13 +824,20 @@ fi
 #      `backup/` carries its own LCP.json + Dockerfile, so a naive walk takes it)
 #   3. `cloud_project_id` is recorded          (--cloud-project was inert, and
 #      handlers/cloud.py silently guessed from the directory name)
-#   4. configs arrive from `<repo>/liferay/`   (proves the nested-workspace
-#      descent; without it the import reads an empty repository root and copies
-#      nothing at all, which is the failure the other three cannot see)
+#   4. `liferay/deploy/<marker>` reaches      (proves the nested-workspace
+#      `<project>/deploy/`                     descent; without it the import
+#      reads an empty repository root and copies nothing at all, which is the
+#      failure the other three cannot see)
+#
+# Assertion 4 deliberately uses `deploy` rather than `configs`. Both prove the
+# descent, but `workspace_root/configs` is copied wholesale into
+# `osgi/configs/<env>/` -- a path Liferay never scans, tracked as LDM-#1692.
+# Asserting on that would pin a defect in place and break when it is fixed.
 #
 # Observed against v2.21.1 + the fix on 2026-09-13: `✅ Imported 1 standalone
 # Liferay Cloud service(s).`, services/webcrawler present, backup/ absent,
-# cloud_project_id=lctverifyproj, osgi/configs/local present.
+# cloud_project_id=lctverifyproj, deploy/ldm-descent-marker.txt present. Run
+# again against 32bea3f3, where it correctly failed on assertion 1.
 #
 # Named, like verify_ldmp_manifest_refusal above, so it can be exercised without
 # a full run (ldm_core/tests/test_verify_scripts.py).
@@ -844,13 +851,19 @@ verify_cloud_workspace_import() {
     local noid_repo="${work_dir}/lcp-noid-src"
 
     rm -rf "$repo" "$noid_repo"
-    mkdir -p "${repo}/liferay/configs/local" "${repo}/webcrawler" "${repo}/backup"
+    mkdir -p "${repo}/liferay/configs/local" "${repo}/liferay/deploy" \
+        "${repo}/webcrawler" "${repo}/backup"
 
     # The Liferay Workspace, nested under `liferay/` as an LCP repository keeps it.
     printf '%s\n' '{"id": "liferay"}' >"${repo}/liferay/LCP.json"
     printf '%s\n' 'liferay.workspace.product=dxp-2026.q1.7' \
         >"${repo}/liferay/gradle.properties"
     printf '%s\n' 'a=1' >"${repo}/liferay/configs/local/portal-ext.properties"
+    # The descent marker. `deploy` is the mapping to assert on, NOT `configs`:
+    # `workspace_root/deploy` -> `<project>/deploy` is correct and unambiguous,
+    # whereas `configs` is copied wholesale into `osgi/configs/<env>/`, which is
+    # its own bug (LDM-#1692). Asserting on that would pin the defect.
+    printf '%s\n' 'marker' >"${repo}/liferay/deploy/ldm-descent-marker.txt"
 
     # The repository-root LCP.json is where the cloud project ID comes from.
     printf '%s\n' '{"id": "lctverifyproj"}' >"${repo}/LCP.json"
@@ -880,8 +893,8 @@ verify_cloud_workspace_import() {
         failure="meta records no cloud_project_id -- the root LCP.json id was not read"
     elif ! grep -q 'lctverifyproj' "${project_dir}/meta" 2>/dev/null; then
         failure="cloud_project_id is present but is not the root LCP.json id"
-    elif [ ! -d "${project_dir}/osgi/configs/local" ]; then
-        failure="osgi/configs/local is absent -- code was read from the repository root, not <repo>/liferay"
+    elif [ ! -f "${project_dir}/deploy/ldm-descent-marker.txt" ]; then
+        failure="deploy/ldm-descent-marker.txt is absent -- code was read from the repository root, not <repo>/liferay"
     fi
 
     # Teardown before asserting, so a failed assertion leaves nothing behind.
