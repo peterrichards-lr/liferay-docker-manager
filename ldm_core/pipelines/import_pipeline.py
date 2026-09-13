@@ -126,6 +126,56 @@ class ExtractionStage(PipelineStage):
             context.set("backup_dir", temp_extract_dir)
         else:
             context.set("extracted_source", source)
+            extracted_source = source
+
+        self._resolve_layout(context, extracted_source)
+
+    @staticmethod
+    def _resolve_layout(context: PipelineContext, extracted_source: Path) -> None:
+        """Record where the Liferay Workspace sits inside the source tree.
+
+        LDM-#1681. An LCP (Liferay Cloud) repository nests the Gradle
+        workspace under `liferay/`; its standalone service directories are
+        siblings of that folder, children of the repository root. A plain
+        Liferay Workspace is its own root and has neither.
+
+        Before PR #497 this was one line -- `source / "liferay" if
+        (source / "liferay").exists() else source` -- and every consumer read
+        it. The refactor dropped it and passed the source root around as
+        `extracted_source` instead, so for a cloud workspace the import has
+        been reading `configs/`, `client-extensions/`, `modules/` and
+        `gradlew` from the repository root, where none of them exist.
+
+        Three keys, deliberately separate, because two of them differ only
+        for cloud sources and conflating them is what broke:
+
+        * `workspace_root` -- the Gradle workspace. Everything that syncs
+          code reads from here.
+        * `cloud_root` -- the LCP repository root, or `None`. The only thing
+          that reads it is the standalone-service scan, which must look one
+          level above the workspace.
+        * `is_cloud` -- detection, via the real `is_lcp_workspace`. The
+          `hasattr`-guarded `manager.workspace._is_lcp_workspace` it replaces
+          named a method that has never existed, so this was permanently
+          `False`.
+        """
+        from ldm_core.utils import is_lcp_workspace
+
+        nested = extracted_source / "liferay"
+        if nested.is_dir() and is_lcp_workspace(extracted_source):
+            # `ldm import <lcp-repo>` -- the usual shape.
+            context.set("workspace_root", nested)
+            context.set("cloud_root", extracted_source)
+            context.set("is_cloud", True)
+        elif is_lcp_workspace(extracted_source):
+            # `ldm import <lcp-repo>/liferay` -- the workspace named directly.
+            context.set("workspace_root", extracted_source)
+            context.set("cloud_root", extracted_source.parent)
+            context.set("is_cloud", True)
+        else:
+            context.set("workspace_root", extracted_source)
+            context.set("cloud_root", None)
+            context.set("is_cloud", False)
 
     def rollback(self, context: PipelineContext) -> None:
         """Discard the extraction directory this stage created.
@@ -371,7 +421,85 @@ class ProjectSetupStage(PipelineStage):
                 "last_run": datetime.now().isoformat(),
             }
         )
+
+        self._resolve_cloud_project_id(context, project_meta)
+
         manager.write_meta(project_path, project_meta)
+
+    @staticmethod
+    def _resolve_cloud_project_id(context: PipelineContext, project_meta: dict) -> None:
+        """Record the Liferay Cloud project ID for a cloud source (LDM-#1681).
+
+        `--cloud-project` is declared on `import`, `init-from`, `link` and
+        `clone`, and PR #497 left nothing reading it. Nothing wrote
+        `cloud_project_id` either, so `handlers/cloud.py` fell through its
+        chain to the project directory name and ran `lcp` commands against a
+        guess -- silently, because that fallback has no warning.
+
+        Resolution order, restored from the pre-refactor implementation:
+
+        1. `--cloud-project`, an explicit decision by the user;
+        2. the `id` in the repository-root `LCP.json` / `lcp.json`;
+        3. interactively, a prompt defaulting to the repository directory
+           name; non-interactively, a refusal.
+
+        The refusal is exit code `2` as it was before, not `1`: an unusable
+        cloud identity is the same class of problem as a missing LCP login,
+        and automation already branches on it that way.
+        """
+        import json
+
+        context = typing.cast(ImportPipelineContext, context)
+        manager = context.manager
+
+        if not context.get("is_cloud"):
+            return
+
+        cli_cloud_id = getattr(manager.args, "cloud_project", None)
+        if cli_cloud_id:
+            project_meta["cloud_project_id"] = cli_cloud_id
+            UI.detail(f"Using Liferay Cloud project ID: {cli_cloud_id}")
+            return
+
+        cloud_root = context.get("cloud_root")
+        if cloud_root:
+            for candidate in ("lcp.json", "LCP.json"):
+                lcp_path = cloud_root / candidate
+                if not lcp_path.exists():
+                    continue
+                try:
+                    root_lcp = json.loads(lcp_path.read_text(encoding="utf-8"))
+                except Exception as e:  # A malformed file is reported, not fatal
+                    UI.warning(f"Failed to parse {lcp_path.name}: {e}")
+                    break
+                if isinstance(root_lcp, dict) and root_lcp.get("id"):
+                    project_meta["cloud_project_id"] = root_lcp["id"]
+                    UI.detail(
+                        f"Detected Liferay Cloud project ID: {root_lcp['id']} "
+                        f"(from {lcp_path.name})"
+                    )
+                    return
+                break
+
+        # Re-importing over a project that already carries one is not a
+        # prompt, and must not be a refusal.
+        if project_meta.get("cloud_project_id"):
+            return
+
+        if manager.non_interactive:
+            UI.die(
+                "Liferay Cloud project ID could not be determined. "
+                "Please specify it using --cloud-project.",
+                exit_code=2,
+            )
+
+        UI.detail(
+            "Liferay Cloud project ID could not be determined from a root LCP.json."
+        )
+        default_id = (cloud_root or context.get("workspace_root")).name
+        project_meta["cloud_project_id"] = UI.ask(
+            "Liferay Cloud Project ID", default_id
+        )
 
     def rollback(self, context: PipelineContext) -> None:
         """Remove the project directory this stage brought into existence.
@@ -490,7 +618,13 @@ class VolumeSyncStage(PipelineStage):
         if context.get("is_ldmp"):
             return  # Handled by restore
 
-        workspace_root = context.get("extracted_source")
+        # LDM-#1681: the Gradle workspace, which is `<repo>/liferay` for a
+        # cloud source and the source root otherwise. `extracted_source` is
+        # the latter in both cases, and reading code out of it is why a cloud
+        # import copied nothing. Resolved once in `ExtractionStage`.
+        workspace_root = context.get("workspace_root") or context.get(
+            "extracted_source"
+        )
         paths = context.get("paths")
         overwrite = context.get("overwrite", True)
 
@@ -500,11 +634,12 @@ class VolumeSyncStage(PipelineStage):
         # end, whose writes this stage cannot otherwise see.
         self._snapshot_targets(context, paths)
 
-        is_cloud = (
-            manager.workspace._is_lcp_workspace(workspace_root)
-            if hasattr(manager.workspace, "_is_lcp_workspace")
-            else False
-        )
+        # LDM-#1681: this read `manager.workspace._is_lcp_workspace(...)` behind
+        # a `hasattr` guard. That method has never been defined at any commit,
+        # so `is_cloud` was permanently False and the service-copy block below
+        # had not run since 2026-07-10. Detection now happens once, in
+        # `ExtractionStage`, through the real `is_lcp_workspace`.
+        is_cloud = context.get("is_cloud", False)
 
         def import_zips(search_base, label, target_dir, overwrite=False):
             count = 0
@@ -580,7 +715,14 @@ class VolumeSyncStage(PipelineStage):
                                 ):
                                     safe_copy(f, paths.get("modules") / f.name)
 
-        if is_cloud:
+        cloud_root = context.get("cloud_root")
+        if is_cloud and cloud_root and cloud_root.is_dir():
+            # LDM-#1681: this walked `workspace_root.parent`. Correct before
+            # PR #497, when `workspace_root` was `<repo>/liferay` -- but the
+            # refactor made it the repository root, so the walk moved one
+            # level ABOVE the repository. Nobody noticed because `is_cloud`
+            # was never True. `cloud_root` names the repository root outright
+            # rather than deriving it, so the two cannot drift apart again.
             infra_dirs = [
                 "liferay",
                 "backup",
@@ -590,9 +732,10 @@ class VolumeSyncStage(PipelineStage):
                 "webserver",
                 ".git",
             ]
+            copied = 0
             for item in [
                 i
-                for i in workspace_root.parent.iterdir()
+                for i in cloud_root.iterdir()
                 if i.is_dir()
                 and i.name not in infra_dirs
                 and not i.name.startswith(".")
@@ -602,6 +745,9 @@ class VolumeSyncStage(PipelineStage):
                     if dest.exists():
                         manager.safe_rmtree(dest)
                     shutil.copytree(item, dest, copy_function=safe_copy)
+                    copied += 1
+            if copied:
+                UI.success(f"Imported {copied} standalone Liferay Cloud service(s).")
 
         # LDM-#1679: a call to `manager.snapshot._restore_from_cloud_layout`
         # stood here, guarded by `hasattr`. The method has never existed on the
@@ -744,7 +890,11 @@ class BuildWorkspaceStage(PipelineStage):
         manager = context.manager
 
         if not context.get("is_ldmp") and getattr(manager.args, "build", False):
-            workspace_root = context.get("extracted_source")
+            # LDM-#1681: `gradlew` lives in the Gradle workspace, which is
+            # `<repo>/liferay` for a cloud source -- not the repository root.
+            workspace_root = context.get("workspace_root") or context.get(
+                "extracted_source"
+            )
             UI.heading(f"Building Workspace: {workspace_root.name}")
             import platform
 

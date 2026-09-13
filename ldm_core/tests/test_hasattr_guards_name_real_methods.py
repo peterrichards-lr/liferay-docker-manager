@@ -35,12 +35,9 @@ _PIPELINE_SRC = _ROOT / "pipelines" / "import_pipeline.py"
 #
 # RATCHET, not approval. An entry needs a tracking issue; removing one is
 # progress. Empty is the goal.
-_KNOWN_PHANTOM = {
-    # LDM-#1681: the real function is `is_lcp_workspace` in ldm_core/utils.py.
-    # Fixing this ENABLES a code path dormant since 2026-07-10, so it is a
-    # behaviour change needing its own tests rather than a tidy-up here.
-    "_is_lcp_workspace",
-}
+_KNOWN_PHANTOM: set[str] = set()
+# LDM-#1681 removed the last entry, `_is_lcp_workspace`. The allowlist is
+# empty, which is the goal -- keep it that way.
 
 
 def _hasattr_names(source: str):

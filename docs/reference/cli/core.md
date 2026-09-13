@@ -199,6 +199,25 @@ ldm link ~/repos/my-workspace my-project --cloud-project lctintranet
 ldm init-from ~/repos/my-workspace my-project
 ```
 
+### Liferay Cloud workspaces
+
+A Liferay Cloud (LCP) repository keeps its Liferay Workspace under `liferay/`
+and its standalone services -- any sibling directory holding both an `LCP.json`
+and a `Dockerfile` -- beside it. `ldm link` resolves that layout, imports the
+workspace code from `liferay/`, and copies each standalone service into
+`<project>/services/`. The infrastructure directories (`backup`, `ci`,
+`database`, `search`, `webserver`) are skipped.
+
+The Liferay Cloud project ID is resolved in this order:
+
+1. `--cloud-project`, if given;
+2. the `id` field in the repository-root `LCP.json` / `lcp.json`;
+3. an interactive prompt, defaulting to the repository directory name.
+
+With `-y`/`--non-interactive` and no ID available from the first two, LDM
+**refuses with exit code `2`** rather than guessing -- a wrong ID would run
+`lcp` commands against someone else's project.
+
 ## `clone` ![Added in v2.15.16](https://img.shields.io/badge/Added%20in-v2.15.16-blue)
 
 Clone a remote Git repository and initialize an LDM project from it. Unlike `link`, which connects to an existing local workspace, `clone` handles the Git clone step automatically and sets up hot-reload mounts in one command.
@@ -549,4 +568,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-10* | *Last Reviewed: 2026-09-10*
+*Last Updated: 2026-09-13* | *Last Reviewed: 2026-09-13*
