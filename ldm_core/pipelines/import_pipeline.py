@@ -422,9 +422,49 @@ class ProjectSetupStage(PipelineStage):
             }
         )
 
+        self._record_linked_workspace(context, project_meta)
         self._resolve_cloud_project_id(context, project_meta)
 
         manager.write_meta(project_path, project_meta)
+
+    @staticmethod
+    def _record_linked_workspace(context: PipelineContext, project_meta: dict) -> None:
+        """Remember the workspace a linked project was created from (LDM-#1684).
+
+        PR #497 rebuilt the `project_meta` literal without
+        `"workspace_path": str(source) if is_init_from else None`, and nothing
+        has written the key since. Two readers depend on it:
+
+        * `workspace/monitor.py:39` -- `ldm monitor <project>` with no path
+          falls back to it and otherwise refuses. `ldm link` itself still
+          worked, because `cmd_link` passes the source to `cmd_monitor`
+          directly; it is re-attaching the watcher later that failed, which is
+          why this stayed quiet.
+        * `handlers/snapshot.py:422` -- reads it to record the workspace's git
+          origin in a package, and silently skips that when absent.
+
+        Two deliberate differences from the line being restored:
+
+        * **absent is not the same as `None`.** The original wrote `None` for a
+          plain import, which would erase a previously linked project's path on
+          any re-import. The key is now left alone instead.
+        * **the path must be a directory that still exists.** `ldm clone`
+          imports from a scratch git checkout that is deleted immediately
+          afterwards, so recording it would store a path that is already gone.
+          It reaches `cmd_import` with `is_init_from=False` and is excluded by
+          that flag anyway; this is the belt to that pair of braces.
+        """
+        context = typing.cast(ImportPipelineContext, context)
+
+        if not context.get("is_init_from"):
+            return
+
+        source = context.get("source_resolved")
+        if not isinstance(source, Path) or not source.is_dir():
+            return
+
+        project_meta["workspace_path"] = str(source)
+        UI.detail(f"Linked to workspace: {source}")
 
     @staticmethod
     def _resolve_cloud_project_id(context: PipelineContext, project_meta: dict) -> None:
