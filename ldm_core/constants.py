@@ -175,6 +175,34 @@ RELEASE_ANNOUNCEMENTS = {
             "One unreachable project no longer abandons every project after it",
         ),
     ],
+    # LDM-#1681 / #1684 / #1677 are restorations rather than new features: PR
+    # #497's ImportPipeline refactor rebuilt a `project_meta` literal and a
+    # `workspace_root` derivation from scratch and silently dropped fields on
+    # the way. They are announced because the user-visible effect is new to
+    # them -- a cloud import that copied nothing has been copying nothing since
+    # 2026-07-10.
+    "2.22": [
+        (
+            "ldm link <lcp-workspace>",
+            "Liferay Cloud workspaces import again: standalone services are copied into the project, and code is read from <repo>/liferay rather than the repository root",
+        ),
+        (
+            "ldm link --cloud-project <id>",
+            "The flag is honoured instead of ignored; with no ID available a non-interactive run now refuses (exit 2) rather than guessing from the directory name",
+        ),
+        (
+            "ldm run",
+            "Warns when the resolved tag disagrees with the linked workspace's liferay.workspace.product, and offers the pinned tag -- an OSGi bundle built for another product line fails to resolve at boot, far from the tag decision",
+        ),
+        (
+            "ldm monitor <project>",
+            "A linked project remembers its workspace again, so re-attaching the watcher no longer needs the path spelled out",
+        ),
+        (
+            "ldm import",
+            "A failed import into an existing project restores the artifact directories it had overwritten, instead of leaving them half-written",
+        ),
+    ],
     "2.21": [
         (
             "ldm run --database-mode <mode>",

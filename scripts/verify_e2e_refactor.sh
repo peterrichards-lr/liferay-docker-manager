@@ -29,6 +29,9 @@ SSHFAIL_TEST_PROJ="sshfail-proj-${TEST_PORT}"
 PORTCONFLICT_PROJ="portconflict-${TEST_PORT}"
 PORT_HOLDER="ldm-e2e-port-holder-${TEST_PORT}"
 LDMP_REFUSAL_PROJECT="ldmp-refusal-${TEST_PORT}"
+CLOUD_IMPORT_PROJECT="cloud-import-${TEST_PORT}"
+CLOUD_NOID_PROJECT="cloud-noid-${TEST_PORT}"
+PRODUCT_PIN_PROJECT="product-pin-${TEST_PORT}"
 # Kibana publishes this host port unconditionally (composer.py
 # _build_kibana_service). It is the LDM-#1350 lever -- see that check below.
 KIBANA_HOST_PORT=5601
@@ -800,6 +803,207 @@ fi
 # Kept as a named function for the same reason as print_version_banner above --
 # so it can be executed without a full Docker/ldm E2E run
 # (ldm_core/tests/test_verify_scripts.py).
+# LDM-#1681: a Liferay Cloud workspace import copies its standalone services,
+# and reads code out of the NESTED workspace.
+#
+# Why this is worth an E2E check rather than only the unit tests: the regression
+# it guards ran for two months with a green suite, because `is_cloud` was read
+# through a `hasattr` guard naming a method that has never existed. Nothing
+# failed -- the branch simply never executed. Only an assertion on the resulting
+# project directory can tell "the cloud block ran" from "the cloud block was
+# skipped", and that is exactly what no test was making.
+#
+# The fixture is a directory tree this function builds itself: no Liferay, no
+# LCP account, no network. `--no-run` stops before any container starts, and the
+# import is driven with `-y import <dir>` rather than `ldm link`, because
+# `cmd_link` ends in `cmd_monitor`, whose `while True: sleep(1)` never returns.
+#
+# Four assertions, because each can fail independently and three of them did:
+#   1. the service directory is copied         (the reported symptom)
+#   2. infrastructure directories are NOT      (the scan must stay selective;
+#      `backup/` carries its own LCP.json + Dockerfile, so a naive walk takes it)
+#   3. `cloud_project_id` is recorded          (--cloud-project was inert, and
+#      handlers/cloud.py silently guessed from the directory name)
+#   4. `liferay/deploy/<marker>` reaches      (proves the nested-workspace
+#      `<project>/deploy/`                     descent; without it the import
+#      reads an empty repository root and copies nothing at all, which is the
+#      failure the other three cannot see)
+#
+# Assertion 4 deliberately uses `deploy` rather than `configs`. Both prove the
+# descent, but `workspace_root/configs` is copied wholesale into
+# `osgi/configs/<env>/` -- a path Liferay never scans, tracked as LDM-#1692.
+# Asserting on that would pin a defect in place and break when it is fixed.
+#
+# Observed against v2.21.1 + the fix on 2026-09-13: `✅ Imported 1 standalone
+# Liferay Cloud service(s).`, services/webcrawler present, backup/ absent,
+# cloud_project_id=lctverifyproj, deploy/ldm-descent-marker.txt present. Run
+# again against 32bea3f3, where it correctly failed on assertion 1.
+#
+# Named, like verify_ldmp_manifest_refusal above, so it can be exercised without
+# a full run (ldm_core/tests/test_verify_scripts.py).
+verify_cloud_workspace_import() {
+    local ldm_cmd="$1"
+    local work_dir="$2"
+    local project_name="$3"
+    local noid_project="$4"
+
+    local repo="${work_dir}/lcp-workspace-src"
+    local noid_repo="${work_dir}/lcp-noid-src"
+
+    rm -rf "$repo" "$noid_repo"
+    mkdir -p "${repo}/liferay/configs/local" "${repo}/liferay/deploy" \
+        "${repo}/webcrawler" "${repo}/backup"
+
+    # The Liferay Workspace, nested under `liferay/` as an LCP repository keeps it.
+    printf '%s\n' '{"id": "liferay"}' >"${repo}/liferay/LCP.json"
+    printf '%s\n' 'liferay.workspace.product=dxp-2026.q1.7' \
+        >"${repo}/liferay/gradle.properties"
+    printf '%s\n' 'a=1' >"${repo}/liferay/configs/local/portal-ext.properties"
+    # The descent marker. `deploy` is the mapping to assert on, NOT `configs`:
+    # `workspace_root/deploy` -> `<project>/deploy` is correct and unambiguous,
+    # whereas `configs` is copied wholesale into `osgi/configs/<env>/`, which is
+    # its own bug (LDM-#1692). Asserting on that would pin the defect.
+    printf '%s\n' 'marker' >"${repo}/liferay/deploy/ldm-descent-marker.txt"
+
+    # The repository-root LCP.json is where the cloud project ID comes from.
+    printf '%s\n' '{"id": "lctverifyproj"}' >"${repo}/LCP.json"
+
+    # A standalone service: a sibling of `liferay/` with both marker files.
+    printf '%s\n' '{"id": "webcrawler"}' >"${repo}/webcrawler/LCP.json"
+    printf '%s\n' 'FROM alpine' >"${repo}/webcrawler/Dockerfile"
+
+    # Infrastructure, deliberately service-shaped. Must NOT be imported.
+    printf '%s\n' '{"id": "backup"}' >"${repo}/backup/LCP.json"
+    printf '%s\n' 'FROM alpine' >"${repo}/backup/Dockerfile"
+
+    local out code
+    out=$(cd "$work_dir" && "$ldm_cmd" -y import "./lcp-workspace-src" "$project_name" --no-run 2>&1) && code=0 || code=$?
+
+    local project_dir="${work_dir}/${project_name}"
+    local services_dir="${project_dir}/services"
+    local failure=""
+
+    if [ "$code" -ne 0 ]; then
+        failure="the cloud import exited ${code}"
+    elif [ ! -d "${services_dir}/webcrawler" ]; then
+        failure="services/webcrawler was not copied -- the cloud block did not run"
+    elif [ -d "${services_dir}/backup" ]; then
+        failure="services/backup WAS copied -- an infrastructure directory was imported as a service"
+    elif ! grep -q '"cloud_project_id"' "${project_dir}/meta" 2>/dev/null; then
+        failure="meta records no cloud_project_id -- the root LCP.json id was not read"
+    elif ! grep -q 'lctverifyproj' "${project_dir}/meta" 2>/dev/null; then
+        failure="cloud_project_id is present but is not the root LCP.json id"
+    elif [ ! -f "${project_dir}/deploy/ldm-descent-marker.txt" ]; then
+        failure="deploy/ldm-descent-marker.txt is absent -- code was read from the repository root, not <repo>/liferay"
+    fi
+
+    # Teardown before asserting, so a failed assertion leaves nothing behind.
+    "$ldm_cmd" -y rm "$project_name" --delete >/dev/null 2>&1 || true
+    rm -rf "$repo" "${work_dir:?}/${project_name:?}" "${work_dir:?}/.ldm_temp"
+
+    if [ -n "$failure" ]; then
+        echo "❌ ERROR: ${failure} (LDM-#1681)."
+        echo "   Output was: ${out}"
+        return 1
+    fi
+
+    # The second half: with no --cloud-project and no root LCP.json id, a
+    # non-interactive run must REFUSE rather than guess. The pre-refactor code
+    # did; PR #497 dropped it, and handlers/cloud.py then ran `lcp` commands
+    # against the project directory name with no warning. Exit 2 is the
+    # authentication/permission code in LDM's contract.
+    mkdir -p "${noid_repo}/liferay" "${noid_repo}/svc"
+    printf '%s\n' '{"id": "liferay"}' >"${noid_repo}/liferay/LCP.json"
+    printf '%s\n' 'liferay.workspace.product=dxp-2026.q1.7' \
+        >"${noid_repo}/liferay/gradle.properties"
+    printf '%s\n' '{"id": "svc"}' >"${noid_repo}/svc/LCP.json"
+    printf '%s\n' 'FROM alpine' >"${noid_repo}/svc/Dockerfile"
+
+    local noid_out noid_code
+    noid_out=$(cd "$work_dir" && "$ldm_cmd" -y import "./lcp-noid-src" "$noid_project" --no-run 2>&1) && noid_code=0 || noid_code=$?
+
+    "$ldm_cmd" -y rm "$noid_project" --delete >/dev/null 2>&1 || true
+    rm -rf "$noid_repo" "${work_dir:?}/${noid_project:?}" "${work_dir:?}/.ldm_temp"
+
+    # Code AND reason. Exit 2 alone is weak -- an LCP login failure is also 2.
+    if [ "$noid_code" -ne 2 ]; then
+        echo "❌ ERROR: expected exit 2 for a cloud import with no determinable project ID, got ${noid_code} (LDM-#1681)."
+        echo "   Output was: ${noid_out}"
+        return 1
+    fi
+    if ! echo "$noid_out" | grep -q -- "--cloud-project"; then
+        echo "❌ ERROR: the cloud import exited 2, but not for the missing project ID (LDM-#1681)."
+        echo "   Output was: ${noid_out}"
+        return 1
+    fi
+
+    echo "✅ Cloud workspace import verified: services copied, infrastructure skipped, cloud project ID recorded, code read from <repo>/liferay, and an undeterminable ID refused with exit 2 (LDM-#1681)."
+    return 0
+}
+
+# LDM-#1658: booting a product line the linked workspace did not ask for is
+# reported, not silent.
+#
+# `liferay.workspace.product` was write-only -- `ldm set-version` wrote it and
+# `_resolve_tag` never read it back. This asserts all three states, because the
+# silences are the half that can regress into noise: a warning that fires on
+# every run is worse than none, and an explicit `-t` must never be
+# second-guessed.
+#
+# No Liferay: `ldm init` scaffolds and stops, which is far enough to run
+# ConfigResolutionStage where the check lives.
+#
+# Observed against v2.21.1 + the fix on 2026-09-13: the mismatch warned and
+# exited 0; `-t 2026.q3.2` and an agreeing pin each produced zero warning lines.
+verify_workspace_product_pin() {
+    local ldm_cmd="$1"
+    local work_dir="$2"
+    local project_name="$3"
+
+    local project_dir="${work_dir}/${project_name}"
+    local needle='pins liferay.workspace.product'
+
+    rm -rf "$project_dir"
+    mkdir -p "${project_dir}/files"
+    printf '{"tag": "2026.q3.2", "container_name": "%s", "port": 8123, "db_type": "postgresql"}\n' \
+        "$project_name" >"${project_dir}/meta"
+
+    _pin_warning_count() {
+        # A pin that disagrees with the tag being run.
+        printf '%s\n' "$1" >"${project_dir}/gradle.properties"
+        shift
+        local out
+        out=$(cd "$work_dir" && "$ldm_cmd" -y init "$project_name" "$@" 2>&1)
+        echo "$out" | grep -c -- "$needle" || true
+    }
+
+    local mismatch silenced_by_tag agreeing
+    mismatch=$(_pin_warning_count 'liferay.workspace.product=dxp-2026.q1.7')
+    silenced_by_tag=$(_pin_warning_count 'liferay.workspace.product=dxp-2026.q1.7' -t 2026.q3.2)
+    agreeing=$(_pin_warning_count 'liferay.workspace.product=dxp-2026.q3.2')
+
+    unset -f _pin_warning_count
+    "$ldm_cmd" -y rm "$project_name" --delete >/dev/null 2>&1 || true
+    rm -rf "$project_dir"
+
+    if [ "$mismatch" -lt 1 ]; then
+        echo "❌ ERROR: a workspace pinned to dxp-2026.q1.7 booted 2026.q3.2 with no warning (LDM-#1658)."
+        return 1
+    fi
+    if [ "$silenced_by_tag" -ne 0 ]; then
+        echo "❌ ERROR: an explicit -t was second-guessed against the workspace pin (LDM-#1658)."
+        echo "   An explicit tag is a decision, not an accident."
+        return 1
+    fi
+    if [ "$agreeing" -ne 0 ]; then
+        echo "❌ ERROR: a pin that AGREES with the resolved tag still warned (LDM-#1658)."
+        return 1
+    fi
+
+    echo "✅ Workspace product pin verified: a mismatch warns and proceeds, an explicit -t and an agreeing pin stay silent (LDM-#1658)."
+    return 0
+}
+
 verify_ldmp_manifest_refusal() {
     local ldm_cmd="$1"
     local work_dir="$2"
@@ -944,6 +1148,22 @@ if CASCADING_GUARD_OUT=$(verify_cascading_default_guard "$LDM_CMD" "$LDM_WORKSPA
     report_ok "$CASCADING_GUARD_OUT"
 else
     echo "$CASCADING_GUARD_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying Liferay Cloud workspace import (LDM-#1681)..."
+if CLOUD_IMPORT_OUT=$(verify_cloud_workspace_import "$LDM_CMD" "$LDM_WORKSPACE" "$CLOUD_IMPORT_PROJECT" "$CLOUD_NOID_PROJECT"); then
+    report_ok "$CLOUD_IMPORT_OUT"
+else
+    echo "$CLOUD_IMPORT_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying the workspace product-pin mismatch warning (LDM-#1658)..."
+if PRODUCT_PIN_OUT=$(verify_workspace_product_pin "$LDM_CMD" "$LDM_WORKSPACE" "$PRODUCT_PIN_PROJECT"); then
+    report_ok "$PRODUCT_PIN_OUT"
+else
+    echo "$PRODUCT_PIN_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
 

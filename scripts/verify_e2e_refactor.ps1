@@ -123,6 +123,9 @@ $SSHFAIL_TEST_PROJ = "sshfail-proj-${TEST_PORT}"
 $PORTCONFLICT_PROJ = "portconflict-${TEST_PORT}"
 $PORT_HOLDER = "ldm-e2e-port-holder-${TEST_PORT}"
 $LDMP_REFUSAL_PROJECT = "ldmp-refusal-${TEST_PORT}"
+$CLOUD_IMPORT_PROJECT = "cloud-import-${TEST_PORT}"
+$CLOUD_NOID_PROJECT = "cloud-noid-${TEST_PORT}"
+$PRODUCT_PIN_PROJECT = "product-pin-${TEST_PORT}"
 # Kibana publishes this host port unconditionally (composer.py
 # _build_kibana_service). It is the LDM-#1350 lever -- see that check below.
 $KIBANA_HOST_PORT = 5601
@@ -785,6 +788,215 @@ function Test-CascadingDefaultGuard {
     return @{ Ok = $true; Message = "[SUCCESS] Cascading default write refused with the working command named; non-cascading keys still write." }
 }
 
+# LDM-#1681: a Liferay Cloud workspace import copies its standalone services,
+# and reads code out of the NESTED workspace.
+#
+# Functional twin of verify_cloud_workspace_import() in verify_e2e_refactor.sh.
+#
+# The regression this guards ran for two months with a green unit suite, because
+# 'is_cloud' was read through a hasattr guard naming a method that has never
+# existed -- nothing failed, the branch simply never ran. Only an assertion on
+# the resulting project directory separates "the cloud block ran" from "the
+# cloud block was skipped".
+#
+# Fixture is a directory tree built here: no Liferay, no LCP account, no
+# network. '--no-run' stops before any container starts, and the import is
+# driven with 'import <dir>' rather than 'link', because cmd_link ends in
+# cmd_monitor, whose 'while True: sleep(1)' never returns.
+#
+# Four assertions, because each fails independently and three of them did:
+#   1. the service directory is copied      (the reported symptom)
+#   2. infrastructure directories are NOT   (backup/ carries its own LCP.json
+#      and Dockerfile, so a naive walk takes it)
+#   3. cloud_project_id is recorded         (--cloud-project was inert)
+#   4. liferay/deploy/<marker> reaches       (proves the nested descent; without
+#      <project>/deploy/                     it the import reads an empty
+#      repository root and copies nothing)
+#
+# Assertion 4 deliberately uses 'deploy' rather than 'configs'. Both prove the
+# descent, but workspace_root/configs is copied wholesale into
+# osgi/configs/<env>/ -- a path Liferay never scans, tracked as LDM-#1692.
+# Asserting on that would pin a defect in place and break when it is fixed.
+#
+# Observed on 2026-09-13 against the fix, and against 32bea3f3 without it, where
+# it correctly failed on assertion 1.
+function Test-CloudWorkspaceImport {
+    param(
+        [string]$LdmCmd,
+        [string]$WorkDir,
+        [string]$ProjectName,
+        [string]$NoIdProjectName
+    )
+
+    $repo = Join-Path $WorkDir "lcp-workspace-src"
+    $noIdRepo = Join-Path $WorkDir "lcp-noid-src"
+    foreach ($stale in @($repo, $noIdRepo)) {
+        if (Test-Path $stale) { Remove-Item -Recurse -Force $stale }
+    }
+
+    foreach ($dir in @(
+            (Join-Path $repo "liferay\configs\local"),
+            (Join-Path $repo "liferay\deploy"),
+            (Join-Path $repo "webcrawler"),
+            (Join-Path $repo "backup"))) {
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    }
+
+    # The Liferay Workspace, nested under liferay/ as an LCP repository keeps it.
+    Set-Content -Path (Join-Path $repo "liferay\LCP.json") -Value '{"id": "liferay"}' -Encoding ascii
+    Set-Content -Path (Join-Path $repo "liferay\gradle.properties") -Value 'liferay.workspace.product=dxp-2026.q1.7' -Encoding ascii
+    Set-Content -Path (Join-Path $repo "liferay\configs\local\portal-ext.properties") -Value 'a=1' -Encoding ascii
+    # The descent marker. 'deploy' is the mapping to assert on, NOT 'configs':
+    # workspace_root/deploy -> <project>/deploy is correct and unambiguous,
+    # whereas 'configs' is copied wholesale into osgi/configs/<env>/, which is
+    # its own bug (LDM-#1692). Asserting on that would pin the defect.
+    Set-Content -Path (Join-Path $repo "liferay\deploy\ldm-descent-marker.txt") -Value 'marker' -Encoding ascii
+    # The repository-root LCP.json is where the cloud project ID comes from.
+    Set-Content -Path (Join-Path $repo "LCP.json") -Value '{"id": "lctverifyproj"}' -Encoding ascii
+    # A standalone service: a sibling of liferay/ with both marker files.
+    Set-Content -Path (Join-Path $repo "webcrawler\LCP.json") -Value '{"id": "webcrawler"}' -Encoding ascii
+    Set-Content -Path (Join-Path $repo "webcrawler\Dockerfile") -Value 'FROM alpine' -Encoding ascii
+    # Infrastructure, deliberately service-shaped. Must NOT be imported.
+    Set-Content -Path (Join-Path $repo "backup\LCP.json") -Value '{"id": "backup"}' -Encoding ascii
+    Set-Content -Path (Join-Path $repo "backup\Dockerfile") -Value 'FROM alpine' -Encoding ascii
+
+    $prev = Get-Location
+    Set-Location $WorkDir
+    try {
+        $out = & $LdmCmd -y import ".\lcp-workspace-src" $ProjectName --no-run 2>&1 | Out-String
+        $code = $LASTEXITCODE
+    } finally {
+        Set-Location $prev
+    }
+
+    $projectDir = Join-Path $WorkDir $ProjectName
+    $servicesDir = Join-Path $projectDir "services"
+    $metaPath = Join-Path $projectDir "meta"
+    $meta = if (Test-Path $metaPath) { Get-Content $metaPath -Raw } else { "" }
+
+    $failure = ""
+    if ($code -ne 0) {
+        $failure = "the cloud import exited ${code}"
+    } elseif (-not (Test-Path (Join-Path $servicesDir "webcrawler"))) {
+        $failure = "services/webcrawler was not copied -- the cloud block did not run"
+    } elseif (Test-Path (Join-Path $servicesDir "backup")) {
+        $failure = "services/backup WAS copied -- an infrastructure directory was imported as a service"
+    } elseif ($meta -notmatch '"cloud_project_id"') {
+        $failure = "meta records no cloud_project_id -- the root LCP.json id was not read"
+    } elseif ($meta -notmatch 'lctverifyproj') {
+        $failure = "cloud_project_id is present but is not the root LCP.json id"
+    } elseif (-not (Test-Path (Join-Path $projectDir "deploy\ldm-descent-marker.txt"))) {
+        $failure = "deploy/ldm-descent-marker.txt is absent -- code was read from the repository root, not <repo>/liferay"
+    }
+
+    # Teardown before asserting, so a failed assertion leaves nothing behind.
+    & $LdmCmd -y rm $ProjectName --delete *> $null
+    foreach ($stale in @($repo, $projectDir, (Join-Path $WorkDir ".ldm_temp"))) {
+        if (Test-Path $stale) { Remove-Item -Recurse -Force $stale -ErrorAction SilentlyContinue }
+    }
+
+    if ($failure -ne "") {
+        return @{ Ok = $false; Message = "[ERROR] ERROR: ${failure} (LDM-#1681).`n   Output was: ${out}" }
+    }
+
+    # The second half: with no --cloud-project and no root LCP.json id, a
+    # non-interactive run must REFUSE rather than guess. The pre-refactor code
+    # did; PR #497 dropped it, and handlers/cloud.py then ran 'lcp' commands
+    # against the project directory name with no warning.
+    foreach ($dir in @((Join-Path $noIdRepo "liferay"), (Join-Path $noIdRepo "svc"))) {
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    }
+    Set-Content -Path (Join-Path $noIdRepo "liferay\LCP.json") -Value '{"id": "liferay"}' -Encoding ascii
+    Set-Content -Path (Join-Path $noIdRepo "liferay\gradle.properties") -Value 'liferay.workspace.product=dxp-2026.q1.7' -Encoding ascii
+    Set-Content -Path (Join-Path $noIdRepo "svc\LCP.json") -Value '{"id": "svc"}' -Encoding ascii
+    Set-Content -Path (Join-Path $noIdRepo "svc\Dockerfile") -Value 'FROM alpine' -Encoding ascii
+
+    Set-Location $WorkDir
+    try {
+        $noIdOut = & $LdmCmd -y import ".\lcp-noid-src" $NoIdProjectName --no-run 2>&1 | Out-String
+        $noIdCode = $LASTEXITCODE
+    } finally {
+        Set-Location $prev
+    }
+
+    & $LdmCmd -y rm $NoIdProjectName --delete *> $null
+    foreach ($stale in @($noIdRepo, (Join-Path $WorkDir $NoIdProjectName), (Join-Path $WorkDir ".ldm_temp"))) {
+        if (Test-Path $stale) { Remove-Item -Recurse -Force $stale -ErrorAction SilentlyContinue }
+    }
+
+    # Code AND reason. Exit 2 alone is weak -- an LCP login failure is also 2.
+    if ($noIdCode -ne 2) {
+        return @{ Ok = $false; Message = "[ERROR] ERROR: expected exit 2 for a cloud import with no determinable project ID, got ${noIdCode} (LDM-#1681).`n   Output was: ${noIdOut}" }
+    }
+    if ($noIdOut -notmatch "--cloud-project") {
+        return @{ Ok = $false; Message = "[ERROR] ERROR: the cloud import exited 2, but not for the missing project ID (LDM-#1681).`n   Output was: ${noIdOut}" }
+    }
+
+    return @{ Ok = $true; Message = "[SUCCESS] Cloud workspace import verified: services copied, infrastructure skipped, cloud project ID recorded, code read from <repo>/liferay, and an undeterminable ID refused with exit 2 (LDM-#1681)." }
+}
+
+# LDM-#1658: booting a product line the linked workspace did not ask for is
+# reported, not silent.
+#
+# Functional twin of verify_workspace_product_pin() in verify_e2e_refactor.sh.
+#
+# 'liferay.workspace.product' was write-only -- 'ldm set-version' wrote it and
+# _resolve_tag never read it back. All three states are asserted, because the
+# silences are the half that can regress into noise: a warning on every run is
+# worse than none, and an explicit -t must never be second-guessed.
+#
+# No Liferay: 'ldm init' scaffolds and stops, which is far enough to reach
+# ConfigResolutionStage where the check lives.
+function Test-WorkspaceProductPin {
+    param(
+        [string]$LdmCmd,
+        [string]$WorkDir,
+        [string]$ProjectName
+    )
+
+    $projectDir = Join-Path $WorkDir $ProjectName
+    $needle = 'pins liferay.workspace.product'
+
+    if (Test-Path $projectDir) { Remove-Item -Recurse -Force $projectDir }
+    New-Item -ItemType Directory -Force -Path (Join-Path $projectDir "files") | Out-Null
+    Set-Content -Path (Join-Path $projectDir "meta") -Encoding ascii `
+        -Value ('{"tag": "2026.q3.2", "container_name": "' + $ProjectName + '", "port": 8123, "db_type": "postgresql"}')
+
+    $gradlePath = Join-Path $projectDir "gradle.properties"
+    $prev = Get-Location
+
+    function Get-PinWarningCount {
+        param([string]$Pin, [string[]]$ExtraArgs = @())
+        Set-Content -Path $gradlePath -Value $Pin -Encoding ascii
+        Set-Location $WorkDir
+        try {
+            $out = & $LdmCmd -y init $ProjectName @ExtraArgs 2>&1 | Out-String
+        } finally {
+            Set-Location $prev
+        }
+        return ([regex]::Matches($out, [regex]::Escape($needle))).Count
+    }
+
+    $mismatch = Get-PinWarningCount -Pin 'liferay.workspace.product=dxp-2026.q1.7'
+    $silencedByTag = Get-PinWarningCount -Pin 'liferay.workspace.product=dxp-2026.q1.7' -ExtraArgs @("-t", "2026.q3.2")
+    $agreeing = Get-PinWarningCount -Pin 'liferay.workspace.product=dxp-2026.q3.2'
+
+    & $LdmCmd -y rm $ProjectName --delete *> $null
+    if (Test-Path $projectDir) { Remove-Item -Recurse -Force $projectDir -ErrorAction SilentlyContinue }
+
+    if ($mismatch -lt 1) {
+        return @{ Ok = $false; Message = "[ERROR] ERROR: a workspace pinned to dxp-2026.q1.7 booted 2026.q3.2 with no warning (LDM-#1658)." }
+    }
+    if ($silencedByTag -ne 0) {
+        return @{ Ok = $false; Message = "[ERROR] ERROR: an explicit -t was second-guessed against the workspace pin (LDM-#1658).`n   An explicit tag is a decision, not an accident." }
+    }
+    if ($agreeing -ne 0) {
+        return @{ Ok = $false; Message = "[ERROR] ERROR: a pin that AGREES with the resolved tag still warned (LDM-#1658)." }
+    }
+
+    return @{ Ok = $true; Message = "[SUCCESS] Workspace product pin verified: a mismatch warns and proceeds, an explicit -t and an agreeing pin stay silent (LDM-#1658)." }
+}
+
 function Test-LdmpManifestRefusal {
     param(
         [string]$LdmCmd,
@@ -990,6 +1202,24 @@ try {
         Write-Verdict $cascadingGuard.Message
     } else {
         Write-Host $cascadingGuard.Message -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying Liferay Cloud workspace import (LDM-#1681)..."
+    $cloudImport = Test-CloudWorkspaceImport -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE -ProjectName $CLOUD_IMPORT_PROJECT -NoIdProjectName $CLOUD_NOID_PROJECT
+    if ($cloudImport.Ok) {
+        Write-Verdict $cloudImport.Message
+    } else {
+        Write-Host $cloudImport.Message -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying the workspace product-pin mismatch warning (LDM-#1658)..."
+    $productPin = Test-WorkspaceProductPin -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE -ProjectName $PRODUCT_PIN_PROJECT
+    if ($productPin.Ok) {
+        Write-Verdict $productPin.Message
+    } else {
+        Write-Host $productPin.Message -ForegroundColor Red
         exit 1
     }
 
