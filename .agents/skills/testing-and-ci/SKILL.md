@@ -7,7 +7,17 @@ description: Activate this skill whenever writing tests, running linters, or com
 
 ## Pre-commit & CI Verification
 
-- **Mandatory Pre-commit Installation**: The agent MUST proactively verify that `pre-commit` hooks are installed locally (i.e. `.git/hooks/pre-commit` exists). If they are missing, you MUST run `.pytest_venv/bin/pre-commit install` (or `ldm dev-setup`) before attempting to commit code. This ensures that the local git hooks will intercept `git commit` and run linters like `ruff format` automatically, preventing unformatted code from slipping through and failing the CI Quality Gate.
+- **Mandatory Environment Initialization**: The agent MUST proactively verify that the `.venv` exists and that `pre-commit` hooks are installed locally (i.e. `.git/hooks/pre-commit` exists). If either is missing, run:
+
+  ```bash
+  bash scripts/setup_pre_commit.sh      # creates .venv if absent, installs requirements-dev, registers the hooks
+  ```
+
+  `ldm dev-setup` does the same job through the CLI. Either is fine; both leave the local git hooks in place so `git commit` intercepts and runs `ruff format`, preventing unformatted code from failing the CI Quality Gate.
+
+  **Do not hand-roll this.** You are FORBIDDEN from creating the `.venv` yourself or installing `pre-commit` globally -- the hooks resolve their interpreter through `scripts/run_python.sh`, which expects the layout the script produces.
+
+  **Why the script rather than a direct command** (LDM-#1687): this line used to read `.pytest_venv/bin/pre-commit install`, which is wrong twice over by the rules in [`ldm-developer`](../ldm-developer/SKILL.md). `.venv` is authoritative, not `.pytest_venv`; and `pre-commit` is one of the console scripts endpoint protection deletes by name, so `.venv/bin/<tool>` and `.pytest_venv/bin/<tool>` are both unreliable spellings -- the module form (`python3 -m pre_commit`) is the one that survives, and `setup_pre_commit.sh` uses it. The wrapper existing on your machine today is not evidence it will tomorrow, which is precisely why this is a script and not a command to be retyped.
 - **Strict Mechanical Enforcement (Agent Push)**: As an AI agent, you are STRICTLY PROHIBITED from using `git commit --no-verify` or bypassing quality gates. You MUST ONLY use the `./scripts/agent_push.sh "<commit message>"` wrapper script, which mechanically forces the execution of `pre-commit run --all-files`, `mypy`, `bandit` and `pytest`.
 
   **`pre-commit run --all-files` is a subset, not the whole gate** (LDM-#1407).
@@ -149,4 +159,4 @@ A release tag fires three to four workflows. Reporting "the" failure after readi
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*
+*Last Updated: 2026-09-13* | *Last Reviewed: 2026-09-13*
