@@ -119,6 +119,39 @@ If the registry cannot be reached at all, discovery falls back to
 quarterly and GA release but not nightlies — an unpublished build is not a release
 (LDM-#1648).
 
+### Workspace Product Pin
+
+If the project is linked to a workspace whose `gradle.properties` sets
+`liferay.workspace.product`, LDM compares that pin against the tag it resolved and
+warns when they disagree (LDM-#1658):
+
+```text
+⚠️  The linked workspace pins liferay.workspace.product=dxp-2026.q3.0
+    (Docker tag 2026.q3.0), but this run resolved 2026.q3.2.
+```
+
+Interactively LDM then offers the pinned tag, defaulting to yes. With
+`-y`/`--non-interactive` it warns and proceeds, so existing automation is
+unaffected.
+
+This matters more than a version mismatch usually does. A shared OSGi
+fragment/override bundle carries `Import-Package` ranges bound to one product
+line, and bnd copies a declared range into the manifest verbatim — so a bundle
+built for `dxp-2026.q3.0` does not resolve on `2026.q3.2`. The failure shows up
+as an unresolved bundle in the OSGi log at boot, a long way from the tag decision
+that caused it.
+
+LDM stays quiet when:
+
+- `-t`/`--tag` was given — an explicit tag is a decision, not an accident;
+- the workspace has no `liferay.workspace.product`;
+- the pin and the resolved tag are the same release. `dxp-2026.q1.7` and
+  `2026.q1.7-lts` count as agreement.
+
+`ldm set-version <product-key>` writes the pin; both a plain workspace
+(`gradle.properties` at the root) and a Liferay Cloud workspace
+(`liferay/gradle.properties`) are recognised.
+
 ### `--vanilla` Switch ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue)
 
 Bypasses downloading the pre-warmed database seed from GitHub releases. Spawns the Liferay project stack with a pristine, empty database.

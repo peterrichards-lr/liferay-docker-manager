@@ -646,6 +646,140 @@ class ConfigResolutionStage(PipelineStage):
 
         return tag, is_portal
 
+    # Where a linked workspace's `gradle.properties` can be, in preference
+    # order. An LCP repository nests the Gradle workspace under `liferay/`;
+    # `cmd_set_version` (workspace/versioning.py) already probes both shapes
+    # against the project root, and this mirrors it so the property LDM
+    # *writes* is the property LDM reads back.
+    @staticmethod
+    def _find_workspace_gradle_properties(paths, project_meta):
+        candidates: list[Path] = []
+        linked = (project_meta or {}).get("workspace_path")
+        if linked:
+            linked_path = Path(linked)
+            candidates += [
+                linked_path / "gradle.properties",
+                linked_path / "liferay" / "gradle.properties",
+            ]
+        root = (paths or {}).get("root")
+        if root:
+            candidates += [
+                Path(root) / "gradle.properties",
+                Path(root) / "liferay" / "gradle.properties",
+            ]
+        for candidate in candidates:
+            with contextlib.suppress(OSError):
+                if candidate.is_file():
+                    return candidate
+        return None
+
+    @staticmethod
+    def _read_workspace_product(gradle_properties):
+        """The `liferay.workspace.product` pin, or None.
+
+        Anchored to the start of a line so a commented-out pin is not read as
+        one -- `#liferay.workspace.product=...` is how a developer disables it.
+        """
+        import re
+
+        try:
+            content = gradle_properties.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        match = re.search(
+            r"^[ \t]*liferay\.workspace\.product[ \t]*=[ \t]*(\S+)[ \t]*$",
+            content,
+            re.MULTILINE,
+        )
+        return match.group(1) if match else None
+
+    def _warn_on_workspace_product_mismatch(  # noqa: PLR0911
+        self, manager, paths, project_meta, tag, is_portal
+    ):
+        """Say so when the tag being booted is not the line the workspace pins.
+
+        LDM-#1658. `liferay.workspace.product` was write-only: `ldm set-version`
+        wrote it and nothing ever read it back, so `_resolve_tag` could pick a
+        different product line without a word. Before LDM-#1647 the discovery
+        answers failed closed and the developer chose a tag by hand; now they
+        resolve, which made a pre-existing gap reachable in ordinary use.
+
+        The cost lands far from the cause. A shared fragment/override bundle
+        carries `Import-Package` ranges bound to one product line -- bnd copies
+        a declared range into the manifest verbatim -- so a bundle cut for
+        `dxp-2026.q3.0` does not resolve on `2026.q3.2`. What the developer
+        sees is an unresolved bundle in the OSGi log at boot, nowhere near the
+        tag decision that caused it.
+
+        Three deliberate silences:
+
+        * **an explicit `-t/--tag` is a decision, not an accident** -- it is
+          never second-guessed;
+        * a workspace with no pin has expressed no opinion;
+        * agreement needs no message, and is settled on the normalised strings
+          so the common case costs no network call.
+
+        Non-interactive warns and proceeds. Failing would break CI that has
+        been running this way for as long as the gap has existed, and the
+        mismatch may well be deliberate.
+
+        Returns `(tag, is_portal)`: accepting a `portal-` pin on a DXP run has
+        to carry the repository change with it, or LDM would look the tag up
+        in the wrong image repository.
+        """
+        if getattr(manager.args, "tag", None):
+            return tag, is_portal
+
+        gradle_properties = self._find_workspace_gradle_properties(paths, project_meta)
+        if not gradle_properties:
+            return tag, is_portal
+
+        product_key = self._read_workspace_product(gradle_properties)
+        if not product_key or not tag:
+            return tag, is_portal
+
+        import re
+
+        def normalise(value):
+            return re.sub(r"^(dxp|portal)-", "", str(value)).strip().lower()
+
+        if normalise(product_key) == normalise(tag):
+            return tag, is_portal
+
+        # Only now is a resolution worth its cost: `dxp-2026.q1.7` and
+        # `2026.q1.7-lts` are the same release spelled two ways, and the
+        # normalised compare above cannot know that.
+        from ldm_core.utils import resolve_liferay_docker_tag
+
+        pinned_tag, pinned_is_portal = resolve_liferay_docker_tag(product_key, manager)
+        if not pinned_tag:
+            pinned_tag = normalise(product_key)
+            pinned_is_portal = product_key.startswith("portal-")
+        if normalise(pinned_tag) == normalise(tag):
+            return tag, is_portal
+
+        UI.warning(
+            f"The linked workspace pins liferay.workspace.product={product_key} "
+            f"(Docker tag {pinned_tag}), but this run resolved {tag}."
+        )
+        UI.warning(
+            f"  Source: {gradle_properties}\n"
+            "  Artifacts built for one product line may not resolve on another -- "
+            "an OSGi bundle with Import-Package ranges bound to the pinned line "
+            "will fail to resolve at boot, far from this decision."
+        )
+
+        if manager.non_interactive:
+            UI.detail("Proceeding with the resolved tag (non-interactive).")
+            return tag, is_portal
+
+        if UI.confirm(f"Use the workspace's pinned tag '{pinned_tag}' instead?", "Y"):
+            UI.detail(f"Using the workspace's pinned tag: {pinned_tag}")
+            return pinned_tag, bool(pinned_is_portal)
+
+        UI.detail(f"Proceeding with the resolved tag: {tag}")
+        return tag, is_portal
+
     def _resolve_database(self, manager, project_meta, is_samples):
         """Resolves the `(engine, mode)` pair this run uses (LDM-#1511).
 
@@ -815,6 +949,12 @@ class ConfigResolutionStage(PipelineStage):
         )
 
         tag, is_portal = self._resolve_tag(manager, project_meta, is_samples, is_portal)
+
+        # LDM-#1658: the linked workspace's own `liferay.workspace.product`
+        # pin is the one opinion nothing in the chain above consults.
+        tag, is_portal = self._warn_on_workspace_product_mismatch(
+            manager, paths, project_meta, tag, is_portal
+        )
 
         host_name = (
             manager.args.host_name
