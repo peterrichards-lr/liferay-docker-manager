@@ -208,6 +208,73 @@ class Headless:
             return {"_error": "connection", "_reason": str(e)}
 
 
+MODULE_REPO = "peterrichards-lr/liferay-custom-osgi-modules"
+MODULE_PREFIX = "com.liferay.custom.fragment.override-"
+
+
+def resolve_module_jar(tag: str, explicit: Path | None, dest: Path):
+    """Put the fragment-override jar where LDM will deploy it (LDM-#1719).
+
+    The module lives in another repository and is published **per DXP line** --
+    `com.liferay.custom.fragment.override-3.3.0-dxp-2026.q3.0.jar`. Its
+    `bnd.bnd` hardcodes `Import-Package` ranges, so a jar built for one line
+    does not resolve on another; deployed onto the wrong tag it fails silently
+    as an unresolved bundle in the OSGi log, nowhere near this script.
+
+    Fetched at run time rather than vendored into LDM's own release: vendoring
+    would pin a third-party binary to one DXP line inside our artifact, where it
+    would go stale independently of us and be wrong for anyone on another line.
+    `--module-jar` covers the offline case -- point it at a local copy and
+    nothing is downloaded.
+
+    Returns (path, note). A None path means the rung cannot be exercised, and
+    the note says why rather than leaving the caller to guess.
+    """
+    if explicit is not None:
+        if not explicit.is_file():
+            return None, f"--module-jar {explicit} does not exist"
+        target = dest / explicit.name
+        shutil.copy2(explicit, target)
+        return target, f"using local jar {explicit.name}"
+
+    # The tag names the line the jar must match, e.g. 2026.q3.0 -> dxp-2026.q3.0.
+    line = f"dxp-{tag}" if not tag.startswith("dxp-") else tag
+    api = f"https://api.github.com/repos/{MODULE_REPO}/releases/latest"
+    try:
+        with urllib.request.urlopen(api, timeout=30) as res:  # nosec B310
+            release = json.loads(res.read().decode())
+    except Exception as e:
+        return None, f"could not reach {MODULE_REPO}: {e}"
+
+    wanted = [
+        a
+        for a in release.get("assets", [])
+        if a.get("name", "").startswith(MODULE_PREFIX)
+        and a.get("name", "").endswith(f"-{line}.jar")
+    ]
+    if not wanted:
+        available = sorted(
+            a.get("name", "")
+            for a in release.get("assets", [])
+            if a.get("name", "").startswith(MODULE_PREFIX)
+        )
+        return None, (
+            f"{release.get('tag_name')} publishes no fragment-override jar for "
+            f"{line}. Available: {available or 'none'}. Re-run with --tag set to "
+            "a line the module is built for, or pass --module-jar."
+        )
+
+    asset = wanted[0]
+    target = dest / asset["name"]
+    try:
+        with urllib.request.urlopen(asset["browser_download_url"], timeout=120) as res:  # nosec B310
+            target.write_bytes(res.read())
+    except Exception as e:
+        return None, f"could not download {asset['name']}: {e}"
+
+    return target, f"fetched {asset['name']} from {release.get('tag_name')}"
+
+
 def ensure_page_with_fragment(api, sites):
     """Create a site page carrying the fragment, if one is not there already.
 
@@ -334,8 +401,18 @@ def main() -> int:  # noqa: PLR0915 - a linear harness reads better unsplit
         "--require-module",
         action="store_true",
         help=(
-            "additionally assert the fragment-override module rung. Needs the "
-            "bundle deployed and feature.flag.LPD-99955=true; see LDM-#1618."
+            "additionally assert the fragment-override module rung. The jar is "
+            "fetched from the module repository for the DXP line --tag names, "
+            "and feature.flag.LPD-99955 is enabled automatically; see LDM-#1618."
+        ),
+    )
+    parser.add_argument(
+        "--module-jar",
+        type=Path,
+        default=None,
+        help=(
+            "use this local fragment-override jar instead of fetching one. For "
+            "an air-gapped run, or to test a build that is not yet released."
         ),
     )
     args = parser.parse_args()
@@ -362,8 +439,25 @@ def main() -> int:  # noqa: PLR0915 - a linear harness reads better unsplit
     )
     build_overrides(workspace / args.project / ".ldm" / "fragment-overrides.json")
 
+    module_note = None
+    run_flags = ["-y", "run", args.project, "-t", args.tag]
+    if args.require_module:
+        # Into deploy/ before the boot: OSGi resolves bundles at startup, so a
+        # jar dropped afterwards needs a second restart to take effect.
+        deploy_dir = workspace / args.project / "deploy"
+        deploy_dir.mkdir(parents=True, exist_ok=True)
+        jar, module_note = resolve_module_jar(args.tag, args.module_jar, deploy_dir)
+        print(f"  {module_note}")
+        if jar is None:
+            print("  The module rung cannot be exercised without it.")
+            return 4
+        # LDM sets `feature.flag.LPD-99955=true` from this; the module reads the
+        # property directly through PropsUtil, so the portal never needs to
+        # register it as a known flag.
+        run_flags += ["--feature", "LPD-99955"]
+
     print("▶ Booting (this pulls and starts Liferay; several minutes)...")
-    run_ldm(["-y", "run", args.project, "-t", args.tag], cwd=workspace)
+    run_ldm(run_flags, cwd=workspace)
 
     base_url = f"http://localhost:{args.port}"
     api = Headless(base_url, args.admin_email, args.admin_password)
@@ -428,7 +522,13 @@ def main() -> int:  # noqa: PLR0915 - a linear harness reads better unsplit
         status = api.request("GET", "/o/fragment-override/status")
         print(f"▶ fragment-override module status: {status}")
         if status.get("_error"):
-            print("  The module is not deployed, or the flag is off.")
+            print(f"  The module did not answer ({module_note}).")
+            print("  Either the bundle failed to resolve -- check the OSGi log for")
+            print("  an Import-Package mismatch, which means the jar was built for")
+            print("  a different DXP line -- or the feature flag did not take.")
+            return 4
+        if not status.get("enabled"):
+            print("  The module is deployed but feature.flag.LPD-99955 is off.")
             return 4
 
     if not args.keep:

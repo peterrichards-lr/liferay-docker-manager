@@ -25,6 +25,7 @@ import unittest
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 _HARNESS = (
     Path(__file__).resolve().parent.parent.parent
@@ -298,6 +299,105 @@ class TheDocstringDoesNotOverclaim(unittest.TestCase):
             "the docstring must state what happens when creation fails, or it "
             "overclaims again",
         )
+
+
+class TheModuleJar(unittest.TestCase):
+    """LDM-#1719: `--require-module` must not need a manual download.
+
+    The jar lives in another repository and is published **per DXP line**. Its
+    `bnd.bnd` hardcodes `Import-Package` ranges, so one built for another line
+    does not resolve -- and the failure is an unresolved bundle in the OSGi log,
+    nowhere near this script. Refusing up front, by name, is the whole point.
+
+    Fetched rather than vendored into LDM's release: a third-party binary pinned
+    to one DXP line inside our artifact would go stale independently of us.
+    `--module-jar` covers the offline case.
+
+    No network here -- the fetch is mocked. The live behaviour was verified by
+    hand against the module repository: `2026.q3.0` fetched
+    `com.liferay.custom.fragment.override-3.3.0-dxp-2026.q3.0.jar`, and
+    `2026.q1.12-lts` was refused with the available names listed.
+    """
+
+    def setUp(self):
+        self.mod = _load()
+        self._tmp = TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.dest = Path(self._tmp.name) / "deploy"
+        self.dest.mkdir(parents=True)
+
+    def test_a_local_jar_is_used_without_fetching(self):
+        local = Path(self._tmp.name) / "mine.jar"
+        local.write_bytes(b"jar")
+
+        jar, note = self.mod.resolve_module_jar("2026.q3.0", local, self.dest)
+
+        self.assertIsNotNone(jar)
+        self.assertEqual(jar.parent, self.dest)
+        self.assertIn("local jar", note)
+
+    def test_a_missing_local_jar_is_reported_not_fetched(self):
+        missing = Path(self._tmp.name) / "nope.jar"
+
+        jar, note = self.mod.resolve_module_jar("2026.q3.0", missing, self.dest)
+
+        self.assertIsNone(jar)
+        self.assertIn("does not exist", note)
+
+    def _release(self, *names):
+        import io
+        import json as _json
+
+        payload = _json.dumps(
+            {
+                "tag_name": "v9.9.9",
+                "assets": [{"name": n, "browser_download_url": "x"} for n in names],
+            }
+        ).encode()
+
+        class _Res(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        return _Res(payload)
+
+    def test_a_line_with_no_jar_is_refused_by_name(self):
+        """The alternative is an unresolved bundle nobody connects to this."""
+        with patch("urllib.request.urlopen") as urlopen:
+            urlopen.return_value = self._release(
+                "com.liferay.custom.fragment.override-3.3.0-dxp-2026.q3.0.jar"
+            )
+            jar, note = self.mod.resolve_module_jar("2026.q1.12-lts", None, self.dest)
+
+        self.assertIsNone(jar)
+        self.assertIn("dxp-2026.q1.12-lts", note)
+        self.assertIn("2026.q3.0", note, "the note must list what IS available")
+
+    def test_an_unreachable_repository_is_reported(self):
+        with patch("urllib.request.urlopen", side_effect=OSError("no network")):
+            jar, note = self.mod.resolve_module_jar("2026.q3.0", None, self.dest)
+
+        self.assertIsNone(jar)
+        self.assertIn("could not reach", note)
+
+    def test_the_checksum_asset_is_not_mistaken_for_the_jar(self):
+        """Both start with the module prefix; only one is a bundle."""
+        with patch("urllib.request.urlopen") as urlopen:
+            urlopen.side_effect = [
+                self._release(
+                    "com.liferay.custom.fragment.override-3.3.0-dxp-2026.q3.0.jar.sha256",
+                    "com.liferay.custom.fragment.override-3.3.0-dxp-2026.q3.0.jar",
+                ),
+                self._release(),
+            ]
+            jar, _note = self.mod.resolve_module_jar("2026.q3.0", None, self.dest)
+
+        self.assertIsNotNone(jar)
+        self.assertTrue(jar.name.endswith(".jar"))
+        self.assertFalse(jar.name.endswith(".sha256"))
 
 
 class ItStaysOutOfTheDefaultGate(unittest.TestCase):
