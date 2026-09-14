@@ -337,9 +337,10 @@ def ensure_page_with_fragment(api, sites):
 
 
 def run_ldm(
-    args: list[str], cwd: Path, check: bool = True
+    args: list[str], cwd: Path, node: str | None = None, check: bool = True
 ) -> subprocess.CompletedProcess:
-    cmd = ["ldm", *args]
+    # `--target` is a GLOBAL flag, so it precedes the subcommand.
+    cmd = ["ldm", *(["--target", node] if node else []), *args]
     print(f"  $ {' '.join(cmd)}")
     proc = subprocess.run(  # nosec B603 - fixed argv, no shell
         cmd,
@@ -382,7 +383,7 @@ def find_fragment_element(node, found: list):
     return found
 
 
-def main() -> int:  # noqa: PLR0915 - a linear harness reads better unsplit
+def main() -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915 - linear by design
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", default="fragverify")
     parser.add_argument(
@@ -396,6 +397,27 @@ def main() -> int:  # noqa: PLR0915 - a linear harness reads better unsplit
     parser.add_argument("--admin-email", default="test@liferay.com")
     parser.add_argument("--admin-password", default="test")  # nosec B107
     parser.add_argument("--port", default="8080")
+    parser.add_argument(
+        "--search-mode",
+        default="sidecar",
+        help=(
+            "Elasticsearch topology. Defaults to `sidecar` rather than LDM's "
+            "own `shared` default: this is a throwaway verification project, "
+            "and a shared Global Search node is infrastructure the harness "
+            "should not have to provision -- on a remote target LDM refuses to "
+            "provision it for the first time at all."
+        ),
+    )
+    parser.add_argument(
+        "--node",
+        default=None,
+        help=(
+            "run against a registered LDM compute node (`ldm target ls`) "
+            "instead of local Docker. The Headless base URL follows the node's "
+            "host automatically -- pointing it at localhost while the container "
+            "runs elsewhere is the obvious way to get this wrong."
+        ),
+    )
     parser.add_argument("--keep", action="store_true", help="leave the project behind")
     parser.add_argument(
         "--require-module",
@@ -436,11 +458,20 @@ def main() -> int:  # noqa: PLR0915 - a linear harness reads better unsplit
     run_ldm(
         ["-y", "import", str(source), args.project, "--no-run", "--port", args.port],
         cwd=workspace,
+        node=args.node,
     )
     build_overrides(workspace / args.project / ".ldm" / "fragment-overrides.json")
 
     module_note = None
-    run_flags = ["-y", "run", args.project, "-t", args.tag]
+    run_flags = [
+        "-y",
+        "run",
+        args.project,
+        "-t",
+        args.tag,
+        "--search-mode",
+        args.search_mode,
+    ]
     if args.require_module:
         # Into deploy/ before the boot: OSGi resolves bundles at startup, so a
         # jar dropped afterwards needs a second restart to take effect.
@@ -457,9 +488,26 @@ def main() -> int:  # noqa: PLR0915 - a linear harness reads better unsplit
         run_flags += ["--feature", "LPD-99955"]
 
     print("▶ Booting (this pulls and starts Liferay; several minutes)...")
-    run_ldm(run_flags, cwd=workspace)
+    run_ldm(run_flags, cwd=workspace, node=args.node)
 
-    base_url = f"http://localhost:{args.port}"
+    host = "localhost"
+    if args.node:
+        # Read the host from LDM's own target registry rather than asking for
+        # it twice -- two sources for one fact is how they drift.
+        try:
+            from ldm_core.config import load_targets
+
+            node = load_targets().get(args.node)
+            if node is None:
+                print(f"  Unknown node {args.node!r}; see `ldm target ls`.")
+                return 2
+            host = node.host
+        except Exception as e:  # Reported, never raised
+            print(f"  Could not resolve node {args.node!r}: {e}")
+            return 2
+        print(f"▶ Targeting node {args.node} at {host}")
+
+    base_url = f"http://{host}:{args.port}"
     api = Headless(base_url, args.admin_email, args.admin_password)
 
     print("▶ Waiting for Headless to answer...")
@@ -533,7 +581,12 @@ def main() -> int:  # noqa: PLR0915 - a linear harness reads better unsplit
 
     if not args.keep:
         print("▶ Cleaning up...")
-        run_ldm(["-y", "rm", args.project, "--delete"], cwd=workspace, check=False)
+        run_ldm(
+            ["-y", "rm", args.project, "--delete"],
+            cwd=workspace,
+            node=args.node,
+            check=False,
+        )
         shutil.rmtree(scratch, ignore_errors=True)
 
     return 0
