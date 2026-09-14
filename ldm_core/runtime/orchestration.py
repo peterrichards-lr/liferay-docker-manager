@@ -830,11 +830,29 @@ class OrchestrationService(BaseHandler):
                                     )
 
                 if is_dry_run:
+                    from ldm_core.utils import archive_project_config
+
+                    archive_project_config(root)
                     UI.warning(
                         f"  {UI.BYELLOW}- [Dry Run] Would unregister project {root.name} and permanently delete directory {root}{UI.COLOR_OFF}"
                     )
                 else:
                     UI.warning(f"Permanently deleting project directory: {root.name}")
+
+                    # LDM-#1703: keep the 20 KB that cannot be regenerated, not
+                    # the gigabyte that can. The tar holds meta, files/,
+                    # osgi/configs and routes/ - the resolved tag and port, the
+                    # feature flags, the config overrides - and is named in the
+                    # output, because a path discovered afterwards is no use to
+                    # somebody who has just watched their project disappear.
+                    #
+                    # Configuration only. A project rebuilt from one boots
+                    # empty; `ldm snapshot` is what preserves state.
+                    from ldm_core.utils import archive_project_config
+
+                    tombstone = archive_project_config(root)
+                    if tombstone:
+                        UI.info(f"Configuration archived to: {tombstone}")
 
                     # Release the lock before attempting deletion to avoid WinError 32 on Windows
                     path_key = Path(root).resolve().as_posix()
