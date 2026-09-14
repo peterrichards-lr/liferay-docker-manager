@@ -126,6 +126,7 @@ $LDMP_REFUSAL_PROJECT = "ldmp-refusal-${TEST_PORT}"
 $CLOUD_IMPORT_PROJECT = "cloud-import-${TEST_PORT}"
 $CLOUD_NOID_PROJECT = "cloud-noid-${TEST_PORT}"
 $PRODUCT_PIN_PROJECT = "product-pin-${TEST_PORT}"
+$LINKED_WS_PROJECT = "linked-ws-${TEST_PORT}"
 # Kibana publishes this host port unconditionally (composer.py
 # _build_kibana_service). It is the LDM-#1350 lever -- see that check below.
 $KIBANA_HOST_PORT = 5601
@@ -820,6 +821,68 @@ function Test-CascadingDefaultGuard {
 #
 # Observed on 2026-09-13 against the fix, and against 32bea3f3 without it, where
 # it correctly failed on assertion 1.
+# LDM-#1684 / LDM-#1689: a linked project records the workspace it came from.
+#
+# Functional twin of verify_linked_workspace_path() in verify_e2e_refactor.sh.
+#
+# This is the assertion LDM-#1689 was opened to track. It could not be written
+# because cmd_link ended in cmd_monitor, whose 'while True: sleep(1)' never
+# returns -- the command could not complete, so nothing could be asserted after
+# it. '--no-monitor' and '--no-run' make it finish.
+#
+# The monitor half is deliberately NOT asserted here: cmd_monitor is a watcher,
+# so checking it in a linear script means backgrounding a process and killing it
+# on a timer, a duration this script does not own (LDM-#1444). Covered by
+# ldm_core/tests/test_link_no_monitor.py instead.
+function Test-LinkedWorkspacePath {
+    param(
+        [string]$LdmCmd,
+        [string]$WorkDir,
+        [string]$ProjectName
+    )
+
+    $src = Join-Path $WorkDir "linked-workspace-src"
+    if (Test-Path $src) { Remove-Item -Recurse -Force $src }
+    New-Item -ItemType Directory -Force -Path (Join-Path $src "configs\local") | Out-Null
+    Set-Content -Path (Join-Path $src "gradle.properties") `
+        -Value 'liferay.workspace.product=dxp-2026.q1.7' -Encoding ascii
+
+    $prev = Get-Location
+    Set-Location $WorkDir
+    try {
+        $out = & $LdmCmd -y link ".\linked-workspace-src" $ProjectName --no-monitor --no-run 2>&1 | Out-String
+        $code = $LASTEXITCODE
+    } finally {
+        Set-Location $prev
+    }
+
+    $projectDir = Join-Path $WorkDir $ProjectName
+    $metaPath = Join-Path $projectDir "meta"
+    $meta = if (Test-Path $metaPath) { Get-Content $metaPath -Raw } else { "" }
+
+    $failure = ""
+    if ($code -ne 0) {
+        $failure = "ldm link exited ${code}"
+    } elseif (-not (Test-Path $metaPath)) {
+        $failure = "no project meta was written"
+    } elseif ($meta -notmatch '"workspace_path"') {
+        $failure = "meta records no workspace_path -- ldm monitor <project> will refuse"
+    } elseif ($meta -notmatch 'linked-workspace-src') {
+        $failure = "workspace_path is present but does not point at the linked source"
+    }
+
+    & $LdmCmd -y rm $ProjectName --delete *> $null
+    foreach ($stale in @($src, $projectDir, (Join-Path $WorkDir ".ldm_temp"))) {
+        if (Test-Path $stale) { Remove-Item -Recurse -Force $stale -ErrorAction SilentlyContinue }
+    }
+
+    if ($failure -ne "") {
+        return @{ Ok = $false; Message = "[ERROR] ERROR: ${failure} (LDM-#1684/#1689).`n   Output was: ${out}" }
+    }
+
+    return @{ Ok = $true; Message = "[SUCCESS] Linked workspace recorded: ldm link completes with --no-monitor and meta carries workspace_path (LDM-#1684/#1689)." }
+}
+
 function Test-CloudWorkspaceImport {
     param(
         [string]$LdmCmd,
@@ -1210,6 +1273,15 @@ try {
         Write-Verdict $cascadingGuard.Message
     } else {
         Write-Host $cascadingGuard.Message -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying the linked workspace path is recorded (LDM-#1684/#1689)..."
+    $linkedWs = Test-LinkedWorkspacePath -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE -ProjectName $LINKED_WS_PROJECT
+    if ($linkedWs.Ok) {
+        Write-Verdict $linkedWs.Message
+    } else {
+        Write-Host $linkedWs.Message -ForegroundColor Red
         exit 1
     }
 

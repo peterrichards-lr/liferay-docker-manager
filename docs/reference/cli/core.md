@@ -231,9 +231,19 @@ ldm link ~/repos/my-workspace my-ci-project -y --tag-latest --no-captcha
 # Manually bind a Liferay Cloud project ID to the local workspace
 ldm link ~/repos/my-workspace my-project --cloud-project lctintranet
 
+# Record the link without starting the file watcher, and without booting
+ldm link ~/repos/my-workspace my-project --no-monitor --no-run
+
 # Legacy alias (still works)
 ldm init-from ~/repos/my-workspace my-project
 ```
+
+> [!NOTE]
+> `ldm link` normally ends by starting a file watcher, which runs until Ctrl-C.
+> **`--no-monitor`** records the link and returns instead; the link is persisted
+> either way, so `ldm monitor -p <project>` attaches later with no path argument.
+> **`--no-run`** sets the project up without booting it. Together they make
+> `ldm link` scriptable (LDM-#1689).
 
 ### Liferay Cloud workspaces
 
