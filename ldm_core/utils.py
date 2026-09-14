@@ -1,4 +1,5 @@
 import contextlib
+import datetime
 import hashlib
 import ipaddress
 import json
@@ -3426,6 +3427,93 @@ def verify_safe_to_delete(path):
         raise ValueError(
             f"Safety Violation: Cannot delete a git repository: {path_obj}"
         )
+
+
+# LDM-#1703: what a removed project's directory holds that cannot be
+# regenerated. Measured on a booted 2026.q1.12-lts project: osgi/ was 1.1 GB and
+# data/ 19 MB, both reproducible from the image and the seed, while these four
+# came to about 20 KB and hold the only record of how the project was
+# configured - the resolved tag and port in `meta`, the feature flags in
+# files/portal-ext.properties, any OSGi config overrides, and the routes.
+#
+# Deliberately not archived: osgi/state, osgi/modules, data, logs, snapshots.
+# Keeping those would defeat the point of the delete, which is to free the
+# space.
+TOMBSTONE_MEMBERS = ("meta", "files", "osgi/configs", "routes")
+
+# At ~20 KB an entry, fifty tombstones cost a megabyte, so pruning is by count
+# rather than age - a project removed a year ago is as recoverable as one
+# removed yesterday, and nothing about the passage of time makes its
+# configuration less useful.
+TOMBSTONE_KEEP = 50
+
+
+def tombstone_dir():
+    """Where tombstones for removed projects are kept."""
+    return Path.home() / ".ldm" / "removed"
+
+
+def _prune_tombstones(keep=TOMBSTONE_KEEP):
+    """Keeps the newest `keep` tombstones, by filename, and removes the rest."""
+    store = tombstone_dir()
+    if not store.is_dir():
+        return
+    archives = sorted(store.glob("*.tar.gz"))
+    for stale in archives[:-keep] if keep > 0 else archives:
+        with contextlib.suppress(OSError):
+            stale.unlink()
+
+
+def archive_project_config(root, timestamp=None):
+    """Archives a project's configuration before its directory is deleted.
+
+    LDM-#1703. `ldm rm --delete` removes the reproducible gigabyte and the
+    irreplaceable kilobytes together. This keeps the second without keeping the
+    first: a tar.gz of TOMBSTONE_MEMBERS under ~/.ldm/removed, named for the
+    project and the moment.
+
+    It restores configuration, never state. A project rebuilt from a tombstone
+    boots empty unless a snapshot was taken; `ldm snapshot` is the tool for
+    that, and this is not a substitute for it.
+
+    Returns the archive path, or None when there was nothing to archive or the
+    archive could not be written - a tombstone is a convenience, and failing to
+    write one must never stop a deletion the user asked for.
+    """
+    import tarfile
+
+    root = Path(root).resolve()
+    is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
+
+    present = [m for m in TOMBSTONE_MEMBERS if (root / m).exists()]
+    if not present:
+        return None
+
+    stamp = timestamp or datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    target = tombstone_dir() / f"{root.name}-{stamp}.tar.gz"
+
+    if is_dry_run:
+        UI.detail(
+            f"{UI.BYELLOW}[DRY RUN] Would archive config to:{UI.COLOR_OFF} {target}"
+        )
+        return target
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with tarfile.open(target, "w:gz") as archive:
+            for member in present:
+                archive.add(root / member, arcname=member)
+    except (OSError, tarfile.TarError) as e:
+        # Never block the deletion. The user asked for the space back, and a
+        # failed convenience is not a reason to refuse it.
+        UI.warning(f"Could not archive project configuration ({e}); continuing.")
+        with contextlib.suppress(OSError):
+            if target.exists():
+                target.unlink()
+        return None
+
+    _prune_tombstones()
+    return target
 
 
 def safe_rmtree(path):

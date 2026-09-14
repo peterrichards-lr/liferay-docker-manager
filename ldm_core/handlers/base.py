@@ -1770,6 +1770,24 @@ class BaseHandler:
             if self.verbose:
                 UI.detail("Synchronizing directory permissions via Docker...")
 
+            # LDM-#1704: the probe cannot run under dry run, and judging its
+            # absent result reported a healthy host as broken. safe_write_text
+            # sends the sentinel to the dry-run VFS rather than the disk, and
+            # run_command announces the container instead of starting it - so
+            # the comparison below was between a token never written and a
+            # container that never ran, and `FAIL` was the only answer it could
+            # give. It then told the user to stop and reconfigure Colima.
+            #
+            # Skipped rather than passed: the check genuinely did not run, and a
+            # dry run printing a green mount check would be a different false
+            # claim.
+            if os.environ.get("LDM_DRY_RUN", "").lower() == "true":
+                UI.info(
+                    "[DRY RUN] Skipping Docker mount verification "
+                    "(nothing is written for it to probe)."
+                )
+                return
+
             import uuid
 
             from ldm_core.utils import safe_write_text

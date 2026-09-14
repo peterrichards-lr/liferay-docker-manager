@@ -74,6 +74,49 @@ ldm restore demo --index 1 # Restore to index 1
 ldm restore demo --name "post-setup-gold-standard" # Restore by name
 ```
 
+## What `ldm rm --delete` keeps
+
+`ldm rm --delete` removes the containers, the volumes, the registry entry and
+the project directory. Before the directory goes, LDM archives the part of it
+that cannot be regenerated to `~/.ldm/removed/<project>-<timestamp>.tar.gz`, and
+names the path in its output (LDM-#1703).
+
+The archive holds four things and nothing else:
+
+| Kept | Why |
+|------|-----|
+| `meta` | the resolved tag, port, database and search mode |
+| `files/` | `portal-ext.properties`, including every feature flag |
+| `osgi/configs/` | configuration overrides |
+| `routes/` | the routes definition |
+
+Everything heavy is deliberately left out. On a booted `2026.q1.12-lts` project,
+`osgi/` was 1.1 GB and `data/` 19 MB -- both rebuildable from the image and the
+seed -- while the four above came to roughly 20 KB. Copying the gigabyte would
+defeat the delete, whose purpose is to free the space; copying the kilobytes
+costs nothing and preserves the only record of how the project was configured.
+
+The newest 50 archives are kept and older ones pruned, which at that size costs
+about a megabyte.
+
+> [!IMPORTANT]
+> **A tombstone restores configuration, never state.** Untar it over a fresh
+> `ldm run <project>` of the same tag and you get the same setup with an empty
+> instance. If the database contents mattered, `ldm snapshot` is the tool that
+> preserves them, and it has to have been run *before* the delete.
+
+```bash
+# Remove a project, freeing the space; the config archive path is printed
+ldm rm demo --delete -y
+
+# What was kept
+tar -tzf ~/.ldm/removed/demo-20260914-071500.tar.gz
+
+# Rebuild the shape, then restore the configuration over it
+ldm run demo -t <the tag from meta>
+tar -xzf ~/.ldm/removed/demo-20260914-071500.tar.gz -C ~/ldm/demo
+```
+
 ## `package` (Portable Package Export)
 
 Bundles a project snapshot (code elements, database backup, document library, and Elasticsearch indices) into a single portable `.ldmp` package (tarball) alongside a `.ldmp.sha256` checksum file. This package is ideal for sharing local environments with other developers or releasing template stacks via GitHub Releases.
@@ -180,4 +223,4 @@ ldm re-seed demo              # Total project reset to Day Zero (Seeded)
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-03* | *Last Reviewed: 2026-09-03*
+*Last Updated: 2026-09-14* | *Last Reviewed: 2026-09-14*

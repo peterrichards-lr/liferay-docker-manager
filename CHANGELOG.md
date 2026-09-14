@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Removed-project config archive**: `ldm rm --delete` now writes `meta`, `files/`, `osgi/configs/` and `routes/` to `~/.ldm/removed/<project>-<timestamp>.tar.gz` before deleting the directory, and names the path in its output. Measured on a booted project, that is ~20 KB against 1.1 GB of reproducible `osgi/` and 19 MB of `data/`: the archive keeps the resolved tag, the port and every feature flag in `portal-ext.properties`, and keeps none of the bulk, so the delete still frees the space. It restores configuration, never state -- `ldm snapshot` remains the tool for that (LDM-#1703).
+
+### Fixed
+
+- **`--dry-run` no longer reports a healthy host as broken**: `ldm run --dry-run` always failed with `FATAL: VOLUME MOUNTING IS BROKEN` and told the user to stop and reconfigure Colima. The mount check writes a sentinel with `safe_write_text` and probes it from a container -- under dry run the sentinel goes to the dry-run VFS and the container is announced rather than started, so the check compared a token never written against a probe that never ran, and `FAIL` was its only possible answer. It is now skipped, and reported as skipped rather than passed (LDM-#1704).
+
 ## [v2.21.1] - 2026-09-11
 
 ### Added
