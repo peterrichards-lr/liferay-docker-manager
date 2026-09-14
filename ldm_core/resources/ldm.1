@@ -41,7 +41,7 @@ Stop project containers gracefully. Use \fB--all\fR to stop all projects.
 Restart containers. Supports \fB--all\fR.
 .TP
 \fBdown\fR [\fIPROJECT\fR] (alias: \fBrm\fR)
-Remove project containers. Use \fB--volumes\fR to also remove data. Use \fB--delete\fR to wipe the project folder.
+Remove project containers. Use \fB--volumes\fR to also remove data. Use \fB--delete\fR to wipe the project folder; interactively this lists the size and whether a snapshot exists, then asks before removing anything (defaults to no). With \fB-y\fR there is no prompt.
 .TP
 \fBstatus\fR (alias: \fBps\fR)
 Show status of global infrastructure and projects. Use \fB--all\fR to see stopped projects.

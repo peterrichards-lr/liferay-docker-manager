@@ -441,6 +441,16 @@ ldm rm [project]                  # Alias for 'down'
 - **`--clean-hosts`** (Only for `down`/`rm`): Removes the project's entries from your `/etc/hosts` file.
 - **`-d`, `--delete`** (Only for `down`/`rm`): Escalates teardown beyond just stopping/removing containers -- drops the project's schema from the shared database (if it uses shared-mode DB), unregisters the project, and **permanently deletes its directory from disk**. This cannot be undone. `ldm rm`/`ldm down` *without* `--delete` only tears down containers and keeps the project registered, so it can be `ldm run` again later; `--delete` is the one-way, destructive option.
 
+  Interactively, `--delete` now lists what is about to go and asks before touching anything (LDM-#1703):
+
+  ```text
+  ⚠️  The following will be permanently removed:
+    my-project: 1.1 GB, no snapshot -- database state will be lost
+  ❓  Permanently delete this project, including containers and volumes? [y/N]:
+  ```
+
+  The prompt defaults to **no**, and reports whether a snapshot exists -- `ldm snapshot` is the real undo for database state, and it is the one thing `--delete` cannot give back. With `-y`/`--non-interactive` there is no prompt and behaviour is unchanged, so existing automation is unaffected.
+
 ### Examples
 
 ```bash
@@ -601,4 +611,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-13* | *Last Reviewed: 2026-09-13*
+*Last Updated: 2026-09-14* | *Last Reviewed: 2026-09-14*
