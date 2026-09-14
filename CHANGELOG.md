@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Fresh clones no longer fail five tests on invisible characters**: `ldm_core/ui_colors.py` is generated and gitignored, so a new clone or `git worktree` lacked it, `ui.py` fell back to empty colour codes, and tests asserting ANSI output failed on strings differing only by escapes nobody can see. `setup_pre_commit.sh`, `ldm dev-setup` and the pytest session all generate it now (LDM-#1707).
+
 ### Added
 
 - **Removed-project config archive**: `ldm rm --delete` now writes `meta`, `files/`, `osgi/configs/` and `routes/` to `~/.ldm/removed/<project>-<timestamp>.tar.gz` before deleting the directory, and names the path in its output. Measured on a booted project, that is ~20 KB against 1.1 GB of reproducible `osgi/` and 19 MB of `data/`: the archive keeps the resolved tag, the port and every feature flag in `portal-ext.properties`, and keeps none of the bulk, so the delete still frees the space. It restores configuration, never state -- `ldm snapshot` remains the tool for that (LDM-#1703).
