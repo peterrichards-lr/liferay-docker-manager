@@ -75,7 +75,48 @@ class FragmentsService(BaseHandler):
             project_meta = {**disk_meta, **(project_meta or {})}
 
         timeout = self._resolve_fragment_patch_timeout(timeout, paths["root"])
+        # LDM-#1728: `timeout` is a budget in SECONDS, and until this was
+        # added nothing measured seconds. It was converted straight into a
+        # retry count, with the sleep *inside* the loop next to the HTTP
+        # calls, so the real cost was `retries x (request latency + 5s)` --
+        # unbounded, and worst exactly when the API is slow, which is the
+        # situation the budget exists to bound. Both loops below also took the
+        # full count each, doubling it again.
+        #
+        # Observed before the fix: `ldm run` still polling after 27 minutes
+        # against a nominal 900s budget, with Liferay healthy throughout.
+        #
+        # The deadline is shared by both loops and is the real ceiling;
+        # `max_retries` stays only as a secondary cap so a pathologically fast
+        # failure cannot spin.
         max_retries = max(1, timeout // 5)
+        deadline = time.monotonic() + timeout
+        last_progress = time.monotonic()
+
+        def budget_spent(waiting_for: str) -> bool:
+            """True once the shared budget is gone; reports progress meanwhile.
+
+            The progress line is `UI.info`, not `UI.detail`: detail is gated
+            behind INFO_MODE/VERBOSE, so on a default run the old per-attempt
+            messages printed nothing at all. A silent multi-minute poll is
+            indistinguishable from a hang -- diagnosing LDM-#1728 needed a
+            stack sample to tell them apart.
+            """
+            nonlocal last_progress
+            now = time.monotonic()
+            if now >= deadline:
+                UI.warning(
+                    f"Gave up waiting for {waiting_for} after {timeout}s "
+                    "(--fragment-patch-timeout / LDM_FRAGMENT_PATCH_TIMEOUT)."
+                )
+                return True
+            if now - last_progress >= 60:
+                last_progress = now
+                UI.info(
+                    f"Still waiting for {waiting_for} -- "
+                    f"{int(deadline - now)}s of budget remaining."
+                )
+            return False
 
         overrides_file = paths["root"] / "configs" / "fragment-overrides.json"
         if not overrides_file.exists():
@@ -340,6 +381,8 @@ class FragmentsService(BaseHandler):
         for attempt in range(max_retries):
             if not specs_supported:
                 break
+            if budget_spent("page specifications"):
+                break
             sites_data = self._api_request(
                 "GET", "/o/headless-admin-site/v1.0/sites", ext_base_url, headers
             )
@@ -439,6 +482,8 @@ class FragmentsService(BaseHandler):
 
         if not specs_supported:
             for attempt in range(max_retries):
+                if budget_spent("legacy page elements"):
+                    break
                 sites_data = (
                     self._api_request(
                         "GET",
@@ -608,13 +653,33 @@ class FragmentsService(BaseHandler):
         `feature.flag.LPD-99955=true` set, so most projects will not have it.
         Trying the supported API first means nothing changes for them.
 
-        UNVERIFIED, and the reason this returns False rather than raising:
-        `element_id` comes from the Headless page-element representation and
-        may not be a `fragmentEntryLinkId` at all. If it is not, the module
-        answers 404 and this falls through to the SQL fallback exactly as if
-        the module were absent. That is why the chain is ordered the way it is
-        -- an id that turns out to be wrong costs a wasted request, not a
-        failure. Confirm against a live instance before relying on this rung.
+        VERIFIED, and the answer was no (LDM-#1618). `element_id` comes from
+        the Headless page-element representation, and that id is a **UUID**,
+        never a `fragmentEntryLinkId`. Measured on DXP 2026.q1.7-lts against
+        real fragments on a real page:
+
+            type='Fragment' id='6f4d9b77-4a14-a5dc-74b8-e0ef4dcee23c'
+            type='Fragment' id='09949d2a-917e-6ecb-1dfb-dc5fe417d1f2'
+
+        while the `fragmententrylink` rows backing that same page are numeric
+        (`33693`, `33694`, ...). The OpenAPI schema agrees -- `PageElement.id`
+        is declared `string`. And the module's own signature is unambiguous:
+
+            @PathParam("fragmentEntryLinkId") long fragmentEntryLinkId
+
+        A UUID cannot be coerced to `long`, so JAX-RS answers 404 before the
+        method body runs. This rung has therefore never fired once, on any
+        project, since it shipped in LDM-#1602 -- which means LDM has always
+        fallen through to the SQL fallback, doing precisely the thing this
+        module was introduced to avoid.
+
+        The guard below stops issuing a request that provably cannot succeed.
+        The rung is kept rather than deleted because it remains the better
+        mechanism whenever a real `fragmentEntryLinkId` is available: making
+        it usable needs either the module to accept a page-element UUID and
+        resolve it server-side, or LDM to look the numeric id up first.
+        Neither belongs in this change, and neither can be verified without a
+        deployed module.
 
         The module merges server-side (its issue #9), so sending LDM's partial
         overrides preserves every editable value it does not mention. Sending
@@ -622,6 +687,18 @@ class FragmentsService(BaseHandler):
         document, which is what the module's v1.0.0 did and v2.0.0 fixed --
         require v2.0.0 or later.
         """
+        # LDM-#1618: a non-numeric id is a guaranteed 404, so do not spend a
+        # request on it. This is not a defensive check for an unlikely case --
+        # it is the case, for every element the Headless traversal yields.
+        if not str(element_id).lstrip("-").isdigit():
+            UI.debug(
+                f"Skipping the fragment-override module for element "
+                f"'{element_id}': the endpoint takes a numeric "
+                f"fragmentEntryLinkId and this is a page-element UUID "
+                f"(LDM-#1618)."
+            )
+            return False
+
         res = self._api_request(
             "PUT",
             f"/o/fragment-override/fragment-entry-links/{element_id}",
