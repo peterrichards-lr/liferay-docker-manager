@@ -199,6 +199,107 @@ class TheMeasurement(unittest.TestCase):
         self.assertEqual(found, [])
 
 
+class ThePageIsCreated(unittest.TestCase):
+    """LDM-#1719: the harness must not need a human to place the fragment.
+
+    It used to walk existing pages and, finding none, ask the operator to add
+    the fragment by hand -- while its docstring claimed it built the page
+    itself. Both halves are fixed: it creates the page, and when it cannot it
+    says so rather than reporting the indistinguishable "no fragment found".
+    """
+
+    def setUp(self):
+        self.mod = _load()
+
+    class _Api:
+        def __init__(self, create_response, existing=None):
+            self.create_response = create_response
+            self.existing = existing or {}
+            self.calls = []
+
+        def request(self, method, path, payload=None):
+            self.calls.append((method, path, payload))
+            if method == "POST":
+                return self.create_response
+            return self.existing
+
+    def _sites(self):
+        return {"items": [{"externalReferenceCode": "SITE-1"}]}
+
+    def test_it_posts_a_page_carrying_the_fragment_key(self):
+        api = self._Api({"friendlyUrlPath": "/ldm-verify"})
+
+        result = self.mod.ensure_page_with_fragment(api, self._sites())
+
+        self.assertTrue(result["ok"])
+        method, path, payload = api.calls[0]
+        self.assertEqual(method, "POST")
+        self.assertIn("site-pages", path)
+        self.assertIn(self.mod.FRAGMENT_KEY, str(payload))
+
+    def test_the_page_starts_at_the_default_value(self):
+        """The override has to change something, so it must start unchanged."""
+        api = self._Api({"friendlyUrlPath": "/ldm-verify"})
+
+        self.mod.ensure_page_with_fragment(api, self._sites())
+
+        _m, _p, payload = api.calls[0]
+        self.assertIn(self.mod.DEFAULT_VALUE, str(payload))
+
+    def test_an_existing_page_is_accepted(self):
+        """A second run must not fail because the page is already there."""
+        api = self._Api(
+            {"_error": 409},
+            existing={"items": [{"id": "77", "key": self.mod.FRAGMENT_KEY}]},
+        )
+
+        result = self.mod.ensure_page_with_fragment(api, self._sites())
+
+        self.assertTrue(result["ok"])
+        self.assertIn("already", result["summary"])
+
+    def test_a_failure_reports_the_api_response_verbatim(self):
+        """Silent fallback would be indistinguishable from a broken fragment."""
+        api = self._Api({"_error": 400, "_reason": "bad schema"}, existing={})
+
+        result = self.mod.ensure_page_with_fragment(api, self._sites())
+
+        self.assertFalse(result["ok"])
+        self.assertIn("400", result["summary"])
+        self.assertIn("bad schema", result["summary"])
+
+    def test_no_site_is_reported_rather_than_crashing(self):
+        api = self._Api({})
+
+        result = self.mod.ensure_page_with_fragment(api, {"items": []})
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(api.calls, [])
+
+
+class TheDocstringDoesNotOverclaim(unittest.TestCase):
+    """It said the harness created the page while it did not (LDM-#1719)."""
+
+    def test_it_describes_the_failure_path_too(self):
+        import ast
+
+        # The module docstring via the AST, not string arithmetic: the file
+        # opens with a shebang, so slicing on the first `"""` lands in the
+        # wrong place and the assertion passes or fails for the wrong reason.
+        head = ast.get_docstring(ast.parse(_HARNESS.read_text(encoding="utf-8")))
+        # assertIsNotNone does not narrow for mypy; self.fail is NoReturn.
+        if head is None:
+            self.fail("the harness lost its module docstring")
+
+        self.assertIn("through the Headless API", head)
+        self.assertIn(
+            "If the page cannot be created",
+            head,
+            "the docstring must state what happens when creation fails, or it "
+            "overclaims again",
+        )
+
+
 class ItStaysOutOfTheDefaultGate(unittest.TestCase):
     """LDM-#1444's principle: no assertion on a dependency the suite cannot control.
 

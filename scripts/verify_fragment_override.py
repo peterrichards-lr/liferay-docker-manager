@@ -12,7 +12,12 @@ most likely way it silently never fires:
 the hard parts the original plan assumed. No `fragment-override` bundle, no
 `feature.flag.LPD-99955`, no published site-initializer page, no refused PATCH,
 and no dependency on another repository's package. A fragment this script
-builds itself, on a page it creates itself, is the whole fixture.
+builds itself, on a page it creates through the Headless API, is the whole
+fixture.
+
+If the page cannot be created, the harness says so and reports the API response
+verbatim rather than falling through to "no fragment found" -- which would look
+identical to a fragment that deployed but never rendered (LDM-#1719).
 
 WHAT IT PROVES
     * a fragment's configuration is overridden end to end, through the
@@ -203,6 +208,67 @@ class Headless:
             return {"_error": "connection", "_reason": str(e)}
 
 
+def ensure_page_with_fragment(api, sites):
+    """Create a site page carrying the fragment, if one is not there already.
+
+    LDM-#1719. The harness used to walk *existing* pages and, finding none,
+    tell the operator to place the fragment by hand -- so it could not run
+    unattended, and the docstring claiming it built "a page it creates itself"
+    was wrong.
+
+    The page-element schema is not guessed silently: the request is made, the
+    page is then read back, and whichever happened is reported verbatim. A
+    harness that cannot create the page must say so plainly rather than fall
+    through to "no fragment found", which would look identical to a fragment
+    that deployed but did not render.
+    """
+    items = sites.get("items") or []
+    if not items:
+        return {"ok": False, "summary": "no site to create a page in"}
+
+    site = items[0]
+    erc = site.get("externalReferenceCode") or site.get("id")
+
+    page = {
+        "title": "LDM Verify",
+        "friendlyUrlPath": "/ldm-verify",
+        "pageDefinition": {
+            "pageElement": {
+                "type": "Root",
+                "pageElements": [
+                    {
+                        "type": "Fragment",
+                        "definition": {
+                            "fragment": {"key": FRAGMENT_KEY},
+                            "fragmentConfig": {FIELD_NAME: DEFAULT_VALUE},
+                        },
+                    }
+                ],
+            }
+        },
+    }
+
+    res = api.request(
+        "POST", f"/o/headless-admin-site/v1.0/sites/{erc}/site-pages", page
+    )
+    if isinstance(res, dict) and not res.get("_error"):
+        return {"ok": True, "summary": f"page created: {res.get('friendlyUrlPath')}"}
+
+    # Read back before concluding: a 409 may simply mean it already exists.
+    existing = api.request("GET", f"/o/headless-admin-site/v1.0/sites/{erc}/site-pages")
+    if find_fragment_element(existing, []):
+        return {"ok": True, "summary": "a page already carries the fragment"}
+
+    return {
+        "ok": False,
+        "summary": (
+            "could not create the page -- the Headless response was "
+            f"{res}. The page-element schema below may need adjusting; place "
+            "the fragment on a page by hand and re-run to proceed."
+        ),
+    }
+
+
 def run_ldm(
     args: list[str], cwd: Path, check: bool = True
 ) -> subprocess.CompletedProcess:
@@ -312,6 +378,10 @@ def main() -> int:  # noqa: PLR0915 - a linear harness reads better unsplit
     if not isinstance(sites, dict) or "_error" in sites:
         print(f"  Headless never answered: {sites}")
         return 3
+
+    print("▶ Creating a page that carries the fragment...")
+    created = ensure_page_with_fragment(api, sites)
+    print(f"  {created['summary']}")
 
     print("▶ Reading the page tree and recording what `id` actually is...")
     report = {
