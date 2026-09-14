@@ -25,6 +25,7 @@ import unittest
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 _HARNESS = (
     Path(__file__).resolve().parent.parent.parent
@@ -197,6 +198,206 @@ class TheMeasurement(unittest.TestCase):
         found = self.mod.find_fragment_element({"id": "1", "key": "somethingElse"}, [])
 
         self.assertEqual(found, [])
+
+
+class ThePageIsCreated(unittest.TestCase):
+    """LDM-#1719: the harness must not need a human to place the fragment.
+
+    It used to walk existing pages and, finding none, ask the operator to add
+    the fragment by hand -- while its docstring claimed it built the page
+    itself. Both halves are fixed: it creates the page, and when it cannot it
+    says so rather than reporting the indistinguishable "no fragment found".
+    """
+
+    def setUp(self):
+        self.mod = _load()
+
+    class _Api:
+        def __init__(self, create_response, existing=None):
+            self.create_response = create_response
+            self.existing = existing or {}
+            self.calls = []
+
+        def request(self, method, path, payload=None):
+            self.calls.append((method, path, payload))
+            if method == "POST":
+                return self.create_response
+            return self.existing
+
+    def _sites(self):
+        return {"items": [{"externalReferenceCode": "SITE-1"}]}
+
+    def test_it_posts_a_page_carrying_the_fragment_key(self):
+        api = self._Api({"friendlyUrlPath": "/ldm-verify"})
+
+        result = self.mod.ensure_page_with_fragment(api, self._sites())
+
+        self.assertTrue(result["ok"])
+        method, path, payload = api.calls[0]
+        self.assertEqual(method, "POST")
+        self.assertIn("site-pages", path)
+        self.assertIn(self.mod.FRAGMENT_KEY, str(payload))
+
+    def test_the_page_starts_at_the_default_value(self):
+        """The override has to change something, so it must start unchanged."""
+        api = self._Api({"friendlyUrlPath": "/ldm-verify"})
+
+        self.mod.ensure_page_with_fragment(api, self._sites())
+
+        _m, _p, payload = api.calls[0]
+        self.assertIn(self.mod.DEFAULT_VALUE, str(payload))
+
+    def test_an_existing_page_is_accepted(self):
+        """A second run must not fail because the page is already there."""
+        api = self._Api(
+            {"_error": 409},
+            existing={"items": [{"id": "77", "key": self.mod.FRAGMENT_KEY}]},
+        )
+
+        result = self.mod.ensure_page_with_fragment(api, self._sites())
+
+        self.assertTrue(result["ok"])
+        self.assertIn("already", result["summary"])
+
+    def test_a_failure_reports_the_api_response_verbatim(self):
+        """Silent fallback would be indistinguishable from a broken fragment."""
+        api = self._Api({"_error": 400, "_reason": "bad schema"}, existing={})
+
+        result = self.mod.ensure_page_with_fragment(api, self._sites())
+
+        self.assertFalse(result["ok"])
+        self.assertIn("400", result["summary"])
+        self.assertIn("bad schema", result["summary"])
+
+    def test_no_site_is_reported_rather_than_crashing(self):
+        api = self._Api({})
+
+        result = self.mod.ensure_page_with_fragment(api, {"items": []})
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(api.calls, [])
+
+
+class TheDocstringDoesNotOverclaim(unittest.TestCase):
+    """It said the harness created the page while it did not (LDM-#1719)."""
+
+    def test_it_describes_the_failure_path_too(self):
+        import ast
+
+        # The module docstring via the AST, not string arithmetic: the file
+        # opens with a shebang, so slicing on the first `"""` lands in the
+        # wrong place and the assertion passes or fails for the wrong reason.
+        head = ast.get_docstring(ast.parse(_HARNESS.read_text(encoding="utf-8")))
+        # assertIsNotNone does not narrow for mypy; self.fail is NoReturn.
+        if head is None:
+            self.fail("the harness lost its module docstring")
+
+        self.assertIn("through the Headless API", head)
+        self.assertIn(
+            "If the page cannot be created",
+            head,
+            "the docstring must state what happens when creation fails, or it "
+            "overclaims again",
+        )
+
+
+class TheModuleJar(unittest.TestCase):
+    """LDM-#1719: `--require-module` must not need a manual download.
+
+    The jar lives in another repository and is published **per DXP line**. Its
+    `bnd.bnd` hardcodes `Import-Package` ranges, so one built for another line
+    does not resolve -- and the failure is an unresolved bundle in the OSGi log,
+    nowhere near this script. Refusing up front, by name, is the whole point.
+
+    Fetched rather than vendored into LDM's release: a third-party binary pinned
+    to one DXP line inside our artifact would go stale independently of us.
+    `--module-jar` covers the offline case.
+
+    No network here -- the fetch is mocked. The live behaviour was verified by
+    hand against the module repository: `2026.q3.0` fetched
+    `com.liferay.custom.fragment.override-3.3.0-dxp-2026.q3.0.jar`, and
+    `2026.q1.12-lts` was refused with the available names listed.
+    """
+
+    def setUp(self):
+        self.mod = _load()
+        self._tmp = TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.dest = Path(self._tmp.name) / "deploy"
+        self.dest.mkdir(parents=True)
+
+    def test_a_local_jar_is_used_without_fetching(self):
+        local = Path(self._tmp.name) / "mine.jar"
+        local.write_bytes(b"jar")
+
+        jar, note = self.mod.resolve_module_jar("2026.q3.0", local, self.dest)
+
+        self.assertIsNotNone(jar)
+        self.assertEqual(jar.parent, self.dest)
+        self.assertIn("local jar", note)
+
+    def test_a_missing_local_jar_is_reported_not_fetched(self):
+        missing = Path(self._tmp.name) / "nope.jar"
+
+        jar, note = self.mod.resolve_module_jar("2026.q3.0", missing, self.dest)
+
+        self.assertIsNone(jar)
+        self.assertIn("does not exist", note)
+
+    def _release(self, *names):
+        import io
+        import json as _json
+
+        payload = _json.dumps(
+            {
+                "tag_name": "v9.9.9",
+                "assets": [{"name": n, "browser_download_url": "x"} for n in names],
+            }
+        ).encode()
+
+        class _Res(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        return _Res(payload)
+
+    def test_a_line_with_no_jar_is_refused_by_name(self):
+        """The alternative is an unresolved bundle nobody connects to this."""
+        with patch("urllib.request.urlopen") as urlopen:
+            urlopen.return_value = self._release(
+                "com.liferay.custom.fragment.override-3.3.0-dxp-2026.q3.0.jar"
+            )
+            jar, note = self.mod.resolve_module_jar("2026.q1.12-lts", None, self.dest)
+
+        self.assertIsNone(jar)
+        self.assertIn("dxp-2026.q1.12-lts", note)
+        self.assertIn("2026.q3.0", note, "the note must list what IS available")
+
+    def test_an_unreachable_repository_is_reported(self):
+        with patch("urllib.request.urlopen", side_effect=OSError("no network")):
+            jar, note = self.mod.resolve_module_jar("2026.q3.0", None, self.dest)
+
+        self.assertIsNone(jar)
+        self.assertIn("could not reach", note)
+
+    def test_the_checksum_asset_is_not_mistaken_for_the_jar(self):
+        """Both start with the module prefix; only one is a bundle."""
+        with patch("urllib.request.urlopen") as urlopen:
+            urlopen.side_effect = [
+                self._release(
+                    "com.liferay.custom.fragment.override-3.3.0-dxp-2026.q3.0.jar.sha256",
+                    "com.liferay.custom.fragment.override-3.3.0-dxp-2026.q3.0.jar",
+                ),
+                self._release(),
+            ]
+            jar, _note = self.mod.resolve_module_jar("2026.q3.0", None, self.dest)
+
+        self.assertIsNotNone(jar)
+        self.assertTrue(jar.name.endswith(".jar"))
+        self.assertFalse(jar.name.endswith(".sha256"))
 
 
 class ItStaysOutOfTheDefaultGate(unittest.TestCase):
