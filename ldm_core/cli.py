@@ -999,6 +999,24 @@ def get_parser():  # noqa: PLR0915
     init_from.add_argument("source")
     init_from.add_argument("project", nargs="?")
     init_from.add_argument("-p", "--project", dest="project_flag")
+    init_from.add_argument(
+        "--no-monitor",
+        action="store_true",
+        help=(
+            "Link the workspace without starting the file watcher. The link is "
+            "still recorded, so 'ldm monitor <project>' can attach later. "
+            "Without this, 'ldm init-from' ends in a watcher that runs until Ctrl-C."
+        ),
+    )
+    init_from.add_argument(
+        "--no-run",
+        action="store_true",
+        help=(
+            "Set the project up without starting it. `cmd_import` has always "
+            "honoured this; the flag was simply never declared here, so "
+            "'ldm init-from' could not be scripted without booting Liferay (LDM-#1689)."
+        ),
+    )
     init_from.add_argument("--cloud-project", help="Liferay Cloud project ID")
     init_from.add_argument("--target-env", default="local")
     init_from.add_argument(
@@ -1050,6 +1068,24 @@ def get_parser():  # noqa: PLR0915
     )
     link.add_argument("project", nargs="?")
     link.add_argument("-p", "--project", dest="project_flag")
+    link.add_argument(
+        "--no-monitor",
+        action="store_true",
+        help=(
+            "Link the workspace without starting the file watcher. The link is "
+            "still recorded, so 'ldm monitor <project>' can attach later. "
+            "Without this, 'ldm link' ends in a watcher that runs until Ctrl-C."
+        ),
+    )
+    link.add_argument(
+        "--no-run",
+        action="store_true",
+        help=(
+            "Set the project up without starting it. `cmd_import` has always "
+            "honoured this; the flag was simply never declared here, so "
+            "'ldm link' could not be scripted without booting Liferay (LDM-#1689)."
+        ),
+    )
     link.add_argument("--cloud-project", help="Liferay Cloud project ID")
     link.add_argument("--target-env", default="local")
     link.add_argument(

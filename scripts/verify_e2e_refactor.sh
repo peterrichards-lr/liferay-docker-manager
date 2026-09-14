@@ -32,6 +32,7 @@ LDMP_REFUSAL_PROJECT="ldmp-refusal-${TEST_PORT}"
 CLOUD_IMPORT_PROJECT="cloud-import-${TEST_PORT}"
 CLOUD_NOID_PROJECT="cloud-noid-${TEST_PORT}"
 PRODUCT_PIN_PROJECT="product-pin-${TEST_PORT}"
+LINKED_WS_PROJECT="linked-ws-${TEST_PORT}"
 # Kibana publishes this host port unconditionally (composer.py
 # _build_kibana_service). It is the LDM-#1350 lever -- see that check below.
 KIBANA_HOST_PORT=5601
@@ -844,6 +845,66 @@ fi
 #
 # Named, like verify_ldmp_manifest_refusal above, so it can be exercised without
 # a full run (ldm_core/tests/test_verify_scripts.py).
+# LDM-#1684 / LDM-#1689: a linked project records the workspace it came from.
+#
+# This is the assertion LDM-#1689 was opened to track. It could not be written
+# because `cmd_link` ended in `cmd_monitor`, whose `while True: sleep(1)` never
+# returns -- the command could not complete, so nothing could be asserted after
+# it. `--no-monitor` (LDM-#1689) and `--no-run` make it finish.
+#
+# What it guards: `workspace_path` was dropped from the import's `project_meta`
+# literal by PR #497 and written by nothing for two months, so
+# `ldm monitor <project>` with no path refused and `ldm snapshot` silently lost
+# the workspace's git origin. `ldm link` itself kept working, which is why it
+# stayed quiet -- it is re-attaching the watcher afterwards that failed.
+#
+# The monitor half is deliberately NOT asserted here. `cmd_monitor` is a
+# watcher by nature, so checking it in a linear script means backgrounding a
+# process and killing it on a timer -- a duration this script does not own,
+# which is what LDM-#1444 refused to do for an `ssh` client. It is covered by
+# `ldm_core/tests/test_link_no_monitor.py` instead.
+#
+# Observed: `ldm -y link ./ws linked --no-monitor --no-run` exits 0 in ~46s and
+# records the path. Before LDM-#1689 the same command never returned at all.
+verify_linked_workspace_path() {
+    local ldm_cmd="$1"
+    local work_dir="$2"
+    local project_name="$3"
+
+    local src="${work_dir}/linked-workspace-src"
+    rm -rf "$src"
+    mkdir -p "${src}/configs/local"
+    printf '%s\n' 'liferay.workspace.product=dxp-2026.q1.7' \
+        >"${src}/gradle.properties"
+
+    local out code
+    out=$(cd "$work_dir" && "$ldm_cmd" -y link "./linked-workspace-src" "$project_name" --no-monitor --no-run 2>&1) && code=0 || code=$?
+
+    local meta="${work_dir}/${project_name}/meta"
+    local failure=""
+    if [ "$code" -ne 0 ]; then
+        failure="ldm link exited ${code}"
+    elif [ ! -f "$meta" ]; then
+        failure="no project meta was written"
+    elif ! grep -q '"workspace_path"' "$meta" 2>/dev/null; then
+        failure="meta records no workspace_path -- ldm monitor <project> will refuse"
+    elif ! grep -q 'linked-workspace-src' "$meta" 2>/dev/null; then
+        failure="workspace_path is present but does not point at the linked source"
+    fi
+
+    "$ldm_cmd" -y rm "$project_name" --delete >/dev/null 2>&1 || true
+    rm -rf "$src" "${work_dir:?}/${project_name:?}" "${work_dir:?}/.ldm_temp"
+
+    if [ -n "$failure" ]; then
+        echo "❌ ERROR: ${failure} (LDM-#1684/#1689)."
+        echo "   Output was: ${out}"
+        return 1
+    fi
+
+    echo "✅ Linked workspace recorded: ldm link completes with --no-monitor and meta carries workspace_path (LDM-#1684/#1689)."
+    return 0
+}
+
 verify_cloud_workspace_import() {
     local ldm_cmd="$1"
     local work_dir="$2"
@@ -1159,6 +1220,14 @@ if CASCADING_GUARD_OUT=$(verify_cascading_default_guard "$LDM_CMD" "$LDM_WORKSPA
     report_ok "$CASCADING_GUARD_OUT"
 else
     echo "$CASCADING_GUARD_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying the linked workspace path is recorded (LDM-#1684/#1689)..."
+if LINKED_WS_OUT=$(verify_linked_workspace_path "$LDM_CMD" "$LDM_WORKSPACE" "$LINKED_WS_PROJECT"); then
+    report_ok "$LINKED_WS_OUT"
+else
+    echo "$LINKED_WS_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
 
