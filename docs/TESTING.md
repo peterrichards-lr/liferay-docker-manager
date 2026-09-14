@@ -539,8 +539,19 @@ gh release download "v${LDM_VER%%-pre.*}-pre.${LDM_VER##*-pre.}" \
   --pattern verification-bundle.zip 2>/dev/null \
   || gh release download "v${LDM_VER}" --pattern verification-bundle.zip
 unzip -o verification-bundle.zip -d ldm-verification
-cd ldm-verification && bash verify_e2e_refactor.sh
+cd ldm-verification
+cp /path/to/activation-key-*.xml ./common/   # see the note below
+bash verify_e2e_refactor.sh
 ```
+
+> [!IMPORTANT]
+> **The bundle does not carry a DXP activation key, and cannot** (LDM-#1733).
+> `common/activation-key-*.xml` is gitignored -- it is licensed and must not be
+> published -- so no CI checkout has one to package. Without it Liferay runs
+> unlicensed, LDM only *warns*, and the suite still reports success: exactly the
+> degraded-run-reported-as-pass the bundle exists to prevent, surviving in the
+> one half that could not travel. Copy your own key into `common/` before
+> running. The bundle's `MANIFEST.txt` says which case it is.
 
 ```powershell
 $LdmVer = (ldm version 2>$null).Trim()
