@@ -780,6 +780,52 @@ class ConfigResolutionStage(PipelineStage):
         UI.detail(f"Proceeding with the resolved tag: {tag}")
         return tag, is_portal
 
+    @staticmethod
+    def _apply_inert_flags(manager, project_meta) -> None:
+        """Wire up `--env` and `--gogo-port`; warn that `--mount-logs` is a no-op.
+
+        LDM-#1695. All three were declared and consumed by nothing. Observed
+        before the fix -- `ldm init envtest --env LDM_PROBE=hello --gogo-port
+        11311 --mount-logs` recorded none of the three keys, and the generated
+        compose carried no `LDM_PROBE`.
+
+        `--gogo-port` is the `--cloud-project` shape exactly: a live consumer
+        (`runtime/orchestration.py:1150` reads `meta.get("gogo_port")`) with no
+        producer anywhere.
+
+        `--mount-logs` is different and is deliberately NOT wired up. Nothing
+        reads it under any spelling, and the behaviour it names now happens
+        anyway -- `handlers/composer.py:1095` bind-mounts `logs/` for every
+        single-node project, inside `if scale == 1`. Removing the flag would
+        break any script that passes it, so it is accepted and reported as the
+        no-op it is.
+        """
+        env_pairs = getattr(manager.args, "env", None) or []
+        custom_env = {
+            k: v for pair in env_pairs if "=" in pair for k, v in [pair.split("=", 1)]
+        }
+        if custom_env:
+            import json
+
+            existing = {}
+            with contextlib.suppress(Exception):
+                existing = json.loads(project_meta.get("custom_env") or "{}")
+            if not isinstance(existing, dict):
+                existing = {}
+            existing.update(custom_env)
+            project_meta["custom_env"] = json.dumps(existing)
+
+        gogo_port = getattr(manager.args, "gogo_port", None)
+        if gogo_port:
+            project_meta["gogo_port"] = str(gogo_port)
+
+        if getattr(manager.args, "mount_logs", False):
+            UI.warning(
+                "--mount-logs has no effect and is kept only so existing "
+                "scripts keep working: logs/ is bind-mounted automatically for "
+                "every single-node project (LDM-#1695)."
+            )
+
     def _resolve_database(self, manager, project_meta, is_samples):
         """Resolves the `(engine, mode)` pair this run uses (LDM-#1511).
 
@@ -1001,6 +1047,16 @@ class ConfigResolutionStage(PipelineStage):
             "port", manager.defaults.get("port")
         )
         port = int(port_val) if port_val is not None else 8080
+
+        # LDM-#1695: three flags were declared on `run`, `import` and
+        # `init-from` and read by nothing. `--env` is the one that matters --
+        # it is published in docs/reference/cli/core.md
+        # (`ldm run my-project --env LIFERAY_COMPANY_DEFAULT_WEB_ID=...`) and
+        # did nothing at all. `composer.py` still consumes
+        # `meta["custom_env"]`, and `ldm config env` still writes it, so both
+        # ends of the plumbing were intact; only the flag-to-meta step was
+        # missing, dropped with the rest of the literal in PR #497.
+        self._apply_inert_flags(manager, project_meta)
 
         project_meta["root"] = str(paths["root"].resolve())
         project_meta["project_name"] = project_id

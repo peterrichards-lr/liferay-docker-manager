@@ -2,6 +2,7 @@
 Orchestrates the main 'ldm import' pipeline.
 """
 
+import contextlib
 import os
 import shutil
 import tarfile
@@ -424,6 +425,13 @@ class ProjectSetupStage(PipelineStage):
                 "last_run": datetime.now().isoformat(),
             }
         )
+
+        # LDM-#1695: dropped with the rest of the literal in PR #497. Only
+        # `_handle_dry_run` has written it since, so a real imported project
+        # records nothing about which LDM created it.
+        from ldm_core.constants import VERSION
+
+        project_meta["ldm_version"] = VERSION
 
         self._record_linked_workspace(context, project_meta)
         self._resolve_cloud_project_id(context, project_meta)
@@ -1115,6 +1123,15 @@ class BuildWorkspaceStage(PipelineStage):
                 "gradlew" if platform.system() != "Windows" else "gradlew.bat"
             )
             if gradlew.exists():
+                # LDM-#1695: `_check_gradle_java_version` (handlers/base.py:845)
+                # was called from nowhere after PR #497 -- the import checked
+                # the *system* Java in `ImportValidationStage` but never the
+                # JVM Gradle would actually use. This is the one place that is
+                # about to run `gradlew`, so it is where the check belongs.
+                # Advisory: a mismatch is reported, not fatal, because the
+                # build below already handles its own failure.
+                with contextlib.suppress(Exception):
+                    manager._check_gradle_java_version(gradlew)
                 if platform.system() != "Windows":
                     try:
                         os.chmod(gradlew, 0o755)  # nosec B103
