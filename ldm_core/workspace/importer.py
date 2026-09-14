@@ -888,11 +888,31 @@ def cmd_link(self, source_path):
         )
 
     project_name = self.cmd_import(str(source), is_init_from=True)
+
+    # LDM-#1689: `cmd_monitor` ends in `while True: time.sleep(1)`, so `ldm
+    # link` never returns until Ctrl-C. That is right for the usual case -- you
+    # link a workspace in order to watch it -- but it makes the command
+    # impossible to assert on, which is why the E2E check for LDM-#1684's
+    # `workspace_path` had to be deferred and tracked instead of written.
+    #
+    # It is also useful in its own right: recording the link without leaving a
+    # watcher running is a reasonable thing to want, in a script or otherwise.
+    # The link is persisted either way, so `ldm monitor <project>` attaches
+    # later with no path argument.
+    if getattr(self.manager.args, "no_monitor", False):
+        UI.success(f"Linked '{project_name}' to {source}.")
+        UI.hint(
+            f"Run 'ldm monitor {project_name}' to start watching for changes, "
+            f"or 'ldm logs -f {project_name}' to tail logs."
+        )
+        return project_name
+
     self.cmd_monitor(str(source), project_id=project_name)
     # LDM-#1508: project_name is resolved just above.
     UI.hint(
         f"Run 'ldm logs -f {project_name}' to monitor client extension hot-reloading."
     )
+    return project_name
 
 
 def cmd_clone(self, source_path):

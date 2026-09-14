@@ -1785,6 +1785,13 @@ class TestAtomicZipRepackaging(unittest.TestCase):
         mock_import.return_value = "my-linked-project"
         import tempfile
 
+        # LDM-#1689: `cmd_link` now reads `args.no_monitor`, and a MagicMock
+        # answers every getattr with a truthy Mock -- so without this the test
+        # silently exercises the `--no-monitor` path and asserts the watcher was
+        # started, which cannot both be true. Stated explicitly because this is
+        # the plain `ldm link` invocation, where the flag is False.
+        self.handler.args.no_monitor = False
+
         with tempfile.TemporaryDirectory() as tmpdir:
             self.handler.workspace.cmd_link(tmpdir)
             mock_import.assert_called_once_with(
