@@ -813,7 +813,7 @@ function Test-CascadingDefaultGuard {
 #      <project>/deploy/                     it the import reads an empty
 #      repository root and copies nothing)
 #
-# Assertion 4 deliberately uses 'deploy' rather than 'configs'. Both prove the
+# Assertion 5 deliberately uses 'deploy' rather than 'configs'. Both prove the
 # descent, but workspace_root/configs is copied wholesale into
 # osgi/configs/<env>/ -- a path Liferay never scans, tracked as LDM-#1692.
 # Asserting on that would pin a defect in place and break when it is fixed.
@@ -883,6 +883,14 @@ function Test-CloudWorkspaceImport {
         $failure = "services/backup WAS copied -- an infrastructure directory was imported as a service"
     } elseif ($meta -notmatch '"cloud_project_id"') {
         $failure = "meta records no cloud_project_id -- the root LCP.json id was not read"
+    } elseif ($meta -notmatch '2026\.q1\.7') {
+        # LDM-#1693: the fixture's liferay/gradle.properties pins dxp-2026.q1.7,
+        # so the import must record it as the project tag. Matched on the bare
+        # version rather than the full tag because the resolved form is
+        # '2026.q1.7-lts' online and '2026.q1.7' when releases.liferay.com
+        # cannot be reached -- both correct, and the assertion must not depend
+        # on the network being up.
+        $failure = "no tag derived from liferay.workspace.product -- the workspace pin was not read"
     } elseif ($meta -notmatch 'lctverifyproj') {
         $failure = "cloud_project_id is present but is not the root LCP.json id"
     } elseif (-not (Test-Path (Join-Path $projectDir "deploy\ldm-descent-marker.txt"))) {

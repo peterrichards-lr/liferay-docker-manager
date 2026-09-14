@@ -824,12 +824,15 @@ fi
 #      `backup/` carries its own LCP.json + Dockerfile, so a naive walk takes it)
 #   3. `cloud_project_id` is recorded          (--cloud-project was inert, and
 #      handlers/cloud.py silently guessed from the directory name)
-#   4. `liferay/deploy/<marker>` reaches      (proves the nested-workspace
+#   4. the workspace's product pin becomes  (LDM-#1693; without it a linked
+#      the project tag                        workspace records no tag at all
+#                                             and boots whatever discovery picks)
+#   5. `liferay/deploy/<marker>` reaches      (proves the nested-workspace
 #      `<project>/deploy/`                     descent; without it the import
 #      reads an empty repository root and copies nothing at all, which is the
 #      failure the other three cannot see)
 #
-# Assertion 4 deliberately uses `deploy` rather than `configs`. Both prove the
+# Assertion 5 deliberately uses `deploy` rather than `configs`. Both prove the
 # descent, but `workspace_root/configs` is copied wholesale into
 # `osgi/configs/<env>/` -- a path Liferay never scans, tracked as LDM-#1692.
 # Asserting on that would pin a defect in place and break when it is fixed.
@@ -893,6 +896,14 @@ verify_cloud_workspace_import() {
         failure="meta records no cloud_project_id -- the root LCP.json id was not read"
     elif ! grep -q 'lctverifyproj' "${project_dir}/meta" 2>/dev/null; then
         failure="cloud_project_id is present but is not the root LCP.json id"
+    elif ! grep -q '2026\.q1\.7' "${project_dir}/meta" 2>/dev/null; then
+        # LDM-#1693: the fixture's liferay/gradle.properties pins
+        # dxp-2026.q1.7, so the import must record it as the project tag.
+        # Matched on the bare version rather than the full tag because the
+        # resolved form is `2026.q1.7-lts` online and `2026.q1.7` when
+        # releases.liferay.com cannot be reached -- both are correct, and the
+        # assertion must not depend on the network being up.
+        failure="no tag derived from liferay.workspace.product -- the workspace pin was not read"
     elif [ ! -f "${project_dir}/deploy/ldm-descent-marker.txt" ]; then
         failure="deploy/ldm-descent-marker.txt is absent -- code was read from the repository root, not <repo>/liferay"
     fi
