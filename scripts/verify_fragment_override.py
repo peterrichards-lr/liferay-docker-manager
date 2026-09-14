@@ -8,29 +8,44 @@ most likely way it silently never fires:
     `element_id` comes from the Headless page-element representation and may
     not be a `fragmentEntryLinkId` at all.
 
-**That is the measurement this harness exists to take**, and it needs none of
-the hard parts the original plan assumed. No `fragment-override` bundle, no
-`feature.flag.LPD-99955`, no published site-initializer page, no refused PATCH,
-and no dependency on another repository's package. A fragment this script
-builds itself, on a page it creates through the Headless API, is the whole
-fixture.
+**That measurement has now been taken** (LDM-#1618): `element_id` is a UUID,
+never a `fragmentEntryLinkId`, so the module rung -- whose endpoint declares
+`@PathParam("fragmentEntryLinkId") long` -- could never have fired.
 
-If the page cannot be created, the harness says so and reports the API response
-verbatim rather than falling through to "no fragment found" -- which would look
-identical to a fragment that deployed but never rendered (LDM-#1719).
+THE HARNESS CANNOT CURRENTLY RUN UNATTENDED, AND SAYS SO
+    The original plan assumed a page carrying the fragment could be created
+    through the Headless API. It cannot (LDM-#1729, all measured on DXP
+    2026.q1.7-lts):
 
-WHAT IT PROVES
-    * a fragment's configuration is overridden end to end, through the
-      supported Headless rung (rung 1 of the chain)
+        * POST /o/headless-delivery/v1.0/sites/{id}/site-pages accepts nested
+          `pageElements`, returns 2xx, and discards them -- confirmed in the
+          database, zero `fragmententrylink` rows for the new plid, with both
+          the bare and the collection-qualified fragment key
+        * PUT on a delivery site-page is 405
+        * the admin-site element PUT targets an element that must already exist
+
+    There is no create-a-page-element endpoint. LDM-#883 records the same wall
+    from the other side. A page carrying a fragment has to come from a site
+    initializer or the UI -- which is precisely the scenario LDM's override
+    feature exists for, so a self-contained harness needs a site-initializer
+    fixture rather than a Headless call.
+
+    Until then the harness stops at that point and explains it, rather than
+    falling through to "no page element carried the fragment key" -- which
+    looks identical to a fragment that deployed but never rendered, and is the
+    false negative LDM-#1729 was filed for.
+
+WHAT IT PROVES TODAY
+    * the fixture builds, packages and deploys as a real Liferay fragment
+      collection (verified: `fragmententryid=1` after the post-boot redeploy)
     * what `element_id` actually is in the page-element representation --
       printed, and written to the report
 
 WHAT IT DOES NOT PROVE
-    * the module rung (rung 2). That rung exists because Headless refuses
-      specification updates on *published site-initializer* pages (LDM-#883,
-      upstream LPD-99955). A page created through the API is not one, so rung 1
-      succeeds and rung 2 is never reached. Forcing it needs the bundle, the
-      feature flag and a site-initializer page -- see --require-module.
+    * that a configuration override is applied end to end. That needs the
+      fragment placed on a page, which is the gap above.
+    * the module rung (rung 2). Verified unreachable rather than untested:
+      see LDM-#1618.
 
 WHY IT IS NOT IN verify_e2e_refactor.sh
     It depends on a Liferay boot and on content it must create through the
@@ -70,8 +85,18 @@ from pathlib import Path
 # configuration it then overrides -- so the assertion is "the field changed
 # from DEFAULT_VALUE to OVERRIDE_VALUE", which cannot pass by accident.
 COLLECTION_NAME = "ldm-verify-collection"
-FRAGMENT_KEY = "ldmVerifyFragment"
+# LDM-#1729: this was "ldmVerifyFragment", and Liferay ignored it. What lands
+# in `fragmententry.fragmententrykey` is derived from the fragment's `name`:
+#
+#     select fragmententrykey, name from fragmententry;
+#      ldm-verify-fragment | ldm-verify-fragment
+#
+# so the harness was matching on a key that never existed and would have
+# reported "no page element carried the fragment key" even once everything
+# else worked. Keeping the two equal removes the discrepancy rather than
+# encoding it.
 FRAGMENT_NAME = "ldm-verify-fragment"
+FRAGMENT_KEY = FRAGMENT_NAME
 FIELD_NAME = "endpoint"
 DEFAULT_VALUE = "https://default.invalid/original"
 OVERRIDE_VALUE = "https://overridden.invalid/patched"
@@ -289,15 +314,32 @@ def ensure_page_with_fragment(api, sites):
     through to "no fragment found", which would look identical to a fragment
     that deployed but did not render.
     """
-    items = sites.get("items") or []
+    items = [
+        s
+        for s in (sites.get("items") or [])
+        if s.get("externalReferenceCode") != "L_GLOBAL"
+    ]
     if not items:
         return {"ok": False, "summary": "no site to create a page in"}
 
     site = items[0]
-    erc = site.get("externalReferenceCode") or site.get("id")
+    # LDM-#1729: the payload below is headless-DELIVERY's SitePage schema
+    # (`title`, `friendlyUrlPath`, `pageDefinition`) and was being posted to
+    # headless-admin-site, whose SitePage has none of those properties -- it
+    # uses `name_i18n`, `friendlyUrlPath_i18n` and `pageSpecifications`.
+    # Observed: 400 `The property "title" is not defined in SitePage.`
+    #
+    # Delivery takes the numeric site id, not the external reference code,
+    # and has no `/sites` listing of its own -- which is why the lookup above
+    # stays on admin-site.
+    site_id = site.get("id")
+    if not site_id:
+        return {"ok": False, "summary": f"site has no numeric id: {site}"}
 
     page = {
         "title": "LDM Verify",
+        # A leading slash is required; "ldm-verify" is rejected with
+        # LayoutFriendlyURLException (LDM-#1729).
         "friendlyUrlPath": "/ldm-verify",
         "pageDefinition": {
             "pageElement": {
@@ -316,24 +358,79 @@ def ensure_page_with_fragment(api, sites):
     }
 
     res = api.request(
-        "POST", f"/o/headless-admin-site/v1.0/sites/{erc}/site-pages", page
+        "POST", f"/o/headless-delivery/v1.0/sites/{site_id}/site-pages", page
     )
-    if isinstance(res, dict) and not res.get("_error"):
-        return {"ok": True, "summary": f"page created: {res.get('friendlyUrlPath')}"}
+    # LDM-#1729: creating the page is not the same as placing the fragment.
+    # Read the page back and check, because the POST accepts the nested
+    # `pageElements` and then silently discards them -- measured on DXP
+    # 2026.q1.7-lts, with both the bare key and the collection-qualified one,
+    # and confirmed in the database (zero `fragmententrylink` rows for the new
+    # plid). Reporting "created" on the strength of a 2xx would hand the rest
+    # of the harness an empty page and produce "no page element carried the
+    # fragment key" -- indistinguishable from a fragment that deployed but did
+    # not render, which is the specific confusion this check exists to stop.
+    written = api.request(
+        "GET", f"/o/headless-delivery/v1.0/sites/{site_id}/site-pages/ldm-verify"
+    )
+    root = (written or {}).get("pageDefinition", {}).get("pageElement", {})
+    if root.get("pageElements"):
+        # Reached on a fresh create and on a re-run alike: a 409 means the page
+        # is already there, which is success for this step, so the read-back is
+        # the authority rather than the POST status.
+        return {
+            "ok": True,
+            "summary": f"page carries the fragment: {written.get('friendlyUrlPath')}",
+        }
 
-    # Read back before concluding: a 409 may simply mean it already exists.
-    existing = api.request("GET", f"/o/headless-admin-site/v1.0/sites/{erc}/site-pages")
-    if find_fragment_element(existing, []):
-        return {"ok": True, "summary": "a page already carries the fragment"}
+    if not isinstance(res, dict) or res.get("_error"):
+        return {
+            "ok": False,
+            "summary": f"could not create the page -- Headless answered {res}",
+        }
 
     return {
         "ok": False,
         "summary": (
-            "could not create the page -- the Headless response was "
-            f"{res}. The page-element schema below may need adjusting; place "
-            "the fragment on a page by hand and re-run to proceed."
+            "the page was created but the fragment was NOT placed on it. The "
+            "Headless API has no way to create a page element: POST discards "
+            "nested pageElements, PUT on a delivery site-page is 405, and the "
+            "admin-site element PUT targets an element that must already "
+            "exist (LDM-#883 records the same wall from the other side). A "
+            "page carrying a fragment has to come from a site initializer or "
+            "the UI -- which is the scenario LDM's override feature is FOR, "
+            "so an unattended harness needs a site-initializer fixture rather "
+            "than a Headless call. Tracked in LDM-#1729."
         ),
     }
+
+
+def redeploy_fragment_collection(
+    workspace: Path, project: str, node: str | None
+) -> str:
+    """Drop the collection zip into the running project's deploy directory.
+
+    Returns a human-readable outcome; never raises. A failure here is worth
+    reporting but is not worth aborting over -- the page-creation step reports
+    an absent fragment clearly enough on its own.
+    """
+    zips = sorted(workspace.rglob("*.zip"))
+    if not zips:
+        return "no collection zip to redeploy"
+    if node:
+        return (
+            "skipping the post-boot redeploy: the deploy directory is on "
+            f"node '{node}', not reachable as a local path"
+        )
+    root = Path.cwd() / project
+    deploy = root / "deploy"
+    if not deploy.is_dir():
+        return f"no deploy directory at {deploy}"
+    shutil.copy2(zips[0], deploy / zips[0].name)
+    # The file-install watcher polls; a fragment collection registers in a few
+    # seconds. This is a fixed wait rather than a poll because the harness has
+    # no cheap way to observe registration without the database.
+    time.sleep(30)
+    return f"redeployed {zips[0].name} after boot"
 
 
 def run_ldm(
@@ -520,6 +617,19 @@ def main() -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915 - linear by design
     if not isinstance(sites, dict) or "_error" in sites:
         print(f"  Headless never answered: {sites}")
         return 3
+
+    # LDM-#1729: the collection is deployed during `ldm import`, so it lands
+    # while the portal is still starting and the deploy throws:
+    #
+    #   NoSuchResourcePermissionException: {name=com.liferay.fragment, ...}
+    #
+    # Liferay then logs "Deployed ldm-verify-collection.zip successfully"
+    # anyway, so nothing looks wrong -- but `fragmententry` is empty, and every
+    # later step fails for a reason that has nothing to do with what is being
+    # verified. Re-dropping the same zip now that Headless answers deploys it
+    # properly (measured: `fragmententryid=1` afterwards, nothing before).
+    redeployed = redeploy_fragment_collection(workspace, args.project, args.node)
+    print(f"  {redeployed}")
 
     print("▶ Creating a page that carries the fragment...")
     created = ensure_page_with_fragment(api, sites)
