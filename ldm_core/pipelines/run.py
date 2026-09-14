@@ -1976,13 +1976,28 @@ class ComposerStage(PipelineStage):
                                 ports_to_check.append((svc_name, int(published)))
                 from ldm_core.docker_service import DockerService
 
+                # LDM-#1727: every question below is about the machine the
+                # container will run on, which is not this one when --target
+                # names a node. All three DockerService helpers already take a
+                # target; the call sites simply never passed one, so a remote
+                # run was refused for conflicts on the operator's laptop and
+                # cleared for conflicts on the node.
+                target_context = context.get("target_context")
+                target_name = (
+                    target_context.target.name if target_context is not None else None
+                )
+                is_remote = bool(
+                    target_context is not None and target_context.is_remote
+                )
+                where = f"node '{target_name}'" if is_remote else "the host"
+
                 # LDM-#1417: ask Docker's allocator, once, before probing any
                 # socket. `docker compose up` refuses a taken port from this
                 # table -- "port is already allocated" -- without ever
                 # attempting a host bind, and on Windows the socket probes
                 # cannot see a container-held port at all. Resolved here
                 # rather than per-service so the whole loop costs one call.
-                docker_held_ports = DockerService.published_host_ports()
+                docker_held_ports = DockerService.published_host_ports(target_name)
 
                 for svc_name, mapped_port in ports_to_check:
                     container_name = (
@@ -1990,9 +2005,20 @@ class ComposerStage(PipelineStage):
                         or f"{context.get('project_id')}-{svc_name}-1"
                     )
 
-                    if not DockerService.is_running(container_name):
-                        if mapped_port in docker_held_ports or not manager.check_port(
-                            "127.0.0.1", mapped_port
+                    if not DockerService.is_running(container_name, target_name):
+                        # LDM-#1727: the socket probe is local-only and stays
+                        # that way. Probing the node's published port from here
+                        # answers a different question -- measured against a
+                        # real node, a port held by a running container timed
+                        # out rather than connecting, because the security
+                        # group drops it. A probe that reports "free" for a
+                        # port that is in use is worse than no probe, so on a
+                        # remote target the allocator above is the sole
+                        # authority (which is what its own docstring argues it
+                        # should be anyway).
+                        if mapped_port in docker_held_ports or (
+                            not is_remote
+                            and not manager.check_port("127.0.0.1", mapped_port)
                         ):
                             # LDM-#996: staying fatal here is deliberate. By this
                             # point the port is written into the generated
@@ -2023,7 +2049,10 @@ class ComposerStage(PipelineStage):
                                         min(mapped_port + 21, 65536),
                                     )
                                     if candidate not in docker_held_ports
-                                    and manager.check_port("127.0.0.1", candidate)
+                                    and (
+                                        is_remote
+                                        or manager.check_port("127.0.0.1", candidate)
+                                    )
                                 ),
                                 None,
                             )
@@ -2047,21 +2076,21 @@ class ComposerStage(PipelineStage):
                                 tip = (
                                     f"Re-run 'ldm run' -- the pre-flight check will "
                                     f"select port {alternative} instead. Or free up "
-                                    f"port {mapped_port} and re-run to keep it."
+                                    f"port {mapped_port} on {where} and re-run to keep it."
                                 )
                             elif preflight_governs and non_interactive:
                                 tip = (
                                     f"A re-run will fail the same way: with -y the "
                                     f"pre-flight refuses rather than moving the port. "
-                                    f"Free up port {mapped_port}, or set an explicit "
-                                    f"one with --port, then re-run."
+                                    f"Free up port {mapped_port} on {where}, or set an "
+                                    f"explicit one with --port, then re-run."
                                 )
                             else:
                                 tip = (
                                     f"Service '{svc_name}' has a fixed port, so a "
                                     f"re-run will produce {mapped_port} again. Free "
-                                    f"up port {mapped_port}, or disable/move that "
-                                    f"service, then re-run."
+                                    f"up port {mapped_port} on {where}, or disable/move "
+                                    f"that service, then re-run."
                                 )
                             # LDM-#1479: say what is HOLDING the port, not just
                             # what needs it. Working that out is per-OS and is
@@ -2074,11 +2103,17 @@ class ComposerStage(PipelineStage):
                                 from ldm_core.utils import native_port_listener
 
                                 container = DockerService.container_publishing_port(
-                                    mapped_port
+                                    mapped_port, target_name
                                 )
                                 if container:
                                     holder = f"container '{container}'"
-                                else:
+                                elif not is_remote:
+                                    # LDM-#1727: native_port_listener reads
+                                    # *this* machine's socket table, so on a
+                                    # remote target it would name a local PID
+                                    # for a conflict on the node -- the
+                                    # specific wrong answer this issue was
+                                    # filed about.
                                     listener = native_port_listener(mapped_port)
                                     if listener:
                                         holder = listener
@@ -2089,7 +2124,7 @@ class ComposerStage(PipelineStage):
                                 f" It is currently held by {holder}." if holder else ""
                             )
                             UI.die(
-                                f"Port conflict detected: Port {mapped_port} is already in use on the host "
+                                f"Port conflict detected: Port {mapped_port} is already in use on {where} "
                                 f"and is required by service '{svc_name}' in your compose configuration."
                                 f"{held_by}",
                                 tip=tip,
