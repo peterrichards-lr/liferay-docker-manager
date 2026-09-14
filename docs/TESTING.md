@@ -511,6 +511,49 @@ binary produces a message naming the real problem instead of a 404. The scripts'
 own mismatch banner derives the ref the same way, so the hint it prints and the
 instructions here can never disagree.
 
+> [!IMPORTANT]
+> **Prefer the verification bundle.** Fetching the script on its own gets you the
+> script and nothing else -- and the suite needs the `common/` folder beside it,
+> which carries the DXP activation key and the Elasticsearch configuration.
+> Without it LDM only **warns**:
+>
+> ```text
+> ⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
+> ```
+>
+> The suite then runs to completion, exits `0` and reports **success** -- having
+> never applied the activation key or the search configuration. Every assertion
+> genuinely passes; they just tested a smaller system than the report claims
+> (LDM-#1718).
+>
+> The bundle also removes a second hazard in the commands above: `LDM_REF` is
+> derived from whatever binary happens to be on `PATH`, so the script can come
+> from a different release than the binary under test. The bundle is published
+> per tag, so the pair is fixed by construction.
+
+### Download the verification bundle (recommended)
+
+```bash
+LDM_VER="$(ldm version 2>/dev/null | tr -d '[:space:]')"
+gh release download "v${LDM_VER%%-pre.*}-pre.${LDM_VER##*-pre.}" \
+  --pattern verification-bundle.zip 2>/dev/null \
+  || gh release download "v${LDM_VER}" --pattern verification-bundle.zip
+unzip -o verification-bundle.zip -d ldm-verification
+cd ldm-verification && bash verify_e2e_refactor.sh
+```
+
+```powershell
+$LdmVer = (ldm version 2>$null).Trim()
+gh release download "v$LdmVer" --pattern verification-bundle.zip
+Expand-Archive -Force verification-bundle.zip -DestinationPath ldm-verification
+Set-Location ldm-verification
+pwsh -File .\verify_e2e_refactor.ps1
+```
+
+The bundle contains both scripts, `common/`, the optional fragment-override
+harness, a `MANIFEST.txt` naming the tag it came from, and `SHA256SUMS`. Run the
+suite **from the directory you unzip into**, so `common/` sits beside the script.
+
 ### **1. macOS & Linux**
 
 Run the Bash E2E verification script:
