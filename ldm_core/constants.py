@@ -195,6 +195,10 @@ RELEASE_ANNOUNCEMENTS = {
             "Warns when the resolved tag disagrees with the linked workspace's liferay.workspace.product, and offers the pinned tag -- an OSGi bundle built for another product line fails to resolve at boot, far from the tag decision",
         ),
         (
+            "ldm link <workspace>",
+            "The workspace's own liferay.workspace.product pin becomes the project's tag again, so a linked project boots the line it was built for instead of whatever discovery returns",
+        ),
+        (
             "ldm monitor <project>",
             "A linked project remembers its workspace again, so re-attaching the watcher no longer needs the path spelled out",
         ),
