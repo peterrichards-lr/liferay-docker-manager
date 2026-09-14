@@ -649,7 +649,10 @@ services:
                         "tag": "7.4.3.132",
                     },
                 )
-                mock_is_running.assert_called_with("test-project-liferay-1")
+                # LDM-#1727: the pre-flight now names the target it is asking
+                # about, so the local case passes "local" explicitly rather
+                # than relying on the default.
+                mock_is_running.assert_called_with("test-project-liferay-1", "local")
                 mock_check_port.assert_not_called()
                 mock_die.assert_not_called()
 
@@ -677,6 +680,9 @@ services:
                         },
                     )
                 self.assertEqual(str(cm.exception), "died")
+                # Case B dies in the handlers/base.py pre-flight, before
+                # ComposerStage's late guard runs -- so this call is the
+                # RuntimeValidationStage one, which LDM-#1727 did not touch.
                 mock_is_running.assert_called_with("test-project-liferay-1")
                 mock_check_port.assert_called_once_with("127.0.0.1", 8080)
                 mock_die.assert_called_once()
@@ -706,7 +712,7 @@ services:
                         "tag": "7.4.3.132",
                     },
                 )
-                mock_is_running.assert_called_with("test-project-liferay-1")
+                mock_is_running.assert_called_with("test-project-liferay-1", "local")
                 mock_check_port.assert_any_call("127.0.0.1", 8080)
                 mock_die.assert_not_called()
 
