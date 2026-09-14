@@ -1212,6 +1212,17 @@ def get_parser():  # noqa: PLR0915
                 help="Also remove the project's Docker Compose volumes (implied by --delete).",
             )
             p.add_argument(
+                "--keep-credentials",
+                action="store_true",
+                help=(
+                    "Keep database and admin passwords in the ~/.ldm/removed "
+                    "archive that --delete writes. They are removed by default; "
+                    "opting in means the archive holds them in plaintext and "
+                    "securing it is yours to do. Set permanently with "
+                    "'ldm config set tombstone_keep_credentials true'."
+                ),
+            )
+            p.add_argument(
                 "-d",
                 "--delete",
                 action="store_true",
@@ -2889,6 +2900,7 @@ def _build_command_map(args, manager):
             infra=getattr(args, "infra", False),
             clean_hosts=getattr(args, "clean_hosts", False),
             volumes=getattr(args, "volumes", False),
+            keep_credentials=getattr(args, "keep_credentials", False),
         ),
         ("rm", None): lambda: manager.runtime.cmd_down(
             getattr(args, "project", None),
@@ -2898,6 +2910,7 @@ def _build_command_map(args, manager):
             infra=getattr(args, "infra", False),
             clean_hosts=getattr(args, "clean_hosts", False),
             volumes=getattr(args, "volumes", False),
+            keep_credentials=getattr(args, "keep_credentials", False),
         ),
         ("logs", None): lambda: manager.runtime.cmd_logs(
             getattr(args, "project", None),
