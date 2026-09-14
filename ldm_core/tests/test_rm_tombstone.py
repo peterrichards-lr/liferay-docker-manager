@@ -45,10 +45,18 @@ def project(tmp_path):
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):
-    """Redirects ~/.ldm/removed at the Path.home() level."""
+    """Redirects ~/.ldm/removed through LDM_HOME.
+
+    LDM-#1715: this used to patch `Path.home`, because `tombstone_dir()` called
+    it directly. That worked in-process but left the production path with no
+    seam at all, so anything driving the real CLI wrote into the developer's
+    own `~/.ldm/removed` -- the exact thing the testing rules forbid, and how
+    the `Path.home()` bug was found. `LDM_HOME` is what those rules name, and
+    it isolates a subprocess just as well as an import.
+    """
     home = tmp_path / "home"
     home.mkdir()
-    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: home))
+    monkeypatch.setenv("LDM_HOME", str(home))
     return home / ".ldm" / "removed"
 
 

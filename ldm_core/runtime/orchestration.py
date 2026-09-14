@@ -563,6 +563,7 @@ class OrchestrationService(BaseHandler):
         infra=False,
         clean_hosts=False,
         volumes=False,
+        keep_credentials=False,
     ):
         """Tears down project containers and volumes."""
         is_dry_run = getattr(self.manager, "dry_run", False)
@@ -607,6 +608,30 @@ class OrchestrationService(BaseHandler):
         # automation (measured). Relying on the default would therefore make
         # every scripted `ldm rm --delete` silently refuse -- including the 70
         # calls across the two E2E verification scripts.
+        # LDM-#1703: the flag wins over the stored default, and the default is
+        # off. Resolved once here rather than per project so a `--all` teardown
+        # cannot treat two projects differently.
+        # `getattr`, because `defaults` is not guaranteed on every manager --
+        # `handlers/base.py:1254` guards the same attribute the same way. A
+        # config lookup must never abort a teardown the user asked for, which
+        # is the principle the tombstone write already follows.
+        _defaults = getattr(self.manager, "defaults", None)
+        _stored = (
+            _defaults.get("tombstone_keep_credentials", "false")
+            if _defaults
+            else "false"
+        )
+        keep_credentials = bool(keep_credentials) or str(_stored).strip().lower() in (
+            "true",
+            "1",
+            "yes",
+        )
+        if keep_credentials and delete:
+            UI.warning(
+                "Credentials will be kept in the removal archive in plaintext. "
+                "Securing ~/.ldm/removed is yours to do (LDM-#1703)."
+            )
+
         if delete and not is_dry_run and not self.manager.non_interactive:
             if not self._confirm_permanent_deletion(targets):
                 UI.detail("Aborted. Nothing was removed.")
@@ -832,7 +857,7 @@ class OrchestrationService(BaseHandler):
                 if is_dry_run:
                     from ldm_core.utils import archive_project_config
 
-                    archive_project_config(root)
+                    archive_project_config(root, keep_credentials=keep_credentials)
                     UI.warning(
                         f"  {UI.BYELLOW}- [Dry Run] Would unregister project {root.name} and permanently delete directory {root}{UI.COLOR_OFF}"
                     )
@@ -850,9 +875,16 @@ class OrchestrationService(BaseHandler):
                     # empty; `ldm snapshot` is what preserves state.
                     from ldm_core.utils import archive_project_config
 
-                    tombstone = archive_project_config(root)
+                    tombstone = archive_project_config(
+                        root, keep_credentials=keep_credentials
+                    )
                     if tombstone:
                         UI.info(f"Configuration archived to: {tombstone}")
+                        UI.detail(
+                            "  credentials kept (plaintext)"
+                            if keep_credentials
+                            else "  credentials removed; re-enter them after restoring"
+                        )
 
                     # Release the lock before attempting deletion to avoid WinError 32 on Windows
                     path_key = Path(root).resolve().as_posix()

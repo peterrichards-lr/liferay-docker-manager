@@ -30,11 +30,27 @@ from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.runtime.orchestration import OrchestrationService
 
 
+@pytest.fixture(autouse=True)
+def _isolate_ldm_home(tmp_path, monkeypatch):
+    """No test may write the real ~/.ldm -- the hard rule in testing-and-ci."""
+    home = tmp_path / "ldm-home"
+    home.mkdir()
+    monkeypatch.setenv("LDM_HOME", str(home))
+
+
 class _Manager(BaseHandler):
+    """LDM-#1715: tests here drive the real `cmd_down(delete=True)`, which now
+    writes a tombstone. Until `tombstone_dir()` honoured `LDM_HOME` it used
+    `Path.home()`, so these tests wrote archives into the developer's real
+    `~/.ldm/removed` -- observed, eight of them. The `store` fixture below
+    redirects it; do not remove that isolation."""
+
     def __init__(self, tmp, non_interactive=True, dry_run=False):
         self.args = MagicMock()
         self.verbose = False

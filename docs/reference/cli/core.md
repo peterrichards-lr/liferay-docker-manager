@@ -441,6 +441,8 @@ ldm rm [project]                  # Alias for 'down'
 - **`--clean-hosts`** (Only for `down`/`rm`): Removes the project's entries from your `/etc/hosts` file.
 - **`-d`, `--delete`** (Only for `down`/`rm`): Escalates teardown beyond just stopping/removing containers -- drops the project's schema from the shared database (if it uses shared-mode DB), unregisters the project, and **permanently deletes its directory from disk**. This cannot be undone. `ldm rm`/`ldm down` *without* `--delete` only tears down containers and keeps the project registered, so it can be `ldm run` again later; `--delete` is the one-way, destructive option.
 
+- **`--keep-credentials`** (Only for `down`/`rm`, with `--delete`): Keeps database and admin passwords in the `~/.ldm/removed` archive that `--delete` writes. They are **removed by default**, with a marker left in place of each value; opting in means the archive holds them in plaintext and securing it becomes yours to do. Set it permanently with `ldm config set tombstone_keep_credentials true`. See [Data Management](../../how-to/data_management.md) (LDM-#1703).
+
   Interactively, `--delete` now lists what is about to go and asks before touching anything (LDM-#1703):
 
   ```text
