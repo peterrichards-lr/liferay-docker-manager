@@ -7,23 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.22.0-pre.2] - 2026-09-14
 
-### Added
+Carries everything in `v2.22.0-pre.1` plus the rest of the PR #497 family, the removal
+safety work, and the first `LDM Release E2E` run that could actually pass.
 
--
-
-## [Unreleased]
-
-### Fixed
-
-- **Fresh clones no longer fail five tests on invisible characters**: `ldm_core/ui_colors.py` is generated and gitignored, so a new clone or `git worktree` lacked it, `ui.py` fell back to empty colour codes, and tests asserting ANSI output failed on strings differing only by escapes nobody can see. `setup_pre_commit.sh`, `ldm dev-setup` and the pytest session all generate it now (LDM-#1707).
+The `[Unreleased]` items below this entry were folded into it -- they describe work that is
+in this pre-release.
 
 ### Added
 
-- **Removed-project config archive**: `ldm rm --delete` now writes `meta`, `files/`, `osgi/configs/` and `routes/` to `~/.ldm/removed/<project>-<timestamp>.tar.gz` before deleting the directory, and names the path in its output. Measured on a booted project, that is ~20 KB against 1.1 GB of reproducible `osgi/` and 19 MB of `data/`: the archive keeps the resolved tag, the port and every feature flag in `portal-ext.properties`, and keeps none of the bulk, so the delete still frees the space. It restores configuration, never state -- `ldm snapshot` remains the tool for that (LDM-#1703).
+- **Removal is no longer silent or irreversible by accident**: `ldm rm --delete` asks before removing anything, naming the project's size and whether a snapshot exists -- `ldm snapshot` is the real undo for database state, and nothing surfaced that at the moment of deletion. It then archives `meta`, `files/`, `osgi/configs/` and `routes/` to `~/.ldm/removed/<project>-<timestamp>.tar.gz` before deleting: ~20 KB against 1.1 GB of reproducible `osgi/`, so the delete still frees the space. Database and admin passwords are **removed** from that archive by default; `--keep-credentials` or `ldm config set tombstone_keep_credentials true` keeps them, and says that securing the file becomes yours (LDM-#1703).
+- **`ldm link --no-monitor` and `--no-run`**: link a workspace without leaving a file watcher running, or without booting it. `cmd_link` previously ended in a watcher that ran until Ctrl-C, so the command could not be scripted -- or asserted on, which is why LDM-#1684's verification had to be deferred (LDM-#1689).
 
 ### Fixed
 
-- **`--dry-run` no longer reports a healthy host as broken**: `ldm run --dry-run` always failed with `FATAL: VOLUME MOUNTING IS BROKEN` and told the user to stop and reconfigure Colima. The mount check writes a sentinel with `safe_write_text` and probes it from a container -- under dry run the sentinel goes to the dry-run VFS and the container is announced rather than started, so the check compared a token never written against a probe that never ran, and `FAIL` was its only possible answer. It is now skipped, and reported as skipped rather than passed (LDM-#1704).
+- **Workspace OSGi configuration was never applied**: a workspace's `configs/<env>/` was copied wholesale into `osgi/configs/`, putting everything one environment-directory too deep -- `osgi/configs/local/osgi/configs/x.config`, where Liferay scans `osgi/configs/*.config`. `ls <project>/osgi/configs/*.config` matched nothing. `--target-env` was ignored with it, so every environment was copied rather than the chosen one, and the workspace's `portal-ext.properties` reached nowhere the portal reads. Properties are now **merged** into the project's file rather than copied over it, so LDM's own generated values survive (LDM-#1692).
+- **`ldm run --dry-run` reported a healthy host as broken**: it always failed with `FATAL: VOLUME MOUNTING IS BROKEN` and told the user to stop and reconfigure Colima. The check writes a sentinel and probes it from a container; under dry run the sentinel goes to the dry-run VFS and the container is announced rather than started, so it compared a token never written against a probe that never ran. A second defect was hiding behind it -- with the check skipped, a dry run reached the readiness poll for the first time and waited the full `--timeout` for a container that was never started (LDM-#1704, LDM-#1712).
+- **Three declared flags did nothing**: `--env` is published in the CLI reference and was read by no code at all, though `composer.py` still consumed `meta["custom_env"]` and `ldm config env` still wrote it -- only the flag-to-meta step was missing. `--gogo-port` had a live consumer and no producer. `--mount-logs` has neither, and is now reported as the no-op it is rather than silently ignored. `ldm_version` is stamped into an imported project again, and the Gradle JVM check is called again (LDM-#1695).
+- **The linked workspace path is recorded**: `ldm link` stopped writing `workspace_path`, so `ldm monitor <project>` with no path refused and `ldm snapshot` silently dropped the workspace's git origin (LDM-#1684).
+- **`LDM Release E2E` had never passed**: the job installs no JDK, and `ubuntu-latest` ships 17 while `ldm import` requires 21 -- so every `ldm import` in the suite died before doing anything, on six consecutive releases including the v2.21.1 stable. The failure never said "Java": it surfaced as a manifest-parse assertion, which was that check working correctly but phrased in terms of the manifest (LDM-#1701).
+- **The removal archive ignored `LDM_HOME`**: `tombstone_dir()` used `Path.home()`, so `sudo ldm rm --delete` wrote to root's home where the user would never find it, and tests could not isolate the store -- eight archives were found in a developer's real `~/.ldm/removed` (LDM-#1715).
+- **Fresh clones failed five healthy tests**: `ldm_core/ui_colors.py` is generated and gitignored, so a new clone or `git worktree` lacked it, `ui.py` fell back to empty colour codes, and tests asserting ANSI output failed on strings differing only by escapes nobody can see (LDM-#1707).
+
+### Internal
+
+- **Fragment-override harness**: `scripts/verify_fragment_override.py` builds its own fragment collection, overrides its configuration and records what `element_id` actually is -- the one genuinely unverified thing in LDM-#1618, and the measurement that decides whether the module rung can ever fire. Deliberately outside the default gate: it needs a Liferay boot and content it creates over HTTP (LDM-#1714).
+- **E2E coverage**: assertions added for the cloud import, the cloud project-ID refusal, the workspace product pin, the product tag and the linked workspace path, in both halves of the verification pair. Each was run against the pre-fix code and observed to fail before being committed -- in one case by constructing a state that does not exist in history, because the obvious pre-fix commit failed for the wrong reason (LDM-#1690, LDM-#1689).
+- **Dependencies**: `mcp` 2.1.1 -> 2.2.0 and `ruff` 0.16.6 -> 0.16.7. The `mcp` bump needed a third pin site Dependabot does not know about, which the LDM-#1483 guard caught.
 
 ## [v2.22.0-pre.1] - 2026-09-14
 
