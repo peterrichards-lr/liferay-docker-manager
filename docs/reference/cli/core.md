@@ -32,6 +32,9 @@ ldm run my-project --lean
 # Inject an environment variable directly
 ldm run my-project --env LIFERAY_COMPANY_DEFAULT_WEB_ID=my-domain.com
 
+# Repeat --env for more than one variable
+ldm run my-project --env A=1 --env B=2
+
 # Enable specific Liferay feature flags
 ldm run demo --feature LPS-122920 dev beta
 
