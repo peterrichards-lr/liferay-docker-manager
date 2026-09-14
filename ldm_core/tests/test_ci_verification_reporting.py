@@ -225,13 +225,34 @@ class TestVerificationFailuresAreReported(unittest.TestCase):
                 "PASSED' marker (LDM-#1611).",
             )
             for step in asserts:
-                self.assertEqual(
-                    step.get("if"),
-                    "always()",
-                    f"The report cross-check in '{job_name}' must run with "
+                condition = (step.get("if") or "").strip()
+                self.assertTrue(
+                    condition.startswith("always()"),
+                    f"The report cross-check in '{job_name}' must start with "
                     "if: always(), or it is skipped on exactly the runs it "
-                    "exists to catch.",
+                    f"exists to catch. Found: {condition!r}",
                 )
+                # LDM-#1720: a conjunction is allowed, but only one that cannot
+                # skip a run where the suite actually executed. The macOS job
+                # gates on a Docker probe -- when Docker is up the suite runs
+                # and this check runs with it; when Docker never came up there
+                # is no report to cross-check, and demanding one would fail the
+                # job for an absence rather than a fault.
+                #
+                # Anything else conjoined here would be a way to duck the
+                # check on a real run, which is LDM-#1611 wearing a different
+                # hat, so the allowed extra term is named explicitly rather
+                # than left open.
+                extra = condition[len("always()") :].strip()
+                if extra:
+                    self.assertEqual(
+                        extra,
+                        "&& steps.docker_probe.outputs.usable == 'true'",
+                        f"The report cross-check in '{job_name}' is gated on "
+                        "something other than the Docker probe. Only a "
+                        "condition that is false when the suite did not run "
+                        "may be added here (LDM-#1611, LDM-#1720).",
+                    )
 
     def test_no_verify_job_is_demoted_with_job_level_continue_on_error(self):
         """LDM-#1662: the tempting "fix" for a permanently red arm, which is the bug.
