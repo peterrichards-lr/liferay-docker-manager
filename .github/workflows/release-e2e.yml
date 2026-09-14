@@ -109,6 +109,22 @@ jobs:
           python3 scripts/sync_baseline.py
           python3 scripts/sync_colors.py
 
+      # LDM-#1701: without this the job runs on ubuntu-latest's default JDK 17
+      # and EVERY `ldm import` in the suite dies in ImportValidationStage, which
+      # requires 21. This workflow had therefore never passed on any release tag
+      # -- six in a row, including the v2.21.1 stable. LDM-#1659 added the same
+      # step to scheduled-verification.yml and best-effort-verification.yml and
+      # missed this one.
+      #
+      # A JRE would do (the suite never runs gradle or javac) but setup-java
+      # gives a JDK and costs nothing extra -- same reasoning, same wording, as
+      # the sibling workflows, so the three stay comparable.
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
       - name: Install Playwright Browsers
         run: |
           playwright install chromium --with-deps
