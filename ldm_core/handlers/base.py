@@ -1767,8 +1767,51 @@ class BaseHandler:
                     )
                 return
 
+            # LDM-#1704: the probe cannot answer under a dry run, so asking it
+            # produces a confident lie.
+            #
+            # The check writes a sentinel with `safe_write_text` and then has a
+            # container compare it. Under `LDM_DRY_RUN` the write goes to
+            # `_DRY_RUN_VFS` and never reaches disk (utils.py:1477), and
+            # `run_command` announces the container instead of running it -- so
+            # `verify_res` is not "OK", the `else` branch fires, and the user is
+            # told VOLUME MOUNTING IS BROKEN on a host where it works. `FAIL` is
+            # the only verdict that branch could ever return here.
+            #
+            # It is not merely noise: the macOS advice that follows tells the
+            # user to `colima stop` and restart with specific mount flags -- a
+            # disruptive change to fix a problem they do not have. And a preview
+            # that aborts at step three says nothing about steps four onward,
+            # which is the entire purpose of `--dry-run`.
+            if getattr(self, "dry_run", False) or (
+                os.environ.get("LDM_DRY_RUN", "").lower() == "true"
+            ):
+                UI.warning(
+                    f"  {UI.BYELLOW}- [Dry Run] Would verify Docker can mount "
+                    f"{root}{UI.COLOR_OFF}"
+                )
+                return
+
             if self.verbose:
                 UI.detail("Synchronizing directory permissions via Docker...")
+
+            # LDM-#1704: the probe cannot run under dry run, and judging its
+            # absent result reported a healthy host as broken. safe_write_text
+            # sends the sentinel to the dry-run VFS rather than the disk, and
+            # run_command announces the container instead of starting it - so
+            # the comparison below was between a token never written and a
+            # container that never ran, and `FAIL` was the only answer it could
+            # give. It then told the user to stop and reconfigure Colima.
+            #
+            # Skipped rather than passed: the check genuinely did not run, and a
+            # dry run printing a green mount check would be a different false
+            # claim.
+            if os.environ.get("LDM_DRY_RUN", "").lower() == "true":
+                UI.info(
+                    "[DRY RUN] Skipping Docker mount verification "
+                    "(nothing is written for it to probe)."
+                )
+                return
 
             import uuid
 

@@ -484,6 +484,76 @@ class OrchestrationService(BaseHandler):
                 failures.append(root.name)
         self._report_batch_failures(failures, "restart")
 
+    @staticmethod
+    def _project_removal_facts(root):
+        """Size on disk and whether a snapshot exists, for the LDM-#1703 prompt.
+
+        Both are best-effort: a project whose size cannot be walked is still
+        deletable, and refusing to remove it because `stat` failed would be a
+        worse outcome than an unhelpful prompt. Size returns None and snapshot
+        presence returns False in that case, and the prompt says so.
+
+        Symlinks are skipped rather than followed -- `osgi/` can contain links
+        into shared caches, and following them would report a size that is not
+        this project's to free.
+        """
+        # A path that is not there cannot be sized, and reporting "0 B" for it
+        # would read as "nothing to lose" -- the opposite of the truth when the
+        # cause is a permission error rather than an empty directory.
+        if not root.is_dir():
+            return None, False
+
+        total = 0
+        sized = True
+        try:
+            for entry in root.rglob("*"):
+                try:
+                    if entry.is_file() and not entry.is_symlink():
+                        total += entry.stat().st_size
+                except OSError:
+                    continue
+        except OSError:
+            sized = False
+
+        has_snapshot = False
+        try:
+            snapshots = root / "snapshots"
+            has_snapshot = snapshots.is_dir() and any(snapshots.iterdir())
+        except OSError:
+            pass
+
+        return (total if sized else None), has_snapshot
+
+    def _confirm_permanent_deletion(self, targets):
+        """Name the blast radius before removing anything (LDM-#1703).
+
+        Size and snapshot presence are the two facts that decide whether a
+        deletion is recoverable, and neither was surfaced at the moment the
+        decision was made. `ldm snapshot` is the real undo for database state;
+        saying so here is the difference between an informed `y` and a reflex.
+        """
+        UI.warning("The following will be permanently removed:")
+        for root in targets:
+            size, has_snapshot = self._project_removal_facts(root)
+            size_text = UI.format_size(size) if size is not None else "size unknown"
+            state_text = (
+                "snapshot available"
+                if has_snapshot
+                else "no snapshot -- database state will be lost"
+            )
+            # `print`, not `UI.detail`: detail is gated behind INFO_MODE /
+            # VERBOSE, so on a default run these lines -- the entire reason the
+            # prompt exists -- were invisible while the prompt still appeared.
+            # Caught by running the command, not by the unit tests, which
+            # asserted only that `UI.detail` had been called.
+            print(f"  {UI.CYAN}{root.name}{UI.COLOR_OFF}: {size_text}, {state_text}")
+
+        noun = "project" if len(targets) == 1 else f"{len(targets)} projects"
+        return UI.confirm(
+            f"Permanently delete this {noun}, including containers and volumes?",
+            "N",
+        )
+
     def cmd_down(  # noqa: C901, PLR0912, PLR0915
         self,
         project_id=None,
@@ -493,6 +563,7 @@ class OrchestrationService(BaseHandler):
         infra=False,
         clean_hosts=False,
         volumes=False,
+        keep_credentials=False,
     ):
         """Tears down project containers and volumes."""
         is_dry_run = getattr(self.manager, "dry_run", False)
@@ -518,6 +589,53 @@ class OrchestrationService(BaseHandler):
             return
 
         announce_remote_targets(self.manager, targets)
+
+        # LDM-#1703: `--delete` is the most destructive thing LDM does, and it
+        # was the only destructive command that never asked. `ldm prune` stops
+        # to ask before removing DATA volumes; this removed the containers, the
+        # volumes, the shared database schema, the registry entry AND the
+        # project directory on the strength of one flag.
+        #
+        # Placed HERE, before the teardown loop, and not at the `safe_rmtree`
+        # further down, because by that point it is far too late to protect
+        # anything: `compose down -v` has already destroyed the volumes and the
+        # shared schema has already been dropped. A prompt at the deletion site
+        # would guard only the directory -- the cheap, reproducible part.
+        #
+        # The `non_interactive` gate is load-bearing, not defensive. `UI.ask`
+        # returns its default verbatim under `-y`, which `UI.confirm` then reads
+        # as "unchanged", so `UI.confirm(..., "N")` evaluates to False in
+        # automation (measured). Relying on the default would therefore make
+        # every scripted `ldm rm --delete` silently refuse -- including the 70
+        # calls across the two E2E verification scripts.
+        # LDM-#1703: the flag wins over the stored default, and the default is
+        # off. Resolved once here rather than per project so a `--all` teardown
+        # cannot treat two projects differently.
+        # `getattr`, because `defaults` is not guaranteed on every manager --
+        # `handlers/base.py:1254` guards the same attribute the same way. A
+        # config lookup must never abort a teardown the user asked for, which
+        # is the principle the tombstone write already follows.
+        _defaults = getattr(self.manager, "defaults", None)
+        _stored = (
+            _defaults.get("tombstone_keep_credentials", "false")
+            if _defaults
+            else "false"
+        )
+        keep_credentials = bool(keep_credentials) or str(_stored).strip().lower() in (
+            "true",
+            "1",
+            "yes",
+        )
+        if keep_credentials and delete:
+            UI.warning(
+                "Credentials will be kept in the removal archive in plaintext. "
+                "Securing ~/.ldm/removed is yours to do (LDM-#1703)."
+            )
+
+        if delete and not is_dry_run and not self.manager.non_interactive:
+            if not self._confirm_permanent_deletion(targets):
+                UI.detail("Aborted. Nothing was removed.")
+                return
 
         # LDM-#1343: this is the loop the original report hit -- `ldm rm --all`
         # removed one project, failed on a sleeping node, and never attempted
@@ -737,11 +855,36 @@ class OrchestrationService(BaseHandler):
                                     )
 
                 if is_dry_run:
+                    from ldm_core.utils import archive_project_config
+
+                    archive_project_config(root, keep_credentials=keep_credentials)
                     UI.warning(
                         f"  {UI.BYELLOW}- [Dry Run] Would unregister project {root.name} and permanently delete directory {root}{UI.COLOR_OFF}"
                     )
                 else:
                     UI.warning(f"Permanently deleting project directory: {root.name}")
+
+                    # LDM-#1703: keep the 20 KB that cannot be regenerated, not
+                    # the gigabyte that can. The tar holds meta, files/,
+                    # osgi/configs and routes/ - the resolved tag and port, the
+                    # feature flags, the config overrides - and is named in the
+                    # output, because a path discovered afterwards is no use to
+                    # somebody who has just watched their project disappear.
+                    #
+                    # Configuration only. A project rebuilt from one boots
+                    # empty; `ldm snapshot` is what preserves state.
+                    from ldm_core.utils import archive_project_config
+
+                    tombstone = archive_project_config(
+                        root, keep_credentials=keep_credentials
+                    )
+                    if tombstone:
+                        UI.info(f"Configuration archived to: {tombstone}")
+                        UI.detail(
+                            "  credentials kept (plaintext)"
+                            if keep_credentials
+                            else "  credentials removed; re-enter them after restoring"
+                        )
 
                     # Release the lock before attempting deletion to avoid WinError 32 on Windows
                     path_key = Path(root).resolve().as_posix()

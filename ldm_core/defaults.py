@@ -20,6 +20,12 @@ CONVENTION_DEFAULTS = {
     "no_color": "false",
     "no_unicode": "false",
     "ci_trigger": "release",
+    # LDM-#1703: whether `ldm rm --delete`'s config archive keeps database and
+    # admin passwords. Off by default -- the archive lives in ~/.ldm/removed
+    # for the last fifty deleted projects, and plaintext credentials sitting
+    # there indefinitely is not a sensible default. Turning it on is a
+    # deliberate choice to own where that file lives.
+    "tombstone_keep_credentials": "false",
     # LDM-#1454: these map to HikariCP's maximumPoolSize / minimumIdle /
     # idleTimeout. They previously mapped to DBCP names Liferay does not read,
     # so they had no effect at all; every project ran on Liferay's defaults of

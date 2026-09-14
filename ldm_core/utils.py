@@ -1,4 +1,5 @@
 import contextlib
+import datetime
 import hashlib
 import ipaddress
 import json
@@ -3426,6 +3427,282 @@ def verify_safe_to_delete(path):
         raise ValueError(
             f"Safety Violation: Cannot delete a git repository: {path_obj}"
         )
+
+
+# LDM-#1703: what a removed project's directory holds that cannot be
+# regenerated. Measured on a booted 2026.q1.12-lts project: osgi/ was 1.1 GB and
+# data/ 19 MB, both reproducible from the image and the seed, while these four
+# came to about 20 KB and hold the only record of how the project was
+# configured - the resolved tag and port in `meta`, the feature flags in
+# files/portal-ext.properties, any OSGi config overrides, and the routes.
+#
+# Deliberately not archived: osgi/state, osgi/modules, data, logs, snapshots.
+# Keeping those would defeat the point of the delete, which is to free the
+# space.
+TOMBSTONE_MEMBERS = ("meta", "files", "osgi/configs", "routes")
+
+# LDM-#1703: what a tombstone must not carry by default.
+#
+# The archive exists so a deleted project's configuration can be rebuilt, and
+# credentials are part of that configuration -- a password set six months ago
+# is exactly the irreproducible thing the tombstone is for. But keeping them
+# means `~/.ldm/removed/*.tar.gz` holds plaintext database and admin passwords
+# for the last fifty deleted projects, at whatever the umask happens to be.
+#
+# So the default is to redact and the choice is the user's, either per command
+# (`ldm rm --delete --keep-credentials`) or once
+# (`ldm config set tombstone_keep_credentials true`). Opting in means accepting
+# responsibility for where the archive lives.
+#
+# The marker is deliberately a sentence rather than `***`: someone restoring a
+# project six months from now needs to understand the value was removed and
+# must be re-entered, not wonder whether the password really was asterisks.
+TOMBSTONE_REDACTION = "<removed by ldm -- re-enter this value after restoring>"
+
+# Keys in `meta`. `jdbc_pass` is the external-database password; each entry in
+# `credentials` is {type, email, password} and only the password is dropped --
+# the email is how you know which account to reset.
+TOMBSTONE_SECRET_META_KEYS = ("jdbc_pass",)
+
+# Keys in files/portal-ext.properties.
+TOMBSTONE_SECRET_PROPERTY_KEYS = (
+    "default.admin.password",  # pragma: allowlist secret
+    "jdbc.default.password",  # pragma: allowlist secret
+)
+
+
+def redact_meta_secrets(raw):
+    """Return `meta` file content with credential values removed.
+
+    Parsed as JSON first, because that is what `write_meta` produces. A meta
+    that cannot be parsed is redacted line-by-line instead rather than passed
+    through -- shipping a secret because the file was in an unexpected shape
+    would be the wrong way to fail.
+    """
+    import json
+    import re
+
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        redacted = raw
+        for key in (*TOMBSTONE_SECRET_META_KEYS, "password"):
+            redacted = re.sub(
+                rf'("{re.escape(key)}"\s*[:=]\s*")[^"]*(")',
+                rf"\1{TOMBSTONE_REDACTION}\2",
+                redacted,
+            )
+        return redacted
+
+    if not isinstance(data, dict):
+        return raw
+
+    for key in TOMBSTONE_SECRET_META_KEYS:
+        if data.get(key):
+            data[key] = TOMBSTONE_REDACTION
+
+    credentials = data.get("credentials")
+    if isinstance(credentials, list):
+        for entry in credentials:
+            if isinstance(entry, dict) and entry.get("password"):
+                entry["password"] = TOMBSTONE_REDACTION
+
+    return json.dumps(data, indent=4, sort_keys=True)
+
+
+def redact_properties_secrets(raw):
+    """Return portal-ext.properties content with credential values removed.
+
+    Line-based and order-preserving: everything the user wrote stays where they
+    wrote it, including comments, and only the value of a known secret key is
+    replaced.
+
+    **Commented-out secrets are redacted too**, with the comment marker kept.
+    The first version deliberately skipped them, reasoning that a disabled
+    property is not in effect and rewriting it would be a surprise. That is the
+    right instinct for configuration and the wrong one for a secret: a
+    commented `default.admin.password=hunter2` sitting in the archive is still
+    `hunter2` in plaintext, and "it was commented out" is no comfort to whoever
+    finds it. Two tests here asserted the opposite of each other until this was
+    settled.
+    """
+    lines = []
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if not stripped or "=" not in line:
+            lines.append(line)
+            continue
+
+        prefix = ""
+        body = line
+        if stripped.startswith(("#", "!")):
+            marker = stripped[0]
+            prefix = line[: line.index(marker) + 1]
+            body = line[line.index(marker) + 1 :]
+            if "=" not in body:
+                lines.append(line)
+                continue
+
+        key = body.split("=", 1)[0].strip()
+        if key in TOMBSTONE_SECRET_PROPERTY_KEYS:
+            lines.append(f"{prefix}{key}={TOMBSTONE_REDACTION}")
+            continue
+        lines.append(line)
+    return "\n".join(lines) + ("\n" if raw.endswith("\n") else "")
+
+
+# At ~20 KB an entry, fifty tombstones cost a megabyte, so pruning is by count
+# rather than age - a project removed a year ago is as recoverable as one
+# removed yesterday, and nothing about the passage of time makes its
+# configuration less useful.
+TOMBSTONE_KEEP = 50
+
+
+def tombstone_dir():
+    """Where tombstones for removed projects are kept.
+
+    LDM-#1715: `get_actual_home()`, not `Path.home()`. Two reasons, both of
+    which apply to every other `~/.ldm` consumer and neither of which this one
+    was honouring:
+
+    * under `sudo`, `Path.home()` is root's home, so the archive landed in
+      `/root/.ldm/removed` where the user will never find it -- for a feature
+      whose whole purpose is "you can get this back", that is close to not
+      writing it at all;
+    * it ignored `LDM_HOME`, which exists (LDM-#1349) precisely so state can be
+      redirected from outside the process. Without it the production path has
+      no seam, so anything driving the real CLI writes into the developer's own
+      `~/.ldm/removed` -- the exact thing the testing rules forbid.
+    """
+    return get_actual_home() / ".ldm" / "removed"
+
+
+def _prune_tombstones(keep=TOMBSTONE_KEEP):
+    """Keeps the newest `keep` tombstones, by filename, and removes the rest."""
+    store = tombstone_dir()
+    if not store.is_dir():
+        return
+    archives = sorted(store.glob("*.tar.gz"))
+    for stale in archives[:-keep] if keep > 0 else archives:
+        with contextlib.suppress(OSError):
+            stale.unlink()
+
+
+def _tar_add(archive, source, arcname, redactor=None):
+    """Add `source` to `archive`, optionally rewriting its content first.
+
+    Redaction streams from memory rather than editing the file on disk: the
+    project still exists at this point, and a deletion that is later aborted
+    must not have silently stripped the user's passwords out of it.
+    """
+    import io
+    import tarfile
+
+    if redactor is None:
+        archive.add(source, arcname=arcname)
+        return
+
+    try:
+        payload = redactor(source.read_text(encoding="utf-8")).encode("utf-8")
+    except (OSError, UnicodeDecodeError):
+        # Unreadable or not text. Omit it rather than risk shipping a secret
+        # verbatim -- a missing member is recoverable, a leaked password is not.
+        UI.warning(f"Could not redact {arcname}; omitting it from the archive.")
+        return
+
+    info = tarfile.TarInfo(name=arcname)
+    info.size = len(payload)
+    info.mode = 0o600
+    archive.addfile(info, io.BytesIO(payload))
+
+
+def archive_project_config(root, timestamp=None, keep_credentials=False):
+    """Archives a project's configuration before its directory is deleted.
+
+    LDM-#1703. `ldm rm --delete` removes the reproducible gigabyte and the
+    irreplaceable kilobytes together. This keeps the second without keeping the
+    first: a tar.gz of TOMBSTONE_MEMBERS under ~/.ldm/removed, named for the
+    project and the moment.
+
+    It restores configuration, never state. A project rebuilt from a tombstone
+    boots empty unless a snapshot was taken; `ldm snapshot` is the tool for
+    that, and this is not a substitute for it.
+
+    Returns the archive path, or None when there was nothing to archive or the
+    archive could not be written - a tombstone is a convenience, and failing to
+    write one must never stop a deletion the user asked for.
+    """
+    import tarfile
+
+    root = Path(root).resolve()
+    is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
+
+    present = [m for m in TOMBSTONE_MEMBERS if (root / m).exists()]
+    if not present:
+        return None
+
+    stamp = timestamp or datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    target = tombstone_dir() / f"{root.name}-{stamp}.tar.gz"
+
+    if is_dry_run:
+        UI.detail(
+            f"{UI.BYELLOW}[DRY RUN] Would archive config to:{UI.COLOR_OFF} {target}"
+        )
+        return target
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # 0o700: the store holds project configuration and, when the user has
+        # opted in, their credentials. Not a substitute for the user securing
+        # it, but a sane floor.
+        with contextlib.suppress(OSError):
+            os.chmod(target.parent, 0o700)
+
+        redactors = (
+            {}
+            if keep_credentials
+            else {
+                "meta": redact_meta_secrets,
+                "files/portal-ext.properties": redact_properties_secrets,
+            }
+        )
+
+        with tarfile.open(target, "w:gz") as archive:
+            for member in present:
+                source = root / member
+                if source.is_dir():
+                    # Walked rather than added recursively, so a redactor can
+                    # intercept a file inside -- `TarFile.add(recursive=True)`
+                    # gives no seam to do that.
+                    #
+                    # Directory entries are added explicitly (recursive=False)
+                    # so the archive keeps the shape the recursive add produced,
+                    # including directories that are legitimately empty. Without
+                    # this an empty `routes/` would vanish from the archive
+                    # rather than be restored as an empty directory.
+                    archive.add(source, arcname=member, recursive=False)
+                    for entry in sorted(source.rglob("*")):
+                        arcname = entry.relative_to(root).as_posix()
+                        if entry.is_dir():
+                            archive.add(entry, arcname=arcname, recursive=False)
+                        elif entry.is_file():
+                            _tar_add(archive, entry, arcname, redactors.get(arcname))
+                else:
+                    _tar_add(archive, source, member, redactors.get(member))
+
+        with contextlib.suppress(OSError):
+            os.chmod(target, 0o600)
+    except (OSError, tarfile.TarError) as e:
+        # Never block the deletion. The user asked for the space back, and a
+        # failed convenience is not a reason to refuse it.
+        UI.warning(f"Could not archive project configuration ({e}); continuing.")
+        with contextlib.suppress(OSError):
+            if target.exists():
+                target.unlink()
+        return None
+
+    _prune_tombstones()
+    return target
 
 
 def safe_rmtree(path):

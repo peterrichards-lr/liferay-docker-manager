@@ -40,11 +40,39 @@ class _Workspace:
         self.hydrated.append(workspace_root)
 
 
+class _Config:
+    """LDM-#1692: the sync now merges `configs/<env>/portal-ext.properties`
+    through the config service, so the stub manager needs that surface."""
+
+    @staticmethod
+    def _get_properties(content):
+        props = {}
+        for line in content.splitlines():
+            line = line.strip()
+            if line and not line.startswith(("#", "!")) and "=" in line:
+                k, v = line.split("=", 1)
+                props[k.strip()] = v.strip()
+        return props
+
+    @staticmethod
+    def update_portal_ext(paths, updates):
+        target = paths["files"] / "portal-ext.properties"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        existing = target.read_text() if target.exists() else ""
+        with target.open("a") as fh:
+            for k, v in updates.items():
+                if f"{k}=" not in existing:
+                    fh.write(f"{k}={v}\n")
+
+
 class _Manager:
     def __init__(self, non_interactive=True, cloud_project=None):
         self.workspace = _Workspace()
+        self.config = _Config()
         self.non_interactive = non_interactive
-        self.args = type("Args", (), {"cloud_project": cloud_project})()
+        self.args = type(
+            "Args", (), {"cloud_project": cloud_project, "target_env": "local"}
+        )()
 
     @staticmethod
     def safe_rmtree(path):
@@ -244,7 +272,12 @@ def test_code_is_synced_from_the_nested_workspace_not_the_repository_root(
     context, paths = _run_sync(tmp_path, monkeypatch, repo)
 
     assert context.manager.workspace.hydrated == [workspace]
-    assert (paths["configs"] / "local" / "portal-ext.properties").exists()
+    # LDM-#1692: this used to assert `osgi/configs/local/portal-ext.properties`
+    # -- the defective layout, where Liferay never reads it. That assertion
+    # pinned the bug in place and broke the moment it was fixed. The workspace's
+    # properties now merge into the project's own file, which proves the
+    # `<repo>/liferay` descent just as well and does not depend on a defect.
+    assert "a=1" in (paths["files"] / "portal-ext.properties").read_text()
 
 
 def test_the_real_stages_copy_services_end_to_end(tmp_path, monkeypatch):

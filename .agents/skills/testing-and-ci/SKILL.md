@@ -15,6 +15,8 @@ description: Activate this skill whenever writing tests, running linters, or com
 
   `ldm dev-setup` does the same job through the CLI. Either is fine; both leave the local git hooks in place so `git commit` intercepts and runs `ruff format`, preventing unformatted code from failing the CI Quality Gate.
 
+  **Both also generate `ldm_core/ui_colors.py`** (LDM-#1707). That module is produced by `scripts/sync_colors.py` and is gitignored, so a fresh clone -- and every `git worktree add`, which starts with no ignored files at all -- lacks it. Without it the import in `ui.py` falls back to a stub whose every colour is the empty string, and five tests that assert ANSI output fail on strings differing from the expected ones only by invisible characters. `ldm_core/tests/conftest.py` generates it at collection too, so the suite cannot hit this even when run without setup.
+
   **Do not hand-roll this.** You are FORBIDDEN from creating the `.venv` yourself or installing `pre-commit` globally -- the hooks resolve their interpreter through `scripts/run_python.sh`, which expects the layout the script produces.
 
   **Why the script rather than a direct command** (LDM-#1687): this line used to read `.pytest_venv/bin/pre-commit install`, which is wrong twice over by the rules in [`ldm-developer`](../ldm-developer/SKILL.md). `.venv` is authoritative, not `.pytest_venv`; and `pre-commit` is one of the console scripts endpoint protection deletes by name, so `.venv/bin/<tool>` and `.pytest_venv/bin/<tool>` are both unreliable spellings -- the module form (`python3 -m pre_commit`) is the one that survives, and `setup_pre_commit.sh` uses it. The wrapper existing on your machine today is not evidence it will tomorrow, which is precisely why this is a script and not a command to be retyped.
@@ -159,4 +161,4 @@ A release tag fires three to four workflows. Reporting "the" failure after readi
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-13* | *Last Reviewed: 2026-09-13*
+*Last Updated: 2026-09-14* | *Last Reviewed: 2026-09-14*

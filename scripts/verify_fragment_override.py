@@ -1,0 +1,373 @@
+#!/usr/bin/env python3
+"""Live harness for the fragment-override chain (LDM-#1618).
+
+`_patch_via_override_module` (`ldm_core/runtime/fragments.py`) shipped in
+v2.21.0 without ever being exercised. Its own docstring says so, and names the
+most likely way it silently never fires:
+
+    `element_id` comes from the Headless page-element representation and may
+    not be a `fragmentEntryLinkId` at all.
+
+**That is the measurement this harness exists to take**, and it needs none of
+the hard parts the original plan assumed. No `fragment-override` bundle, no
+`feature.flag.LPD-99955`, no published site-initializer page, no refused PATCH,
+and no dependency on another repository's package. A fragment this script
+builds itself, on a page it creates itself, is the whole fixture.
+
+WHAT IT PROVES
+    * a fragment's configuration is overridden end to end, through the
+      supported Headless rung (rung 1 of the chain)
+    * what `element_id` actually is in the page-element representation --
+      printed, and written to the report
+
+WHAT IT DOES NOT PROVE
+    * the module rung (rung 2). That rung exists because Headless refuses
+      specification updates on *published site-initializer* pages (LDM-#883,
+      upstream LPD-99955). A page created through the API is not one, so rung 1
+      succeeds and rung 2 is never reached. Forcing it needs the bundle, the
+      feature flag and a site-initializer page -- see --require-module.
+
+WHY IT IS NOT IN verify_e2e_refactor.sh
+    It depends on a Liferay boot and on content it must create through the
+    Headless API. Those are durations and states the verification suite does
+    not own, which is the principle LDM-#1383 set out and LDM-#1444 applied
+    when it skipped a check rather than let it hang on an `ssh` client. This is
+    an on-demand harness, run deliberately, not part of the default gate.
+
+USAGE
+    python3 scripts/verify_fragment_override.py --project fragverify
+    python3 scripts/verify_fragment_override.py --project fragverify --keep
+    python3 scripts/verify_fragment_override.py --project fragverify \
+        --require-module            # additionally assert the module rung
+
+The fixture builder below is importable and has unit tests
+(`ldm_core/tests/test_fragment_override_harness.py`) so its shape can be
+checked without Docker.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess  # nosec B404 - drives the ldm CLI deliberately
+import sys
+import time
+import urllib.error
+import urllib.request
+import zipfile
+from base64 import b64encode
+from pathlib import Path
+
+# The fragment the harness builds. `FRAGMENT_KEY` is what LDM matches against
+# the keys in fragment-overrides.json, and `FIELD_NAME`/`DEFAULT_VALUE` are the
+# configuration it then overrides -- so the assertion is "the field changed
+# from DEFAULT_VALUE to OVERRIDE_VALUE", which cannot pass by accident.
+COLLECTION_NAME = "ldm-verify-collection"
+FRAGMENT_KEY = "ldmVerifyFragment"
+FRAGMENT_NAME = "ldm-verify-fragment"
+FIELD_NAME = "endpoint"
+DEFAULT_VALUE = "https://default.invalid/original"
+OVERRIDE_VALUE = "https://overridden.invalid/patched"
+
+
+def build_fragment_collection(dest: Path) -> Path:
+    """Write a minimal, valid Liferay fragment collection under `dest`.
+
+    Shape taken from a real collection rather than invented:
+    `collection.json` beside one fragment directory holding `fragment.json`
+    (which carries the `fragmentEntryKey` LDM matches on), `index.json` (the
+    configuration that gets overridden) and the html/css/js the fragment
+    renders.
+    """
+    collection = dest / COLLECTION_NAME
+    fragment = collection / FRAGMENT_NAME
+    fragment.mkdir(parents=True, exist_ok=True)
+
+    (collection / "collection.json").write_text(
+        json.dumps(
+            {
+                "description": "Built by verify_fragment_override.py (LDM-#1618).",
+                "name": COLLECTION_NAME,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (fragment / "fragment.json").write_text(
+        json.dumps(
+            {
+                "fragmentEntryKey": FRAGMENT_KEY,
+                "icon": "cog",
+                "name": FRAGMENT_NAME,
+                "type": "component",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    # One text field with a known default. The override changes exactly this.
+    (fragment / "index.json").write_text(
+        json.dumps(
+            {
+                "fieldSets": [
+                    {
+                        "fields": [
+                            {
+                                "defaultValue": DEFAULT_VALUE,
+                                "description": "ldm-verify-endpoint",
+                                "label": "Endpoint",
+                                "name": FIELD_NAME,
+                                "type": "text",
+                            }
+                        ]
+                    }
+                ]
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (fragment / "index.html").write_text(
+        '<div class="ldm-verify" data-endpoint="${configuration.'
+        + FIELD_NAME
+        + '}">LDM verification fragment</div>\n',
+        encoding="utf-8",
+    )
+    (fragment / "index.css").write_text(".ldm-verify { display: block; }\n", "utf-8")
+    (fragment / "index.js").write_text("// intentionally empty\n", encoding="utf-8")
+    return collection
+
+
+def package_fragment_zip(collection: Path, target: Path) -> Path:
+    """Zip the collection with the marker LDM looks for.
+
+    `workspace/hydration.py:_sync_fragments` only treats a zip as a fragment
+    bundle when it contains `liferay-deploy-fragments.json`; without it the
+    file is ignored silently.
+    """
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("liferay-deploy-fragments.json", json.dumps({"version": 1}))
+        for path in sorted(collection.rglob("*")):
+            if path.is_file():
+                archive.write(path, arcname=str(path.relative_to(collection.parent)))
+    return target
+
+
+def build_overrides(path: Path) -> Path:
+    """The fragment-overrides.json LDM reads.
+
+    Schema per `_validate_fragment_overrides`: a top-level object keyed by
+    fragment key, each value the configuration payload.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({FRAGMENT_KEY: {FIELD_NAME: OVERRIDE_VALUE}}, indent=2),
+        encoding="utf-8",
+    )
+    return path
+
+
+class Headless:
+    """The few Headless calls the harness needs, with LDM's own auth convention."""
+
+    def __init__(self, base_url: str, email: str, password: str):
+        self.base_url = base_url.rstrip("/")
+        token = b64encode(f"{email}:{password}".encode()).decode()
+        self.headers = {
+            "Authorization": f"Basic {token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+
+    def request(self, method: str, path: str, payload=None):
+        import ssl
+
+        req = urllib.request.Request(
+            f"{self.base_url}{path}", headers=self.headers, method=method
+        )
+        if payload is not None:
+            req.data = json.dumps(payload).encode("utf-8")
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        try:
+            with urllib.request.urlopen(req, context=ctx, timeout=60) as res:  # nosec B310
+                body = res.read().decode()
+                return json.loads(body) if body else {}
+        except urllib.error.HTTPError as e:
+            return {"_error": e.code, "_reason": e.reason, "_body": e.read().decode()}
+        except Exception as e:  # The harness reports failures, never raises
+            return {"_error": "connection", "_reason": str(e)}
+
+
+def run_ldm(
+    args: list[str], cwd: Path, check: bool = True
+) -> subprocess.CompletedProcess:
+    cmd = ["ldm", *args]
+    print(f"  $ {' '.join(cmd)}")
+    proc = subprocess.run(  # nosec B603 - fixed argv, no shell
+        cmd,
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        timeout=3600,
+        check=False,
+    )
+    if check and proc.returncode != 0:
+        print(proc.stdout[-4000:])
+        print(proc.stderr[-4000:], file=sys.stderr)
+        raise SystemExit(f"ldm {' '.join(args)} failed with {proc.returncode}")
+    return proc
+
+
+def find_fragment_element(node, found: list):
+    """Collect every page element that carries our fragment key, with its id.
+
+    The shape of `id` here IS the open question in LDM-#1618, so the harness
+    records it verbatim rather than interpreting it.
+    """
+    if isinstance(node, dict):
+        blob = json.dumps(node)
+        if FRAGMENT_KEY in blob and "id" in node:
+            found.append(
+                {
+                    "id": node.get("id"),
+                    "id_type": type(node.get("id")).__name__,
+                    "id_is_numeric": str(node.get("id", "")).isdigit(),
+                    "has_fragmentEntryLinkId": "fragmentEntryLinkId" in blob,
+                    "keys": sorted(node.keys()),
+                }
+            )
+        for value in node.values():
+            find_fragment_element(value, found)
+    elif isinstance(node, list):
+        for item in node:
+            find_fragment_element(item, found)
+    return found
+
+
+def main() -> int:  # noqa: PLR0915 - a linear harness reads better unsplit
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--project", default="fragverify")
+    parser.add_argument(
+        "--tag",
+        default="2026.q3.0",
+        help=(
+            "Liferay tag. Defaults to the line the fragment-override module "
+            "publishes for, so --require-module can work without a rebuild."
+        ),
+    )
+    parser.add_argument("--admin-email", default="test@liferay.com")
+    parser.add_argument("--admin-password", default="test")  # nosec B107
+    parser.add_argument("--port", default="8080")
+    parser.add_argument("--keep", action="store_true", help="leave the project behind")
+    parser.add_argument(
+        "--require-module",
+        action="store_true",
+        help=(
+            "additionally assert the fragment-override module rung. Needs the "
+            "bundle deployed and feature.flag.LPD-99955=true; see LDM-#1618."
+        ),
+    )
+    args = parser.parse_args()
+
+    workspace = Path(os.environ.get("LDM_WORKSPACE", Path.cwd())).resolve()
+    scratch = workspace / f".{args.project}-fixture"
+    if scratch.exists():
+        shutil.rmtree(scratch)
+
+    print("▶ Building the fragment fixture...")
+    collection = build_fragment_collection(scratch)
+    source = scratch / "workspace"
+    (source / "fragments").mkdir(parents=True, exist_ok=True)
+    package_fragment_zip(collection, source / "fragments" / f"{COLLECTION_NAME}.zip")
+    (source / "gradle.properties").write_text(
+        "liferay.workspace.product=dxp-2026.q3.0\n", encoding="utf-8"
+    )
+    print(f"  fixture at {source}")
+
+    print("▶ Creating the project...")
+    run_ldm(
+        ["-y", "import", str(source), args.project, "--no-run", "--port", args.port],
+        cwd=workspace,
+    )
+    build_overrides(workspace / args.project / ".ldm" / "fragment-overrides.json")
+
+    print("▶ Booting (this pulls and starts Liferay; several minutes)...")
+    run_ldm(["-y", "run", args.project, "-t", args.tag], cwd=workspace)
+
+    base_url = f"http://localhost:{args.port}"
+    api = Headless(base_url, args.admin_email, args.admin_password)
+
+    print("▶ Waiting for Headless to answer...")
+    sites = None
+    for _ in range(60):
+        sites = api.request("GET", "/o/headless-admin-site/v1.0/sites")
+        if isinstance(sites, dict) and "_error" not in sites:
+            break
+        time.sleep(10)
+    if not isinstance(sites, dict) or "_error" in sites:
+        print(f"  Headless never answered: {sites}")
+        return 3
+
+    print("▶ Reading the page tree and recording what `id` actually is...")
+    report = {
+        "fragment_key": FRAGMENT_KEY,
+        "default_value": DEFAULT_VALUE,
+        "override_value": OVERRIDE_VALUE,
+        "elements": find_fragment_element(sites, []),
+    }
+    for site in sites.get("items", []) or []:
+        erc = site.get("externalReferenceCode") or site.get("id")
+        pages = api.request(
+            "GET", f"/o/headless-admin-site/v1.0/sites/{erc}/site-pages"
+        )
+        report["elements"].extend(find_fragment_element(pages, []))
+
+    out = workspace / args.project / ".ldm" / "fragment-override-harness.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+    print()
+    print("=" * 70)
+    print("  LDM-#1618 measurement: what is `element_id`?")
+    print("=" * 70)
+    if not report["elements"]:
+        print("  No page element carried the fragment key.")
+        print("  The fragment deployed but is not placed on any page -- add it to a")
+        print("  page in the UI and re-run, or the chain has nothing to patch.")
+    for element in report["elements"]:
+        print(
+            f"  id={element['id']!r}  type={element['id_type']}  "
+            f"numeric={element['id_is_numeric']}  "
+            f"fragmentEntryLinkId present={element['has_fragmentEntryLinkId']}"
+        )
+    print()
+    print("  A non-numeric id means the module rung can NEVER fire: the endpoint")
+    print('  declares `@PathParam("fragmentEntryLinkId") long`, and a path param')
+    print("  that cannot be coerced is a 404 by JAX-RS specification -- which")
+    print("  `_api_request` swallows as expected. That would resolve LDM-#1618 by")
+    print("  fixing or removing the rung, with no live positive path needed.")
+    print(f"  Full report: {out}")
+    print("=" * 70)
+
+    if args.require_module:
+        status = api.request("GET", "/o/fragment-override/status")
+        print(f"▶ fragment-override module status: {status}")
+        if status.get("_error"):
+            print("  The module is not deployed, or the flag is off.")
+            return 4
+
+    if not args.keep:
+        print("▶ Cleaning up...")
+        run_ldm(["-y", "rm", args.project, "--delete"], cwd=workspace, check=False)
+        shutil.rmtree(scratch, ignore_errors=True)
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -182,6 +182,21 @@ class DevService:
         )
         UI.success("Pre-commit and pre-push hooks registered.")
 
+        # 5. Generate the terminal colour module.
+        #
+        # LDM-#1707: ui_colors.py is generated and gitignored, so a fresh clone
+        # -- and every `git worktree add`, which starts with no ignored files at
+        # all -- does not have it. Without it ui.py falls back to the stub whose
+        # every colour is the empty string, and five tests asserting ANSI output
+        # fail on invisible characters. Kept in step with
+        # scripts/setup_pre_commit.sh, which the skills present as the
+        # equivalent path.
+        colors_script = root / "scripts" / "sync_colors.py"
+        if colors_script.exists():
+            UI.detail("Generating terminal colour module...")
+            run_command([str(venv_python), str(colors_script)])
+            UI.success("Colour module generated.")
+
         UI.success("Development environment is ready!")
         if platform.system().lower() == "windows":
             UI.detail(

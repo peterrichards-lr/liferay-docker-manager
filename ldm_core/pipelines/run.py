@@ -780,6 +780,52 @@ class ConfigResolutionStage(PipelineStage):
         UI.detail(f"Proceeding with the resolved tag: {tag}")
         return tag, is_portal
 
+    @staticmethod
+    def _apply_inert_flags(manager, project_meta) -> None:
+        """Wire up `--env` and `--gogo-port`; warn that `--mount-logs` is a no-op.
+
+        LDM-#1695. All three were declared and consumed by nothing. Observed
+        before the fix -- `ldm init envtest --env LDM_PROBE=hello --gogo-port
+        11311 --mount-logs` recorded none of the three keys, and the generated
+        compose carried no `LDM_PROBE`.
+
+        `--gogo-port` is the `--cloud-project` shape exactly: a live consumer
+        (`runtime/orchestration.py:1150` reads `meta.get("gogo_port")`) with no
+        producer anywhere.
+
+        `--mount-logs` is different and is deliberately NOT wired up. Nothing
+        reads it under any spelling, and the behaviour it names now happens
+        anyway -- `handlers/composer.py:1095` bind-mounts `logs/` for every
+        single-node project, inside `if scale == 1`. Removing the flag would
+        break any script that passes it, so it is accepted and reported as the
+        no-op it is.
+        """
+        env_pairs = getattr(manager.args, "env", None) or []
+        custom_env = {
+            k: v for pair in env_pairs if "=" in pair for k, v in [pair.split("=", 1)]
+        }
+        if custom_env:
+            import json
+
+            existing = {}
+            with contextlib.suppress(Exception):
+                existing = json.loads(project_meta.get("custom_env") or "{}")
+            if not isinstance(existing, dict):
+                existing = {}
+            existing.update(custom_env)
+            project_meta["custom_env"] = json.dumps(existing)
+
+        gogo_port = getattr(manager.args, "gogo_port", None)
+        if gogo_port:
+            project_meta["gogo_port"] = str(gogo_port)
+
+        if getattr(manager.args, "mount_logs", False):
+            UI.warning(
+                "--mount-logs has no effect and is kept only so existing "
+                "scripts keep working: logs/ is bind-mounted automatically for "
+                "every single-node project (LDM-#1695)."
+            )
+
     def _resolve_database(self, manager, project_meta, is_samples):
         """Resolves the `(engine, mode)` pair this run uses (LDM-#1511).
 
@@ -1001,6 +1047,16 @@ class ConfigResolutionStage(PipelineStage):
             "port", manager.defaults.get("port")
         )
         port = int(port_val) if port_val is not None else 8080
+
+        # LDM-#1695: three flags were declared on `run`, `import` and
+        # `init-from` and read by nothing. `--env` is the one that matters --
+        # it is published in docs/reference/cli/core.md
+        # (`ldm run my-project --env LIFERAY_COMPANY_DEFAULT_WEB_ID=...`) and
+        # did nothing at all. `composer.py` still consumes
+        # `meta["custom_env"]`, and `ldm config env` still writes it, so both
+        # ends of the plumbing were intact; only the flag-to-meta step was
+        # missing, dropped with the rest of the literal in PR #497.
+        self._apply_inert_flags(manager, project_meta)
 
         project_meta["root"] = str(paths["root"].resolve())
         project_meta["project_name"] = project_id
@@ -2399,6 +2455,33 @@ class ExecutionStage(PipelineStage):
                 )
                 return None
             no_wait = context.get("no_wait") or getattr(manager.args, "no_wait", False)
+
+            # LDM-#1704: nothing was started under a dry run, so nothing can
+            # become ready -- `_wait_for_ready` polls a container that does not
+            # exist for the full `--timeout` (900s by default) and then reports
+            # a boot failure that never happened.
+            #
+            # Latent until now. The mount check aborted every dry run three
+            # phases earlier (`FATAL: VOLUME MOUNTING IS BROKEN`), so execution
+            # had never reached this line -- the same shape as LDM-#1262, where
+            # fixing one assertion revealed the next block had been broken all
+            # along. Fixing only the mount check would have turned a wrong
+            # message into a fifteen-minute hang, which is worse.
+            #
+            # Not folded into `no_wait`: that branch also starts share tunnels
+            # and prints a "started in background" banner, neither of which is
+            # true here.
+            if getattr(manager, "dry_run", False):
+                UI.warning(
+                    f"  {UI.BYELLOW}- [Dry Run] Would wait for Liferay to become "
+                    f"ready, then report the project URL{UI.COLOR_OFF}"
+                )
+                # Bare, not `return True`: `PipelineStage.execute` is declared
+                # `-> None` and `Pipeline.run` discards stage return values.
+                # The neighbouring `return ready` only type-checks because
+                # `ready` is `Any`.
+                return None
+
             if not no_wait:
                 timeout_val = getattr(manager.args, "timeout", 900)
                 if timeout_val is None:

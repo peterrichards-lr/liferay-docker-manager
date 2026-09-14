@@ -2,6 +2,7 @@
 Orchestrates the main 'ldm import' pipeline.
 """
 
+import contextlib
 import os
 import shutil
 import tarfile
@@ -425,6 +426,13 @@ class ProjectSetupStage(PipelineStage):
             }
         )
 
+        # LDM-#1695: dropped with the rest of the literal in PR #497. Only
+        # `_handle_dry_run` has written it since, so a real imported project
+        # records nothing about which LDM created it.
+        from ldm_core.constants import VERSION
+
+        project_meta["ldm_version"] = VERSION
+
         self._record_linked_workspace(context, project_meta)
         self._resolve_cloud_project_id(context, project_meta)
 
@@ -790,8 +798,15 @@ class VolumeSyncStage(PipelineStage):
         # Sync code elements directly
         # Standard structural folders
         UI.detail("Syncing workspace structure and files...")
+        # LDM-#1692: `configs` is deliberately NOT here. It is not a flat
+        # mirror like the other three -- a workspace keeps it as
+        # `configs/<environment>/...`, so copying it wholesale into
+        # `osgi/configs/` produced `osgi/configs/local/osgi/configs/x.config`,
+        # three directories below the `osgi/configs/*.config` that Liferay
+        # scans. Workspace OSGi configuration was therefore never applied, and
+        # nothing said so. Handled selectively by `_sync_environment_configs`
+        # below, which also honours `--target-env`.
         structural_mappings = {
-            "configs": paths.get("configs"),
             "deploy": paths.get("deploy"),
             "files": paths.get("files"),
             "scripts": paths.get("scripts"),
@@ -811,6 +826,8 @@ class VolumeSyncStage(PipelineStage):
                             shutil.copytree(item, dest, copy_function=safe_copy)
                     elif not dest.exists() or overwrite:
                         safe_copy(item, dest)
+
+        self._sync_environment_configs(context, workspace_root, paths)
 
         # Handle CEs and Fragments
         import_zips(
@@ -890,6 +907,87 @@ class VolumeSyncStage(PipelineStage):
             manager.workspace._hydrate_from_workspace(
                 workspace_root, paths, overwrite=overwrite
             )
+
+    @staticmethod
+    def _sync_environment_configs(context, workspace_root, paths) -> None:
+        """Apply `configs/<target_env>/` the way Liferay actually reads it (LDM-#1692).
+
+        A Liferay Workspace keeps environment configuration as
+        `configs/<environment>/`, holding `portal-ext.properties`, an
+        `osgi/configs/` tree and optionally `deploy/`. PR #497 replaced the
+        selective copy that understood that shape with a wholesale directory
+        mapping, which put every file one environment-directory too deep:
+
+            configs/local/osgi/configs/x.config
+              -> osgi/configs/local/osgi/configs/x.config   (never scanned)
+            configs/local/portal-ext.properties
+              -> osgi/configs/local/portal-ext.properties   (never read)
+
+        Measured before the fix: `ls <project>/osgi/configs/*.config` matched
+        nothing, and a marker property placed in the workspace's
+        `portal-ext.properties` appeared nowhere the portal would look.
+
+        Three differences from the pre-refactor code it restores:
+
+        * **properties are merged, not copied over.** The original did
+          `safe_copy(pe, paths["files"] / "portal-ext.properties")`, which
+          would flatten LDM's own generated file -- the JDBC URL, the host
+          name, the feature flags. `update_portal_ext` merges key by key, and
+          LDM's later writes still win on the keys it owns.
+        * **`--target-env` is honoured again.** The wholesale copy took every
+          environment, so a project built for `local` also carried `uat`.
+        * **absent is not an error.** A workspace with no `configs/` at all is
+          normal and must stay silent.
+        """
+        manager = typing.cast(ImportPipelineContext, context).manager
+
+        target_env = getattr(manager.args, "target_env", None) or "local"
+        config_src = workspace_root / "configs" / target_env
+        if not config_src.is_dir():
+            return
+
+        from ldm_core.utils import safe_copy
+
+        pe_file = config_src / "portal-ext.properties"
+        if pe_file.is_file():
+            try:
+                props = manager.config._get_properties(
+                    pe_file.read_text(encoding="utf-8")
+                )
+            except OSError as e:
+                UI.warning(f"Could not read {pe_file}: {e}")
+                props = {}
+            if props:
+                manager.config.update_portal_ext(paths, props)
+                UI.success(
+                    f"Applied {len(props)} propert"
+                    f"{'y' if len(props) == 1 else 'ies'} from "
+                    f"configs/{target_env}/portal-ext.properties."
+                )
+
+        osgi_src = config_src / "osgi" / "configs"
+        if osgi_src.is_dir() and paths.get("configs"):
+            target = paths["configs"]
+            target.mkdir(parents=True, exist_ok=True)
+            count = 0
+            # Flattened by basename: Liferay scans `osgi/configs/*.config`, not
+            # a tree beneath it.
+            for entry in sorted(osgi_src.glob("*.config")) + sorted(
+                osgi_src.glob("*.cfg")
+            ):
+                safe_copy(entry, target / entry.name)
+                count += 1
+            if count:
+                UI.success(
+                    f"Imported {count} OSGi config file(s) from configs/{target_env}."
+                )
+
+        deploy_src = config_src / "deploy"
+        if deploy_src.is_dir() and paths.get("deploy"):
+            paths["deploy"].mkdir(parents=True, exist_ok=True)
+            for entry in deploy_src.iterdir():
+                if entry.is_file():
+                    safe_copy(entry, paths["deploy"] / entry.name)
 
     # Artifact directories this stage and its callees write into. `root/data`
     # is deliberately absent: document-library content lives there, it is not
@@ -1025,6 +1123,15 @@ class BuildWorkspaceStage(PipelineStage):
                 "gradlew" if platform.system() != "Windows" else "gradlew.bat"
             )
             if gradlew.exists():
+                # LDM-#1695: `_check_gradle_java_version` (handlers/base.py:845)
+                # was called from nowhere after PR #497 -- the import checked
+                # the *system* Java in `ImportValidationStage` but never the
+                # JVM Gradle would actually use. This is the one place that is
+                # about to run `gradlew`, so it is where the check belongs.
+                # Advisory: a mismatch is reported, not fatal, because the
+                # build below already handles its own failure.
+                with contextlib.suppress(Exception):
+                    manager._check_gradle_java_version(gradlew)
                 if platform.system() != "Windows":
                     try:
                         os.chmod(gradlew, 0o755)  # nosec B103

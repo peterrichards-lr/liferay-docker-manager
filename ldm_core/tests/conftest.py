@@ -1,6 +1,55 @@
 import os
+import subprocess  # nosec B404 - used to run this repository's own generator
+import sys
+from pathlib import Path
 
 import pytest
+
+
+def pytest_configure(config):
+    """Generates ldm_core/ui_colors.py before collection if it is missing.
+
+    LDM-#1707. That module is produced by scripts/sync_colors.py and is
+    gitignored, so a fresh clone -- and every `git worktree add`, which starts
+    with no ignored files at all -- does not have it. Without it the
+    `from ldm_core.ui_colors import UIColors` in ui.py raises ImportError and
+    falls back to the stub whose every colour is the empty string.
+
+    Five tests hardcode ANSI escapes in their expected strings, so they then
+    fail on output that differs only by invisible characters. pytest prints
+    both, they look identical, and nothing mentions colours. The plausible
+    reactions are all wrong: conclude master is red, "fix" five healthy tests
+    to match uncoloured output, or hunt a regression that is not there.
+
+    Generating it here rather than only in setup_pre_commit.sh is deliberate:
+    the failure is a property of running the suite, so the suite is where it
+    should be impossible. A generator that cannot run is reported rather than
+    swallowed -- silently continuing would restore the very ambiguity this
+    exists to remove.
+    """
+    colors = Path(__file__).resolve().parents[2] / "ldm_core" / "ui_colors.py"
+    if colors.exists():
+        return
+
+    generator = colors.parents[1] / "scripts" / "sync_colors.py"
+    if not generator.exists():
+        return
+
+    try:
+        subprocess.run(  # nosec B603 - fixed argv, repository-local script
+            [sys.executable, str(generator)],
+            cwd=str(generator.parent.parent),
+            check=True,
+            capture_output=True,
+            timeout=60,
+        )
+    except (subprocess.SubprocessError, OSError) as e:
+        raise pytest.UsageError(
+            f"ldm_core/ui_colors.py is missing and could not be generated ({e}). "
+            "Run scripts/sync_colors.py before the suite: without it, ui.py "
+            "falls back to empty colour codes and tests asserting ANSI output "
+            "fail on invisible characters (LDM-#1707)."
+        ) from e
 
 
 @pytest.fixture(autouse=True)
