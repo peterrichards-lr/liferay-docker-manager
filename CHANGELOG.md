@@ -7,15 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.22.0-pre.4] - 2026-09-14
 
-### Added
+Three defects found by *using* LDM rather than by reading it -- each one silent, and two of
+them the reason another one took so long to find. Tagged but never published: its own CI
+failed the CHANGELOG ratchet, because `v2.22.0-pre.3` below was left an empty stub. The
+same change set ships in `v2.22.0-pre.5`.
 
--
+### Fixed
+
+- **The port pre-flight asked the wrong machine**: `ldm --target <node> run` refused on a port conflict detected on the *operator's laptop*, naming a local PID and telling the user to free a local port -- none of which bears on whether the node can bind it. It was wrong in both directions: unable to see the node, it also **cleared** ports genuinely taken there, and the conflict resurfaced later as a container that would not start. `DockerService.published_host_ports`, `is_running` and `container_publishing_port` had all accepted a target since remote nodes shipped; the call sites simply never passed one. The socket probe stays local-only deliberately -- measured against a real node, a port held by a running container *times out* rather than connecting, because the security group drops it, so a probe there reports "free" for a port that is in use (LDM-#1727).
+- **`--fragment-patch-timeout` was a retry count, not a timeout**: it is documented, named and announced as a budget in seconds, then converted to `timeout // 5` retries with the `sleep(5)` *inside* the loop next to the HTTP calls. Nothing measured elapsed time, so the real cost was `retries x (request latency + 5s)` -- a floor rather than a ceiling, widening exactly when the API is slow, which is the case the budget exists to bound. Both loops took the full count independently, doubling it again, and the macOS external-drive bump makes the default 180 retries *per loop*. Observed: `ldm run` still polling after **27 minutes** against a nominal 900s budget with Liferay healthy throughout. Now a real `time.monotonic()` deadline, shared by both loops (LDM-#1728).
+- **The wait was also silent**: the per-attempt messages were `UI.detail`, which is gated behind INFO_MODE/VERBOSE, so a default run printed nothing at all for the entire poll -- indistinguishable from a hang, and diagnosing it needed a stack sample. There is now a visible line each minute naming the remaining budget (LDM-#1728).
+
+### Internal
+
+- **The fragment-override module rung was verified, and cannot fire**: LDM-#1618 asked for the measurement its own docstring said was missing (*"may not be a `fragmentEntryLinkId` at all ... confirm against a live instance"*). It is not one. On DXP 2026.q1.7-lts the Headless page-element `id` is a **UUID** (`6f4d9b77-4a14-a5dc-74b8-e0ef4dcee23c`), while the `fragmententrylink` rows behind the same page are numeric (`33693`); `PageElement.id` is declared `string` in the schema, and the module's own source takes `@PathParam("fragmentEntryLinkId") long`. A UUID cannot coerce, so JAX-RS answers 404 before the method body runs -- the rung has never fired once since it shipped. It is **kept**, not deleted: it routes through `FragmentEntryLinkLocalService`, so cache invalidation, model listeners and indexing all happen, none of which the SQL fallback can do. What changed is that LDM no longer spends a request proving the id is the wrong shape. The other two rungs stay, upstream-blocked and tracked by #883 (LDM-#1618).
+- **The fragment harness stopped producing a false negative**: it reported `No page element carried the fragment key` -- clean, plausible and wrong, and a message four independent faults each produce. Fixed: the page payload went to headless-admin-site carrying headless-delivery's schema (`400 The property "title" is not defined in SitePage.`); `friendlyUrlPath` needs a leading slash; and the fixture's `fragmentEntryKey` was ignored by Liferay, which derives the key from `name`, so the harness matched a key that never existed. A fourth is worked around: the collection is deployed during `ldm import`, before resource permissions exist, and the deploy throws `NoSuchResourcePermissionException` while Liferay still logs *"Deployed ... successfully"* -- leaving `fragmententry` empty. It is now redeployed after boot (LDM-#1729).
+- **And one that cannot be fixed**: there is no Headless endpoint that creates a page element. `POST .../site-pages` accepts nested `pageElements`, returns 2xx and discards them -- confirmed as zero `fragmententrylink` rows, with both the bare and collection-qualified key; delivery `PUT` is 405; the admin-site element `PUT` needs an element that already exists. #883 records the same wall from the other side. A page carrying a fragment must come from a site initializer or the UI, which is precisely the scenario the override feature is *for*. The harness now reads the page back, treats that as the authority rather than the create status, and says so plainly (LDM-#1729).
 
 ## [v2.22.0-pre.3] - 2026-09-14
 
+Mostly about the verification suite being able to tell the truth: what it ships with, and
+what it reports when it cannot run.
+
 ### Added
 
--
+- **`verification-bundle.zip` is published per release**: `docs/TESTING.md` told a verifier to `curl` a single script, and the suite also needs `common/` -- the DXP activation key and the Elasticsearch configuration. Without it LDM emits a *warning*, not a failure, so the run completed, exited 0 and reported success having applied neither. Every assertion genuinely passed; they tested a smaller system than the report claimed. That is the LDM-#1662 family one layer quieter: there a *failed* run was reported as passed, here a *degraded* one. The bundle also fixes a second hazard -- `LDM_REF` is derived from whichever binary is on `PATH`, so the script could come from a different release than the binary under test; published per tag, the pairing is structural. The builder refuses to produce a bundle missing any required member, because a quiet omission would recreate the original hole while looking like the fix for it (LDM-#1718).
+
+### Fixed
+
+- **A macOS runner with no Docker was reported as a failure**: the best-effort platform job was permanently red for an environment nobody had verified either way. Skip is now a third state, distinct from both pass and fail, and its report is written outside the `verify-*` glob deliberately -- `sync_compatibility.py` derives status from report *content*, not filename, so a skip report inside that glob would have been ingested as a pass (LDM-#1720).
+
+### Internal
+
+- **Fragment harness**: creates its own page rather than requiring one placed by hand, fetches the per-DXP-line module jar, and gained `--node` to run against a registered compute node and `--search-mode` defaulting to `sidecar` -- a shared Global Search node is infrastructure a throwaway verification project should not have to provision (LDM-#1719).
+- **`jira-tracker` skill retired** in favour of the `github-jira-sync` plugin: one mechanism for raising and tracking upstream issues rather than two that could disagree.
 
 ## [v2.22.0-pre.2] - 2026-09-14
 
