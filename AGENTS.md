@@ -25,7 +25,7 @@ skill before starting work:
 | Release orchestration | `.agents/skills/release-orchestration/SKILL.md` |
 | GitHub workflows & PR scope | `.agents/skills/github-workflows/SKILL.md` |
 | Developer runbook | `.agents/skills/ldm-developer/SKILL.md` |
-| Upstream JIRA tracker | `.agents/skills/jira-tracker/SKILL.md` |
+| Upstream JIRA tracking | label an issue `JIRA`; the `github-jira-sync` plugin raises and tracks it |
 
 `.claude/skills` is a symlink to `.agents/skills` (LDM-#1378). Claude Code only
 discovers project skills under `.claude/skills/`, so without it none of the
