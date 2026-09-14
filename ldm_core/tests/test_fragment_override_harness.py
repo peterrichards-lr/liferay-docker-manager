@@ -213,22 +213,47 @@ class ThePageIsCreated(unittest.TestCase):
         self.mod = _load()
 
     class _Api:
-        def __init__(self, create_response, existing=None):
+        """POST result and read-back are separate: LDM-#1729 measured that a
+        2xx create does not mean the fragment was placed."""
+
+        def __init__(self, create_response, read_back=None):
             self.create_response = create_response
-            self.existing = existing or {}
+            self.read_back = read_back if read_back is not None else {}
             self.calls = []
 
         def request(self, method, path, payload=None):
             self.calls.append((method, path, payload))
             if method == "POST":
                 return self.create_response
-            return self.existing
+            return self.read_back
+
+    @staticmethod
+    def _placed():
+        """A read-back showing the fragment actually on the page."""
+        return {
+            "friendlyUrlPath": "/ldm-verify",
+            "pageDefinition": {
+                "pageElement": {
+                    "type": "Root",
+                    "pageElements": [{"type": "Fragment", "id": "uuid-1"}],
+                }
+            },
+        }
+
+    @staticmethod
+    def _empty():
+        """What the API actually returns: Root only, children discarded."""
+        return {
+            "friendlyUrlPath": "/ldm-verify",
+            "pageDefinition": {"pageElement": {"type": "Root"}},
+        }
 
     def _sites(self):
-        return {"items": [{"externalReferenceCode": "SITE-1"}]}
+        # Delivery addresses sites by numeric id; admin-site supplies it.
+        return {"items": [{"externalReferenceCode": "SITE-1", "id": 20127}]}
 
     def test_it_posts_a_page_carrying_the_fragment_key(self):
-        api = self._Api({"friendlyUrlPath": "/ldm-verify"})
+        api = self._Api({"friendlyUrlPath": "/ldm-verify"}, self._placed())
 
         result = self.mod.ensure_page_with_fragment(api, self._sites())
 
@@ -238,9 +263,33 @@ class ThePageIsCreated(unittest.TestCase):
         self.assertIn("site-pages", path)
         self.assertIn(self.mod.FRAGMENT_KEY, str(payload))
 
+    def test_it_posts_to_headless_delivery_with_the_numeric_site_id(self):
+        """LDM-#1729: this payload shape is delivery's, not admin-site's.
+
+        Posted to admin-site it returned
+        `The property "title" is not defined in SitePage.`
+        """
+        api = self._Api({}, self._placed())
+
+        self.mod.ensure_page_with_fragment(api, self._sites())
+
+        _m, path, _p = api.calls[0]
+        self.assertIn("headless-delivery", path)
+        self.assertIn("20127", path)
+        self.assertNotIn("headless-admin-site", path)
+
+    def test_the_friendly_url_has_a_leading_slash(self):
+        """Without it: LayoutFriendlyURLException (LDM-#1729)."""
+        api = self._Api({}, self._placed())
+
+        self.mod.ensure_page_with_fragment(api, self._sites())
+
+        _m, _p, payload = api.calls[0]
+        self.assertTrue(str(payload["friendlyUrlPath"]).startswith("/"))
+
     def test_the_page_starts_at_the_default_value(self):
         """The override has to change something, so it must start unchanged."""
-        api = self._Api({"friendlyUrlPath": "/ldm-verify"})
+        api = self._Api({"friendlyUrlPath": "/ldm-verify"}, self._placed())
 
         self.mod.ensure_page_with_fragment(api, self._sites())
 
@@ -248,20 +297,42 @@ class ThePageIsCreated(unittest.TestCase):
         self.assertIn(self.mod.DEFAULT_VALUE, str(payload))
 
     def test_an_existing_page_is_accepted(self):
-        """A second run must not fail because the page is already there."""
-        api = self._Api(
-            {"_error": 409},
-            existing={"items": [{"id": "77", "key": self.mod.FRAGMENT_KEY}]},
-        )
+        """A second run must not fail because the page is already there.
+
+        The read-back is what decides, so a 409 on create is irrelevant when
+        the fragment is on the page.
+        """
+        api = self._Api({"_error": 409}, self._placed())
 
         result = self.mod.ensure_page_with_fragment(api, self._sites())
 
         self.assertTrue(result["ok"])
-        self.assertIn("already", result["summary"])
+
+    def test_a_created_page_without_the_fragment_is_not_success(self):
+        """The measured reality: POST returns 2xx and discards the children.
+
+        Trusting the status here hands the rest of the harness an empty page,
+        which then reports "no page element carried the fragment key" -- the
+        exact false negative LDM-#1729 was filed for.
+        """
+        api = self._Api({"friendlyUrlPath": "/ldm-verify"}, self._empty())
+
+        result = self.mod.ensure_page_with_fragment(api, self._sites())
+
+        self.assertFalse(result["ok"], "a 2xx was taken as proof of placement")
+        self.assertIn("NOT placed", result["summary"])
+
+    def test_the_limitation_is_explained_not_just_reported(self):
+        """Whoever reads this needs to know it is an API wall, not a bug."""
+        api = self._Api({}, self._empty())
+
+        summary = self.mod.ensure_page_with_fragment(api, self._sites())["summary"]
+
+        self.assertIn("site initializer", summary)
 
     def test_a_failure_reports_the_api_response_verbatim(self):
         """Silent fallback would be indistinguishable from a broken fragment."""
-        api = self._Api({"_error": 400, "_reason": "bad schema"}, existing={})
+        api = self._Api({"_error": 400, "_reason": "bad schema"}, {})
 
         result = self.mod.ensure_page_with_fragment(api, self._sites())
 
@@ -292,12 +363,24 @@ class TheDocstringDoesNotOverclaim(unittest.TestCase):
         if head is None:
             self.fail("the harness lost its module docstring")
 
-        self.assertIn("through the Headless API", head)
         self.assertIn(
-            "If the page cannot be created",
+            "CANNOT CURRENTLY RUN UNATTENDED",
             head,
-            "the docstring must state what happens when creation fails, or it "
-            "overclaims again",
+            "the docstring must lead with the limitation, not bury it: it "
+            "claimed the harness created its own page long after that was "
+            "measured impossible (LDM-#1729)",
+        )
+        self.assertIn(
+            "WHAT IT DOES NOT PROVE",
+            head,
+            "the docstring must state what happens when placement fails, or "
+            "it overclaims again",
+        )
+        self.assertNotIn(
+            "overridden end to end",
+            head,
+            "no override has been demonstrated end to end -- the fragment "
+            "cannot be placed on a page yet",
         )
 
 
