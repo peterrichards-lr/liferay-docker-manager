@@ -22,6 +22,13 @@ if ! command -v pre-commit &> /dev/null; then
     python3 -m pre_commit install
 fi
 
+# LDM-#1707: ui_colors.py is generated and gitignored, so a fresh clone or
+# worktree does not have it. Without it ui.py falls back to empty colour codes,
+# and five tests that assert ANSI output fail on invisible characters. Cheap and
+# idempotent, so it runs unconditionally.
+echo "=> Generating terminal colour module..."
+python3 scripts/sync_colors.py
+
 echo "=> Running pre-commit on all files..."
 # We use || true so the script doesn't abort if pre-commit finds issues,
 # allowing the user to see the output.
