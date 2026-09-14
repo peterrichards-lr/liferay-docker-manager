@@ -577,11 +577,28 @@ jobs:
         run: |
           cp LICENSE bin-temp/
 
+      # LDM-#1718: the suite is useless without `common/`, and the documented
+      # way to get it was a single-file curl that never fetched it. LDM then
+      # only WARNS, so the run completed, exited 0 and reported success having
+      # never applied the DXP activation key or the Elasticsearch config.
+      #
+      # Publishing the bundle per tag also removes the `${LDM_REF}` hazard: the
+      # script and the binary now come from the same release by construction,
+      # rather than whichever ref the verifier happened to type.
+      #
+      # The builder fails hard when a required member is absent, so a bundle
+      # that would verify less than it claims cannot be published quietly.
+      - name: Build Verification Bundle
+        shell: bash
+        run: |
+          python3 scripts/build_verification_bundle.py \
+            --tag "${{ github.ref_name }}" --out bin-temp
+
       - name: Generate Checksums
         shell: bash
         run: |
           cd bin-temp
-          sha256sum ldm-linux ldm-macos-arm64 ldm-macos-x86_64 ldm-windows.exe ../compatibility.json > checksums.txt
+          sha256sum ldm-linux ldm-macos-arm64 ldm-macos-x86_64 ldm-windows.exe verification-bundle.zip ../compatibility.json > checksums.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
@@ -594,6 +611,7 @@ jobs:
             bin-temp/ldm-windows.exe
             bin-temp/checksums.txt
             bin-temp/LICENSE
+            bin-temp/verification-bundle.zip
             compatibility.json
           make_latest: ${{ steps.check_release.outputs.is_release == 'true' }}
           fail_on_unmatched_files: true
