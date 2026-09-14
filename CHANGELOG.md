@@ -7,9 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.22.0-pre.1] - 2026-09-14
 
+Five of the six user-visible items in this release are **restorations**. A single commit --
+`ba24c012`, "Refactor cmd_import into modular ImportPipeline" (PR #497, 2026-07-10) --
+rebuilt a `project_meta` literal and a workspace-path derivation from scratch and silently
+dropped fields on the way. Nothing failed, no test went red, and the losses shipped for
+two months. They were found one at a time while fixing the first, then enumerated
+mechanically so the set could be closed rather than kept being stumbled into (LDM-#1695).
+
 ### Added
 
--
+- **Workspace Product Pin**: `ldm run` now compares the tag it resolved against the linked workspace's `liferay.workspace.product` and warns when they disagree, offering the pinned tag interactively and proceeding under `-y`. A shared OSGi fragment/override bundle carries `Import-Package` ranges bound to one product line, so a bundle built for `dxp-2026.q3.0` does not resolve on `2026.q3.2` -- and the failure surfaces as an unresolved bundle in the OSGi log at boot, a long way from the tag decision that caused it. Silent on an explicit `-t`, on agreement, and where the workspace has no pin (LDM-#1658).
+
+### Fixed
+
+- **Liferay Cloud Import**: importing or linking an LCP workspace copied **none** of its standalone services and read its code from the repository root rather than the nested `liferay/` workspace, where an LCP repository keeps nothing. Detection ran through a `hasattr` guard naming a method that has never existed at any commit, so it was permanently false; the service scan it gated was also walking one level *above* the repository, so repointing detection alone would still have found nothing. `--cloud-project` was declared on four commands and read by none, with `handlers/cloud.py` falling through to the project directory name -- so `lcp` commands ran against a guessed project. A non-interactive import that cannot determine the ID now refuses with exit `2` rather than guessing (LDM-#1681).
+- **Workspace Product Tag**: an imported or linked workspace recorded no `tag` at all, so tag resolution fell through to discovery and the project booted whatever line that returned. The workspace's own `liferay.workspace.product` is read again, along with the portal/DXP flag that decides the image repository. Unlike the original, an explicit `-t` now wins over the pin -- an explicit tag is a decision, not an accident, which is the same rule LDM-#1658 applies (LDM-#1693).
+- **Linked Workspace Path**: `ldm link` stopped recording the workspace it linked to, so `ldm monitor <project>` with no path argument refused, and `ldm snapshot` silently dropped the workspace's git origin. `ldm link` itself kept working, which is why this stayed quiet -- it is re-attaching the watcher afterwards that failed (LDM-#1684).
+- **Import Rollback**: a failed import into an **existing** project now restores the artifact directories it had already overwritten, instead of leaving them half-written. A brand-new project was always cleaned up; an existing one never was (LDM-#1677).
+- **Logging Output**: `logging` records are routed into the trace log at `~/.ldm/last-command.log` instead of raw stderr, so library output no longer interleaves with LDM's own console rendering (LDM-#1669).
+
+### Internal
+
+- **Rollback Allowlist**: narrowed to the one real gap, and the stage-ownership rule it rests on is now asserted rather than described (LDM-#1643).
+- **`hasattr` Ratchet**: a dead `hasattr`-guarded branch removed, and an AST check added that fails when such a guard names something defined nowhere under `ldm_core`. `hasattr` around a call is uniquely quiet -- no `AttributeError`, no failing test, nothing for a linter to object to -- and two instances survived a God Object decomposition, a pipeline refactor and a shim cleanup between them. The allowlist is now **empty** (LDM-#1679, LDM-#1681).
+- **E2E Coverage**: `scripts/verify_e2e_refactor.{sh,ps1}` gain assertions for the cloud import, the cloud project ID refusal and the workspace product pin. Each was run against the pre-fix commit and observed to fail before being committed; a test that has never failed has not been shown to test anything. The `ldm link` assertion for LDM-#1684 is deliberately deferred and tracked, because `cmd_link` ends in a watcher that never returns (LDM-#1690, LDM-#1689).
+- **Environment Setup**: the testing-and-ci skill pointed at `.pytest_venv/bin/pre-commit`, a console script endpoint protection deletes by name, in a venv the developer skill says is not a safe fallback. It now points at `scripts/setup_pre_commit.sh`, which has existed since July and was referenced nowhere (LDM-#1687).
 
 ## [v2.21.1] - 2026-09-11
 
