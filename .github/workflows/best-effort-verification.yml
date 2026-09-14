@@ -66,13 +66,19 @@ jobs:
           brew install colima docker docker-compose || true
 
       # The continue-on-error here is NOT the LDM-#1611 defect and is kept
-      # deliberately: if Colima cannot start, the suite step below fails on
-      # its own (and now says so), which produces a report and the failure
-      # debug logs instead of aborting the job with only a brew/colima trace.
+      # deliberately: if Colima cannot start, the probe below decides what that
+      # means, rather than aborting the job with only a brew/colima trace.
+      #
+      # LDM-#1720: `--vm-type=vfkit` was tried first and has never worked --
+      # this Colima rejects it outright with `invalid vmType: 'vfkit'`, so the
+      # only thing it produced was a `fatal` line making the log look worse
+      # than it was. `vz` is the real first choice on Apple Silicon; `qemu` is
+      # a genuine fallback rather than a synonym for the default.
       - name: Start Colima
         continue-on-error: true
         run: |
-          colima start --cpu 2 --memory 4 --vm-type=vfkit || colima start --cpu 2 --memory 4
+          colima start --cpu 2 --memory 4 --vm-type=vz \
+            || colima start --cpu 2 --memory 4 --vm-type=qemu
 
       # LDM-#1611: `continue-on-error: true` was here, and it is the whole bug
       # on this platform. The bash script propagates its own failure correctly
@@ -87,7 +93,36 @@ jobs:
       # cannot report failure is worse than an absent one, because it
       # manufactures the evidence the compatibility matrix is built from.
       # A red job says "unverified"; a green one said "verified" and was wrong.
+      # LDM-#1720: the third state.
+      #
+      # Before this there were two outcomes -- passed and failed -- and
+      # "Docker never started, so nothing was attempted" was being forced into
+      # "failed". That is not a failure, it is an absence, and reporting it as
+      # red on every single release tag taught everyone to ignore the one job
+      # that is supposed to tell them something is wrong.
+      #
+      # The hosted macOS image cannot reliably boot Colima's `vz` driver: the
+      # VM gets as far as `Converting datadisk to a raw disk` and then exits
+      # with `Running:false`. That is a runner limitation, not an LDM defect.
+      #
+      # This probe decides which of the three outcomes applies. It does NOT
+      # weaken LDM-#1611 -- if Docker is up, the suite runs and its failure is
+      # still red. What changed is that a run which never started is no longer
+      # described as one that failed.
+      - name: Probe the Docker daemon
+        id: docker_probe
+        shell: bash
+        run: |
+          if docker info >/dev/null 2>&1; then
+            echo "usable=true" >> "$GITHUB_OUTPUT"
+            echo "Docker is usable; the suite will run and its result will be reported."
+          else
+            echo "usable=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Colima did not start, so Docker is unavailable on this runner. Nothing will be verified on macOS for this tag."
+          fi
+
       - name: Run E2E Verification Suite (macOS)
+        if: steps.docker_probe.outputs.usable == 'true'
         env:
           GITHUB_ACTIONS: "true"
         run: |
@@ -96,17 +131,60 @@ jobs:
           pip install .
           bash scripts/verify_e2e_refactor.sh --ci
 
+      # Deliberately NOT named `verify-*.txt`.
+      #
+      # The compatibility-sync tool decides a report's status by scanning its
+      # CONTENT for failure markers and defaulting to pass
+      # (`status_slug = "pass" if passed else "fail"`) -- it does not key on the
+      # filename. A tidy `verify-...-skip.txt` with no failure markers in it
+      # would therefore be ingested as a PASS, recording
+      # "verified on macOS" for a run that never started Docker. That is the
+      # precise harm LDM-#1611 exists to prevent, reintroduced through the back
+      # door.
+      #
+      # A name outside the `verify-*` glob cannot be picked up by that tool at
+      # all, which is a structural guarantee rather than a careful one.
+      - name: Record that nothing was verified
+        if: steps.docker_probe.outputs.usable != 'true'
+        shell: bash
+        run: |
+          stamp="$(date -u +%Y%m%d-%H%M%S)"
+          cat > "macos-SKIPPED-${stamp}.txt" <<'EOF'
+          LDM macOS verification: SKIPPED -- nothing was verified.
+
+          Colima could not start on this GitHub-hosted macOS runner, so there was
+          no Docker daemon and the suite was not run. This is a runner
+          limitation (the `vz` driver fails during VM boot), not a result about
+          LDM.
+
+          This is deliberately NOT reported as a failure: no verification was
+          attempted, so there is nothing to have failed. It is equally
+          deliberately NOT reported as a pass -- the compatibility matrix keys
+          on `-pass` reports and must never record this as verified.
+
+          macOS coverage for this tag comes from the manually verified runs
+          recorded in the compatibility matrix (LDM-#1662, LDM-#1720).
+          EOF
+
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: verification-results-macos
-          path: verify-*.txt
+          path: |
+            verify-*.txt
+            macos-SKIPPED-*.txt
           retention-days: 7
 
       # LDM-#1611: see the equivalent step in verify-linux.
+      #
+      # LDM-#1720: gated on the probe. When Docker never came up the suite did
+      # not run, so there is no report to assert on -- and demanding one would
+      # fail the job for an absence, which is the whole defect being fixed.
+      # When Docker IS up this is unchanged: a `-fail.txt` or a missing
+      # "ALL E2E VERIFICATIONS PASSED" marker still fails the job.
       - name: Assert the verification report says it passed
-        if: always()
+        if: always() && steps.docker_probe.outputs.usable == 'true'
         shell: bash
         run: |
           shopt -s nullglob
