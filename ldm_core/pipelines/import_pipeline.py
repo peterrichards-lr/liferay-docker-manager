@@ -380,6 +380,9 @@ class ProjectSetupStage(PipelineStage):
         if manifest.get("db_type"):
             project_meta["db_type"] = manifest["db_type"]
 
+        if not is_ldmp:
+            self._apply_workspace_product(context, project_meta)
+
         from ldm_core.utils import sanitize_id
 
         safe_container_name = sanitize_id(project_name)
@@ -426,6 +429,86 @@ class ProjectSetupStage(PipelineStage):
         self._resolve_cloud_project_id(context, project_meta)
 
         manager.write_meta(project_path, project_meta)
+
+    @staticmethod
+    def _apply_workspace_product(context: PipelineContext, project_meta: dict) -> None:
+        """Take the project's tag from the workspace's own pin (LDM-#1693).
+
+        PR #497 rebuilt the `project_meta` literal without the
+        `liferay.workspace.product` read, so an imported or linked workspace
+        has recorded no `tag` at all since 2026-07-10. `_resolve_tag` then
+        falls through to discovery, and the project boots a line the workspace
+        was not built for.
+
+        That also made LDM-#1658 noisy: with nothing recorded, discovery and
+        the pin disagree on *every* run, so the mismatch warning fired
+        constantly instead of only when the user had chosen a different tag.
+        Measured before this change -- a workspace pinned to `dxp-2026.q3.0`
+        warned on every `ldm run`, resolving `2026.q1.12-lts`.
+
+        Two deliberate differences from the line being restored:
+
+        * **an explicit `-t` now wins.** The original comment read "Workspace
+          product always wins" and it overrode the flag. LDM-#1658 settled the
+          opposite principle for the same collision -- an explicit tag is a
+          decision, not an accident -- and the two must agree or the warning
+          contradicts the behaviour.
+        * **`manager.args` is not mutated.** The original assigned
+          `self.manager.args.tag`; `cmd_import` has since moved deliberately
+          away from that ("Resolve parameters to avoid mutating manager.args
+          directly"). Writing `project_meta` is sufficient: the post-import
+          `cmd_run` re-reads the meta this stage writes.
+
+        The seeded start the original also drove from here needs nothing: the
+        run pipeline calls `_ensure_seeded` itself (`pipelines/run.py:1264`)
+        with whatever tag it resolves, so recording the right tag restores the
+        right seed as a consequence.
+        """
+        import re
+
+        context = typing.cast(ImportPipelineContext, context)
+        manager = context.manager
+
+        if getattr(manager.args, "tag", None):
+            return
+
+        workspace_root = context.get("workspace_root") or context.get(
+            "extracted_source"
+        )
+        if not isinstance(workspace_root, Path):
+            return
+
+        gradle_props = workspace_root / "gradle.properties"
+        try:
+            if not gradle_props.is_file():
+                return
+            content = gradle_props.read_text(encoding="utf-8")
+        except OSError:
+            return
+
+        # Anchored to the line start so a commented-out pin is not read as one.
+        match = re.search(
+            r"^[ \t]*liferay\.workspace\.product[ \t]*=[ \t]*(\S+)[ \t]*$",
+            content,
+            re.MULTILINE,
+        )
+        if not match:
+            return
+
+        raw_product = match.group(1)
+        from ldm_core.utils import resolve_liferay_docker_tag
+
+        resolved_tag, is_portal = resolve_liferay_docker_tag(raw_product, manager)
+        if resolved_tag:
+            project_meta["tag"] = resolved_tag
+            project_meta["portal"] = "true" if is_portal else "false"
+        else:
+            # Offline, or a product key releases.json does not carry. Stripping
+            # the prefix is what the original did and is better than recording
+            # nothing -- `2026.q1.7` is still the right image, just unconfirmed.
+            project_meta["tag"] = re.sub(r"^(dxp|portal)-", "", raw_product)
+
+        UI.detail(f"Workspace pins {raw_product}; using tag {project_meta['tag']}.")
 
     @staticmethod
     def _record_linked_workspace(context: PipelineContext, project_meta: dict) -> None:
