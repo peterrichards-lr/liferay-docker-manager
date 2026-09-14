@@ -206,6 +206,14 @@ RELEASE_ANNOUNCEMENTS = {
             "ldm import",
             "A failed import into an existing project restores the artifact directories it had overwritten, instead of leaving them half-written",
         ),
+        (
+            "ldm rm --delete",
+            "Now asks before removing anything, naming the size and whether a snapshot exists -- and archives the project's configuration to ~/.ldm/removed first, with credentials removed unless you pass --keep-credentials",
+        ),
+        (
+            "ldm run --dry-run",
+            "Previews the whole command instead of stopping three phases in with a FATAL mount error on a healthy host",
+        ),
     ],
     "2.21": [
         (
