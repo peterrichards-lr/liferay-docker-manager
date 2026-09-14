@@ -2399,6 +2399,33 @@ class ExecutionStage(PipelineStage):
                 )
                 return None
             no_wait = context.get("no_wait") or getattr(manager.args, "no_wait", False)
+
+            # LDM-#1704: nothing was started under a dry run, so nothing can
+            # become ready -- `_wait_for_ready` polls a container that does not
+            # exist for the full `--timeout` (900s by default) and then reports
+            # a boot failure that never happened.
+            #
+            # Latent until now. The mount check aborted every dry run three
+            # phases earlier (`FATAL: VOLUME MOUNTING IS BROKEN`), so execution
+            # had never reached this line -- the same shape as LDM-#1262, where
+            # fixing one assertion revealed the next block had been broken all
+            # along. Fixing only the mount check would have turned a wrong
+            # message into a fifteen-minute hang, which is worse.
+            #
+            # Not folded into `no_wait`: that branch also starts share tunnels
+            # and prints a "started in background" banner, neither of which is
+            # true here.
+            if getattr(manager, "dry_run", False):
+                UI.warning(
+                    f"  {UI.BYELLOW}- [Dry Run] Would wait for Liferay to become "
+                    f"ready, then report the project URL{UI.COLOR_OFF}"
+                )
+                # Bare, not `return True`: `PipelineStage.execute` is declared
+                # `-> None` and `Pipeline.run` discards stage return values.
+                # The neighbouring `return ready` only type-checks because
+                # `ready` is `Any`.
+                return None
+
             if not no_wait:
                 timeout_val = getattr(manager.args, "timeout", 900)
                 if timeout_val is None:
