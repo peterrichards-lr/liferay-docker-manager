@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.22.0-pre.6] - 2026-09-15
+
+### Added
+
+-
+
 ## [v2.22.0-pre.5] - 2026-09-14
 
 Carries the `v2.22.0-pre.4` change set -- that tag published nothing, because its own CI
