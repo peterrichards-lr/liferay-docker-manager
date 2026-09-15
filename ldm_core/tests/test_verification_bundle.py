@@ -86,13 +86,39 @@ class WhatItContains(BundleTestCase):
             "common/ is absent -- the bundle reproduces the hole it exists to close",
         )
 
-    def test_the_activation_key_travels(self):
+    def test_the_activation_key_travels_when_there_is_one(self):
+        """Only ever true locally -- see the honesty test below."""
         names = self._names(self._build())
 
-        self.assertTrue(
-            any("activation-key" in n for n in names),
-            "without the activation key the suite verifies an unlicensed DXP "
-            "and says nothing about it",
+        self.assertTrue(any("activation-key" in n for n in names))
+
+    def test_an_absent_activation_key_is_declared_not_glossed_over(self):
+        """LDM-#1733: the manifest used to claim the key was in the bundle.
+
+        It cannot be. `.gitignore` excludes `common/activation-key-*.xml` --
+        correctly, it is licensed -- so no CI checkout has one to package, and
+        every published bundle lacks it. The manifest asserted otherwise while
+        listing its own contents, which showed no key, directly underneath.
+
+        This passed before the fix because `collect()` walks the filesystem
+        rather than git, and a developer's checkout HAS the key sitting there
+        untracked. The test verified the developer's machine, not the artifact
+        users download -- the precise shape the Behaviour Coverage Gate exists
+        to catch.
+        """
+        repo = _fake_repo(self.base / "nokey")
+        for stray in (repo / "common").glob("activation-key-*"):
+            stray.unlink()
+
+        with zipfile.ZipFile(self.mod.build("v9.9.9", self.out, root=repo)) as archive:
+            text = archive.read("MANIFEST.txt").decode()
+
+        self.assertIn("NOT INCLUDED", text)
+        self.assertIn("activation-key", text)
+        self.assertIn(
+            "cp ",
+            text,
+            "saying it is missing is only half of it -- say how to supply one",
         )
 
     def test_both_script_halves_travel_together(self):
@@ -179,6 +205,22 @@ class TheRealRepositoryBuilds(unittest.TestCase):
         self.assertTrue(any(n.startswith("common/") for n in names))
         self.assertIn("verify_e2e_refactor.sh", names)
         self.assertIn("verify_e2e_refactor.ps1", names)
+
+    def test_the_manifest_never_claims_a_key_it_does_not_carry(self):
+        """Against the real tree, whichever way this machine happens to be set
+        up: the manifest and the contents must agree."""
+        mod = _load()
+        with TemporaryDirectory() as tmp:
+            with zipfile.ZipFile(mod.build("v0.0.0-test", Path(tmp))) as archive:
+                names = archive.namelist()
+                text = archive.read("MANIFEST.txt").decode()
+
+        has_key = any("activation-key" in n for n in names)
+        self.assertEqual(
+            has_key,
+            "NOT INCLUDED: the DXP activation key" not in text,
+            "the manifest and the bundle contents disagree about the key",
+        )
 
 
 class TheReleaseWorkflowPublishesIt(unittest.TestCase):
