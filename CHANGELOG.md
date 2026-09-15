@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.22.0-pre.5] - 2026-09-14
 
-### Added
+Carries the `v2.22.0-pre.4` change set -- that tag published nothing, because its own CI
+failed the CHANGELOG ratchet -- plus the CHANGELOG entries whose absence caused it. See
+the `v2.22.0-pre.4` entry below for what the fixes actually are.
 
--
+### Internal
+
+- **CHANGELOG entries for `v2.22.0-pre.3` and `v2.22.0-pre.4`**: `release.py` stubs an entry for the version it is cutting and the ratchet exempts only that one, so the *previous* release must be described before the next cut. `pre.3` was left a stub, which passed locally -- it was still the exempt "being released" version at the time -- and failed in CI once `pre.4` became current. Tags are immutable, so `pre.4` is burnt rather than re-cut (LDM-#1699).
 
 ## [v2.22.0-pre.4] - 2026-09-14
 
