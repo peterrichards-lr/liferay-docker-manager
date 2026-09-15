@@ -5,7 +5,7 @@
 
     curl -fsSL ".../${LDM_REF}/scripts/verify_e2e_refactor.sh" -o verify_e2e_refactor.sh
 
-But LDM looks for a `common/` folder beside it, holding the DXP activation key
+But LDM looks for a `common/` folder beside it, holding the Elasticsearch
 and the Elasticsearch configuration. When it is absent, `handlers/config.py`
 emits a **warning**, not a failure:
 
@@ -29,7 +29,7 @@ WHAT GOES IN, AND WHY EACH
     verify_e2e_refactor.sh / .ps1   both halves, so one bundle serves either
                                     platform and the pair cannot drift apart in
                                     a verifier's download
-    common/                         the actual gap: activation key, Elasticsearch
+    common/                         the actual gap: Elasticsearch
                                     and session configuration
     verify_fragment_override.py     the optional LDM-#1618 arm, so it travels
                                     with the suite it belongs to
@@ -123,10 +123,29 @@ def manifest(tag: str, members: list[tuple[Path, str]]) -> str:
         "branch ref, as the old instructions did, could pair one release's suite",
         "with another release's binary.",
         "",
-        "`common/` carries the DXP activation key and the Elasticsearch and",
-        "session configuration. Without it LDM only WARNS and the suite still",
-        "reports success, having verified a smaller system than it claims. Keep",
-        "it beside the script.",
+        "`common/` carries the Elasticsearch and session configuration. Without",
+        "it LDM only WARNS and the suite still reports success, having verified",
+        "a smaller system than it claims. Keep it beside the script.",
+        "",
+    ]
+    # LDM-#1733: the manifest used to assert that the activation key travelled
+    # in this bundle. It cannot: `.gitignore` excludes `common/activation-key-*.xml`,
+    # correctly -- it is licensed and must not be published -- so no CI
+    # checkout has one to package. Saying otherwise told a verifier the
+    # licensed half was covered when it was not, which is the same
+    # reported-better-than-reality failure the bundle exists to stop.
+    if any(arc.startswith("common/activation-key-") for _src, arc in members):
+        lines.append("The DXP activation key is included.")
+    else:
+        lines += [
+            "NOT INCLUDED: the DXP activation key. `common/activation-key-*.xml`",
+            "is gitignored -- it is licensed and cannot be published -- so no",
+            "release bundle can carry one. Liferay will run unlicensed and LDM",
+            "will only warn. Copy your own key into `common/` before running:",
+            "",
+            "    cp /path/to/activation-key-*.xml ./common/",
+        ]
+    lines += [
         "",
         "Contents:",
     ]
