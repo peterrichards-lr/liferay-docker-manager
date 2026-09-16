@@ -158,8 +158,8 @@ rm -f "${TARGET_DIR}/verification-bundle.zip"
 
 # LDM-#1735: the repo keeps these 0644, so a faithful zip lands un-runnable.
 chmod +x "${TARGET_DIR}/verify_e2e_refactor.sh" 2>/dev/null || true
-[ -f "${TARGET_DIR}/verify_fragment_override.py" ] \
-    && chmod +x "${TARGET_DIR}/verify_fragment_override.py" 2>/dev/null || true
+[ -f "${TARGET_DIR}/fragment_override_harness.py" ] \
+    && chmod +x "${TARGET_DIR}/fragment_override_harness.py" 2>/dev/null || true
 
 if [ -n "$BINARY_ASSET" ]; then
     note "Downloading ${BINARY_ASSET}..."

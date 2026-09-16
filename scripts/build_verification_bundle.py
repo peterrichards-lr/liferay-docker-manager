@@ -31,7 +31,7 @@ WHAT GOES IN, AND WHY EACH
                                     a verifier's download
     common/                         the actual gap: Elasticsearch
                                     and session configuration
-    verify_fragment_override.py     the optional LDM-#1618 arm, so it travels
+    fragment_override_harness.py     the optional LDM-#1618 arm, so it travels
                                     with the suite it belongs to
     MANIFEST.txt                    what this bundle is, which tag it came from,
                                     and what each member is for
@@ -59,7 +59,7 @@ REQUIRED_FILES = (
     "scripts/verify_e2e_refactor.ps1",
 )
 REQUIRED_DIRS = ("common",)
-OPTIONAL_FILES = ("scripts/verify_fragment_override.py",)
+OPTIONAL_FILES = ("scripts/fragment_override_harness.py",)
 
 BUNDLE_NAME = "verification-bundle.zip"
 

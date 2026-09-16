@@ -55,9 +55,9 @@ WHY IT IS NOT IN verify_e2e_refactor.sh
     an on-demand harness, run deliberately, not part of the default gate.
 
 USAGE
-    python3 scripts/verify_fragment_override.py --project fragverify
-    python3 scripts/verify_fragment_override.py --project fragverify --keep
-    python3 scripts/verify_fragment_override.py --project fragverify \
+    python3 scripts/fragment_override_harness.py --project fragverify
+    python3 scripts/fragment_override_harness.py --project fragverify --keep
+    python3 scripts/fragment_override_harness.py --project fragverify \
         --require-module            # additionally assert the module rung
 
 The fixture builder below is importable and has unit tests
@@ -118,7 +118,7 @@ def build_fragment_collection(dest: Path) -> Path:
     (collection / "collection.json").write_text(
         json.dumps(
             {
-                "description": "Built by verify_fragment_override.py (LDM-#1618).",
+                "description": "Built by fragment_override_harness.py (LDM-#1618).",
                 "name": COLLECTION_NAME,
             },
             indent=2,
