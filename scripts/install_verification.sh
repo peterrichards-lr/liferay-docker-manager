@@ -150,6 +150,12 @@ note "Verifying checksums..."
 ( cd "$TARGET_DIR" && $SHA_CHECK SHA256SUMS >/dev/null ) \
     || die "checksum mismatch in the bundle -- re-download rather than run it"
 
+# LDM-#1741: the archive has done its job once the contents are extracted AND
+# verified, so remove it. Deliberately AFTER the checksum check, never before:
+# a failed verification is exactly when the archive is worth keeping, because
+# it is the evidence of what actually arrived.
+rm -f "${TARGET_DIR}/verification-bundle.zip"
+
 # LDM-#1735: the repo keeps these 0644, so a faithful zip lands un-runnable.
 chmod +x "${TARGET_DIR}/verify_e2e_refactor.sh" 2>/dev/null || true
 [ -f "${TARGET_DIR}/verify_fragment_override.py" ] \
@@ -171,6 +177,9 @@ if [ -n "$BINARY_ASSET" ]; then
             die "binary checksum mismatch for ${BINARY_ASSET}"
         fi
         note "Binary checksum verified."
+        # LDM-#1741: spent once the binary is verified. SHA256SUMS stays --
+        # it covers the extracted files and lets them be re-checked later.
+        rm -f "${TARGET_DIR}/checksums.txt"
     else
         warn "could not fetch checksums.txt; the binary is UNVERIFIED"
     fi

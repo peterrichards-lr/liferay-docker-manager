@@ -147,6 +147,76 @@ class BothFindTheActivationKeyWhereItLives(unittest.TestCase):
         self.assertIn("if ([string]::IsNullOrWhiteSpace($ActivationKey))", self.ps1)
 
 
+class BothCleanUpAfterThemselves(unittest.TestCase):
+    """The archive is a means, not a deliverable (LDM-#1741).
+
+    Leaving `verification-bundle.zip` and `checksums.txt` beside the suite
+    gives the operator a directory where it is not obvious what is input, what
+    is output, and what is spent -- and an 80KB zip they now have to decide
+    about every time.
+
+    Removal happens AFTER verification, never before. A failed checksum is
+    precisely when the archive is worth keeping, because it is the evidence of
+    what actually arrived; deleting it first would destroy the one artifact
+    worth inspecting.
+
+    `SHA256SUMS` and `MANIFEST.txt` stay. They came out of the bundle and
+    remain useful: one re-checks the extracted files, the other records which
+    release this is and what it does not contain.
+    """
+
+    def setUp(self):
+        self.sh = SH.read_text(encoding="utf-8")
+        self.ps1 = PS1.read_text(encoding="utf-8")
+
+    def test_both_remove_the_archive(self):
+        self.assertIn('rm -f "${TARGET_DIR}/verification-bundle.zip"', self.sh)
+        self.assertIn("Remove-Item $zipPath", self.ps1)
+
+    def test_the_archive_is_removed_after_the_checksum_check(self):
+        """Removing it first would destroy the evidence on a failure."""
+        verify_at = self.sh.index("Verifying checksums")
+        remove_at = self.sh.index('rm -f "${TARGET_DIR}/verification-bundle.zip"')
+
+        self.assertLess(
+            verify_at,
+            remove_at,
+            "the archive is deleted before it is verified, so a corrupt "
+            "download leaves nothing to inspect",
+        )
+
+    def test_both_remove_the_spent_binary_checksums(self):
+        self.assertIn('rm -f "${TARGET_DIR}/checksums.txt"', self.sh)
+        self.assertIn("Remove-Item $sumFile", self.ps1)
+
+    def test_neither_removes_the_bundle_manifest_or_sums(self):
+        """These are bundle contents, not transient downloads.
+
+        Asserted against removal commands specifically -- both files are
+        legitimately *read* (the sums to verify, the manifest to report), so a
+        bare name search would match those and fail for the wrong reason.
+        """
+        removals_sh = [
+            line for line in self.sh.splitlines() if line.strip().startswith("rm -f")
+        ]
+        removals_ps1 = [
+            line
+            for line in self.ps1.splitlines()
+            if line.strip().startswith("Remove-Item")
+        ]
+
+        for keep in ("SHA256SUMS", "MANIFEST.txt"):
+            with self.subTest(file=keep):
+                self.assertFalse(
+                    [line for line in removals_sh if keep in line],
+                    f"the shell half deletes {keep}",
+                )
+                self.assertFalse(
+                    [line for line in removals_ps1 if keep in line],
+                    f"the PowerShell half deletes {keep}",
+                )
+
+
 class BothRefuseAnUnverifiedBundle(unittest.TestCase):
     """A truncated download is otherwise found by the suite failing strangely
     an hour later, which is a far more expensive way to learn it."""
