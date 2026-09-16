@@ -147,6 +147,53 @@ class BothFindTheActivationKeyWhereItLives(unittest.TestCase):
         self.assertIn("if ([string]::IsNullOrWhiteSpace($ActivationKey))", self.ps1)
 
 
+class TheBundleOpensWithoutUnzip(unittest.TestCase):
+    """`unzip` is not installed by default on minimal Linux images or WSL.
+
+    Reported from a WSL box where staging died on `ERROR: unzip is required`
+    (LDM-#1746) -- a hard stop for no reason, since a machine able to run the
+    suite already carries at least one thing that opens a zip, and a message
+    that did not even name the remedy.
+
+    Order is by directness: `unzip` is purpose-built; `bsdtar` reads zip
+    natively where GNU tar does not; `python3`'s `zipfile` is the broadest
+    fallback. All three were exercised by hiding the earlier ones from PATH and
+    confirming the bundle still extracted.
+    """
+
+    def setUp(self):
+        self.sh = SH.read_text(encoding="utf-8")
+
+    def test_all_three_extractors_are_offered(self):
+        for tool in ("unzip", "bsdtar", "python3"):
+            with self.subTest(tool=tool):
+                self.assertIn(tool, self.sh)
+
+    def test_unzip_is_no_longer_a_hard_requirement(self):
+        self.assertNotIn('die "unzip is required"', self.sh)
+
+    def test_the_refusal_names_how_to_fix_it(self):
+        """A message that states a missing tool without saying how to get it
+        leaves the reader exactly where they started."""
+        self.assertIn("apt-get install", self.sh)
+
+    def test_it_refuses_before_downloading_anything(self):
+        """Failing after an 80KB transfer is not failing fast."""
+        checks_at = self.sh.index("need one of unzip, bsdtar or python3")
+        download_at = self.sh.index("Downloading the verification bundle")
+
+        self.assertLess(
+            checks_at,
+            download_at,
+            "the extractor check runs after the download, so a machine that "
+            "cannot unpack still pays for the transfer",
+        )
+
+    def test_it_reports_which_extractor_it_used(self):
+        """A silent fallback is how you discover the difference too late."""
+        self.assertIn("using ${EXTRACTOR}", self.sh)
+
+
 class BothCleanUpAfterThemselves(unittest.TestCase):
     """The archive is a means, not a deliverable (LDM-#1741).
 

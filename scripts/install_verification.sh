@@ -65,7 +65,44 @@ while [ $# -gt 0 ]; do
 done
 
 command -v curl >/dev/null 2>&1 || die "curl is required"
-command -v unzip >/dev/null 2>&1 || die "unzip is required"
+
+# LDM-#1746: `unzip` is NOT installed by default on many minimal Linux images
+# and WSL distributions, and refusing there is refusing for no reason -- the
+# archive can be opened by at least three things that are already present on a
+# machine capable of running the suite. Reported from a WSL box where the whole
+# staging run died on `ERROR: unzip is required`, a message that did not even
+# say how to fix it.
+#
+# Order is by directness: unzip is purpose-built, bsdtar reads zip natively
+# (GNU tar does not), and python3's zipfile is the broadest fallback.
+EXTRACTOR=""
+if command -v unzip >/dev/null 2>&1; then
+    EXTRACTOR="unzip"
+elif command -v bsdtar >/dev/null 2>&1; then
+    EXTRACTOR="bsdtar"
+elif command -v python3 >/dev/null 2>&1 && python3 -c "import zipfile" >/dev/null 2>&1; then
+    EXTRACTOR="python3"
+else
+    die "need one of unzip, bsdtar or python3 to open the bundle.
+   Install one, e.g.:   sudo apt-get install -y unzip
+                        sudo dnf install -y unzip
+                        brew install unzip"
+fi
+
+extract_bundle() {
+    # $1 = archive, $2 = destination
+    case "$EXTRACTOR" in
+        unzip) unzip -oq "$1" -d "$2" ;;
+        bsdtar) bsdtar -xf "$1" -C "$2" ;;
+        python3)
+            python3 - "$1" "$2" <<'PYEOF'
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as archive:
+    archive.extractall(sys.argv[2])
+PYEOF
+            ;;
+    esac
+}
 
 # `shasum` on macOS, `sha256sum` on most Linux. Checking is not optional: a
 # truncated download is otherwise found by the suite failing strangely an hour
@@ -141,10 +178,10 @@ note "Downloading the verification bundle (${TAG})..."
 curl -fsSL -o "${TARGET_DIR}/verification-bundle.zip" "${BASE}/verification-bundle.zip" \
     || die "could not download verification-bundle.zip for ${TAG} -- does that release exist?"
 
-note "Unpacking..."
+note "Unpacking (using ${EXTRACTOR})..."
 # Into TARGET_DIR itself, NOT a nested folder: LDM looks for common/ beside
 # the script, so the layout is the point rather than a convenience.
-unzip -oq "${TARGET_DIR}/verification-bundle.zip" -d "$TARGET_DIR"
+extract_bundle "${TARGET_DIR}/verification-bundle.zip" "$TARGET_DIR"
 
 note "Verifying checksums..."
 ( cd "$TARGET_DIR" && $SHA_CHECK SHA256SUMS >/dev/null ) \
