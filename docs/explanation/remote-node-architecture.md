@@ -190,6 +190,23 @@ Same image, mounts, environment and licence. Only the MAC. On success,
 The licence's product version is **not** a factor: a 2026.Q1 key activated
 `dxp-2026.q3.0` in the run above.
 
+### Do you need this?
+
+Only if your licence is **machine-bound**. The two kinds differ:
+
+```text
+developer key      … license-type, license-version, start-date,
+                     expiration-date, max-http-sessions, key
+                     ^ no mac-address, no host, no IP -- activates anywhere
+
+trial key          … max-servers, mac-addresses, mac-address
+                     ^ bound to one NIC
+```
+
+A developer key carries no machine binding at all, which is why local runs
+activate today without any of this. **Only MAC-bound trial keys need a pin.**
+Check your key for a `mac-address` field before configuring anything.
+
 ### Configure it per node
 
 ```bash

@@ -222,6 +222,39 @@ class TheCliCanRecordIt(unittest.TestCase):
         self.assertIn("ldm target add", doc)
         self.assertNotIn("ldm target set aws-1 --mac-address", doc)
 
+    def test_the_docs_say_who_needs_this(self):
+        """Only MAC-bound trial keys do (LDM-#1752 review).
+
+        A developer key carries no machine binding -- no `mac-address`, no
+        host, no IP -- which is why local runs activate today without any of
+        this. Without that stated, a reader on a developer key has no way to
+        tell the feature is irrelevant to them, and may pin a MAC to solve a
+        problem they do not have.
+        """
+        from pathlib import Path
+
+        doc = (
+            Path(__file__).resolve().parent.parent.parent
+            / "docs"
+            / "explanation"
+            / "remote-node-architecture.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("developer key", doc)
+        self.assertIn("max-http-sessions", doc)
+
+    def test_the_compatibility_surface_is_client_times_daemon(self):
+        """Compose runs client-side over a docker context; the node need not
+        have compose at all. Naming only the daemon version sends a tester
+        after a combination LDM never uses."""
+        from pathlib import Path
+
+        src = (Path(__file__).resolve().parent.parent / "docker_service.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("client compose version x node daemon version", src)
+
     def test_the_docs_state_the_bridge_only_caveat(self):
         """ "Safe" unqualified would be actively wrong on macvlan or host
         networking, where the duplicate MAC reaches the wire."""
