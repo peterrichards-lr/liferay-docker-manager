@@ -549,6 +549,10 @@ chmod +x install_verification.sh
 ./install_verification.sh --tag "${LDM_TAG}" --activation-key /path/to/activation-key.xml
 ```
 
+Every checksum is the installer's job, including its own -- it verifies itself
+against the release it is staging before downloading anything else. There is no
+`shasum` step for the tester to remember, and therefore none to forget.
+
 ```powershell
 $LdmTag = "vX.Y.Z"
 Invoke-WebRequest -UseBasicParsing -OutFile install_verification.ps1 `
@@ -556,13 +560,11 @@ Invoke-WebRequest -UseBasicParsing -OutFile install_verification.ps1 `
 .\install_verification.ps1 -Tag $LdmTag -ActivationKey C:\path\to\activation-key.xml
 ```
 
-It is covered by the release `checksums.txt` like every other asset, so the
-installer itself can be verified before it is trusted:
-
-```bash
-curl -fsSL -O "https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/${LDM_TAG}/checksums.txt"
-shasum -a 256 -c --ignore-missing checksums.txt
-```
+A mismatch is a **warning**, not a refusal: reusing one installer across several
+releases is legitimate, and everything it downloads is checksummed regardless.
+A release predating the asset has no entry, and the check passes quietly rather
+than complaining about its own absence. `--no-self-check` / `-NoSelfCheck`
+skips it.
 
 Omit `--tag`/`-Tag` to take the latest release. `--no-binary`/`-NoBinary` skips
 the binary download. It deliberately does **not** install the binary onto PATH

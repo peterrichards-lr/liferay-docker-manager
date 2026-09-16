@@ -67,6 +67,53 @@ class TheyOfferTheSameOptions(unittest.TestCase):
         self.assertIn("LDM_ACTIVATION_KEY", self.ps1)
 
 
+class BothVerifyThemselves(unittest.TestCase):
+    """LDM-#1735: the bootstrap was the one unverified link.
+
+    The installer checksums the bundle and the binary, so asking the tester to
+    verify the installer by hand -- with a separate curl of checksums.txt and a
+    shasum invocation to remember -- put the only manual step on the only file
+    nothing else covered. It now checks itself against the release it is
+    staging.
+
+    A mismatch WARNS rather than fails: reusing one installer across several
+    releases is legitimate, and what is being verified is the release's
+    artifacts, not this script's vintage. A release predating the asset has no
+    entry at all, and must pass silently rather than warn about its own
+    absence.
+    """
+
+    def setUp(self):
+        self.sh = SH.read_text(encoding="utf-8")
+        self.ps1 = PS1.read_text(encoding="utf-8")
+
+    def test_both_hash_themselves_against_the_release(self):
+        self.assertIn("install_verification", self.sh)
+        self.assertIn("$PSCommandPath", self.ps1)
+
+    def test_both_offer_an_escape_hatch(self):
+        self.assertIn("--no-self-check", self.sh)
+        self.assertIn("NoSelfCheck", self.ps1)
+
+    def test_neither_treats_a_mismatch_as_fatal(self):
+        """Refusing here would block a legitimate reuse across releases."""
+        self.assertNotIn('die "This installer does not match', self.sh)
+        self.assertNotIn('Stop-WithError "This installer does not match', self.ps1)
+
+    def test_the_shell_pattern_does_not_match_the_powershell_file(self):
+        """`install_verification.sh` must not match `install_verification.ps1`.
+
+        A loose pattern would compare this script against the OTHER half's
+        digest and warn on every single run.
+        """
+        import re as _re
+
+        pattern = _re.compile(r"install_verification\.sh$")
+
+        self.assertIsNone(pattern.search("install_verification.ps1"))
+        self.assertIsNotNone(pattern.search("install_verification.sh"))
+
+
 class BothRefuseAnUnverifiedBundle(unittest.TestCase):
     """A truncated download is otherwise found by the suite failing strangely
     an hour later, which is a far more expensive way to learn it."""
