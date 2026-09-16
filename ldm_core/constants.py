@@ -181,6 +181,16 @@ RELEASE_ANNOUNCEMENTS = {
     # the way. They are announced because the user-visible effect is new to
     # them -- a cloud import that copied nothing has been copying nothing since
     # 2026-07-10.
+    "2.23": [
+        (
+            "ldm target add --mac-address",
+            "Pin the Liferay container to a node's NIC address so a MAC-bound licence activates: without it the container takes a bridge address, validation fails, and the portal serves the Activation page rather than Sign In -- with a healthy container and 'License registered' in the log, so nothing looks wrong",
+        ),
+        (
+            "ldm run --target <node>",
+            "After start, the container's MAC is read back and the run refuses if it is not the one configured -- writing the value into the compose file is a request, not a guarantee, and a version that ignores it would fail silently",
+        ),
+    ],
     "2.22": [
         (
             "ldm link <lcp-workspace>",
