@@ -239,6 +239,30 @@ fi
 echo "=> Pushing to remote..."
 git push origin HEAD
 
+# LDM-#1735: a push to a branch whose PR has ALREADY MERGED succeeds, prints
+# nothing unusual, and lands nowhere. Two commits were lost that way -- the PR
+# merged at 07:45, the commits were made at 07:52 and 08:03, and the only
+# symptom was a published release missing an asset nobody thought to check.
+#
+# The push itself cannot fail here: the branch is real and the write succeeds.
+# Only the PR's state reveals that the work has nowhere left to go, so ask.
+#
+# Best-effort and never fatal: no `gh`, no auth, or no PR for this branch are
+# all ordinary, and none of them mean anything is wrong.
+if command -v gh >/dev/null 2>&1; then
+  _branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+  if [ -n "$_branch" ] && [ "$_branch" != "HEAD" ]; then
+    _pr_state=$(gh pr view "$_branch" --json state --jq '.state' 2>/dev/null || echo "")
+    if [ "$_pr_state" = "MERGED" ] || [ "$_pr_state" = "CLOSED" ]; then
+      echo ""
+      echo "=> ⚠️  WARNING: the PR for '$_branch' is already $_pr_state."
+      echo "=>    This commit is NOT in it and will not reach master. Open a new"
+      echo "=>    PR from a branch off master, or the work is silently lost."
+      echo ""
+    fi
+  fi
+fi
+
 echo "=> ✅ Push completed successfully!"
 if [ "$PUSH_ONLY" != true ]; then
   echo "=>    $(git rev-parse --short HEAD) $(git log -1 --pretty=%s)"

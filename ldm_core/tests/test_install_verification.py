@@ -67,6 +67,86 @@ class TheyOfferTheSameOptions(unittest.TestCase):
         self.assertIn("LDM_ACTIVATION_KEY", self.ps1)
 
 
+class BothVerifyThemselves(unittest.TestCase):
+    """LDM-#1735: the bootstrap was the one unverified link.
+
+    The installer checksums the bundle and the binary, so asking the tester to
+    verify the installer by hand -- with a separate curl of checksums.txt and a
+    shasum invocation to remember -- put the only manual step on the only file
+    nothing else covered. It now checks itself against the release it is
+    staging.
+
+    A mismatch WARNS rather than fails: reusing one installer across several
+    releases is legitimate, and what is being verified is the release's
+    artifacts, not this script's vintage. A release predating the asset has no
+    entry at all, and must pass silently rather than warn about its own
+    absence.
+    """
+
+    def setUp(self):
+        self.sh = SH.read_text(encoding="utf-8")
+        self.ps1 = PS1.read_text(encoding="utf-8")
+
+    def test_both_hash_themselves_against_the_release(self):
+        self.assertIn("install_verification", self.sh)
+        self.assertIn("$PSCommandPath", self.ps1)
+
+    def test_both_offer_an_escape_hatch(self):
+        self.assertIn("--no-self-check", self.sh)
+        self.assertIn("NoSelfCheck", self.ps1)
+
+    def test_neither_treats_a_mismatch_as_fatal(self):
+        """Refusing here would block a legitimate reuse across releases."""
+        self.assertNotIn('die "This installer does not match', self.sh)
+        self.assertNotIn('Stop-WithError "This installer does not match', self.ps1)
+
+    def test_the_shell_pattern_does_not_match_the_powershell_file(self):
+        """`install_verification.sh` must not match `install_verification.ps1`.
+
+        A loose pattern would compare this script against the OTHER half's
+        digest and warn on every single run.
+        """
+        import re as _re
+
+        pattern = _re.compile(r"install_verification\.sh$")
+
+        self.assertIsNone(pattern.search("install_verification.ps1"))
+        self.assertIsNotNone(pattern.search("install_verification.sh"))
+
+
+class BothFindTheActivationKeyWhereItLives(unittest.TestCase):
+    """The key sits in a `common/` folder on each machine, relative to where
+    the suite is run (LDM-#1735).
+
+    Requiring a flag for something already on disk in a known place is one more
+    thing to remember -- and forgetting it fails SILENTLY: LDM only warns, the
+    suite exits 0, and reports success having verified an unlicensed DXP. So
+    the installer looks before it asks.
+
+    Two places, in order: the target's own `common/`, which already holds a key
+    when the bundle was unpacked over an existing folder (measured: `unzip -o`
+    replaces only what the zip contains, so a key sitting there survives), then
+    `./common/` relative to the invocation.
+    """
+
+    def setUp(self):
+        self.sh = SH.read_text(encoding="utf-8")
+        self.ps1 = PS1.read_text(encoding="utf-8")
+
+    def test_both_look_in_the_target_common(self):
+        self.assertIn("activation-key-*.xml", self.sh)
+        self.assertIn("activation-key-*.xml", self.ps1)
+
+    def test_both_look_beside_the_invocation(self):
+        self.assertIn("./common", self.sh)
+        self.assertIn(".\\common", self.ps1)
+
+    def test_an_explicit_flag_still_wins(self):
+        """Discovery must not override what the operator asked for."""
+        self.assertIn('if [ -z "$ACTIVATION_KEY" ]; then', self.sh)
+        self.assertIn("if ([string]::IsNullOrWhiteSpace($ActivationKey))", self.ps1)
+
+
 class BothRefuseAnUnverifiedBundle(unittest.TestCase):
     """A truncated download is otherwise found by the suite failing strangely
     an hour later, which is a far more expensive way to learn it."""
@@ -164,6 +244,50 @@ class ThePowerShellHalfIsParseable(unittest.TestCase):
         self.assertEqual(non_ascii, [], f"non-ASCII bytes at {non_ascii[:3]}")
 
 
+class TheReleasePublishesIt(unittest.TestCase):
+    """An installer only reachable from a checkout defeats its own purpose.
+
+    The whole point is verifying a release the way a user would -- from the
+    published artifacts alone, with no clone. Before this, the installer
+    existed only in the repo, so the one person it was written for could not
+    use it without the thing it was meant to avoid.
+    """
+
+    def _ci(self):
+        root = Path(__file__).resolve().parent.parent.parent
+        return (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    def test_both_halves_are_published_as_release_assets(self):
+        text = self._ci()
+
+        self.assertIn("bin-temp/install_verification.sh", text)
+        self.assertIn("bin-temp/install_verification.ps1", text)
+
+    def test_they_are_covered_by_the_release_checksums(self):
+        """An installer you cannot verify before running is a worse bootstrap
+        than the curl it replaces."""
+        text = self._ci()
+        sums_line = next(
+            line for line in text.splitlines() if "sha256sum ldm-linux" in line
+        )
+
+        self.assertIn("install_verification.sh", sums_line)
+        self.assertIn("install_verification.ps1", sums_line)
+
+    def test_they_are_staged_before_the_checksums_that_cover_them(self):
+        """Staged after, and checksums.txt would not include them."""
+        text = self._ci()
+
+        staged_at = text.index("cp scripts/install_verification.sh")
+        sums_at = text.index("sha256sum ldm-linux")
+
+        self.assertLess(
+            staged_at,
+            sums_at,
+            "the installers are staged after the checksums, so they ship unchecksummed",
+        )
+
+
 class TheDocsPointAtIt(unittest.TestCase):
     """An installer nobody is told about is the same as no installer."""
 
@@ -220,3 +344,50 @@ class TheHelpTextIsNotAStaleCopy(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ThePushWrapperWarnsAboutAMergedPr(unittest.TestCase):
+    """A push to a branch whose PR already merged lands nowhere (LDM-#1735).
+
+    It is the quietest failure in this workflow: the branch exists, the write
+    succeeds, the wrapper prints its success banner, and CI stays green because
+    there is nothing new to test. Two commits were lost exactly this way --
+    the PR merged at 07:45, the commits were made at 07:52 and 08:03, and the
+    first symptom was a published release missing an asset.
+
+    The guard is best-effort on purpose: no `gh`, no auth, or no PR for the
+    branch are all ordinary situations, and none of them indicate a problem.
+    """
+
+    WRAPPER = SCRIPTS / "agent_push.sh"
+
+    def _text(self):
+        return self.WRAPPER.read_text(encoding="utf-8")
+
+    def test_it_checks_the_pr_state_after_pushing(self):
+        text = self._text()
+
+        self.assertIn("gh pr view", text)
+        self.assertIn("MERGED", text)
+
+    def test_it_runs_after_the_push_not_instead_of_it(self):
+        """The push must still happen -- the branch may be legitimately reused."""
+        text = self._text()
+
+        self.assertLess(
+            text.index("git push origin HEAD"),
+            text.index("gh pr view"),
+            "the guard runs before the push, so a failure would block it",
+        )
+
+    def test_it_never_fails_the_push(self):
+        """`gh` absent or unauthenticated must not turn a good push into an error."""
+        text = self._text()
+        guard = text[text.index("gh pr view") - 400 : text.index("gh pr view") + 400]
+
+        self.assertIn("|| echo", guard)
+        self.assertNotIn("exit 1", guard)
+
+    def test_it_says_what_to_do_about_it(self):
+        """A warning that does not name the remedy gets read as noise."""
+        self.assertIn("Open a new", self._text())

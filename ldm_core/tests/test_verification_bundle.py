@@ -247,7 +247,15 @@ class TheReleaseWorkflowPublishesIt(unittest.TestCase):
             sums_at,
             "the bundle is built after the checksums, so it is unchecksummed",
         )
-        self.assertIn("verification-bundle.zip ../compatibility.json", text)
+        # LDM-#1735: this used to assert the exact adjacency
+        # `verification-bundle.zip ../compatibility.json`, which broke the
+        # moment another asset was added between them -- pinning the argument
+        # ORDER rather than the property that matters. What matters is that
+        # the bundle is on the checksum line at all.
+        sums_line = next(
+            line for line in text.splitlines() if "sha256sum ldm-linux" in line
+        )
+        self.assertIn("verification-bundle.zip", sums_line)
 
 
 if __name__ == "__main__":

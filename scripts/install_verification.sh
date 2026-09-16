@@ -30,6 +30,7 @@ TAG=""
 TARGET_DIR="ldm-verification"
 ACTIVATION_KEY="${LDM_ACTIVATION_KEY:-}"
 WANT_BINARY=1
+SELF_CHECK=1
 
 die() { printf '\033[0;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 note() { printf '\033[0;36m==>\033[0m %s\n' "$*"; }
@@ -46,6 +47,7 @@ Options:
   --activation-key <path> Your DXP activation key; copied into common/.
                           May also be given as $LDM_ACTIVATION_KEY.
   --no-binary             Skip downloading the ldm binary.
+  --no-self-check         Skip verifying this script against the release.
   -h, --help              This text.
 EOF
 }
@@ -56,6 +58,7 @@ while [ $# -gt 0 ]; do
         --dir) TARGET_DIR="${2:-}"; shift 2 ;;
         --activation-key) ACTIVATION_KEY="${2:-}"; shift 2 ;;
         --no-binary) WANT_BINARY=0; shift ;;
+        --no-self-check) SELF_CHECK=0; shift ;;
         -h|--help) usage; exit 0 ;;
         *) die "unknown option '$1' (try --help)" ;;
     esac
@@ -69,8 +72,10 @@ command -v unzip >/dev/null 2>&1 || die "unzip is required"
 # later.
 if command -v shasum >/dev/null 2>&1; then
     SHA_CHECK="shasum -a 256 -c"
+    sha_of() { shasum -a 256 "$1" | awk '{print $1}'; }
 elif command -v sha256sum >/dev/null 2>&1; then
     SHA_CHECK="sha256sum -c"
+    sha_of() { sha256sum "$1" | awk '{print $1}'; }
 else
     die "need shasum or sha256sum to verify the download"
 fi
@@ -84,6 +89,31 @@ if [ -z "$TAG" ]; then
 fi
 
 BASE="https://github.com/${REPO}/releases/download/${TAG}"
+
+# LDM-#1735: verify THIS FILE against the release it is staging, so the
+# bootstrap is not the one unverified link in a chain that checksums
+# everything else. It is a warning rather than an error on purpose: reusing
+# one installer across several releases is legitimate and common, and the
+# thing being verified is the release's artifacts, not this script's vintage.
+if [ "$SELF_CHECK" -eq 1 ]; then
+    self_sums=$(mktemp)
+    if curl -fsSL -o "$self_sums" "${BASE}/checksums.txt" 2>/dev/null; then
+        expected_self=$(awk '$2 ~ /install_verification\.sh$/ {print $1; exit}' "$self_sums")
+        if [ -n "$expected_self" ]; then
+            actual_self=$(sha_of "$0")
+            if [ "$expected_self" = "$actual_self" ]; then
+                note "Installer verified against ${TAG}."
+            else
+                warn "This installer does not match the one published with ${TAG}."
+                warn "That is expected if you are reusing an older copy, and fine --"
+                warn "everything it downloads below is still checksummed. Fetch the"
+                warn "matching one if you would rather it were identical:"
+                warn "    curl -fsSL -O ${BASE}/install_verification.sh"
+            fi
+        fi
+    fi
+    rm -f "$self_sums"
+fi
 
 # Resolve the binary asset before downloading anything, so an unsupported
 # platform fails immediately rather than after a 23 MB transfer.
@@ -147,8 +177,36 @@ if [ -n "$BINARY_ASSET" ]; then
     chmod +x "${TARGET_DIR}/ldm"
 fi
 
+# LDM-#1735: the key lives in a `common/` folder on each machine, relative to
+# where the suite is run -- so look there before asking for it. Two places, in
+# order:
+#
+#   1. the target's own common/, which already holds one when the bundle was
+#      unpacked over an existing folder. `unzip -o` overwrites only what the
+#      zip contains, so a key sitting there survives -- measured, not assumed.
+#   2. ./common/ relative to where THIS script was invoked, which is the
+#      layout the suite has always used.
+#
+# Discovery beats a flag here: the flag is one more thing to remember, and
+# forgetting it fails silently.
 KEY_OK=0
-if [ -n "$ACTIVATION_KEY" ]; then
+if [ -z "$ACTIVATION_KEY" ]; then
+    existing=$(find "${TARGET_DIR}/common" -maxdepth 1 -name 'activation-key-*.xml' 2>/dev/null | head -1)
+    if [ -n "$existing" ]; then
+        note "Using the activation key already in $(basename "$TARGET_DIR")/common/."
+        KEY_OK=1
+    else
+        nearby=$(find ./common -maxdepth 1 -name 'activation-key-*.xml' 2>/dev/null | head -1)
+        if [ -n "$nearby" ]; then
+            ACTIVATION_KEY="$nearby"
+            note "Found an activation key in ./common/ -- using it."
+        fi
+    fi
+fi
+
+if [ "$KEY_OK" -eq 1 ]; then
+    :
+elif [ -n "$ACTIVATION_KEY" ]; then
     if [ -f "$ACTIVATION_KEY" ]; then
         cp "$ACTIVATION_KEY" "${TARGET_DIR}/common/"
         note "Activation key copied into common/."

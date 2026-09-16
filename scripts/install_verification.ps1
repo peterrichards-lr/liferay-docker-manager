@@ -25,6 +25,7 @@ param(
     [string]$Dir = "ldm-verification",
     [string]$ActivationKey = $env:LDM_ACTIVATION_KEY,
     [switch]$NoBinary,
+    [switch]$NoSelfCheck,
     [switch]$Help
 )
 
@@ -50,6 +51,7 @@ Options:
   -ActivationKey <path>  Your DXP activation key; copied into common\.
                          May also be given as `$env:LDM_ACTIVATION_KEY.
   -NoBinary              Skip downloading the ldm binary.
+  -NoSelfCheck           Skip verifying this script against the release.
   -Help                  This text.
 "@
     exit 0
@@ -71,6 +73,39 @@ if ([string]::IsNullOrWhiteSpace($Tag)) {
 }
 
 $Base = "https://github.com/$Repo/releases/download/$Tag"
+
+# LDM-#1735: verify THIS FILE against the release it is staging, so the
+# bootstrap is not the one unverified link in a chain that checksums
+# everything else. A warning rather than an error on purpose: reusing one
+# installer across several releases is legitimate, and what is being verified
+# is the release's artifacts, not this script's vintage.
+if (-not $NoSelfCheck) {
+    $selfSums = Join-Path ([System.IO.Path]::GetTempPath()) "ldm-selfcheck-$PID.txt"
+    try {
+        Invoke-WebRequest -Uri "$Base/checksums.txt" -OutFile $selfSums -UseBasicParsing
+        $entry = Get-Content $selfSums |
+            Where-Object { $_ -match 'install_verification\.ps1\s*$' } |
+            Select-Object -First 1
+        if ($entry -and $entry -match '^\s*([0-9a-fA-F]{64})') {
+            $expectedSelf = $Matches[1].ToLower()
+            $actualSelf = (Get-FileHash -Algorithm SHA256 -Path $PSCommandPath).Hash.ToLower()
+            if ($expectedSelf -eq $actualSelf) {
+                Write-Note "Installer verified against $Tag."
+            } else {
+                Write-Warn "This installer does not match the one published with $Tag."
+                Write-Warn "That is expected if you are reusing an older copy, and fine --"
+                Write-Warn "everything it downloads below is still checksummed. Fetch the"
+                Write-Warn "matching one if you would rather it were identical:"
+                Write-Warn "    $Base/install_verification.ps1"
+            }
+        }
+    } catch {
+        # An older release simply has no such asset; that is not a failure.
+        Write-Verbose "Self-check skipped: $_"
+    } finally {
+        Remove-Item $selfSums -ErrorAction SilentlyContinue
+    }
+}
 
 New-Item -ItemType Directory -Force -Path $Dir | Out-Null
 $TargetDir = (Resolve-Path $Dir).Path
@@ -134,8 +169,32 @@ if (-not $NoBinary) {
     }
 }
 
+# LDM-#1735: the key lives in a `common\` folder on each machine, relative to
+# where the suite is run -- so look there before asking for it. The target's own
+# common\ first (a key unpacked over survives, since Expand-Archive replaces
+# only what the zip contains), then .\common\ relative to the invocation.
+# Discovery beats a flag: the flag is one more thing to remember, and
+# forgetting it fails silently.
 $keyOk = $false
-if (-not [string]::IsNullOrWhiteSpace($ActivationKey)) {
+if ([string]::IsNullOrWhiteSpace($ActivationKey)) {
+    $inTarget = Get-ChildItem -Path (Join-Path $TargetDir "common") -Filter "activation-key-*.xml" `
+        -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($inTarget) {
+        Write-Note "Using the activation key already in $(Split-Path $TargetDir -Leaf)\common\."
+        $keyOk = $true
+    } else {
+        $nearby = Get-ChildItem -Path ".\common" -Filter "activation-key-*.xml" `
+            -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($nearby) {
+            $ActivationKey = $nearby.FullName
+            Write-Note "Found an activation key in .\common\ -- using it."
+        }
+    }
+}
+
+if ($keyOk) {
+    # Already in place.
+} elseif (-not [string]::IsNullOrWhiteSpace($ActivationKey)) {
     if (Test-Path $ActivationKey) {
         Copy-Item -Path $ActivationKey -Destination (Join-Path $TargetDir "common") -Force
         Write-Note "Activation key copied into common\."
