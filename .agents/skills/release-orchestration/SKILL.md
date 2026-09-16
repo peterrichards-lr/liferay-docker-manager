@@ -155,6 +155,25 @@ To prevent "version fatigue" and ensure the stability of the main release channe
   - **`./lint.sh` is NOT an equivalent substitute.** It does not run `check-version-sync`, `gitleaks`, `mypy`, `check-cli-drift`, `validate-compose`, `deptry` or `shellcheck`, and by default it *auto-fixes* rather than validates (use `./lint.sh --check` if you run it at all). `check-version-sync` is the most release-relevant hook in the set, so a release verified only by `lint.sh` is not verified. `scripts/release.py` refuses to fall back to it for this reason (LDM-#1244).
 - **Post-Push Release Asset Verification Gate**: AFTER running `python3 scripts/release.py --bump beta`, the agent MUST execute `gh run list --workflow=ci.yml` and actively monitor the pushed tag run until the `release` job completes with status `success`. If CI fails at any step (e.g. `markdownlint`, `mypy`, `check-cli-drift`, or `detect-secrets`), immediately extract logs (`gh run view --log-failed`), run `pre-commit run --all-files` locally to quickly reproduce and resolve all quality gate failures in a single local iteration, re-verify with `./lint.sh`, and bump to the next candidate. Never assume pushing a tag automatically created the GitHub Release entity without verifying CI run completion.
 - **Verification Gate**: A pre-release feature is only eligible for a stable release after the user has explicitly confirmed they have performed a full manual E2E verification of the pre-release. Do not automatically promote releases without explicit user confirmation.
+- **Promotion Delta Gate (is stable what was actually verified?)**: BEFORE running `python3 scripts/release.py --promote`, diff the SHIPPED code between the verified pre-release tag and `HEAD`, and state what changed:
+
+  ```bash
+  git diff --name-only vX.Y.Z-pre.N HEAD -- ldm_core/ | grep -v /tests/
+  ```
+
+  Anything beyond `ldm_core/constants.py` and `ldm_core/resources/ldm.1` -- both of which are version stamps -- means **stable is not the software that was verified**. That is a decision for the maintainer to take deliberately, not a fact to discover afterwards.
+
+  Every other gate here guards the road *to* a pre-release. Nothing guarded the gap between verifying one and promoting it, and work continues to land on `master` during the days a verification takes. Hit on 2026-09-16 promoting v2.22.0: four commits merged after the `-pre.9` verification and shipped in stable, one of them 91 lines of `ldm_core/diagnostics/info.py`. It was judged acceptable -- the only behavioural surface was `ldm system doctor --slug`, which names the verification report file and nothing the E2E suite asserts -- but it was found by the maintainer asking afterwards, not by any check.
+
+  The maintainer's own criterion was *"fine if it does not change `ldm_core`"*. That is a good test and it needs running, because the answer is not obvious: three of those four commits were tooling and docs, and it takes one command to find the fourth.
+
+  Two ways to satisfy it, both legitimate:
+
+  - **Accept the delta**, having named it, and record it in the CHANGELOG so the release says plainly that it is not byte-for-byte what was verified.
+  - **Cut another pre-release** carrying the delta and re-verify. Right whenever the change touches orchestration -- containers, volumes, ports, imports, snapshots, config sync -- since those are what the suite actually exercises.
+
+  Do not skip it because the changes "look like tooling". `docs/` and `scripts/` changes genuinely do not ship in the binary; `ldm_core/` always does, whatever its subject matter.
+
 - **Immutable Tags (The Burn Rule)**: GitHub Repository Rules strictly prohibit the deletion or force-updating of Git tags. Once a tag (e.g. `v2.15.19`) is pushed, it is permanently locked to that commit. Any premature tagging permanently burns the version number, requiring a version bump to recover. You MUST be absolutely certain all pre-requisites are met before tagging.
 - **Compatibility Matrix Gate**: You MUST update the compatibility matrix (in the project documentation) to reflect the newly verified environments BEFORE moving to a stable release. Always run `python3 scripts/sync_compatibility.py` from a checkout whose `ldm_core/constants.py` `VERSION` actually matches the report(s) you're syncing (e.g. the active `release/vX.Y.Z-pre.N` branch for pre-release reports) -- running it from `master` (or any other mismatched checkout) silently archives every report whose binary/script version doesn't match as "stale," discarding real test data with no error.
   - **The script now refuses rather than discarding (LDM-#1390).** A raw report whose recorded version does not match the checkout's `VERSION` makes `sync_compatibility.py` exit non-zero *before moving anything*, naming each report and both versions. Check out the ref whose `VERSION` matches and re-run. `--archive-stale` is the deliberate opt-out for genuinely clearing an older cycle's reports -- it prints the full plan first (each report and the name it moves to) before touching anything; `--dry-run` shows the same diagnosis without a failing exit, and `--quiet` suppresses routine progress without ever hiding a refusal. This used to be a `UI.warning` followed by the move, which is easy to miss in a long run.
@@ -190,4 +209,4 @@ To ensure clarity and prevent title drift across multi-commit pre-release iterat
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-11* | *Last Reviewed: 2026-09-11*
+*Last Updated: 2026-09-16* | *Last Reviewed: 2026-09-16*
