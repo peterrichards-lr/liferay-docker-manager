@@ -145,6 +145,58 @@ class DockerService:
         return ports
 
     @staticmethod
+    def container_mac_address(
+        container_name: str, target_name: str | None = None
+    ) -> str | None:
+        """The MAC the container actually has, or None if it cannot be read.
+
+        LDM-#1752: emitting `mac_address` into the compose file is not the same
+        as the container having it. Measured with Compose v5.2.0 / CLI 29.7.2
+        against daemon 25.0.14, both the service-level and network-level forms
+        applied -- but that is ONE combination, and the combination is what
+        matters here.
+
+        LDM reaches a node through a docker **context**, so compose runs
+        CLIENT-side; the node runs only the daemon and need not have compose
+        installed at all. The compatibility surface is therefore
+        `client compose version x node daemon version`, not a single version.
+        Testing on a host where client and daemon are the same version
+        exercises a combination LDM never uses. A version that ignores the form
+        LDM writes would drop the MAC silently, and the symptom is not a
+        container failure: it boots healthy, logs `License registered`, and
+        then serves the Activation page instead of Sign In.
+
+        So the emitted value is a request and this is the confirmation. It also
+        catches a container created before the configured value changed, which
+        cannot be corrected in place -- `docker network connect --mac-address`
+        does not exist on 25.0.14.
+
+        Returns None rather than raising: an unreadable MAC is a diagnosis
+        problem, and the caller decides whether that is fatal.
+        """
+        cmd = [
+            *DockerService.get_docker_cmd_prefix(target_name),
+            "inspect",
+            "-f",
+            "{{range .NetworkSettings.Networks}}{{.MacAddress}} {{end}}",
+            container_name,
+        ]
+        try:
+            out = run_command(cmd, check=False, capture_output=True)
+        except Exception:
+            return None
+        if not out:
+            return None
+        # A container on several networks reports one MAC per network. They are
+        # the same when pinned, so the first non-empty value answers the
+        # question; taking them all would only make the comparison awkward.
+        for token in str(out).split():
+            token = token.strip()
+            if token:
+                return token.lower()
+        return None
+
+    @staticmethod
     def container_publishing_port(
         port: int, target_name: str | None = None
     ) -> str | None:

@@ -167,6 +167,89 @@ Separable, smaller UX fixes not blocked on the full migration:
 
 See also: [Multi-Node Orchestration & Remote Node Setup](../how-to/multi_node_orchestration.md) for the user-facing `ldm target` guide, and [Architecture Overview](architecture.md) for how this fits into LDM's broader layering.
 
+## 7. Pinning the container MAC (licence activation)
+
+Liferay's licence binds to a MAC address. On a remote node the container takes
+a bridge-assigned address and validation fails -- the portal boots healthy,
+logs `License registered`, and then serves the **DXP Activation page** instead
+of the Sign In form.
+
+Measured on `aws-1` with `liferay/dxp:2026.q3.0`, the container recreated
+identically except for `--mac-address`:
+
+| | Before | After |
+|---|---|---|
+| Container MAC | `02:42:ac:12:00:03` | `06:d0:95:e5:26:a7` (the host's `ens5`) |
+| Validation | failed -- "MAC address matching failed" | passed |
+| Portal serves | DXP Activation page | Sign In form |
+
+Same image, mounts, environment and licence. Only the MAC. On success,
+`LiferayTrialActivation_DXPNonProduction_production.li` is written into
+`/opt/liferay/data/license`.
+
+The licence's product version is **not** a factor: a 2026.Q1 key activated
+`dxp-2026.q3.0` in the run above.
+
+### Do you need this?
+
+Only if your licence is **machine-bound**. The two kinds differ:
+
+```text
+developer key      … license-type, license-version, start-date,
+                     expiration-date, max-http-sessions, key
+                     ^ no mac-address, no host, no IP -- activates anywhere
+
+trial key          … max-servers, mac-addresses, mac-address
+                     ^ bound to one NIC
+```
+
+A developer key carries no machine binding at all, which is why local runs
+activate today without any of this. **Only MAC-bound trial keys need a pin.**
+Check your key for a `mac-address` field before configuring anything.
+
+### Configure it per node
+
+```bash
+ldm target add aws-1 --host <node-ip> --user ec2-user \
+  --mac-address 06:d0:95:e5:26:a7
+```
+
+`ldm target set` is a different command -- it assigns a target to the active
+project, not node properties -- so re-run `ldm target add` with the same name
+to record or change the MAC.
+
+LDM does **not** infer the value. `ip a` on a typical node shows `ens5`
+alongside `docker0` and `br-*`: all plausible, only one licensed. A wrong guess
+produces exactly the failure above -- a healthy container that will not let you
+sign in -- so the configured value is the contract.
+
+### LDM verifies that the pin actually took
+
+Writing `mac_address` into the compose file is a *request*, not a guarantee.
+LDM therefore re-reads the MAC from the running container and refuses when it
+does not match, with both values named. That one check covers three failures
+that are otherwise indistinguishable:
+
+- a Docker/Compose version that ignores the form LDM wrote
+- a container created before the configured value changed
+- a MAC that was set to the wrong interface
+
+**The MAC can only be set when a container is created.** `docker network
+connect --mac-address` does not exist in Docker 25.0.14, so an existing
+container cannot be corrected in place -- it has to be recreated.
+
+### The duplicate-MAC caveat, stated precisely
+
+Pinning the container to the host's NIC address means two interfaces share a
+MAC. **This is contained on a bridge network and only there.** The container
+sits on a NAT'd bridge (`172.18.0.0/16`), which is a different L2 segment from
+the VPC interface, so the duplicate never reaches the wire.
+
+On **macvlan** or **host** networking that containment disappears and the
+duplicate address is on the physical segment, where it will cause the problems
+duplicate MACs normally cause. The same option is reachable in those setups, so
+the safety here is a property of bridge networking -- not of the option.
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*
+*Last Updated: 2026-09-16* | *Last Reviewed: 2026-09-16*

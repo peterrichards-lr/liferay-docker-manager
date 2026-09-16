@@ -2279,6 +2279,7 @@ class ConfigService:
         user: str = "",
         key: str = "",
         default: bool = False,
+        mac_address: str = "",
     ) -> None:
         """Handler for 'ldm target add <name> --host <host>'."""
         from ldm_core.config import TargetNode, save_target_node
@@ -2294,6 +2295,10 @@ class ConfigService:
             user=user,
             key_path=key,
             is_default=default,
+            # LDM-#1752: normalised to lower case so a value typed in upper
+            # case does not read as a mismatch against `docker inspect`, which
+            # reports lower case.
+            mac_address=(mac_address or "").strip().lower(),
         )
         save_target_node(node)
 
