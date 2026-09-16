@@ -30,6 +30,7 @@ TAG=""
 TARGET_DIR="ldm-verification"
 ACTIVATION_KEY="${LDM_ACTIVATION_KEY:-}"
 WANT_BINARY=1
+SELF_CHECK=1
 
 die() { printf '\033[0;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 note() { printf '\033[0;36m==>\033[0m %s\n' "$*"; }
@@ -46,6 +47,7 @@ Options:
   --activation-key <path> Your DXP activation key; copied into common/.
                           May also be given as $LDM_ACTIVATION_KEY.
   --no-binary             Skip downloading the ldm binary.
+  --no-self-check         Skip verifying this script against the release.
   -h, --help              This text.
 EOF
 }
@@ -56,6 +58,7 @@ while [ $# -gt 0 ]; do
         --dir) TARGET_DIR="${2:-}"; shift 2 ;;
         --activation-key) ACTIVATION_KEY="${2:-}"; shift 2 ;;
         --no-binary) WANT_BINARY=0; shift ;;
+        --no-self-check) SELF_CHECK=0; shift ;;
         -h|--help) usage; exit 0 ;;
         *) die "unknown option '$1' (try --help)" ;;
     esac
@@ -69,8 +72,10 @@ command -v unzip >/dev/null 2>&1 || die "unzip is required"
 # later.
 if command -v shasum >/dev/null 2>&1; then
     SHA_CHECK="shasum -a 256 -c"
+    sha_of() { shasum -a 256 "$1" | awk '{print $1}'; }
 elif command -v sha256sum >/dev/null 2>&1; then
     SHA_CHECK="sha256sum -c"
+    sha_of() { sha256sum "$1" | awk '{print $1}'; }
 else
     die "need shasum or sha256sum to verify the download"
 fi
@@ -84,6 +89,31 @@ if [ -z "$TAG" ]; then
 fi
 
 BASE="https://github.com/${REPO}/releases/download/${TAG}"
+
+# LDM-#1735: verify THIS FILE against the release it is staging, so the
+# bootstrap is not the one unverified link in a chain that checksums
+# everything else. It is a warning rather than an error on purpose: reusing
+# one installer across several releases is legitimate and common, and the
+# thing being verified is the release's artifacts, not this script's vintage.
+if [ "$SELF_CHECK" -eq 1 ]; then
+    self_sums=$(mktemp)
+    if curl -fsSL -o "$self_sums" "${BASE}/checksums.txt" 2>/dev/null; then
+        expected_self=$(awk '$2 ~ /install_verification\.sh$/ {print $1; exit}' "$self_sums")
+        if [ -n "$expected_self" ]; then
+            actual_self=$(sha_of "$0")
+            if [ "$expected_self" = "$actual_self" ]; then
+                note "Installer verified against ${TAG}."
+            else
+                warn "This installer does not match the one published with ${TAG}."
+                warn "That is expected if you are reusing an older copy, and fine --"
+                warn "everything it downloads below is still checksummed. Fetch the"
+                warn "matching one if you would rather it were identical:"
+                warn "    curl -fsSL -O ${BASE}/install_verification.sh"
+            fi
+        fi
+    fi
+    rm -f "$self_sums"
+fi
 
 # Resolve the binary asset before downloading anything, so an unsupported
 # platform fails immediately rather than after a 23 MB transfer.
