@@ -7,9 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.22.0-pre.8] - 2026-09-16
 
+The first release whose verification installer is actually reachable. `v2.22.0-pre.7`
+shipped the installer in the repository but not in the release, so the documented download
+404'd.
+
 ### Added
 
--
+- **The installer is published as a release asset** and covered by the release `checksums.txt`. Without that it existed only in a checkout, which defeats its purpose: a release should be verifiable from its published artifacts alone, the way a user does it. It is staged **before** the checksums are generated -- staged after, it would ship unchecksummed (LDM-#1735).
+- **The installer verifies itself** against the release it is staging, before downloading anything else, so the bootstrap is no longer the one unverified link in a chain that checksums everything else. A mismatch **warns** rather than fails -- reusing one installer across releases is legitimate -- and a release predating the asset passes quietly rather than complaining about its own absence (LDM-#1735).
+- **Activation-key discovery**: the key lives in a `common/` folder on each machine, relative to where the suite is run, so the installer looks there before asking. It checks the target's own `common/` first, then `./common/`. Requiring a flag for something already on disk in a known place is one more thing to remember, and forgetting it fails **silently** -- LDM only warns, the suite exits 0, and reports success having verified an unlicensed DXP (LDM-#1740).
+
+### Fixed
+
+- **Commits pushed to a branch whose PR had already merged were silently lost**: two reached no branch anyone would merge. The push succeeded, `agent_push.sh` printed its success banner, and CI stayed green because there was nothing new to test. The first symptom was `v2.22.0-pre.7` publishing without `install_verification.sh`, found only by listing the release's assets. The wrapper now warns when the branch's PR is `MERGED`/`CLOSED` -- after the push, never fatal, and naming the remedy (LDM-#1740).
+
+### Internal
+
+- **The installer cleans up after itself**: the bundle archive is removed once its contents are extracted **and verified**, and `checksums.txt` once the binary hash matches. Ordering is deliberate -- a failed checksum is exactly when the archive is worth keeping, being the evidence of what arrived. `SHA256SUMS` and `MANIFEST.txt` stay, since one re-checks the extracted files and the other records what the release does not contain (LDM-#1741).
 
 ## [v2.22.0-pre.7] - 2026-09-16
 
