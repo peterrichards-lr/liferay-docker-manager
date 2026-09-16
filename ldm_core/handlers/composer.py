@@ -806,6 +806,31 @@ class ComposerService:
             image = f"{image_base}:{tag}{suffix}"
         return image
 
+    def _resolve_target_mac(self, meta) -> str:
+        """The MAC to pin, or "" to leave Docker's assignment alone.
+
+        Only for remote targets: local runs validate today, as the
+        compatibility matrix shows, and pinning there would change working
+        behaviour for no benefit.
+
+        Never inferred. `ip a` on these nodes shows `ens5` beside `docker0` and
+        `br-*` -- all plausible, one correct -- and a wrong guess produces a
+        healthy container, `License registered` in the log, and a portal that
+        will not sign in. The configured value is the contract (LDM-#1752).
+        """
+        target_name = getattr(self.manager, "target", None) or (
+            meta.get("target") if isinstance(meta, dict) else None
+        )
+        if not target_name or target_name == "local":
+            return ""
+        try:
+            from ldm_core.config import load_targets
+
+            node = load_targets().get(target_name)
+        except Exception:
+            return ""
+        return (getattr(node, "mac_address", "") or "").strip() if node else ""
+
     def _build_liferay_service(  # noqa: C901, PLR0912, PLR0915
         self,
         paths,
@@ -1061,6 +1086,26 @@ class ComposerService:
             ],
             "networks": ["liferay-net"],
         }
+
+        # LDM-#1752: Liferay's licence binds to a MAC. On a remote node the
+        # container takes a bridge-assigned address (02:42:...), validation
+        # fails with "MAC address matching failed", and the portal serves the
+        # Activation page rather than Sign In. Measured on aws-1: pinning to
+        # the host's own NIC address was the only difference between a failed
+        # and a passed validation, same image, mounts, env and licence.
+        #
+        # BOTH forms are written. Measured together on Compose v5.2.0 / CLI
+        # 29.7.2 against daemon 25.0.14 they coexist with no conflict, no
+        # error and no deprecation warning -- but that is one toolchain, and a
+        # version honouring only one of them would otherwise drop the MAC
+        # silently. Neither key is trusted: `ExecutionStage` re-reads the MAC
+        # from the running container and refuses on a mismatch, which is what
+        # actually guarantees the outcome.
+        mac = self._resolve_target_mac(meta)
+        if mac:
+            service["mac_address"] = mac
+            service["networks"] = {"liferay-net": {"mac_address": mac}}
+
         if depends_on:
             service["depends_on"] = depends_on
 

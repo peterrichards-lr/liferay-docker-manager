@@ -2173,6 +2173,15 @@ def get_parser():  # noqa: PLR0915
         action="store_true",
         help="Set this target node as active global default",
     )
+    t_add.add_argument(
+        "--mac-address",
+        default="",
+        help=(
+            "Pin the Liferay container to this MAC on the node. Liferay's "
+            "licence binds to it; without a pin the container takes a bridge "
+            "address and the portal serves the Activation page (LDM-#1752)"
+        ),
+    )
 
     target_subparsers.add_parser(
         "ls",

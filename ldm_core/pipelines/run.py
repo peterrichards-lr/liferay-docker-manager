@@ -2140,6 +2140,71 @@ class ComposerStage(PipelineStage):
         manager.write_meta(paths["root"], project_meta)
 
 
+def _verify_pinned_mac(manager, context, project_meta) -> None:
+    """Refuse when the container's MAC is not the one that was configured.
+
+    LDM-#1752. Silent on a local target and when no MAC is configured -- this
+    exists to catch a pin that did not take, not to require one.
+
+    Exit 3 (infrastructure/data): the configuration is right and the
+    environment did not honour it, which is not a user-input error.
+    """
+    if context.get("dry_run"):
+        return
+
+    target_name = getattr(manager, "target", None) or (
+        project_meta.get("target") if isinstance(project_meta, dict) else None
+    )
+    if not target_name or target_name == "local":
+        return
+
+    try:
+        from ldm_core.config import load_targets
+
+        node = load_targets().get(target_name)
+    except Exception:
+        return
+    expected = (getattr(node, "mac_address", "") or "").strip().lower() if node else ""
+    if not expected:
+        return
+
+    from ldm_core.docker_service import DockerService
+    from ldm_core.utils import liferay_container_of
+
+    container = liferay_container_of(project_meta)
+    actual = DockerService.container_mac_address(container, target_name)
+
+    if actual is None:
+        # Unreadable is not the same as wrong. Say so and continue rather than
+        # blocking a boot on a diagnosis that did not run.
+        UI.warning(
+            f"Could not read the MAC of '{container}' to confirm it was pinned "
+            f"(LDM-#1752). Liferay's licence binds to it, so if activation "
+            f"fails, check it by hand."
+        )
+        return
+
+    if actual != expected:
+        UI.die(
+            f"The container's MAC is {actual}, not the {expected} configured "
+            f"for node '{target_name}'.",
+            details=(
+                "Liferay's licence binds to the MAC. Left alone, this boots a "
+                "healthy container that logs 'License registered' and then "
+                "serves the DXP Activation page instead of the Sign In form."
+            ),
+            tip=(
+                "The MAC can only be set when a container is created, so an "
+                "existing one cannot be corrected in place. Recreate it:\n"
+                f"    ldm rm {context.get('project_id')} && ldm run "
+                f"{context.get('project_id')}"
+            ),
+            exit_code=3,
+        )
+
+    UI.detail(f"Container MAC pinned to {actual} as configured for '{target_name}'.")
+
+
 def _patch_docker_prefix(manager, target_context):
     """Returns the `docker` argv prefix to use for `docker cp` (LDM-#1264).
 
@@ -2482,6 +2547,20 @@ class ExecutionStage(PipelineStage):
                     cwd=str(paths["root"]),
                     capture_output=not follow,
                 )
+
+            # LDM-#1752: the container is up, so the MAC it ACTUALLY has can
+            # be read. Emitting `mac_address` into the compose file is a
+            # request, not a guarantee -- a toolchain that ignores the form LDM
+            # wrote drops it silently, and so does a container created before
+            # the configured value changed, which cannot be corrected in place
+            # (`docker network connect --mac-address` does not exist on 25.0.14).
+            #
+            # Every one of those presents identically: healthy container,
+            # `License registered` in the log, and a portal serving the
+            # Activation page instead of Sign In. Checking here turns all of
+            # them into one named error, before the operator spends fifteen
+            # minutes waiting for a boot that will not let them sign in.
+            _verify_pinned_mac(manager, context, project_meta)
 
             if follow:
                 context.set("logs_attached", True)

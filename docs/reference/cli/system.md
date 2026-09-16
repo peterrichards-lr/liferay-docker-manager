@@ -530,6 +530,31 @@ ldm target migrate local win-wsl
 ldm target rm win-wsl
 ```
 
+### `--mac-address` (licence activation on remote nodes)
+
+Liferay's licence binds to a MAC address. On a remote node the container takes
+a bridge-assigned address, validation fails, and the portal serves the **DXP
+Activation page** instead of the Sign In form -- with a healthy container and
+`License registered` in the log, so nothing looks wrong.
+
+```bash
+ldm target add aws-1 --host 10.0.0.9 --user ec2-user \
+  --mac-address 06:d0:95:e5:26:a7
+```
+
+Use the node's own primary NIC address (the one the licence allows). LDM does
+not infer it: a node typically shows `ens5` beside `docker0` and `br-*`, all
+plausible and only one licensed, and a wrong value produces the failure above.
+Re-run `ldm target add` with the same name to change it.
+
+LDM re-reads the MAC from the running container and **refuses** when it does
+not match, because writing the value into the compose file is a request rather
+than a guarantee. The MAC can only be set at container creation, so a changed
+value requires a recreate.
+
+See `docs/explanation/remote-node-architecture.md` for the measurement and the
+bridge-only safety caveat.
+
 ### `target migrate`
 
 Migrate a running project workload live between target compute nodes with zero manual data loss:
@@ -543,4 +568,4 @@ ldm target migrate win-wsl aws-1
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-03* | *Last Reviewed: 2026-09-03*
+*Last Updated: 2026-09-16* | *Last Reviewed: 2026-09-16*

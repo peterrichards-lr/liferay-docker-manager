@@ -23,6 +23,17 @@ class TargetNode:
     key_path: str = ""
     is_default: bool = False
     created_at: str = ""
+    # LDM-#1752: Liferay's licence binds to a MAC. On a remote node the
+    # container gets a bridge-assigned address (02:42:...), the licence check
+    # fails, and the portal serves the Activation page instead of Sign In --
+    # measured on aws-1, where pinning to the host's own `ens5` address was the
+    # only difference between a failed and a passed validation.
+    #
+    # Deliberately NOT auto-populated. `ip a` on these nodes shows `ens5`
+    # beside `docker0` and `br-*`: all plausible, one correct, and a wrong
+    # guess yields a healthy container, `License registered` in the log, and a
+    # portal that will not sign in. Configuration is the contract.
+    mac_address: str = ""
 
     def __post_init__(self) -> None:
         if not self.created_at:
@@ -35,6 +46,7 @@ class TargetNode:
             "key_path": self.key_path,
             "is_default": self.is_default,
             "created_at": self.created_at,
+            "mac_address": self.mac_address,
         }
 
     @classmethod
@@ -48,6 +60,7 @@ class TargetNode:
             key_path=str(data.get("key_path", "")),
             is_default=bool(data.get("is_default", False)),
             created_at=str(data.get("created_at", "")),
+            mac_address=str(data.get("mac_address", "")),
         )
 
 
