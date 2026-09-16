@@ -83,6 +83,79 @@ class NewerKernelsAreNotMistakenForTahoe(unittest.TestCase):
         self.assertNotEqual(_host_os("darwin27"), _host_os("darwin28"))
 
 
+class TahoesRealProductVersionIsTwentySix(unittest.TestCase):
+    """`16` was never a product version (LDM-#1750).
+
+    It is what the old `darwin - 9` arithmetic produced for Tahoe, and it was
+    left in the table when `27: "Golden Gate"` was added on the assumption that
+    both numbers meant the same thing. They do not. A Tahoe machine reporting
+    its real version says `macos-26.6.2`, so it fell through the table unnamed
+    and would have been filed as a codename-less "macOS 26" -- breaking the
+    convention that a release is named by its project name wherever one exists.
+
+    Surfaced by a real verification report from a second Mac, not by review:
+    the number in the filename said Tahoe while the `Platform:` line said 26.
+
+    Both mappings are kept. `16` serves reports that predate the
+    product-version change; `26` serves every machine reporting honestly.
+    """
+
+    def test_a_real_tahoe_machine_is_named(self):
+        self.assertEqual(_host_os("macos-26.6.2"), "macOS 26 Tahoe")
+
+    def test_a_darwin_derived_tahoe_report_is_relabelled(self):
+        """The existing reports say `darwin25`, and darwin 25 IS macOS 26.
+
+        Re-labelling them is the honest outcome: 16 was produced by a bug, so
+        preserving it would preserve the bug. The reports are untouched -- they
+        still record `darwin25` -- and the corrected mapping derives the right
+        answer from them on the next sync, which also renames the canonical
+        files.
+        """
+        self.assertEqual(_host_os("darwin25"), "macOS 26 Tahoe")
+
+    def test_the_sequence_is_not_continuous(self):
+        """Sequoia is 15 on darwin 24, then Apple jumped to 26 for Tahoe.
+
+        `darwin - 9` assumed a continuous sequence, which is the root of this
+        whole family of defects.
+        """
+        self.assertEqual(_host_os("darwin24"), "macOS 15 Sequoia")
+        self.assertEqual(_host_os("darwin25"), "macOS 26 Tahoe")
+
+    def test_a_literal_sixteen_is_still_named(self):
+        """Nothing produces 16 any more, but a stray report naming it should
+        not become anonymous."""
+        self.assertEqual(_host_os("macos-16"), "macOS 16 Tahoe")
+
+    def test_both_tahoe_machines_land_on_the_same_row(self):
+        """The point of the re-label: one OS, one row.
+
+        Before it, a darwin-derived report and a product-version report from
+        the same OS produced two parallel rows.
+        """
+        self.assertEqual(_host_os("darwin25"), _host_os("macos-26.6.2"))
+
+    def test_tahoe_and_golden_gate_remain_distinct(self):
+        """Adjacent product versions, so a fumbled table would merge them."""
+        self.assertNotEqual(_host_os("macos-26.6.2"), _host_os("macos-27.0"))
+
+    def test_the_two_tables_agree(self):
+        """`sync_compatibility.py` names the matrix row; `info.py` names the
+        report file. They disagreeing is how LDM-#1744 happened."""
+        from unittest.mock import patch
+
+        from ldm_core.diagnostics.info import resolve_macos_host_os
+
+        for product in ("26.6.2", "27.0", "15.4"):
+            with self.subTest(product=product):
+                with patch(
+                    "platform.mac_ver", return_value=(product, ("", "", ""), "arm64")
+                ):
+                    binary_side = resolve_macos_host_os("darwin-x-arm64")
+                self.assertEqual(binary_side, _host_os(f"macos-{product}"))
+
+
 class TheSlugCannotOverwriteAnExistingEnvironment(unittest.TestCase):
     """The reason this is a bug and not a typo.
 
@@ -110,8 +183,9 @@ class ExistingReportsKeepTheirLabels(unittest.TestCase):
     """The matrix already holds rows derived the old way; re-syncing them must
     not silently rewrite history."""
 
-    def test_darwin_25_is_still_tahoe(self):
-        self.assertEqual(_host_os("darwin25"), "macOS 16 Tahoe")
+    def test_darwin_25_is_tahoe_at_its_real_version(self):
+        """LDM-#1750 corrected this from 16, which no macOS ever was."""
+        self.assertEqual(_host_os("darwin25"), "macOS 26 Tahoe")
 
     def test_darwin_24_is_still_sequoia(self):
         self.assertEqual(_host_os("darwin24"), "macOS 15 Sequoia")
@@ -203,3 +277,72 @@ class TheVerifyScriptRecordsTheRealVersion(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheDoctorSlugNamesTheReleaseCorrectly(unittest.TestCase):
+    """`ldm system doctor --slug` NAMES the verification report (LDM-#1744).
+
+    `verify_e2e_refactor.sh` builds the report filename from this slug, so a
+    wrong answer here misfiles the compatibility record no matter what the rest
+    of the pipeline does. It is a third derivation site, independent of
+    `sync_compatibility.py` and of the verify script's own platform line -- and
+    it was missed when the other two were fixed.
+
+    Observed on macOS 27.0:
+
+        verify-apple-silicon-macos-18-18-colima-20260916-130714-fail.txt
+
+    Two faults compounded. `platform.release()` is the DARWIN kernel (27.0.0)
+    and `v_num - 9` was applied to it unconditionally, giving 18; then
+    `names.get(v, str(v))` fell back to the number as its own codename, giving
+    "macOS 18 18". The table even carried `17: "17"` -- the same symptom
+    patched once before, rather than the cause.
+
+    `platform.mac_ver()` reports the product version from the OS, so the fix
+    removes the arithmetic rather than correcting it.
+    """
+
+    def _host_os(self, product, release="27.0.0"):
+        """Drives the pure helper, not `_get_env_info`.
+
+        `_get_env_info` reaches a real Docker daemon to identify the provider,
+        which the suite's LDM-#1409 guard rightly refuses. Naming a release is
+        a pure computation and is now separable from that.
+        """
+        from unittest.mock import patch
+
+        from ldm_core.diagnostics.info import resolve_macos_host_os
+
+        with patch("platform.mac_ver", return_value=(product, ("", "", ""), "arm64")):
+            return resolve_macos_host_os(f"darwin-{release}-arm64")
+
+    def test_golden_gate_is_named(self):
+        self.assertEqual(self._host_os("27.0"), "macOS 27 Golden Gate")
+
+    def test_the_kernel_version_is_not_subtracted_from(self):
+        """27 - 9 = 18 was the arithmetic that produced `macos-18-18`."""
+        self.assertNotIn("18", self._host_os("27.0"))
+
+    def test_a_number_is_never_used_as_its_own_codename(self):
+        """ "macOS 18 18" is what that fallback produces."""
+        host_os = self._host_os("31.0")
+
+        self.assertEqual(host_os, "macOS 31")
+        self.assertNotEqual(host_os, "macOS 31 31")
+
+    def test_known_releases_are_unchanged(self):
+        self.assertEqual(self._host_os("15.4", "24.4.0"), "macOS 15 Sequoia")
+        self.assertEqual(self._host_os("16.1", "25.1.0"), "macOS 16 Tahoe")
+
+    def test_the_kernel_fallback_still_works_without_a_product_version(self):
+        """mac_ver() can return an empty string; the offset holds historically."""
+        self.assertEqual(self._host_os("", "24.0.0"), "macOS 15 Sequoia")
+
+    def test_the_slug_is_filename_safe_and_distinct(self):
+        """It becomes part of the report filename, and must not collide with
+        the Tahoe row."""
+        golden = self._host_os("27.0").lower().replace(" ", "-")
+        tahoe = self._host_os("16.1", "25.1.0").lower().replace(" ", "-")
+
+        self.assertEqual(golden, "macos-27-golden-gate")
+        self.assertNotEqual(golden, tahoe)

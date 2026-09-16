@@ -147,6 +147,53 @@ class BothFindTheActivationKeyWhereItLives(unittest.TestCase):
         self.assertIn("if ([string]::IsNullOrWhiteSpace($ActivationKey))", self.ps1)
 
 
+class TheBundleOpensWithoutUnzip(unittest.TestCase):
+    """`unzip` is not installed by default on minimal Linux images or WSL.
+
+    Reported from a WSL box where staging died on `ERROR: unzip is required`
+    (LDM-#1746) -- a hard stop for no reason, since a machine able to run the
+    suite already carries at least one thing that opens a zip, and a message
+    that did not even name the remedy.
+
+    Order is by directness: `unzip` is purpose-built; `bsdtar` reads zip
+    natively where GNU tar does not; `python3`'s `zipfile` is the broadest
+    fallback. All three were exercised by hiding the earlier ones from PATH and
+    confirming the bundle still extracted.
+    """
+
+    def setUp(self):
+        self.sh = SH.read_text(encoding="utf-8")
+
+    def test_all_three_extractors_are_offered(self):
+        for tool in ("unzip", "bsdtar", "python3"):
+            with self.subTest(tool=tool):
+                self.assertIn(tool, self.sh)
+
+    def test_unzip_is_no_longer_a_hard_requirement(self):
+        self.assertNotIn('die "unzip is required"', self.sh)
+
+    def test_the_refusal_names_how_to_fix_it(self):
+        """A message that states a missing tool without saying how to get it
+        leaves the reader exactly where they started."""
+        self.assertIn("apt-get install", self.sh)
+
+    def test_it_refuses_before_downloading_anything(self):
+        """Failing after an 80KB transfer is not failing fast."""
+        checks_at = self.sh.index("need one of unzip, bsdtar or python3")
+        download_at = self.sh.index("Downloading the verification bundle")
+
+        self.assertLess(
+            checks_at,
+            download_at,
+            "the extractor check runs after the download, so a machine that "
+            "cannot unpack still pays for the transfer",
+        )
+
+    def test_it_reports_which_extractor_it_used(self):
+        """A silent fallback is how you discover the difference too late."""
+        self.assertIn("using ${EXTRACTOR}", self.sh)
+
+
 class BothCleanUpAfterThemselves(unittest.TestCase):
     """The archive is a means, not a deliverable (LDM-#1741).
 
@@ -360,6 +407,52 @@ class TheReleasePublishesIt(unittest.TestCase):
 
 class TheDocsPointAtIt(unittest.TestCase):
     """An installer nobody is told about is the same as no installer."""
+
+    def _docs(self):
+        return (
+            Path(__file__).resolve().parent.parent.parent / "docs" / "TESTING.md"
+        ).read_text(encoding="utf-8")
+
+    def test_both_platforms_are_documented(self):
+        """Parity in the scripts is worth little if only one is written up."""
+        docs = self._docs()
+
+        self.assertIn("install_verification.sh", docs)
+        self.assertIn("install_verification.ps1", docs)
+
+    def test_the_upgrade_step_comes_first(self):
+        """`v$(ldm version)` is only correct because the upgrade precedes it.
+
+        Documented without that step, the sequence silently stages the
+        PREVIOUS release -- observed once, with pre.8 staged while pre.9 was
+        the release under test.
+        """
+        docs = self._docs()
+
+        self.assertLess(
+            docs.index("ldm system upgrade --beta"),
+            docs.index("LDM_TAG=v$(ldm version)"),
+            "the tag is derived before the upgrade that makes it correct",
+        )
+
+    def test_the_windows_execution_policy_is_covered(self):
+        """A downloaded .ps1 is blocked by default; without this the very first
+        Windows run fails with a security error."""
+        self.assertIn("Set-ExecutionPolicy", self._docs())
+
+    def test_the_windows_upgrade_race_is_warned_about(self):
+        """LDM-#1743: the upgrade returns before it completes on Windows."""
+        docs = self._docs()
+
+        self.assertIn("1743", docs)
+        self.assertIn("returns before it has finished", docs)
+
+    def test_the_silent_failure_of_a_missing_key_is_stated(self):
+        """The whole hazard is that nothing appears to go wrong."""
+        docs = self._docs()
+
+        self.assertIn("unlicensed", docs)
+        self.assertIn("exits 0", docs)
 
     def test_testing_md_mentions_the_installer(self):
         docs = (

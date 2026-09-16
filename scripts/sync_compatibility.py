@@ -702,7 +702,15 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
                 # An unrecognised kernel must never borrow the newest known
                 # codename. Reports written since this change carry
                 # `macos-<version>` and never reach here at all.
-                known = {24: 15, 25: 16}
+                # LDM-#1750: darwin 25 is macOS **26** Tahoe, not 16. The
+                # sequence is not continuous -- Sequoia is 15 on darwin 24 and
+                # Apple then jumped to 26 -- which is precisely what the old
+                # `darwin - 9` arithmetic assumed away. Correcting it here
+                # re-labels the existing Tahoe reports on their next sync
+                # rather than leaving them recorded under a number that never
+                # existed; the reports themselves are untouched and still say
+                # `darwin25`.
+                known = {24: 15, 25: 26}
                 if darwin_v in known:
                     v_num = known[darwin_v]
                 elif darwin_v < 24:
@@ -727,9 +735,12 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
             13: "Ventura",
             14: "Sonoma",
             15: "Sequoia",
+            # LDM-#1750: 16 is NOT a product version. It is what the old
+            # `darwin - 9` arithmetic produced for Tahoe, and it is kept only so
+            # that reports predating the product-version change keep their
+            # labels. A machine reporting its real version says `macos-26.6.2`.
             16: "Tahoe",
-            # LDM-#1737: keyed on the product version a report now carries
-            # directly (`macos-27.0`), not on a kernel-derived guess.
+            26: "Tahoe",
             27: "Golden Gate",
         }
         name = real_names.get(v_num, "")

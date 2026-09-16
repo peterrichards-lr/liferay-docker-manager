@@ -50,7 +50,7 @@ def _fake_repo(root: Path, *, with_common=True, with_ps1=True, with_harness=True
     if with_ps1:
         (root / "scripts" / "verify_e2e_refactor.ps1").write_text("# ps1\n")
     if with_harness:
-        (root / "scripts" / "verify_fragment_override.py").write_text("# harness\n")
+        (root / "scripts" / "fragment_override_harness.py").write_text("# harness\n")
     if with_common:
         common = root / "common"
         common.mkdir(exist_ok=True)
@@ -154,6 +154,54 @@ class WhatItContains(BundleTestCase):
             self.assertIn(member, sums, f"{member} is unchecksummed")
 
 
+class TabCompletionPicksTheSuite(BundleTestCase):
+    """`verify_<TAB>` should reach the runnable suite (LDM-#1748).
+
+    The bundle is unpacked into a directory the operator then types in, and
+    while three files began `verify_` the completion stopped dead at that
+    prefix -- one extra listing, every single time, before any useful keystroke.
+
+    The Python harness was renamed out of the namespace rather than the suite
+    renamed into a longer one: the harness is opt-in and currently cannot
+    complete a run at all (LDM-#1729), so it is the one that should cost the
+    keystrokes.
+
+    This asserts the PROPERTY rather than the filenames, so adding
+    `verify_something_else.sh` to the bundle fails here and the trade-off gets
+    made deliberately instead of eroding.
+    """
+
+    def _verify_prefixed(self):
+        names = self._names(self._build())
+        return sorted(n for n in names if n.startswith("verify_") and "/" not in n)
+
+    def test_completion_reaches_the_suite_name(self):
+        names = self._verify_prefixed()
+        self.assertTrue(names, "no verify_* entries at all")
+
+        prefix = names[0]
+        for name in names[1:]:
+            while not name.startswith(prefix):
+                prefix = prefix[:-1]
+
+        self.assertEqual(
+            prefix,
+            "verify_e2e_refactor.",
+            f"`verify_<TAB>` stops at {prefix!r}; only the platform halves of "
+            "the suite should share that namespace",
+        )
+
+    def test_only_the_two_platform_halves_use_the_prefix(self):
+        self.assertEqual(
+            self._verify_prefixed(),
+            ["verify_e2e_refactor.ps1", "verify_e2e_refactor.sh"],
+        )
+
+    def test_the_harness_is_still_shipped_under_its_new_name(self):
+        """Renaming it must not quietly drop it from the bundle."""
+        self.assertIn("fragment_override_harness.py", self._names(self._build()))
+
+
 class WhatItRefusesToBuild(BundleTestCase):
     """Absence must be loud. A quiet omission is the original defect."""
 
@@ -188,7 +236,7 @@ class WhatItRefusesToBuild(BundleTestCase):
 
         names = self._names(self.mod.build("v9.9.9", self.out, root=repo))
 
-        self.assertNotIn("verify_fragment_override.py", names)
+        self.assertNotIn("fragment_override_harness.py", names)
         self.assertIn("verify_e2e_refactor.sh", names)
 
 

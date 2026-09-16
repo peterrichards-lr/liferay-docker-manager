@@ -1,6 +1,6 @@
 """The LDM-#1618 harness builds a fixture Liferay and LDM both accept.
 
-`scripts/verify_fragment_override.py` needs a live Liferay, so it is not part
+`scripts/fragment_override_harness.py` needs a live Liferay, so it is not part
 of the default gate. Its *fixture builder* needs nothing, and it is the half
 that silently rots: a fragment zip missing its marker is ignored by LDM without
 a word, and a `fragment-overrides.json` in the wrong shape is rejected by a
@@ -30,12 +30,12 @@ from unittest.mock import patch
 _HARNESS = (
     Path(__file__).resolve().parent.parent.parent
     / "scripts"
-    / "verify_fragment_override.py"
+    / "fragment_override_harness.py"
 )
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("verify_fragment_override", _HARNESS)
+    spec = importlib.util.spec_from_file_location("fragment_override_harness", _HARNESS)
     # Asserted rather than assumed: `spec_from_file_location` returns None for
     # an unreadable path, and mypy narrows on these.
     assert spec is not None, f"could not load {_HARNESS}"
@@ -495,7 +495,7 @@ class ItStaysOutOfTheDefaultGate(unittest.TestCase):
         for name in ("verify_e2e_refactor.sh", "verify_e2e_refactor.ps1"):
             body = (root / "scripts" / name).read_text(encoding="utf-8")
             self.assertNotIn(
-                "verify_fragment_override",
+                "fragment_override_harness",
                 body,
                 f"{name} calls the live harness -- it needs a Liferay boot and "
                 "content it creates itself, which the suite does not own",
