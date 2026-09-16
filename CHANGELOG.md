@@ -7,9 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.23.0-pre.1] - 2026-09-16
 
+Opened the `v2.23.0` cycle with the MAC pinning work. **Published nothing**: the first cut
+of a new minor fails `test_release_announcements_contract` until `RELEASE_ANNOUNCEMENTS`
+carries an entry for that minor, which only `--bump preminor` can hit -- `--bump beta`
+reuses a minor that already has one. The same change set ships in `v2.23.0-pre.2`.
+
 ### Added
 
--
+- **`ldm target add --mac-address`**: pin the Liferay container to a node's NIC address so a MAC-bound licence activates. Measured on `aws-1` with `liferay/dxp:2026.q3.0`: the container recreated identically except for the MAC took validation from "MAC address matching failed" to passed, and the portal from the DXP Activation page to the Sign In form. Without a pin the container takes a bridge address and the failure is silent -- healthy container, `License registered` in the log, and a portal that will not sign in. Configured per node and never inferred: a node shows `ens5` beside `docker0` and `br-*`, all plausible and one licensed (LDM-#1752).
+- **The pin is verified, not assumed**: after start LDM reads the container's MAC back and refuses (exit 3) when it is not the configured one, naming both values and stating that a recreate is required. Writing `mac_address` into the compose file is a request -- a toolchain that ignores the form, a container created before the value changed, and a wrongly chosen interface all present identically, and one check covers all three (LDM-#1752).
+
+### Internal
+
+- **Promotion Delta Gate** added to `release-orchestration`: before `--promote`, diff the shipped code between the verified pre-release tag and HEAD. Every other gate guards the road *to* a pre-release; nothing guarded the gap between verifying one and promoting it, and four commits landed in `v2.22.0` after its `-pre.9` verification -- found by asking afterwards rather than by any check (LDM-#1754).
 
 ## [v2.22.0] - 2026-09-16
 
