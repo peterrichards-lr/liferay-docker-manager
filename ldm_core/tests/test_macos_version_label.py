@@ -139,6 +139,38 @@ class TheArchitectureSurvivesTheChange(unittest.TestCase):
         self.assertEqual(self._arch("darwin25"), "Apple Silicon")
 
 
+class TheNamingConventionIsRecorded(unittest.TestCase):
+    """Name a macOS release by its code name wherever one exists.
+
+    A row reading "macOS 27" is a version nobody recognises; "Golden Gate" is
+    what people say and what the release notes use. The convention lives beside
+    the table it governs, because that is the only place someone adding the
+    next version will be looking.
+    """
+
+    def _src(self):
+        return (SCRIPTS / "sync_compatibility.py").read_text(encoding="utf-8")
+
+    def test_the_convention_is_stated_where_versions_are_added(self):
+        src = self._src()
+        at_convention = src.index("CONVENTION")
+        at_table = src.index('11: "Big Sur"')
+
+        self.assertLess(
+            at_convention,
+            at_table,
+            "the convention must precede the table it governs",
+        )
+
+    def test_every_named_release_has_a_code_name(self):
+        """A bare number in the table would contradict the rule."""
+        src = self._src()
+        block = src[src.index("real_names = {") : src.index('11: "Big Sur"') + 400]
+
+        for entry in ("Big Sur", "Monterey", "Ventura", "Sonoma", "Sequoia", "Tahoe"):
+            self.assertIn(entry, block)
+
+
 class TheVerifyScriptRecordsTheRealVersion(unittest.TestCase):
     """`$OSTYPE` is compile-time, so the script must ask the OS itself."""
 

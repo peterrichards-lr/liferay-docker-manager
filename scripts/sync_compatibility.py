@@ -714,6 +714,13 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
                     # record.
                     v_num = -darwin_v
 
+        # CONVENTION: name a macOS release by its project/code name wherever
+        # one exists -- "Golden Gate", not "macOS 27". The code name is what
+        # people say and what release notes use, so a matrix row without it
+        # reads as a version nobody recognises. When a new macOS ships, add its
+        # entry here keyed on the PRODUCT version (what `sw_vers
+        # -productVersion` reports); the fallback below deliberately renders an
+        # unnamed release rather than borrowing the nearest known name.
         real_names = {
             11: "Big Sur",
             12: "Monterey",
