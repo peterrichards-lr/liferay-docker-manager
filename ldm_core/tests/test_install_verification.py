@@ -361,6 +361,52 @@ class TheReleasePublishesIt(unittest.TestCase):
 class TheDocsPointAtIt(unittest.TestCase):
     """An installer nobody is told about is the same as no installer."""
 
+    def _docs(self):
+        return (
+            Path(__file__).resolve().parent.parent.parent / "docs" / "TESTING.md"
+        ).read_text(encoding="utf-8")
+
+    def test_both_platforms_are_documented(self):
+        """Parity in the scripts is worth little if only one is written up."""
+        docs = self._docs()
+
+        self.assertIn("install_verification.sh", docs)
+        self.assertIn("install_verification.ps1", docs)
+
+    def test_the_upgrade_step_comes_first(self):
+        """`v$(ldm version)` is only correct because the upgrade precedes it.
+
+        Documented without that step, the sequence silently stages the
+        PREVIOUS release -- observed once, with pre.8 staged while pre.9 was
+        the release under test.
+        """
+        docs = self._docs()
+
+        self.assertLess(
+            docs.index("ldm system upgrade --beta"),
+            docs.index("LDM_TAG=v$(ldm version)"),
+            "the tag is derived before the upgrade that makes it correct",
+        )
+
+    def test_the_windows_execution_policy_is_covered(self):
+        """A downloaded .ps1 is blocked by default; without this the very first
+        Windows run fails with a security error."""
+        self.assertIn("Set-ExecutionPolicy", self._docs())
+
+    def test_the_windows_upgrade_race_is_warned_about(self):
+        """LDM-#1743: the upgrade returns before it completes on Windows."""
+        docs = self._docs()
+
+        self.assertIn("1743", docs)
+        self.assertIn("returns before it has finished", docs)
+
+    def test_the_silent_failure_of_a_missing_key_is_stated(self):
+        """The whole hazard is that nothing appears to go wrong."""
+        docs = self._docs()
+
+        self.assertIn("unlicensed", docs)
+        self.assertIn("exits 0", docs)
+
     def test_testing_md_mentions_the_installer(self):
         docs = (
             Path(__file__).resolve().parent.parent.parent / "docs" / "TESTING.md"

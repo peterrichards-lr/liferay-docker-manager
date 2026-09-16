@@ -833,6 +833,64 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
             sys.exit(0)
 
 
+def resolve_macos_host_os(p_low: str = "") -> str:
+    """The display name for this machine's macOS release (LDM-#1744).
+
+    Pure by design: it is the value `ldm system doctor --slug` prints, and the
+    verification report is NAMED from that slug, so it needs to be testable
+    without a Docker daemon in the way -- `_get_env_info` reaches one to
+    identify the provider, which is why this lives on its own.
+
+    `platform.mac_ver()` reports the PRODUCT version from the OS (e.g. `27.0`),
+    so no arithmetic is needed and none is done. The old code read
+    `platform.release()` -- the DARWIN kernel, `27.0.0` -- and subtracted 9 from
+    it unconditionally, yielding 18; `names.get(v, str(v))` then used the number
+    as its own codename, so a macOS 27.0 report was filed as
+    `verify-apple-silicon-macos-18-18-colima-...`. The table even carried
+    `17: "17"`, which was that symptom patched once before rather than its cause.
+
+    CONVENTION: name a release by its project/code name wherever one exists.
+    An unnamed release renders as `macOS <n>` -- never the number twice, and
+    never the nearest known name, which would collide with a real release's
+    slug and overwrite its verification record.
+    """
+    names = {
+        11: "Big Sur",
+        12: "Monterey",
+        13: "Ventura",
+        14: "Sonoma",
+        15: "Sequoia",
+        16: "Tahoe",
+        27: "Golden Gate",
+    }
+
+    v_macos = 0
+    try:
+        product = platform.mac_ver()[0] or ""
+    except Exception:
+        product = ""
+
+    if product:
+        try:
+            v_macos = int(product.split(".")[0])
+        except ValueError:
+            v_macos = 0
+
+    if v_macos <= 0:
+        # No product version available: fall back to the kernel, where the
+        # historical offset does hold (darwin 24 -> macOS 15).
+        ver_match = re.search(r"darwin[-]?(\d+)", p_low)
+        if not ver_match:
+            ver_match = re.search(r"macos[-]?(\d+)", p_low)
+        if ver_match:
+            v_num = int(ver_match.group(1))
+            v_macos = v_num - 9 if v_num >= 20 else v_num
+
+    if v_macos <= 0:
+        return "macOS 11+"
+    return f"macOS {v_macos} {names.get(v_macos, '')}".strip()
+
+
 def _get_env_info(self):  # noqa: C901, PLR0912, PLR0915
     """Extracts architecture, OS, and Docker provider information."""
     arch = "Unknown"
@@ -851,30 +909,7 @@ def _get_env_info(self):  # noqa: C901, PLR0912, PLR0915
             arch = "Apple Intel" if is_mac else "x86_64"
 
         if is_mac:
-            # Improved mapping: darwin21 = macOS 12 Monterey, etc.
-            ver_match = re.search(r"darwin[-]?(\d+)", p_low)
-            if not ver_match:
-                ver_match = re.search(r"macos[-]?(\d+)", p_low)
-
-            if ver_match:
-                v_num = int(ver_match.group(1))
-                if v_num >= 20:
-                    v_macos = v_num - 9
-                    names = {
-                        11: "Big Sur",
-                        12: "Monterey",
-                        13: "Ventura",
-                        14: "Sonoma",
-                        15: "Sequoia",
-                        16: "Tahoe",
-                        17: "17",
-                    }
-                    name = names.get(v_macos, str(v_macos))
-                    host_os = f"macOS {v_macos} {name}".strip()
-                else:
-                    host_os = f"macOS {v_num}"
-            else:
-                host_os = "macOS 11+"
+            host_os = resolve_macos_host_os(p_low)
         elif "microsoft" in p_low or "windows" in p_low:
             host_os = "Windows 11"
             arch = "Windows PC"

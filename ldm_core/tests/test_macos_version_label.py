@@ -203,3 +203,72 @@ class TheVerifyScriptRecordsTheRealVersion(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheDoctorSlugNamesTheReleaseCorrectly(unittest.TestCase):
+    """`ldm system doctor --slug` NAMES the verification report (LDM-#1744).
+
+    `verify_e2e_refactor.sh` builds the report filename from this slug, so a
+    wrong answer here misfiles the compatibility record no matter what the rest
+    of the pipeline does. It is a third derivation site, independent of
+    `sync_compatibility.py` and of the verify script's own platform line -- and
+    it was missed when the other two were fixed.
+
+    Observed on macOS 27.0:
+
+        verify-apple-silicon-macos-18-18-colima-20260916-130714-fail.txt
+
+    Two faults compounded. `platform.release()` is the DARWIN kernel (27.0.0)
+    and `v_num - 9` was applied to it unconditionally, giving 18; then
+    `names.get(v, str(v))` fell back to the number as its own codename, giving
+    "macOS 18 18". The table even carried `17: "17"` -- the same symptom
+    patched once before, rather than the cause.
+
+    `platform.mac_ver()` reports the product version from the OS, so the fix
+    removes the arithmetic rather than correcting it.
+    """
+
+    def _host_os(self, product, release="27.0.0"):
+        """Drives the pure helper, not `_get_env_info`.
+
+        `_get_env_info` reaches a real Docker daemon to identify the provider,
+        which the suite's LDM-#1409 guard rightly refuses. Naming a release is
+        a pure computation and is now separable from that.
+        """
+        from unittest.mock import patch
+
+        from ldm_core.diagnostics.info import resolve_macos_host_os
+
+        with patch("platform.mac_ver", return_value=(product, ("", "", ""), "arm64")):
+            return resolve_macos_host_os(f"darwin-{release}-arm64")
+
+    def test_golden_gate_is_named(self):
+        self.assertEqual(self._host_os("27.0"), "macOS 27 Golden Gate")
+
+    def test_the_kernel_version_is_not_subtracted_from(self):
+        """27 - 9 = 18 was the arithmetic that produced `macos-18-18`."""
+        self.assertNotIn("18", self._host_os("27.0"))
+
+    def test_a_number_is_never_used_as_its_own_codename(self):
+        """ "macOS 18 18" is what that fallback produces."""
+        host_os = self._host_os("31.0")
+
+        self.assertEqual(host_os, "macOS 31")
+        self.assertNotEqual(host_os, "macOS 31 31")
+
+    def test_known_releases_are_unchanged(self):
+        self.assertEqual(self._host_os("15.4", "24.4.0"), "macOS 15 Sequoia")
+        self.assertEqual(self._host_os("16.1", "25.1.0"), "macOS 16 Tahoe")
+
+    def test_the_kernel_fallback_still_works_without_a_product_version(self):
+        """mac_ver() can return an empty string; the offset holds historically."""
+        self.assertEqual(self._host_os("", "24.0.0"), "macOS 15 Sequoia")
+
+    def test_the_slug_is_filename_safe_and_distinct(self):
+        """It becomes part of the report filename, and must not collide with
+        the Tahoe row."""
+        golden = self._host_os("27.0").lower().replace(" ", "-")
+        tahoe = self._host_os("16.1", "25.1.0").lower().replace(" ", "-")
+
+        self.assertEqual(golden, "macos-27-golden-gate")
+        self.assertNotEqual(golden, tahoe)

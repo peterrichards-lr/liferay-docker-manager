@@ -535,46 +535,93 @@ instructions here can never disagree.
 
 `scripts/install_verification.sh` (and `install_verification.ps1` on Windows)
 does the whole staging sequence: fetches the bundle for a tag, **verifies every
-checksum**, unpacks it so `common/` sits beside the script, makes the suite
-executable, and fetches and checksums the matching binary.
+checksum including its own**, unpacks it so `common/` sits beside the script,
+makes the suite executable, removes the archive once it is verified, and finds
+your activation key without being told where it is.
 
 It is published as a release asset, so no checkout is needed -- which is the
 point: a release should be verifiable from its published artifacts alone, the
-way a user would.
+way a user does it.
+
+Run it from the directory that already holds your `common/` folder, since that
+is where the activation key lives on each machine.
+
+#### macOS / Linux
 
 ```bash
-LDM_TAG=vX.Y.Z
+ldm system upgrade --beta          # take the release under test
+
+LDM_TAG=v$(ldm version)
 curl -fsSL -O "https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/${LDM_TAG}/install_verification.sh"
 chmod +x install_verification.sh
-./install_verification.sh --tag "${LDM_TAG}" --activation-key /path/to/activation-key.xml
+./install_verification.sh --tag "${LDM_TAG}" --no-binary --dir .
+
+./verify_e2e_refactor.sh
 ```
 
-Every checksum is the installer's job, including its own -- it verifies itself
-against the release it is staging before downloading anything else. There is no
-`shasum` step for the tester to remember, and therefore none to forget.
+#### Windows
 
 ```powershell
-$LdmTag = "vX.Y.Z"
+ldm system upgrade --beta
+
+# A downloaded .ps1 is blocked by default. Process-scoped, so it does not persist.
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+
+$LdmTag = "v$(ldm version)"
 Invoke-WebRequest -UseBasicParsing -OutFile install_verification.ps1 `
   "https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/$LdmTag/install_verification.ps1"
-.\install_verification.ps1 -Tag $LdmTag -ActivationKey C:\path\to\activation-key.xml
+.\install_verification.ps1 -Tag $LdmTag -NoBinary -Dir .
+
+.\verify_e2e_refactor.ps1
 ```
 
-A mismatch is a **warning**, not a refusal: reusing one installer across several
-releases is legitimate, and everything it downloads is checksummed regardless.
-A release predating the asset has no entry, and the check passes quietly rather
-than complaining about its own absence. `--no-self-check` / `-NoSelfCheck`
-skips it.
+> [!WARNING]
+> **On Windows, `ldm system upgrade` returns before it has finished** -- it
+> stages the swap and relaunches in a new window, because a running executable
+> cannot replace itself. Run `ldm version` too promptly and it reports the
+> **old** version, so `$LdmTag` stages the wrong release: the suite and the
+> binary under test then come from different releases, which is exactly the
+> pairing the per-tag bundle exists to guarantee. Confirm `ldm version` shows
+> the version you expect before using it, or pin the tag literally
+> (LDM-#1743). macOS and Linux upgrade in-process and are unaffected.
 
-Omit `--tag`/`-Tag` to take the latest release. `--no-binary`/`-NoBinary` skips
-the binary download. It deliberately does **not** install the binary onto PATH
-or into a system directory -- that needs elevation, and a verification helper
-making a machine-wide change silently is a surprise; it prints the one command
-to run.
+#### The flags that matter
 
-**Pin the tag rather than deriving it from `ldm version`.** The installed binary
-is whatever happens to be on `PATH`, which may not be the release under test --
-the drift the per-tag bundle exists to remove.
+| Flag | PowerShell | Why |
+|---|---|---|
+| `--tag` | `-Tag` | the release to stage. Omit to take the latest. |
+| `--dir .` | `-Dir .` | stage **in place** rather than in `./ldm-verification` |
+| `--no-binary` | `-NoBinary` | skip the binary -- you already have it from the upgrade |
+| `--activation-key` | `-ActivationKey` | only needed when discovery cannot find your key |
+| `--no-self-check` | `-NoSelfCheck` | skip verifying the installer against the release |
+
+`--dir` defaults to `ldm-verification`, created relative to where you run the
+script, which keeps your source `common/` pristine and gives you one directory
+per release. `--dir .` stages into the current folder instead: one directory, no
+duplicated key, but each run overwrites the suite in place, so it stops being a
+record of any particular release.
+
+#### Deriving the tag from `ldm version`
+
+Safe **only because the upgrade runs first** -- it reads whatever binary is on
+`PATH`, so without the upgrade it stages the previous release. Subject to the
+Windows caveat above. Pin the tag literally if you are not upgrading first.
+
+#### The activation key
+
+The bundle cannot carry one (see below), so the installer looks for yours in
+two places, in order:
+
+1. the target's own `common/` -- used in place, nothing copied
+2. `./common/` relative to where you ran the script -- copied in
+
+It says which it found. If neither exists it **warns loudly and continues**,
+because offline staging is legitimate -- but heed it: without a key Liferay runs
+unlicensed, LDM only *warns*, and the suite still exits 0 reporting success,
+having verified a smaller system than it claims.
+
+Discovery matches the filename pattern only, not the contents, so a placeholder
+file stages cleanly and then verifies an unlicensed DXP.
 
 ### Or stage it by hand
 
@@ -881,4 +928,4 @@ debug logs, instead of aborting the job on a bare brew/colima trace.)
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-15* | *Last Reviewed: 2026-09-15*
+*Last Updated: 2026-09-16* | *Last Reviewed: 2026-09-16*
