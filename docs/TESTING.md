@@ -531,15 +531,44 @@ instructions here can never disagree.
 > from a different release than the binary under test. The bundle is published
 > per tag, so the pair is fixed by construction.
 
-### Download the verification bundle (recommended)
+### Use the installer (recommended)
+
+`scripts/install_verification.sh` (and `install_verification.ps1` on Windows)
+does the whole staging sequence: fetches the bundle for a tag, **verifies every
+checksum**, unpacks it so `common/` sits beside the script, makes the suite
+executable, and fetches and checksums the matching binary.
 
 ```bash
-LDM_VER="$(ldm version 2>/dev/null | tr -d '[:space:]')"
-gh release download "v${LDM_VER%%-pre.*}-pre.${LDM_VER##*-pre.}" \
-  --pattern verification-bundle.zip 2>/dev/null \
-  || gh release download "v${LDM_VER}" --pattern verification-bundle.zip
+curl -fsSL -O "https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/vX.Y.Z/scripts/install_verification.sh"
+chmod +x install_verification.sh
+./install_verification.sh --tag vX.Y.Z --activation-key /path/to/activation-key.xml
+```
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -OutFile install_verification.ps1 `
+  "https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/vX.Y.Z/scripts/install_verification.ps1"
+.\install_verification.ps1 -Tag vX.Y.Z -ActivationKey C:\path\to\activation-key.xml
+```
+
+Omit `--tag`/`-Tag` to take the latest release. `--no-binary`/`-NoBinary` skips
+the binary download. It deliberately does **not** install the binary onto PATH
+or into a system directory -- that needs elevation, and a verification helper
+making a machine-wide change silently is a surprise; it prints the one command
+to run.
+
+**Pin the tag rather than deriving it from `ldm version`.** The installed binary
+is whatever happens to be on `PATH`, which may not be the release under test --
+the drift the per-tag bundle exists to remove.
+
+### Or stage it by hand
+
+```bash
+LDM_TAG=vX.Y.Z
+curl -fsSL -o verification-bundle.zip \
+  "https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/${LDM_TAG}/verification-bundle.zip"
 unzip -o verification-bundle.zip -d ldm-verification
 cd ldm-verification
+shasum -a 256 -c SHA256SUMS
 cp /path/to/activation-key-*.xml ./common/   # see the note below
 bash verify_e2e_refactor.sh
 ```
@@ -836,4 +865,4 @@ debug logs, instead of aborting the job on a bare brew/colima trace.)
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-11* | *Last Reviewed: 2026-09-11*
+*Last Updated: 2026-09-15* | *Last Reviewed: 2026-09-15*
