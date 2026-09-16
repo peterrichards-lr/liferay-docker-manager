@@ -177,8 +177,36 @@ if [ -n "$BINARY_ASSET" ]; then
     chmod +x "${TARGET_DIR}/ldm"
 fi
 
+# LDM-#1735: the key lives in a `common/` folder on each machine, relative to
+# where the suite is run -- so look there before asking for it. Two places, in
+# order:
+#
+#   1. the target's own common/, which already holds one when the bundle was
+#      unpacked over an existing folder. `unzip -o` overwrites only what the
+#      zip contains, so a key sitting there survives -- measured, not assumed.
+#   2. ./common/ relative to where THIS script was invoked, which is the
+#      layout the suite has always used.
+#
+# Discovery beats a flag here: the flag is one more thing to remember, and
+# forgetting it fails silently.
 KEY_OK=0
-if [ -n "$ACTIVATION_KEY" ]; then
+if [ -z "$ACTIVATION_KEY" ]; then
+    existing=$(find "${TARGET_DIR}/common" -maxdepth 1 -name 'activation-key-*.xml' 2>/dev/null | head -1)
+    if [ -n "$existing" ]; then
+        note "Using the activation key already in $(basename "$TARGET_DIR")/common/."
+        KEY_OK=1
+    else
+        nearby=$(find ./common -maxdepth 1 -name 'activation-key-*.xml' 2>/dev/null | head -1)
+        if [ -n "$nearby" ]; then
+            ACTIVATION_KEY="$nearby"
+            note "Found an activation key in ./common/ -- using it."
+        fi
+    fi
+fi
+
+if [ "$KEY_OK" -eq 1 ]; then
+    :
+elif [ -n "$ACTIVATION_KEY" ]; then
     if [ -f "$ACTIVATION_KEY" ]; then
         cp "$ACTIVATION_KEY" "${TARGET_DIR}/common/"
         note "Activation key copied into common/."

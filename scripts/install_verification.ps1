@@ -169,8 +169,32 @@ if (-not $NoBinary) {
     }
 }
 
+# LDM-#1735: the key lives in a `common\` folder on each machine, relative to
+# where the suite is run -- so look there before asking for it. The target's own
+# common\ first (a key unpacked over survives, since Expand-Archive replaces
+# only what the zip contains), then .\common\ relative to the invocation.
+# Discovery beats a flag: the flag is one more thing to remember, and
+# forgetting it fails silently.
 $keyOk = $false
-if (-not [string]::IsNullOrWhiteSpace($ActivationKey)) {
+if ([string]::IsNullOrWhiteSpace($ActivationKey)) {
+    $inTarget = Get-ChildItem -Path (Join-Path $TargetDir "common") -Filter "activation-key-*.xml" `
+        -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($inTarget) {
+        Write-Note "Using the activation key already in $(Split-Path $TargetDir -Leaf)\common\."
+        $keyOk = $true
+    } else {
+        $nearby = Get-ChildItem -Path ".\common" -Filter "activation-key-*.xml" `
+            -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($nearby) {
+            $ActivationKey = $nearby.FullName
+            Write-Note "Found an activation key in .\common\ -- using it."
+        }
+    }
+}
+
+if ($keyOk) {
+    # Already in place.
+} elseif (-not [string]::IsNullOrWhiteSpace($ActivationKey)) {
     if (Test-Path $ActivationKey) {
         Copy-Item -Path $ActivationKey -Destination (Join-Path $TargetDir "common") -Force
         Write-Note "Activation key copied into common\."
