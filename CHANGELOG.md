@@ -7,9 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.22.0-pre.7] - 2026-09-16
 
+The macOS labelling fix, and the first installer -- though the installer is **not usable
+from this release**: the commits publishing it as a release asset were lost to a merge (see
+`v2.22.0-pre.8`), so it exists only in the repository here. Verify with `-pre.8`.
+
 ### Added
 
--
+- **`scripts/install_verification.sh` / `.ps1`**: one command stages the whole E2E suite -- fetches the bundle for a tag, verifies every checksum, unpacks so `common/` sits beside the script, sets the executable bit, and fetches and checksums the matching binary. It deliberately does **not** install the binary onto `PATH` (that needs elevation, and a verification helper making a machine-wide change silently is a surprise) and cannot invent an activation key (LDM-#1735).
+
+### Fixed
+
+- **A newer macOS was recorded as Tahoe, overwriting its verification report**: `sync_compatibility.py` mapped the Darwin kernel with an open-ended `>= 25`, so *every* macOS after Tahoe was labelled Tahoe -- `darwin27` and `darwin40` alike. The label becomes the **slug**, so a Golden Gate run canonicalised onto the existing Tahoe report and was ingested as a re-verification of it: one row where there should be two, the new OS appearing verified when it was not, and the old one's evidence overwritten by a different machine's run. Underneath it, the report took its platform from `$OSTYPE`, which bash bakes in at *compile* time -- measured on a macOS 27.0 machine, `$OSTYPE` said `darwin26.0` while `uname -r` said `27.0.0`. Reports now carry `macos-<productVersion> <arch>` from `sw_vers`, which the parser matches ahead of any kernel guess, and an unmapped kernel renders distinctly rather than borrowing the newest known name (LDM-#1737).
+- **The architecture nearly went with it**: the Architecture column is derived from the same platform string via `arm64`/`aarch64` plus a hardcoded `darwin25` hint, so replacing the `$OSTYPE` token without adding `uname -m` relabelled every Apple Silicon run as Apple Intel -- a different wrong row in place of the one being fixed. Caught by running the parser, not by reading it (LDM-#1737).
+
+### Internal
+
+- **Convention recorded**: name a macOS release by its project/code name wherever one exists -- "Golden Gate", not "macOS 27" -- keyed on the product version. Stated beside the table it governs, because that is where someone adding the next version will be looking (LDM-#1737).
 
 ## [v2.22.0-pre.6] - 2026-09-15
 
