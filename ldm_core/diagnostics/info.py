@@ -860,7 +860,11 @@ def resolve_macos_host_os(p_low: str = "") -> str:
         13: "Ventura",
         14: "Sonoma",
         15: "Sequoia",
+        # LDM-#1750: 16 is the old `darwin - 9` artifact, kept for reports
+        # predating the product-version change. Tahoe's real product version
+        # is 26 -- observed on a live machine as `macos-26.6.2`.
         16: "Tahoe",
+        26: "Tahoe",
         27: "Golden Gate",
     }
 

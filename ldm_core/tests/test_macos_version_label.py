@@ -83,6 +83,51 @@ class NewerKernelsAreNotMistakenForTahoe(unittest.TestCase):
         self.assertNotEqual(_host_os("darwin27"), _host_os("darwin28"))
 
 
+class TahoesRealProductVersionIsTwentySix(unittest.TestCase):
+    """`16` was never a product version (LDM-#1750).
+
+    It is what the old `darwin - 9` arithmetic produced for Tahoe, and it was
+    left in the table when `27: "Golden Gate"` was added on the assumption that
+    both numbers meant the same thing. They do not. A Tahoe machine reporting
+    its real version says `macos-26.6.2`, so it fell through the table unnamed
+    and would have been filed as a codename-less "macOS 26" -- breaking the
+    convention that a release is named by its project name wherever one exists.
+
+    Surfaced by a real verification report from a second Mac, not by review:
+    the number in the filename said Tahoe while the `Platform:` line said 26.
+
+    Both mappings are kept. `16` serves reports that predate the
+    product-version change; `26` serves every machine reporting honestly.
+    """
+
+    def test_a_real_tahoe_machine_is_named(self):
+        self.assertEqual(_host_os("macos-26.6.2"), "macOS 26 Tahoe")
+
+    def test_the_legacy_sixteen_still_resolves(self):
+        """Older darwin-derived reports must keep their labels on re-sync."""
+        self.assertEqual(_host_os("darwin25"), "macOS 16 Tahoe")
+        self.assertEqual(_host_os("macos-16"), "macOS 16 Tahoe")
+
+    def test_tahoe_and_golden_gate_remain_distinct(self):
+        """Adjacent product versions, so a fumbled table would merge them."""
+        self.assertNotEqual(_host_os("macos-26.6.2"), _host_os("macos-27.0"))
+
+    def test_the_two_tables_agree(self):
+        """`sync_compatibility.py` names the matrix row; `info.py` names the
+        report file. They disagreeing is how LDM-#1744 happened."""
+        from unittest.mock import patch
+
+        from ldm_core.diagnostics.info import resolve_macos_host_os
+
+        for product in ("26.6.2", "27.0", "15.4"):
+            with self.subTest(product=product):
+                with patch(
+                    "platform.mac_ver", return_value=(product, ("", "", ""), "arm64")
+                ):
+                    binary_side = resolve_macos_host_os("darwin-x-arm64")
+                self.assertEqual(binary_side, _host_os(f"macos-{product}"))
+
+
 class TheSlugCannotOverwriteAnExistingEnvironment(unittest.TestCase):
     """The reason this is a bug and not a typo.
 

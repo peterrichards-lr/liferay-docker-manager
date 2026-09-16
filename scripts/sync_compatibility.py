@@ -727,9 +727,12 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
             13: "Ventura",
             14: "Sonoma",
             15: "Sequoia",
+            # LDM-#1750: 16 is NOT a product version. It is what the old
+            # `darwin - 9` arithmetic produced for Tahoe, and it is kept only so
+            # that reports predating the product-version change keep their
+            # labels. A machine reporting its real version says `macos-26.6.2`.
             16: "Tahoe",
-            # LDM-#1737: keyed on the product version a report now carries
-            # directly (`macos-27.0`), not on a kernel-derived guess.
+            26: "Tahoe",
             27: "Golden Gate",
         }
         name = real_names.get(v_num, "")
