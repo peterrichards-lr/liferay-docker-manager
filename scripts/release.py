@@ -259,6 +259,78 @@ def run_pre_commit_checks(branch_name, delete_branch_on_failure=True):
         abort_release(branch_name, delete_branch_on_failure, res.returncode)
     print("✅ Pre-commit quality gate checks passed.")
 
+    run_release_contract_checks(branch_name, delete_branch_on_failure)
+
+
+# LDM-#1758: the tests that guard the metadata this script is about to WRITE.
+# Kept to the two that fail on release metadata specifically -- the whole suite
+# is what the tag's CI is for, and running it here would make every cut
+# materially slower without protecting against this failure any better.
+RELEASE_CONTRACT_TESTS = (
+    "ldm_core/tests/test_changelog_is_populated.py",
+    "ldm_core/tests/test_architectural_contracts.py",
+)
+
+
+def run_release_contract_checks(branch_name, delete_branch_on_failure=True):
+    """Refuse before tagging when release metadata will fail the tag's own CI.
+
+    LDM-#1758. Two tags were burnt in two cycles to the same shape: a
+    precondition CI enforces, discovered only after the tag was pushed and
+    therefore made immutable by the Burn Rule.
+
+        v2.22.0  -pre.4  CHANGELOG ratchet -- the PREVIOUS release must be
+                         described before the next cut
+        v2.23.0  -pre.1  RELEASE_ANNOUNCEMENTS must carry an entry for the
+                         active minor
+
+    Both are enforced by tests that already existed and take ~34s together.
+    `release.py` bumps, commits, tags and pushes, and only then does CI run --
+    so by the time either failure is visible the number is spent, nothing has
+    published, and recovery means a fresh cut.
+
+    The announcements contract is the sharper case: it is reachable only via
+    `--bump preminor`/`--premajor`, since `beta` reuses a minor that already
+    has an entry. Documentation alone would leave it for whoever next opens a
+    minor, months later, having never seen it fail.
+    """
+    import shutil
+
+    python_bin = shutil.which("python3") or sys.executable
+    venv_python = Path(".venv") / "bin" / "python3"
+    if venv_python.exists():
+        python_bin = str(venv_python)
+
+    print("Running release contract checks (CHANGELOG, announcements)...")
+    res = run_cmd(
+        [
+            python_bin,
+            "-m",
+            "pytest",
+            "-q",
+            "--no-header",
+            "-p",
+            "no:cacheprovider",
+            "--no-cov",
+            *RELEASE_CONTRACT_TESTS,
+        ],
+        check=False,
+        capture=True,
+    )
+    if res.returncode != 0:
+        print(
+            "\n❌ Error: release contract checks failed. NOT tagging -- the version "
+            "number is still available.\n"
+            "   These guard the metadata this release is about to write, and the "
+            "tag's CI would fail on them:\n"
+            f"{res.stdout}\n{res.stderr or ''}\n"
+            "   Common causes:\n"
+            "   - the PREVIOUS release has an empty CHANGELOG stub (write it first)\n"
+            "   - opening a new minor without a RELEASE_ANNOUNCEMENTS entry for it"
+        )
+        abort_release(branch_name, delete_branch_on_failure, res.returncode)
+    print("✅ Release contract checks passed.")
+
 
 def poll_pr_merge(pr_num):
     print("Waiting for PR checks to pass and merge to complete...")
