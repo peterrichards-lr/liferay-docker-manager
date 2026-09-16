@@ -144,6 +144,12 @@ if ($bad.Count -gt 0) {
     Stop-WithError ("checksum mismatch in the bundle -- re-download rather than run it: " + ($bad -join ", "))
 }
 
+# LDM-#1741: the archive has done its job once the contents are extracted AND
+# verified, so remove it. Deliberately AFTER the checksum check, never before:
+# a failed verification is exactly when the archive is worth keeping, because
+# it is the evidence of what actually arrived.
+Remove-Item $zipPath -ErrorAction SilentlyContinue
+
 if (-not $NoBinary) {
     Write-Note "Downloading ldm-windows.exe..."
     $binPath = Join-Path $TargetDir "ldm.exe"
@@ -161,6 +167,9 @@ if (-not $NoBinary) {
             $actual = (Get-FileHash -Algorithm SHA256 -Path $binPath).Hash.ToLower()
             if ($expected -ne $actual) { Stop-WithError "binary checksum mismatch for ldm-windows.exe" }
             Write-Note "Binary checksum verified."
+            # LDM-#1741: spent once the binary is verified. SHA256SUMS stays --
+            # it covers the extracted files and lets them be re-checked later.
+            Remove-Item $sumFile -ErrorAction SilentlyContinue
         } else {
             Write-Warn "checksums.txt has no entry for ldm-windows.exe; the binary is UNVERIFIED"
         }
