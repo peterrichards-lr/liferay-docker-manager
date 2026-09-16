@@ -7,9 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.22.0-pre.6] - 2026-09-15
 
-### Added
+Adds the bundle-manifest honesty fix. Everything else in the cycle is unchanged from
+`v2.22.0-pre.5`.
 
--
+### Fixed
+
+- **The verification bundle claimed to carry a DXP activation key it cannot contain**: `MANIFEST.txt` stated that `common/` carries the activation key, while listing its own contents -- showing no key -- immediately underneath. It never can: `.gitignore` excludes `common/activation-key-*.xml` because the key is licensed, so no CI checkout has one to package. LDM-#1718 built the bundle precisely because a run without `common/` applies neither the key nor the search configuration, LDM only *warns*, and the suite still exits 0 reporting success. The bundle closes that for the search configuration; for the licensed half it does not, and saying otherwise told a verifier the gap was closed when it was open. The manifest now declares the absence and says how to supply a key. No test caught it because `collect()` walks the filesystem rather than git, and a developer's checkout has the key sitting there untracked -- so the test verified the developer's machine, not the artifact users download (LDM-#1733).
 
 ## [v2.22.0-pre.5] - 2026-09-14
 
