@@ -538,17 +538,33 @@ does the whole staging sequence: fetches the bundle for a tag, **verifies every
 checksum**, unpacks it so `common/` sits beside the script, makes the suite
 executable, and fetches and checksums the matching binary.
 
+It is published as a release asset, so no checkout is needed -- which is the
+point: a release should be verifiable from its published artifacts alone, the
+way a user would.
+
 ```bash
-curl -fsSL -O "https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/vX.Y.Z/scripts/install_verification.sh"
+LDM_TAG=vX.Y.Z
+curl -fsSL -O "https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/${LDM_TAG}/install_verification.sh"
 chmod +x install_verification.sh
-./install_verification.sh --tag vX.Y.Z --activation-key /path/to/activation-key.xml
+./install_verification.sh --tag "${LDM_TAG}" --activation-key /path/to/activation-key.xml
 ```
 
+Every checksum is the installer's job, including its own -- it verifies itself
+against the release it is staging before downloading anything else. There is no
+`shasum` step for the tester to remember, and therefore none to forget.
+
 ```powershell
+$LdmTag = "vX.Y.Z"
 Invoke-WebRequest -UseBasicParsing -OutFile install_verification.ps1 `
-  "https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/vX.Y.Z/scripts/install_verification.ps1"
-.\install_verification.ps1 -Tag vX.Y.Z -ActivationKey C:\path\to\activation-key.xml
+  "https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/$LdmTag/install_verification.ps1"
+.\install_verification.ps1 -Tag $LdmTag -ActivationKey C:\path\to\activation-key.xml
 ```
+
+A mismatch is a **warning**, not a refusal: reusing one installer across several
+releases is legitimate, and everything it downloads is checksummed regardless.
+A release predating the asset has no entry, and the check passes quietly rather
+than complaining about its own absence. `--no-self-check` / `-NoSelfCheck`
+skips it.
 
 Omit `--tag`/`-Tag` to take the latest release. `--no-binary`/`-NoBinary` skips
 the binary download. It deliberately does **not** install the binary onto PATH
