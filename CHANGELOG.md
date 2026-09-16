@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.22.0-pre.9] - 2026-09-16
 
-### Added
+The pre-release the v2.22.0 stable was verified against, across six environments: macOS 27
+Golden Gate (Colima), macOS 26 Tahoe (OrbStack), Fedora 44, WSL2, and Windows 11 under both
+PowerShell 5.1 and 7.
 
--
+### Internal
+
+- **The installer cleans up after itself**: the bundle archive is removed once its contents are extracted **and verified**, and `checksums.txt` once the binary hash matches. Ordering is deliberate -- a failed checksum is exactly when the archive is worth keeping, being the evidence of what arrived. `SHA256SUMS` and `MANIFEST.txt` stay: one re-checks the extracted files, the other records what the release does not contain (LDM-#1741).
 
 ## [v2.22.0-pre.8] - 2026-09-16
 
