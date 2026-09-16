@@ -164,6 +164,50 @@ class ThePowerShellHalfIsParseable(unittest.TestCase):
         self.assertEqual(non_ascii, [], f"non-ASCII bytes at {non_ascii[:3]}")
 
 
+class TheReleasePublishesIt(unittest.TestCase):
+    """An installer only reachable from a checkout defeats its own purpose.
+
+    The whole point is verifying a release the way a user would -- from the
+    published artifacts alone, with no clone. Before this, the installer
+    existed only in the repo, so the one person it was written for could not
+    use it without the thing it was meant to avoid.
+    """
+
+    def _ci(self):
+        root = Path(__file__).resolve().parent.parent.parent
+        return (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    def test_both_halves_are_published_as_release_assets(self):
+        text = self._ci()
+
+        self.assertIn("bin-temp/install_verification.sh", text)
+        self.assertIn("bin-temp/install_verification.ps1", text)
+
+    def test_they_are_covered_by_the_release_checksums(self):
+        """An installer you cannot verify before running is a worse bootstrap
+        than the curl it replaces."""
+        text = self._ci()
+        sums_line = next(
+            line for line in text.splitlines() if "sha256sum ldm-linux" in line
+        )
+
+        self.assertIn("install_verification.sh", sums_line)
+        self.assertIn("install_verification.ps1", sums_line)
+
+    def test_they_are_staged_before_the_checksums_that_cover_them(self):
+        """Staged after, and checksums.txt would not include them."""
+        text = self._ci()
+
+        staged_at = text.index("cp scripts/install_verification.sh")
+        sums_at = text.index("sha256sum ldm-linux")
+
+        self.assertLess(
+            staged_at,
+            sums_at,
+            "the installers are staged after the checksums, so they ship unchecksummed",
+        )
+
+
 class TheDocsPointAtIt(unittest.TestCase):
     """An installer nobody is told about is the same as no installer."""
 

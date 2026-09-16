@@ -538,16 +538,30 @@ does the whole staging sequence: fetches the bundle for a tag, **verifies every
 checksum**, unpacks it so `common/` sits beside the script, makes the suite
 executable, and fetches and checksums the matching binary.
 
+It is published as a release asset, so no checkout is needed -- which is the
+point: a release should be verifiable from its published artifacts alone, the
+way a user would.
+
 ```bash
-curl -fsSL -O "https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/vX.Y.Z/scripts/install_verification.sh"
+LDM_TAG=vX.Y.Z
+curl -fsSL -O "https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/${LDM_TAG}/install_verification.sh"
 chmod +x install_verification.sh
-./install_verification.sh --tag vX.Y.Z --activation-key /path/to/activation-key.xml
+./install_verification.sh --tag "${LDM_TAG}" --activation-key /path/to/activation-key.xml
 ```
 
 ```powershell
+$LdmTag = "vX.Y.Z"
 Invoke-WebRequest -UseBasicParsing -OutFile install_verification.ps1 `
-  "https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/vX.Y.Z/scripts/install_verification.ps1"
-.\install_verification.ps1 -Tag vX.Y.Z -ActivationKey C:\path\to\activation-key.xml
+  "https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/$LdmTag/install_verification.ps1"
+.\install_verification.ps1 -Tag $LdmTag -ActivationKey C:\path\to\activation-key.xml
+```
+
+It is covered by the release `checksums.txt` like every other asset, so the
+installer itself can be verified before it is trusted:
+
+```bash
+curl -fsSL -O "https://github.com/peterrichards-lr/liferay-docker-manager/releases/download/${LDM_TAG}/checksums.txt"
+shasum -a 256 -c --ignore-missing checksums.txt
 ```
 
 Omit `--tag`/`-Tag` to take the latest release. `--no-binary`/`-NoBinary` skips

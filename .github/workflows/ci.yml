@@ -594,11 +594,23 @@ jobs:
           python3 scripts/build_verification_bundle.py \
             --tag "${{ github.ref_name }}" --out bin-temp
 
+      # LDM-#1735: the installer must be reachable WITHOUT a checkout -- the
+      # whole point is verifying a release the way a user would, from the
+      # published artifacts alone. Publishing it per tag also keeps it paired
+      # with the bundle and binary it stages, the same argument the bundle
+      # itself rests on.
+      - name: Stage Verification Installers
+        shell: bash
+        run: |
+          cp scripts/install_verification.sh bin-temp/
+          cp scripts/install_verification.ps1 bin-temp/
+          chmod +x bin-temp/install_verification.sh
+
       - name: Generate Checksums
         shell: bash
         run: |
           cd bin-temp
-          sha256sum ldm-linux ldm-macos-arm64 ldm-macos-x86_64 ldm-windows.exe verification-bundle.zip ../compatibility.json > checksums.txt
+          sha256sum ldm-linux ldm-macos-arm64 ldm-macos-x86_64 ldm-windows.exe verification-bundle.zip install_verification.sh install_verification.ps1 ../compatibility.json > checksums.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
@@ -612,6 +624,8 @@ jobs:
             bin-temp/checksums.txt
             bin-temp/LICENSE
             bin-temp/verification-bundle.zip
+            bin-temp/install_verification.sh
+            bin-temp/install_verification.ps1
             compatibility.json
           make_latest: ${{ steps.check_release.outputs.is_release == 'true' }}
           fail_on_unmatched_files: true
