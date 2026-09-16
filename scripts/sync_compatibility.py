@@ -691,13 +691,36 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
             darwin_match = re.search(r"darwin[-]?(\d+)", p_low)
             if darwin_match:
                 darwin_v = int(darwin_match.group(1))
-                if darwin_v >= 25:
-                    v_num = 16
-                elif darwin_v >= 24:
-                    v_num = 15
-                else:
+                # LDM-#1737: `>= 25` was open-ended, so EVERY macOS newer
+                # than Tahoe was recorded as Tahoe. That is not merely a wrong
+                # label -- the label becomes the slug, so a newer OS
+                # canonicalises onto the existing Tahoe report and overwrites
+                # it. One row where there should be two, and both wrong: the
+                # new OS looks verified when it is not, and the old one's
+                # evidence is gone.
+                #
+                # An unrecognised kernel must never borrow the newest known
+                # codename. Reports written since this change carry
+                # `macos-<version>` and never reach here at all.
+                known = {24: 15, 25: 16}
+                if darwin_v in known:
+                    v_num = known[darwin_v]
+                elif darwin_v < 24:
                     v_num = darwin_v - 9
+                else:
+                    # Newer than anything mapped. Say so, distinctly, rather
+                    # than guessing -- a truthful odd-looking row beats a
+                    # confident wrong one that eats another environment's
+                    # record.
+                    v_num = -darwin_v
 
+        # CONVENTION: name a macOS release by its project/code name wherever
+        # one exists -- "Golden Gate", not "macOS 27". The code name is what
+        # people say and what release notes use, so a matrix row without it
+        # reads as a version nobody recognises. When a new macOS ships, add its
+        # entry here keyed on the PRODUCT version (what `sw_vers
+        # -productVersion` reports); the fallback below deliberately renders an
+        # unnamed release rather than borrowing the nearest known name.
         real_names = {
             11: "Big Sur",
             12: "Monterey",
@@ -705,13 +728,21 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
             14: "Sonoma",
             15: "Sequoia",
             16: "Tahoe",
+            # LDM-#1737: keyed on the product version a report now carries
+            # directly (`macos-27.0`), not on a kernel-derived guess.
+            27: "Golden Gate",
         }
         name = real_names.get(v_num, "")
-        host_os = (
-            f"macOS {v_num} {name}"
-            if name
-            else (f"macOS {v_num}" if v_num > 0 else "macOS 11+")
-        )
+        if v_num < 0:
+            # LDM-#1737 sentinel: an unmapped Darwin kernel. Distinct slug,
+            # honest label, no collision with a real release.
+            host_os = f"macOS (darwin {-v_num})"
+        elif name:
+            host_os = f"macOS {v_num} {name}"
+        elif v_num > 0:
+            host_os = f"macOS {v_num}"
+        else:
+            host_os = "macOS 11+"
 
         if "arm64" in p_low or "aarch64" in p_low or "darwin25" in p_low:
             arch = "Apple Silicon"

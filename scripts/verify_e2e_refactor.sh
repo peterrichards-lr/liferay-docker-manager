@@ -89,6 +89,23 @@ PLATFORM_INFO="$OSTYPE"
 if [[ "$OSTYPE" == "linux"* ]] && [ -f /etc/os-release ]; then
     DISTRO=$(grep "^PRETTY_NAME=" /etc/os-release | cut -d'=' -f2 | tr -d '"')
     PLATFORM_INFO="${DISTRO:-$OSTYPE}"
+elif [[ "$OSTYPE" == "darwin"* ]] && command -v sw_vers >/dev/null 2>&1; then
+    # LDM-#1737: `$OSTYPE` is baked into bash at COMPILE time, not read at
+    # runtime, so it reports the version bash was built on. Measured on a
+    # macOS 27.0 machine: OSTYPE said `darwin26.0` while `uname -r` said
+    # 27.0.0 -- the report was wrong before anything else touched it, and the
+    # host OS column is the whole point of the compatibility matrix.
+    #
+    # `macos-<version>` is also the form sync_compatibility.py matches FIRST,
+    # ahead of its darwin heuristic, so a report in this shape needs no
+    # guesswork to place.
+    # The architecture must stay in the string. sync_compatibility.py reads
+    # `arm64`/`aarch64` out of it to fill the Architecture column, and its
+    # remaining hint is a hardcoded `"darwin25" in p_low` -- so dropping the
+    # OSTYPE token without adding `uname -m` would silently relabel every
+    # Apple Silicon run as Apple Intel. Caught by a test, not by review.
+    MACOS_VERSION=$(sw_vers -productVersion 2>/dev/null)
+    [ -n "$MACOS_VERSION" ] && PLATFORM_INFO="macos-${MACOS_VERSION} $(uname -m)"
 fi
 
 INSTALLED_VERSION_RAW=$("$LDM_CMD" --version 2>/dev/null || echo "unknown")
