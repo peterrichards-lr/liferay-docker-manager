@@ -888,7 +888,11 @@ def resolve_macos_host_os(p_low: str = "") -> str:
             ver_match = re.search(r"macos[-]?(\d+)", p_low)
         if ver_match:
             v_num = int(ver_match.group(1))
-            v_macos = v_num - 9 if v_num >= 20 else v_num
+            # LDM-#1750: the kernel-to-product sequence is NOT continuous.
+            # darwin 24 -> macOS 15 Sequoia, then darwin 25 -> macOS 26 Tahoe.
+            # `- 9` assumed otherwise and is why Tahoe was recorded as 16.
+            known = {24: 15, 25: 26}
+            v_macos = known.get(v_num, v_num - 9 if v_num >= 20 else v_num)
 
     if v_macos <= 0:
         return "macOS 11+"

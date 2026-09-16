@@ -702,7 +702,15 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
                 # An unrecognised kernel must never borrow the newest known
                 # codename. Reports written since this change carry
                 # `macos-<version>` and never reach here at all.
-                known = {24: 15, 25: 16}
+                # LDM-#1750: darwin 25 is macOS **26** Tahoe, not 16. The
+                # sequence is not continuous -- Sequoia is 15 on darwin 24 and
+                # Apple then jumped to 26 -- which is precisely what the old
+                # `darwin - 9` arithmetic assumed away. Correcting it here
+                # re-labels the existing Tahoe reports on their next sync
+                # rather than leaving them recorded under a number that never
+                # existed; the reports themselves are untouched and still say
+                # `darwin25`.
+                known = {24: 15, 25: 26}
                 if darwin_v in known:
                     v_num = known[darwin_v]
                 elif darwin_v < 24:

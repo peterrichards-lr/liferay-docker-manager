@@ -103,10 +103,38 @@ class TahoesRealProductVersionIsTwentySix(unittest.TestCase):
     def test_a_real_tahoe_machine_is_named(self):
         self.assertEqual(_host_os("macos-26.6.2"), "macOS 26 Tahoe")
 
-    def test_the_legacy_sixteen_still_resolves(self):
-        """Older darwin-derived reports must keep their labels on re-sync."""
-        self.assertEqual(_host_os("darwin25"), "macOS 16 Tahoe")
+    def test_a_darwin_derived_tahoe_report_is_relabelled(self):
+        """The existing reports say `darwin25`, and darwin 25 IS macOS 26.
+
+        Re-labelling them is the honest outcome: 16 was produced by a bug, so
+        preserving it would preserve the bug. The reports are untouched -- they
+        still record `darwin25` -- and the corrected mapping derives the right
+        answer from them on the next sync, which also renames the canonical
+        files.
+        """
+        self.assertEqual(_host_os("darwin25"), "macOS 26 Tahoe")
+
+    def test_the_sequence_is_not_continuous(self):
+        """Sequoia is 15 on darwin 24, then Apple jumped to 26 for Tahoe.
+
+        `darwin - 9` assumed a continuous sequence, which is the root of this
+        whole family of defects.
+        """
+        self.assertEqual(_host_os("darwin24"), "macOS 15 Sequoia")
+        self.assertEqual(_host_os("darwin25"), "macOS 26 Tahoe")
+
+    def test_a_literal_sixteen_is_still_named(self):
+        """Nothing produces 16 any more, but a stray report naming it should
+        not become anonymous."""
         self.assertEqual(_host_os("macos-16"), "macOS 16 Tahoe")
+
+    def test_both_tahoe_machines_land_on_the_same_row(self):
+        """The point of the re-label: one OS, one row.
+
+        Before it, a darwin-derived report and a product-version report from
+        the same OS produced two parallel rows.
+        """
+        self.assertEqual(_host_os("darwin25"), _host_os("macos-26.6.2"))
 
     def test_tahoe_and_golden_gate_remain_distinct(self):
         """Adjacent product versions, so a fumbled table would merge them."""
@@ -155,8 +183,9 @@ class ExistingReportsKeepTheirLabels(unittest.TestCase):
     """The matrix already holds rows derived the old way; re-syncing them must
     not silently rewrite history."""
 
-    def test_darwin_25_is_still_tahoe(self):
-        self.assertEqual(_host_os("darwin25"), "macOS 16 Tahoe")
+    def test_darwin_25_is_tahoe_at_its_real_version(self):
+        """LDM-#1750 corrected this from 16, which no macOS ever was."""
+        self.assertEqual(_host_os("darwin25"), "macOS 26 Tahoe")
 
     def test_darwin_24_is_still_sequoia(self):
         self.assertEqual(_host_os("darwin24"), "macOS 15 Sequoia")
