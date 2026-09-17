@@ -1232,11 +1232,78 @@ verify_cascading_default_guard() {
     return 0
 }
 
+# LDM-#1771: `--mac-address` (LDM-#1752) is the v2.23.0 cycle's headline
+# feature, and it shipped in v2.23.0-pre.2 parsed and then discarded --
+# `cmd_target_add` stored "", `target add` reported success, and ~/.ldmrc
+# carried the key with an empty value (LDM-#1759). Nothing local caught it:
+# the unit tests asserted the flag was DECLARED and that the docs named it,
+# neither followed the value to storage, and this suite had no MAC assertion
+# at all. It was found by the maintainer running the released binary.
+#
+# The pin actually working needs a licensed remote node and is tracked on
+# LDM-#1756. Persistence needs nothing, and persistence is the half that broke.
+#
+# Runs against an isolated LDM_HOME on purpose: this registers a target, and
+# the suite runs against the operator's real home everywhere else. The host is
+# TEST-NET-1 (RFC 5737, permanently unroutable) and the Docker context that
+# `target add` creates is removed immediately, so nothing dials out.
+verify_mac_address_persisted() {
+    local ldm_cmd="$1"
+    local work_dir="$2"
+
+    local iso_home="${work_dir}/mac-pin-home"
+    local node="ldm-macpin-check"
+    local mac="02:42:ac:11:00:99"
+
+    rm -rf "$iso_home"
+    mkdir -p "$iso_home" || return 1
+
+    local out code
+    out=$(LDM_HOME="$iso_home" "$ldm_cmd" -y target add "$node" \
+        --host 192.0.2.12 --mac-address "$mac" 2>&1) && code=0 || code=$?
+    docker context rm "$node" >/dev/null 2>&1 || true
+
+    if [ "$code" -ne 0 ]; then
+        rm -rf "$iso_home"
+        echo "❌ ERROR: 'ldm target add --mac-address' exited ${code}."
+        echo "   Output was: $out"
+        return 1
+    fi
+
+    if [ ! -f "${iso_home}/.ldmrc" ]; then
+        rm -rf "$iso_home"
+        echo "❌ ERROR: 'ldm target add' reported success but wrote no ~/.ldmrc."
+        echo "   Output was: $out"
+        return 1
+    fi
+
+    if ! grep -qi "$mac" "${iso_home}/.ldmrc"; then
+        echo "❌ ERROR: 'ldm target add --mac-address ${mac}' reported success, but the value is absent from ~/.ldmrc."
+        echo "   The flag is parsed and discarded, so the MAC pin cannot be exercised at all (LDM-#1759)."
+        echo "   Stored configuration was:"
+        sed -n '1,40p' "${iso_home}/.ldmrc" | sed 's/^/     /'
+        rm -rf "$iso_home"
+        return 1
+    fi
+
+    rm -rf "$iso_home"
+    echo "✅ 'target add --mac-address' persists the value to ~/.ldmrc (LDM-#1759)."
+    return 0
+}
+
 echo ">> Verifying the cascading-default write guard (LDM-#1651)..."
 if CASCADING_GUARD_OUT=$(verify_cascading_default_guard "$LDM_CMD" "$LDM_WORKSPACE"); then
     report_ok "$CASCADING_GUARD_OUT"
 else
     echo "$CASCADING_GUARD_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying --mac-address is persisted (LDM-#1759/#1771)..."
+if MAC_PIN_OUT=$(verify_mac_address_persisted "$LDM_CMD" "$LDM_WORKSPACE"); then
+    report_ok "$MAC_PIN_OUT"
+else
+    echo "$MAC_PIN_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
 

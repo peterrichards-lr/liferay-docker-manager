@@ -259,6 +259,148 @@ def run_pre_commit_checks(branch_name, delete_branch_on_failure=True):
         abort_release(branch_name, delete_branch_on_failure, res.returncode)
     print("✅ Pre-commit quality gate checks passed.")
 
+    run_release_contract_checks(branch_name, delete_branch_on_failure)
+
+
+# LDM-#1758: the tests that guard the metadata this script is about to WRITE.
+# Kept to the two that fail on release metadata specifically -- the whole suite
+# is what the tag's CI is for, and running it here would make every cut
+# materially slower without protecting against this failure any better.
+RELEASE_CONTRACT_TESTS = (
+    "ldm_core/tests/test_changelog_is_populated.py",
+    "ldm_core/tests/test_architectural_contracts.py",
+)
+
+
+def run_release_contract_checks(branch_name, delete_branch_on_failure=True):
+    """Refuse before tagging when release metadata will fail the tag's own CI.
+
+    LDM-#1758. Two tags were burnt in two cycles to the same shape: a
+    precondition CI enforces, discovered only after the tag was pushed and
+    therefore made immutable by the Burn Rule.
+
+        v2.22.0  -pre.4  CHANGELOG ratchet -- the PREVIOUS release must be
+                         described before the next cut
+        v2.23.0  -pre.1  RELEASE_ANNOUNCEMENTS must carry an entry for the
+                         active minor
+
+    Both are enforced by tests that already existed and take ~34s together.
+    `release.py` bumps, commits, tags and pushes, and only then does CI run --
+    so by the time either failure is visible the number is spent, nothing has
+    published, and recovery means a fresh cut.
+
+    The announcements contract is the sharper case: it is reachable only via
+    `--bump preminor`/`--premajor`, since `beta` reuses a minor that already
+    has an entry. Documentation alone would leave it for whoever next opens a
+    minor, months later, having never seen it fail.
+    """
+    import shutil
+
+    python_bin = shutil.which("python3") or sys.executable
+    venv_python = Path(".venv") / "bin" / "python3"
+    if venv_python.exists():
+        python_bin = str(venv_python)
+
+    print("Running release contract checks (CHANGELOG, announcements)...")
+    res = run_cmd(
+        [
+            python_bin,
+            "-m",
+            "pytest",
+            "-q",
+            "--no-header",
+            "-p",
+            "no:cacheprovider",
+            "--no-cov",
+            *RELEASE_CONTRACT_TESTS,
+        ],
+        check=False,
+        capture=True,
+    )
+    if res.returncode != 0:
+        print(
+            "\n❌ Error: release contract checks failed. NOT tagging -- the version "
+            "number is still available.\n"
+            "   These guard the metadata this release is about to write, and the "
+            "tag's CI would fail on them:\n"
+            f"{res.stdout}\n{res.stderr or ''}\n"
+            "   Common causes:\n"
+            "   - the PREVIOUS release has an empty CHANGELOG stub (write it first)\n"
+            "   - opening a new minor without a RELEASE_ANNOUNCEMENTS entry for it"
+        )
+        abort_release(branch_name, delete_branch_on_failure, res.returncode)
+    print("✅ Release contract checks passed.")
+
+
+def check_promotion_delta(allow_delta=False):
+    """Is stable the software that was actually verified? (LDM-#1765)
+
+    Every other gate guards the road TO a pre-release. Nothing guarded the gap
+    between verifying one and promoting it -- and work keeps landing on
+    `master` during the days a verification takes.
+
+    Hit promoting v2.22.0: four commits merged after the `-pre.9` verification
+    and shipped in stable, one of them 91 lines of
+    `ldm_core/diagnostics/info.py`. It was judged acceptable, but it was found
+    by the maintainer asking afterwards rather than by any check -- and the
+    answer was not obvious, because three of the four were tooling and docs.
+
+    `constants.py` and `resources/ldm.1` are version stamps and always differ;
+    anything else under `ldm_core/` ships in the binary whatever its subject
+    matter. Tests are excluded: they do not ship.
+
+    LDM-#1754 recorded this as a rule in the release skill. A rule that fires
+    once per release, months apart, is not one anyone retains -- hence the check.
+    """
+    version_stamps = {"ldm_core/constants.py", "ldm_core/resources/ldm.1"}
+
+    run_cmd(["git", "fetch", "--tags", "origin"], check=False)
+    tags = run_cmd(
+        ["git", "tag", "--list", "v*-pre.*", "--sort=-creatordate"],
+        capture=True,
+        check=False,
+    ).stdout.split()
+    if not tags:
+        print("ℹ️  No pre-release tag to compare against; skipping the delta check.")
+        return
+
+    verified_tag = tags[0]
+    changed = run_cmd(
+        ["git", "diff", "--name-only", verified_tag, "HEAD", "--", "ldm_core/"],
+        capture=True,
+        check=False,
+    ).stdout.split()
+    shipped = sorted(
+        f for f in changed if f and "/tests/" not in f and f not in version_stamps
+    )
+
+    if not shipped:
+        print(f"✅ Promotion delta: only version stamps changed since {verified_tag}.")
+        return
+
+    listing = "\n".join(f"     {f}" for f in shipped)
+    print(
+        f"\n⚠️  Promotion delta: {len(shipped)} shipped file(s) changed since "
+        f"{verified_tag}, the verified pre-release:\n{listing}\n"
+        "\n   Stable would NOT be the software that was verified."
+    )
+    if allow_delta:
+        print(
+            "   Proceeding: --allow-promotion-delta was passed. Record this in "
+            "the CHANGELOG so the release says plainly what changed after "
+            "verification."
+        )
+        return
+
+    print(
+        "\n   Decide deliberately rather than discover it afterwards:\n"
+        "   - accept it, re-run with --allow-promotion-delta, and say so in\n"
+        "     the CHANGELOG; or\n"
+        "   - cut another pre-release and re-verify -- required when the change\n"
+        "     touches orchestration, which is what the E2E suite exercises.\n"
+    )
+    sys.exit(1)
+
 
 def poll_pr_merge(pr_num):
     print("Waiting for PR checks to pass and merge to complete...")
@@ -580,6 +722,14 @@ def main():  # noqa: C901, PLR0912, PLR0915
         help="Promote the current pre-release/beta branch to a stable release",
     )
     parser.add_argument(
+        "--allow-promotion-delta",
+        action="store_true",
+        help=(
+            "Promote even though shipped code changed since the verified "
+            "pre-release. Record the delta in the CHANGELOG (LDM-#1765)"
+        ),
+    )
+    parser.add_argument(
         "--issue",
         help="Associated GitHub Issue or Epic number (e.g. 1204)",
     )
@@ -623,6 +773,9 @@ def main():  # noqa: C901, PLR0912, PLR0915
         if not current_branch.startswith("release/"):
             print("❌ Error: Promotion must be run from a 'release/' branch.")
             sys.exit(1)
+
+        # LDM-#1765: before anything is bumped or tagged.
+        check_promotion_delta(allow_delta=getattr(args, "allow_promotion_delta", False))
 
         # Get current version from constants.py to verify it is a pre-release
         ver_res = run_cmd(
