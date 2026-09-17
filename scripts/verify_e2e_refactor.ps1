@@ -789,6 +789,67 @@ function Test-CascadingDefaultGuard {
     return @{ Ok = $true; Message = "[SUCCESS] Cascading default write refused with the working command named; non-cascading keys still write." }
 }
 
+function Test-MacAddressPersisted {
+    # LDM-#1771: '--mac-address' (LDM-#1752) is the v2.23.0 cycle's headline
+    # feature, and it shipped in v2.23.0-pre.2 parsed and then discarded --
+    # cmd_target_add stored "", 'target add' reported success, and ~/.ldmrc
+    # carried the key with an empty value (LDM-#1759). Nothing local caught it:
+    # the unit tests asserted the flag was DECLARED and that the docs named it,
+    # neither followed the value to storage, and this suite had no MAC
+    # assertion at all. It was found by the maintainer running the released
+    # binary.
+    #
+    # The pin actually working needs a licensed remote node and is tracked on
+    # LDM-#1756. Persistence needs nothing, and persistence is the half that
+    # broke.
+    #
+    # Runs against an isolated LDM_HOME on purpose: this registers a target,
+    # and the suite runs against the operator's real home everywhere else. The
+    # host is TEST-NET-1 (RFC 5737, permanently unroutable) and the Docker
+    # context that 'target add' creates is removed immediately, so nothing
+    # dials out.
+    #
+    # Parity with verify_mac_address_persisted in verify_e2e_refactor.sh.
+    param($LdmCmd, $WorkDir)
+
+    $isoHome = Join-Path $WorkDir "mac-pin-home"
+    $node = "ldm-macpin-check"
+    $mac = "02:42:ac:11:00:99"
+
+    if (Test-Path $isoHome) { Remove-Item -Recurse -Force $isoHome -ErrorAction SilentlyContinue }
+    New-Item -ItemType Directory -Path $isoHome -Force | Out-Null
+    $ldmrc = Join-Path $isoHome ".ldmrc"
+
+    $prevHome = $env:LDM_HOME
+    $env:LDM_HOME = $isoHome
+    try {
+        $out = & $LdmCmd -y target add $node --host 192.0.2.12 --mac-address $mac 2>&1 | Out-String
+        $code = $LASTEXITCODE
+        docker context rm $node 2>&1 | Out-Null
+
+        if ($code -ne 0) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm target add --mac-address' exited ${code}.`n   Output was: ${out}" }
+        }
+        if (-not (Test-Path $ldmrc)) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm target add' reported success but wrote no ~/.ldmrc.`n   Output was: ${out}" }
+        }
+
+        $stored = Get-Content -Raw $ldmrc
+        if ($stored -notmatch [regex]::Escape($mac)) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm target add --mac-address ${mac}' reported success, but the value is absent from ~/.ldmrc.`n   The flag is parsed and discarded, so the MAC pin cannot be exercised at all (LDM-#1759).`n   Stored configuration was:`n${stored}" }
+        }
+    } finally {
+        if ($null -eq $prevHome) {
+            Remove-Item Env:LDM_HOME -ErrorAction SilentlyContinue
+        } else {
+            $env:LDM_HOME = $prevHome
+        }
+        if (Test-Path $isoHome) { Remove-Item -Recurse -Force $isoHome -ErrorAction SilentlyContinue }
+    }
+
+    return @{ Ok = $true; Message = "[SUCCESS] 'target add --mac-address' persists the value to ~/.ldmrc (LDM-#1759)." }
+}
+
 # LDM-#1681: a Liferay Cloud workspace import copies its standalone services,
 # and reads code out of the NESTED workspace.
 #
@@ -1273,6 +1334,15 @@ try {
         Write-Verdict $cascadingGuard.Message
     } else {
         Write-Host $cascadingGuard.Message -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying --mac-address is persisted (LDM-#1759/#1771)..."
+    $macPin = Test-MacAddressPersisted -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE
+    if ($macPin.Ok) {
+        Write-Verdict $macPin.Message
+    } else {
+        Write-Host $macPin.Message -ForegroundColor Red
         exit 1
     }
 
