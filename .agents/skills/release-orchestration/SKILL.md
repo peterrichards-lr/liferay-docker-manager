@@ -29,6 +29,16 @@ description: Activate this skill whenever preparing a release, bumping versions,
 
     `preminor`/`premajor` only **open** a cycle. Continue it with `--bump beta` as usual — it matches on the `-pre.N` suffix and increments N whichever component started the cycle, so the tracking PR and `--promote` behave identically. Running `preminor` from an existing `release/*` branch is rejected, exactly as the other non-beta bumps are.
 
+    **Opening a new minor needs a `RELEASE_ANNOUNCEMENTS` entry for it.** `test_architectural_contracts.py` requires one for the active minor, and only `preminor`/`premajor` can reach that failure -- `beta` reuses a minor that already has an entry. Add it to `ldm_core/constants.py` *before* cutting:
+
+    ```python
+    RELEASE_ANNOUNCEMENTS = {
+        "2.23": [("ldm target add --mac-address", "Pin the container MAC so a MAC-bound licence activates")],
+        ...
+    ```
+
+    `release.py` now checks this before tagging (LDM-#1758), so a miss costs a refused command rather than a number. It burnt `v2.23.0-pre.1` when it did not: the script bumps, commits, tags and pushes, and CI only then reports the failure -- by which point the Burn Rule has made the tag permanent and nothing has published.
+
     **Never hand-set a version to reach `X.Y.0-pre.N`.** That is prohibited by the rule above on any branch; if the orchestrator lacks a path you need, add it to the orchestrator (as #1291 did) or ask the maintainer.
 
   - To publish a **disposable preview build** for validating an idea that may be abandoned (LDM-#1265), without consuming a `-pre.N` number:
