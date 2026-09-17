@@ -3240,6 +3240,9 @@ def _build_command_map(args, manager):
             user=getattr(args, "user", ""),
             key=getattr(args, "key", ""),
             default=getattr(args, "default", False),
+            # LDM-#1759: the flag was declared and parsed, and then not passed
+            # here -- so `cmd_target_add` took its default and stored "".
+            mac_address=getattr(args, "mac_address", "") or "",
         ),
         ("target", "ls"): manager.config.cmd_target_ls,
         ("target", "list"): manager.config.cmd_target_ls,
