@@ -217,6 +217,41 @@ files and knowing the adaptive tiers.
 [Advanced CLI](advanced_cli.md). Reach for it only when you want none of the
 above.
 
+## When the kernel kills Liferay
+
+If the machine cannot give the container what the heap settings ask for, the
+kernel SIGKILLs the JVM. LDM names this rather than letting it read as a slow
+boot:
+
+```text
+❌  Liferay was killed by the kernel for running out of memory -- it did not
+    simply take too long.
+```
+
+It is worth stating why that message had to be added. The JVM is killed while
+the entrypoint survives, so the container **stays up** and simply never becomes
+healthy -- and `docker inspect` reports `ExitCode: 0`, because the entrypoint
+then exits cleanly. Nothing in the container's state contradicts a timeout, so
+LDM used to print *"Timed out waiting for Liferay to become healthy"* after
+eight minutes while `OOMKilled: true` sat one `docker inspect` away. The two
+readings send you to opposite places: one says wait longer or look at the
+application, the other says this machine does not have enough memory
+(LDM-#1773).
+
+Waiting longer will not help. Either raise Docker's memory allocation, or
+reduce what the stack asks for:
+
+- `jvm_heap_max` / `--jvm-heap-max` caps the portal's own heap (see
+  [Overriding any of this](#overriding-any-of-this)).
+- Check whether a **second Elasticsearch** is running. An imported package can
+  carry `operationMode=EMBEDDED` in its restored environment, which starts a
+  sidecar ES *inside* the Liferay container alongside the shared
+  `liferay-search-global` node. That sidecar defaults to `-Xmx2g`, so a stack
+  sized for a 3 GB ceiling is really asking for 5 GB (LDM-#1773).
+
+LDM reports the kill on the node the project actually runs on, not the
+operator's laptop.
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-28* | *Last Reviewed: 2026-08-28*
+*Last Updated: 2026-09-17* | *Last Reviewed: 2026-09-17*
