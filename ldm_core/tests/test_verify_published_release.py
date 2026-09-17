@@ -117,14 +117,20 @@ class ItCatchesTheRealDefects(unittest.TestCase):
 
 
 class TheWorkflowRunsIt(unittest.TestCase):
-    """A checker nobody runs is the same as no checker."""
+    """A checker nobody runs is the same as no checker.
+
+    These assert the standalone workflow's shape. They do NOT establish that
+    published releases get checked -- see TheCheckerActuallyRuns below, and
+    LDM-#1774 for why this class alone was misleading for several releases.
+    """
 
     def setUp(self):
         self.src = WORKFLOW.read_text(encoding="utf-8")
 
     def test_it_fires_when_a_release_is_published(self):
-        """Not during the release job: the point is to check what GitHub
-        actually serves, which cannot be known until it serves it."""
+        """Kept because it still fires for a release published by a human or a
+        PAT. It can never fire for one CI published: GitHub does not start a
+        workflow run from an event triggered by GITHUB_TOKEN (LDM-#1774)."""
         self.assertIn("release:", self.src)
         self.assertIn("published", self.src)
 
