@@ -90,6 +90,47 @@ Two notes on the differences:
   A `meta` file that is genuinely *empty* — zero bytes, or nothing but blank
   lines and `#` comments — is still read as empty, not refused.
 
+### What the consumer's machine decides, not the package
+
+Some settings describe the machine LDM is running on rather than the package,
+and `import` regenerates those rather than carrying the publisher's across.
+`jdbc.default.url` and `virtual.hosts.valid.hosts` have always worked this way.
+**Search topology joins them** (LDM-#1773).
+
+Two routes used to carry the publisher's search settings in and win:
+
+| Route | Where it lands | Why it won |
+| :--- | :--- | :--- |
+| `custom_env` in the package manifest | appended to the Liferay service environment | Compose resolves a duplicated key to the **later** entry, and `custom_env` is appended after LDM's own search block |
+| the packaged `portal-ext.properties` | layer 2 **and** layer 5 of the properties cascade | `module.framework.properties.*` is the highest-precedence route into that configuration |
+
+A package built on a `--sidecar` machine therefore made a shared-search project
+start an embedded Elasticsearch **inside** the Liferay container as well. Its
+sidecar JVM defaults to `-Xmx2g`, so a stack sized for a 3 GB ceiling really
+asked for 5 GB — enough to be OOM-killed on an 8 GB machine, which is how this
+was found.
+
+On import, LDM now removes its own search settings from both and says what it
+removed:
+
+```text
+⚠️  Discarded 2 search setting(s) from the package's portal-ext.properties;
+    this machine resolved search_mode 'shared'.
+      - module.framework.properties.com.liferay.portal.search.elasticsearch7
+        .configuration.ElasticsearchConfiguration.operationMode=EMBEDDED
+      - ...sidecarHttpPort=9201
+```
+
+The keys it owns are everything beginning `LIFERAY_ELASTICSEARCH` in the
+environment, and everything beginning
+`module.framework.properties.com.liferay.portal.search.elasticsearch` in the
+properties. Everything else a publisher sets is left exactly as they wrote it,
+comments and ordering included.
+
+**For publishers:** you no longer need to sanitise search settings out of a
+package — but if you set one deliberately, the announcement is where you will
+see it discarded. Nothing else about `custom_env` changed.
+
 ---
 
 ## 2. Packaging Workspaces (`ldm package`)
@@ -192,4 +233,4 @@ This scaffolds a `.github/workflows/ldm-package-release.yml` file which:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-08* | *Last Reviewed: 2026-09-08*
+*Last Updated: 2026-09-17* | *Last Reviewed: 2026-09-17*

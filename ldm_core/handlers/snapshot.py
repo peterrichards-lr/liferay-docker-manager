@@ -14,6 +14,118 @@ from ldm_core.snapshot.volumes import VolumesSnapshotService
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home
 
+# LDM-#1773. The search topology is a property of the machine LDM is running
+# on, not of the package -- the same class of thing as `jdbc.default.url` and
+# `virtual.hosts.valid.hosts`, which `restore` already regenerates. These two
+# prefixes cover every key LDM itself emits for search:
+#
+#   composer._build_liferay_service   -> LIFERAY_ELASTICSEARCH_PERIOD_*
+#   composer._inject_liferay_search_env -> LIFERAY_ELASTICSEARCH{7,8}_PERIOD_*
+#   composer's sidecar branch         -> module.framework.properties....
+#                                        ElasticsearchConfiguration.*
+LDM_SEARCH_ENV_PREFIX = "LIFERAY_ELASTICSEARCH"
+LDM_SEARCH_PROPERTY_PREFIX = (
+    "module.framework.properties.com.liferay.portal.search.elasticsearch"
+)
+
+
+def strip_ldm_search_env(custom_env):
+    """Removes LDM's own search environment from a restored `custom_env`.
+
+    Returns `(kept, removed)`, both dicts.
+
+    A snapshot's `custom_env` is captured from the **rendered compose file** of
+    the publisher's machine (`snapshot/archive.py`), so these entries are not a
+    publisher's declaration at all -- they are LDM's own output from a
+    different machine, travelling back in. `composer._build_liferay_service`
+    appends `custom_env` *after* the shared-search block, and Compose resolves
+    a duplicated key to the later entry, so the restored copy silently wins:
+
+        LIFERAY_ELASTICSEARCH_PERIOD_SIDECAR_PERIOD_ENABLED=false   # shared mode
+        ...
+        LIFERAY_ELASTICSEARCH_PERIOD_SIDECAR_PERIOD_ENABLED=true    # from custom_env
+        LIFERAY_ELASTICSEARCH_PERIOD_OPERATION_PERIOD_MODE=EMBEDDED
+
+    A project that resolved to shared search then starts an embedded
+    Elasticsearch **inside** the Liferay container as well, whose sidecar JVM
+    defaults to `-Xmx2g` -- enough to OOM an 8 GB machine sized for a 3 GB
+    ceiling.
+
+    Unconditional rather than "only when it contradicts the resolved mode":
+    LDM re-emits the correct values for whatever mode this machine resolves, so
+    an entry that agrees is redundant and one that disagrees is harmful. There
+    is no third case, and comparing values would add a way to be subtly wrong
+    about which is which.
+    """
+    if not isinstance(custom_env, dict):
+        return custom_env, {}
+
+    kept, removed = {}, {}
+    for key, value in custom_env.items():
+        if str(key).upper().startswith(LDM_SEARCH_ENV_PREFIX):
+            removed[key] = value
+        else:
+            kept[key] = value
+    return kept, removed
+
+
+def strip_ldm_search_properties(text):
+    """Removes LDM's own search properties from a restored portal-ext text.
+
+    Returns `(text, removed)`.
+
+    Layer 2 of `_resolve_properties_cascade`. A package built on a `--sidecar`
+    machine carries `...ElasticsearchConfiguration.operationMode=EMBEDDED` and
+    that machine's sidecar ports, and `module.framework.properties.*` is
+    deliberately the highest-precedence route into that configuration --
+    `composer.py`'s own comment says so. Nothing rewrote it on a shared-search
+    import, because `operationMode` is written only in the sidecar branch.
+
+    Operates on the text rather than a parsed dict so that everything else in
+    the file -- comments, ordering, blank lines, the publisher's own
+    properties -- survives the copy unchanged.
+    """
+    kept_lines, removed = [], {}
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        if stripped and "=" in stripped:
+            # A commented-out setting keeps its leading `#` or `!` in the key
+            # read here, so it never matches the prefix and survives the copy.
+            # That is deliberate -- it is inert, and deleting it would destroy
+            # a note the publisher left on purpose. An explicit comment guard
+            # was dropped from this loop because it could not change any
+            # outcome, and a branch no input can reach is not a safeguard.
+            key = stripped.split("=", 1)[0].strip()
+            if key.startswith(LDM_SEARCH_PROPERTY_PREFIX):
+                removed[key] = stripped.split("=", 1)[1].strip()
+                continue
+        kept_lines.append(line)
+    return "".join(kept_lines), removed
+
+
+def announce_stripped_search_keys(removed, source, search_mode):
+    """Says what was discarded and where it came from. LDM-#1773.
+
+    Silent stripping was rejected deliberately: a publisher who set
+    `operationMode` on purpose would otherwise get no signal at all, and the
+    announcement is what makes this recoverable rather than mysterious.
+    """
+    if not removed:
+        return
+
+    UI.warning(
+        f"Discarded {len(removed)} search setting(s) from the package's "
+        f"{source}; this machine resolved search_mode '{search_mode}'."
+    )
+    for key in sorted(removed):
+        UI.detail(f"  - {key}={removed[key]}")
+    UI.detail(
+        "Search topology belongs to the machine LDM runs on, not to the "
+        "package -- the same as the JDBC URL and virtual host, which are also "
+        "regenerated on import. Left in place, these start an embedded "
+        "Elasticsearch alongside the shared one (LDM-#1773)."
+    )
+
 
 class SnapshotService(BaseHandler):
     def __init__(self, manager):
@@ -25,6 +137,73 @@ class SnapshotService(BaseHandler):
         self.custom_containers = CustomContainersSnapshotService(self)
         self.archive = ArchiveSnapshotService(self)
         self.utils = UtilsSnapshotService(self)
+
+    def _install_restored_portal_ext(self, paths, project_meta):
+        """Copies the restored portal-ext into the cascade, minus LDM's own
+        search settings. LDM-#1773.
+
+        The extracted file lands in BOTH ends of the properties cascade: it is
+        layer 5 (project customisations) where it sits, and it is copied to
+        `ldmp-portal-ext.properties` as layer 2. Stripping only the layer-2
+        copy would achieve nothing -- the key would stop matching the baseline
+        and be promoted to a layer-5 customisation, which outranks every other
+        layer. So the strip happens once, on the file itself, and the copy is
+        taken from the cleaned text.
+
+        Written rather than `copy2`'d for that reason; the mtime is not worth
+        shipping a second copy of the setting to preserve.
+        """
+        target_pe = paths["files"] / "portal-ext.properties"
+        if not target_pe.exists():
+            return
+
+        ldm_dir = paths["root"] / ".liferay-docker"
+        ldm_dir.mkdir(parents=True, exist_ok=True)
+
+        text = target_pe.read_text(encoding="utf-8")
+        text, removed = strip_ldm_search_properties(text)
+        if removed:
+            target_pe.write_text(text, encoding="utf-8")
+        (ldm_dir / "ldmp-portal-ext.properties").write_text(text, encoding="utf-8")
+
+        announce_stripped_search_keys(
+            removed,
+            "portal-ext.properties",
+            self._resolved_search_mode(project_meta),
+        )
+
+    def _clean_restored_custom_env(self, custom_env, project_meta):
+        """Removes LDM's own search environment from a restored `custom_env`
+        and returns what is left. LDM-#1773.
+
+        `composer._build_liferay_service` appends `custom_env` *after* the
+        shared-search block, and Compose resolves a duplicated key to the later
+        entry -- so the publisher's machine wins over the decision
+        `resolve_infrastructure_mode` just made on this one.
+        """
+        custom_env, removed = strip_ldm_search_env(custom_env)
+        announce_stripped_search_keys(
+            removed,
+            "captured environment",
+            self._resolved_search_mode(project_meta),
+        )
+        return custom_env
+
+    def _resolved_search_mode(self, project_meta):
+        """The search mode THIS machine resolved, for the announcement.
+
+        Reported rather than acted on: the strip is unconditional, because LDM
+        re-emits the correct values for whichever mode this is. Naming it tells
+        the operator what the discarded settings were measured against.
+        """
+        try:
+            from ldm_core.utils import resolve_infrastructure_mode
+
+            return resolve_infrastructure_mode(
+                "search_mode", project_meta or {}, self.manager.defaults
+            )
+        except Exception:
+            return "unknown"
 
     def cmd_snapshots(self, paths=None):
         """Lists snapshots for a project."""
@@ -281,13 +460,7 @@ class SnapshotService(BaseHandler):
             self.archive._extract_snapshot_archive(files_tar, paths)
 
             if "files" in paths:
-                target_pe = paths["files"] / "portal-ext.properties"
-                if target_pe.exists():
-                    ldm_dir = paths["root"] / ".liferay-docker"
-                    ldm_dir.mkdir(parents=True, exist_ok=True)
-                    import shutil
-
-                    shutil.copy2(target_pe, ldm_dir / "ldmp-portal-ext.properties")
+                self._install_restored_portal_ext(paths, project_meta)
 
             if (choice_path / ".ldm").exists():
                 import shutil
@@ -305,7 +478,9 @@ class SnapshotService(BaseHandler):
 
         custom_env = snap_meta.get("custom_env")
         if custom_env:
-            project_meta["custom_env"] = custom_env
+            project_meta["custom_env"] = self._clean_restored_custom_env(
+                custom_env, project_meta
+            )
             self.manager.write_meta(paths["root"], project_meta)
 
         snap_tag = snap_meta.get("tag")
