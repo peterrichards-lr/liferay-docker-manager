@@ -2297,6 +2297,19 @@ class ConfigService:
 
         from ldm_core.config import remote_interface_macs
 
+        # Announced because it is a network round trip the operator did not
+        # ask for. Registering a node that is currently stopped is legitimate,
+        # and there the SSH ConnectTimeout is paid in full: measured 6s -> 16s
+        # on an unroutable host. A silent ten-second pause is indistinguishable
+        # from a hang, which is the LDM-#1728 finding applied to a new wait.
+        #
+        # UI.info, not UI.detail: detail is gated behind --info/--verbose
+        # (LDM-#1036), so it would be invisible exactly when it is needed.
+        UI.info(
+            f"Checking '{node.name}'s interfaces for the pinned MAC "
+            f"(up to 10s if the node is unreachable)..."
+        )
+
         interfaces = remote_interface_macs(node)
         if not interfaces:
             return  # could not ask -- say nothing rather than guess
