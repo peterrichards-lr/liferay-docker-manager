@@ -235,6 +235,64 @@ def resolve_remote_home(target: TargetNode) -> str | None:
     return home or None
 
 
+def remote_interface_macs(target: TargetNode) -> dict[str, str] | None:
+    """Returns {interface: mac} for a remote node, or None if it cannot be asked.
+
+    LDM-#1780. `_verify_pinned_mac` compares the *container's* MAC against the
+    *configured* one, so a wrong configured value satisfies it perfectly -- LDM
+    pins the typo faithfully, the guard passes, and Liferay then refuses the
+    licence. The symptom is the one LDM-#1752 was raised for: healthy container,
+    "License registered" in the log, and the Activation page instead of Sign In.
+    Reported from the v2.23.0-pre.3 AWS verification, where it cost two CI runs.
+
+    Reads `/sys/class/net/*/address` rather than parsing `ip` or `ifconfig`:
+    it is a plain file per interface, needs no tool to be installed, and cannot
+    change output format between distributions. Remote compute nodes are Linux
+    (that is what `target add` registers a Docker context against), so this is
+    not a portability compromise.
+
+    **None means "could not ask", never "no match".** An unreachable node, a
+    non-Linux one, or an SSH timeout must not be reported as a wrong MAC --
+    unreachable is not the same as wrong, the same distinction
+    `_verify_pinned_mac` already draws for an unreadable container MAC.
+    """
+    if target.name == "local" or is_local_host(target.host):
+        return None
+
+    target_spec = f"{target.user}@{target.host}" if target.user else target.host
+    ssh_opts = ["-i", target.key_path] if target.key_path else []
+    result = run_command(
+        [
+            "ssh",
+            *ssh_opts,
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=10",
+            target_spec,
+            "for f in /sys/class/net/*/address; do "
+            'n="${f%/address}"; echo "${n##*/} $(cat "$f" 2>/dev/null)"; done',
+        ],
+        check=False,
+    )
+    if not result:
+        return None
+
+    macs: dict[str, str] = {}
+    for line in result.splitlines():
+        parts = line.split()
+        if len(parts) != 2:
+            continue
+        name, mac = parts[0], parts[1].strip().lower()
+        # Loopback reports all zeroes. Keeping it would let any node "match" a
+        # configured 00:00:00:00:00:00 and would pad the message with noise.
+        if not mac or set(mac) <= {"0", ":"}:
+            continue
+        macs[name] = mac
+
+    return macs or None
+
+
 def get_remote_project_root(target: TargetNode, project_name: str) -> str | None:
     """Returns the absolute remote project directory, matching the exact
     destination convention `sync_project_to_target` rsyncs/tars into
