@@ -1,0 +1,45 @@
+# LDM-#1768: verify the PUBLISHED release, not the build that produced it.
+#
+# CI proves the commit builds. Four defects during the v2.22.0 cycle were
+# invisible to it by construction and found only by a human downloading the
+# artifact: a release with no installer, a bundle with no common/, a MANIFEST
+# claiming an activation key it could not carry, and an installer absent from
+# checksums.txt. Each is trivial to catch once you hold the published bytes.
+#
+# Runs after the release publishes rather than as part of it: the point is to
+# check what GitHub actually serves, which cannot be known until it serves it.
+name: Verify Published Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to verify (e.g. v2.23.0-pre.2)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Verify the published assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # `release.published` carries the tag; a manual run supplies it.
+          TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+        run: |
+          echo "Verifying published release: $TAG"
+          python3 scripts/verify_published_release.py --tag "$TAG"
