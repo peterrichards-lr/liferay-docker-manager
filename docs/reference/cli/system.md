@@ -561,6 +561,17 @@ interfaces are, so a licence bound to a MAC that is not a current NIC is
 legitimate, if unusual. A node that cannot be reached says nothing at all --
 unable to ask is not the same as wrong (LDM-#1780).
 
+The check is one SSH round trip, and `target add` announces it because
+registering a node that is currently stopped is legitimate and pays the full
+connect timeout there -- measured 6s to 16s against an unroutable host:
+
+```text
+ℹ  Checking 'aws-1's interfaces for the pinned MAC (up to 10s if the node is
+   unreachable)...
+```
+
+No `--mac-address`, no round trip and no line.
+
 LDM re-reads the MAC from the running container and **refuses** when it does
 not match, because writing the value into the compose file is a request rather
 than a guarantee. The MAC can only be set at container creation, so a changed
