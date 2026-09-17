@@ -7,9 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.23.0-pre.2] - 2026-09-16
 
-### Added
+The first *published* cut of the `v2.23.0` cycle. `-pre.1` was tagged but published
+nothing, so this carries that entire change set -- the MAC pinning work described under
+`-pre.1` -- plus the `RELEASE_ANNOUNCEMENTS` entry that unblocked it.
 
--
+**It cannot exercise its own headline feature.** `ldm target add --mac-address` is
+accepted and parsed, and then never passed to the handler, so the value is stored as an
+empty string and no pin is ever written into the compose file (LDM-#1759). A node added
+with this build reports success and records nothing. Use `-pre.3` or later for the
+remote-node verification; there is nothing to test here. Found by the maintainer running
+the released binary: CI was green, and both tests for the feature asserted the flag was
+*declared* rather than following the value to storage.
+
+### Fixed
+
+- **`RELEASE_ANNOUNCEMENTS` carries the `v2.23` entry**, which is what `-pre.1` was spent on: `test_release_announcements_contract` fails the first cut of any new minor until that entry exists, and that path is reachable only through `--bump preminor`/`--premajor` -- `--bump beta` reuses a minor that already has one, so the contract had never fired since it was written (LDM-#1756).
 
 ## [v2.23.0-pre.1] - 2026-09-16
 
