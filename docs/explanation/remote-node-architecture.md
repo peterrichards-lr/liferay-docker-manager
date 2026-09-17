@@ -223,6 +223,14 @@ alongside `docker0` and `br-*`: all plausible, only one licensed. A wrong guess
 produces exactly the failure above -- a healthy container that will not let you
 sign in -- so the configured value is the contract.
 
+`target add` does read the node's interfaces and **warns** when the value it was
+given is none of them, naming each so the right one can be picked. It warns
+rather than refuses, because Liferay validates the *container's* MAC against the
+licence and does not care what the host's interfaces are: a licence bound to a
+MAC that is not a current NIC is legitimate, if unusual, and refusing would
+block a working configuration to catch a likely typo. A node that cannot be
+reached is silent -- unable to ask is not the same as wrong (LDM-#1780).
+
 ### LDM verifies that the pin actually took
 
 Writing `mac_address` into the compose file is a *request*, not a guarantee.
@@ -232,7 +240,16 @@ that are otherwise indistinguishable:
 
 - a Docker/Compose version that ignores the form LDM wrote
 - a container created before the configured value changed
-- a MAC that was set to the wrong interface
+- a compose key the running Docker does not honour
+
+**What it cannot catch is a wrong configured value**, and this is worth stating
+plainly because the check reads as though it covers it. It compares the
+container's MAC against the *configured* one, so a typo satisfies it perfectly:
+LDM pins the wrong address faithfully, both values agree, the check passes, and
+Liferay then refuses the licence. The operator gets the original symptom --
+healthy container, `License registered`, Activation page -- roughly twenty
+minutes after making the mistake. That half is covered at `target add` instead,
+by the interface warning above, where the typo is cheapest to fix (LDM-#1780).
 
 **The MAC can only be set when a container is created.** `docker network
 connect --mac-address` does not exist in Docker 25.0.14, so an existing
@@ -252,4 +269,4 @@ the safety here is a property of bridge networking -- not of the option.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-16* | *Last Reviewed: 2026-09-16*
+*Last Updated: 2026-09-17* | *Last Reviewed: 2026-09-17*
