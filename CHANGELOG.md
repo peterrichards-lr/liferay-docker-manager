@@ -7,9 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.23.0-pre.3] - 2026-09-17
 
+**The first build in this cycle that can actually exercise the MAC pin.** `-pre.2`
+could not: `--mac-address` was parsed and then never passed to the handler, so every
+node added with it recorded an empty string. Use this build or later for the remote-node
+verification.
+
+Alongside that, four release-hardening mechanisms, written after the maintainer asked what
+more could be automated "to prevent burning too many tags". Each replaces something someone
+had to remember with something that refuses.
+
+### Fixed
+
+- **`--mac-address` now reaches the handler.** The flag was declared and parsed, and then never passed on, so `cmd_target_add` stored `""`. `target add` reported success and `~/.ldmrc` carried the key with an empty value — a node configured with `-pre.2` has no pin at all. Found by the maintainer running the released binary; CI was green throughout, because both tests for the feature asserted the flag was *declared* and that the docs named it, and neither followed the value to storage. The regression test now drives `_build_command_map` and invokes the real lambda, rather than calling `cmd_target_add` with the arguments the dispatch was supposed to supply (LDM-#1759).
+
 ### Added
 
--
+- **The release contracts are checked *before* the tag exists** (LDM-#1758). `release.py` runs the CHANGELOG ratchet and the architectural-contract tests before creating a tag, and aborts saying the number is still available. Both tags burnt in the previous cycle — `v2.22.0-pre.4` and `v2.23.0-pre.1` — failed preconditions that already had fast tests; they simply were not run at the moment the decision was made. Tags are immutable, so the cost of finding out afterwards is a version number that can never be reclaimed.
+- **The published release is verified, not just the build** (LDM-#1768). `scripts/verify_published_release.py --tag X` downloads a release and asserts what a *user* finds: every asset present, every checksum matching, and the manifest's claims true. Validated against real published history rather than fixtures — it reports 4 problems on `v2.22.0-pre.7`, 5 on `-pre.5`, and passes `v2.23.0-pre.2`. Four defects in the previous cycle were invisible to green CI and surfaced only by downloading the release.
+- **The Promotion Delta Gate is a check, not a documented rule** (LDM-#1765). `--promote` diffs `ldm_core/` against the last `v*-pre.*` tag and refuses when stable would ship code no pre-release ever verified. `constants.py`, `resources/ldm.1` and `/tests/` are excluded — version stamps and files that do not ship. `--allow-promotion-delta` is the deliberate opt-out. Hit promoting `v2.22.0`, where four commits merged after the verification and shipped in stable.
+- **`agent_push.sh` refuses to commit onto `master` or `release/*`** unless `LDM_ALLOW_PROTECTED_BRANCH=1` (LDM-#1764). Four branch mistakes were made in a single day.
+
+### Internal
+
+- **The E2E suite asserts `--mac-address` is actually persisted** (LDM-#1771), rather than that the flag exists. This is the assertion whose absence let LDM-#1759 ship.
+- **`RELEASE_ANNOUNCEMENTS` precondition documented** (LDM-#1761): the first cut of any new minor fails `test_release_announcements_contract` until that constant carries an entry for the minor, which only `--bump preminor` can reach. This is what `-pre.1` was spent on.
 
 ## [v2.23.0-pre.2] - 2026-09-16
 
