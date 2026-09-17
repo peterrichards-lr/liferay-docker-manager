@@ -43,10 +43,9 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from ldm_core.utils import safe_extract
-
+# Standard library only, deliberately. This runs inside `ci.yml`'s release job
+# immediately after the release publishes, where nothing has been pip-installed
+# -- importing `ldm_core` would pull in `requests` and fail there (LDM-#1774).
 REPO = "peterrichards-lr/liferay-docker-manager"
 
 # Everything `ci.yml` claims to publish. Keep in step with its `files:` block;
@@ -205,35 +204,34 @@ def check_bundle(dest: Path, findings: Findings) -> None:
 
 
 def check_bundle_self_checksums(dest: Path, findings: Findings) -> None:
-    """The bundle's own SHA256SUMS must cover and match its members."""
+    """The bundle's own SHA256SUMS must cover and match its members.
+
+    Members are read straight out of the archive and never written to disk.
+    That removes the Zip Slip question entirely rather than guarding against it
+    -- this archive was DOWNLOADED, and a verification tool runs against
+    artifacts it did not build, so the safest extraction is the one that does
+    not happen. It also keeps this script to the standard library, which is
+    what lets the release job run it without installing anything.
+    """
     bundle = dest / "verification-bundle.zip"
     if not bundle.is_file():
         return
 
-    with tempfile.TemporaryDirectory() as tmp:
-        out = Path(tmp)
-        with zipfile.ZipFile(bundle) as archive:
-            # `safe_extract`, not `extractall`: this archive was DOWNLOADED, so
-            # a tampered release could path-traverse out of the temp directory
-            # (Zip Slip). The repo enforces this via the `enforce-safe-extract`
-            # semgrep rule, and a verification tool is exactly the wrong place
-            # to make an exception -- it runs against artifacts it did not build.
-            safe_extract(archive, out)
-
-        sums = out / "SHA256SUMS"
-        if not sums.is_file():
+    with zipfile.ZipFile(bundle) as archive:
+        names = set(archive.namelist())
+        if "SHA256SUMS" not in names:
             return  # already reported as a missing member
 
-        for line in sums.read_text(encoding="utf-8", errors="replace").splitlines():
+        sums = archive.read("SHA256SUMS").decode("utf-8", errors="replace")
+        for line in sums.splitlines():
             parts = line.split()
             if len(parts) < 2:
                 continue
-            expected, name = parts[0].lower(), parts[-1]
-            member = out / name
-            if not member.is_file():
+            expected, name = parts[0].lower(), parts[-1].lstrip("*./")
+            if name not in names:
                 findings.fail(f"SHA256SUMS names {name}, which is not in the bundle")
                 continue
-            actual = hashlib.sha256(member.read_bytes()).hexdigest()
+            actual = hashlib.sha256(archive.read(name)).hexdigest()
             if actual != expected:
                 findings.fail(f"bundle member {name} does not match SHA256SUMS")
 
