@@ -63,6 +63,46 @@ class TheWarningFires(unittest.TestCase):
             ConfigService._warn_if_mac_matches_no_interface(target)
         return "\n".join(said)
 
+    def test_the_probe_is_announced_before_it_blocks(self):
+        """The probe is an SSH round trip the operator did not ask for, and on
+        an unreachable node it pays the full ConnectTimeout -- measured 6s to
+        16s registering an unroutable host. A silent ten-second pause reads as
+        a hang (LDM-#1728), so it is announced.
+
+        `UI.info`, not `UI.detail`: detail is gated behind `--info`/`--verbose`
+        (LDM-#1036) and would be invisible exactly when it is needed.
+        """
+        announced = []
+
+        def record(message, *_args, **_kwargs):
+            announced.append(str(message))
+
+        with (
+            patch("ldm_core.config.remote_interface_macs", return_value=None),
+            patch("ldm_core.ui.UI.info", side_effect=record),
+        ):
+            ConfigService._warn_if_mac_matches_no_interface(node("02:42:de:ad:be:ef"))
+
+        self.assertTrue(announced, "the probe blocked without saying why")
+        self.assertIn("aws-1", announced[0])
+
+    def test_nothing_is_announced_when_no_probe_happens(self):
+        """No MAC configured means no round trip, so no line. A message about
+        work that is not being done is noise."""
+        announced = []
+
+        def record(message, *_args, **_kwargs):
+            announced.append(str(message))
+
+        with (
+            patch("ldm_core.config.remote_interface_macs") as probe,
+            patch("ldm_core.ui.UI.info", side_effect=record),
+        ):
+            ConfigService._warn_if_mac_matches_no_interface(node(""))
+
+        probe.assert_not_called()
+        self.assertEqual(announced, [])
+
     def test_a_mac_on_no_interface_is_reported(self):
         out = self.warn_for(
             node("02:42:de:ad:be:ef"),
