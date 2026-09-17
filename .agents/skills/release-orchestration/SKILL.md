@@ -184,6 +184,10 @@ To prevent "version fatigue" and ensure the stability of the main release channe
 
   Do not skip it because the changes "look like tooling". `docs/` and `scripts/` changes genuinely do not ship in the binary; `ldm_core/` always does, whatever its subject matter.
 
+  **Since LDM-#1765 this is a check, not only a rule**, and since LDM-#1777 it compares the verified tag against **both** `HEAD` and `origin/master`. The command above is still the right thing to run by hand, but note it describes only half the question: `--promote` runs from a `release/` branch, so `HEAD` is the release branch, while `create_and_push_tag` checks out `master` and tags **that**. A commit merged to `master` and never backported ships in the stable tag while a `HEAD`-only diff reports nothing.
+
+  The gate also prints the commits `master` carries that the release branch does not, on every run, whether or not any of them ship. That is reported rather than refused on purpose: the live example (`2224d81d` during the `v2.23.0` cycle) was test-only, and a gate that refuses a correct configuration gets disabled. Step 5 of the conflict procedure above -- `git merge-base --is-ancestor origin/master HEAD` -- remains the thing to fix when it fires.
+
 - **Immutable Tags (The Burn Rule)**: GitHub Repository Rules strictly prohibit the deletion or force-updating of Git tags. Once a tag (e.g. `v2.15.19`) is pushed, it is permanently locked to that commit. Any premature tagging permanently burns the version number, requiring a version bump to recover. You MUST be absolutely certain all pre-requisites are met before tagging.
 - **Compatibility Matrix Gate**: You MUST update the compatibility matrix (in the project documentation) to reflect the newly verified environments BEFORE moving to a stable release. Always run `python3 scripts/sync_compatibility.py` from a checkout whose `ldm_core/constants.py` `VERSION` actually matches the report(s) you're syncing (e.g. the active `release/vX.Y.Z-pre.N` branch for pre-release reports) -- running it from `master` (or any other mismatched checkout) silently archives every report whose binary/script version doesn't match as "stale," discarding real test data with no error.
   - **The script now refuses rather than discarding (LDM-#1390).** A raw report whose recorded version does not match the checkout's `VERSION` makes `sync_compatibility.py` exit non-zero *before moving anything*, naming each report and both versions. Check out the ref whose `VERSION` matches and re-run. `--archive-stale` is the deliberate opt-out for genuinely clearing an older cycle's reports -- it prints the full plan first (each report and the name it moves to) before touching anything; `--dry-run` shows the same diagnosis without a failing exit, and `--quiet` suppresses routine progress without ever hiding a refusal. This used to be a `UI.warning` followed by the move, which is easy to miss in a long run.
@@ -219,4 +223,4 @@ To ensure clarity and prevent title drift across multi-commit pre-release iterat
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-16* | *Last Reviewed: 2026-09-16*
+*Last Updated: 2026-09-17* | *Last Reviewed: 2026-09-17*

@@ -351,10 +351,31 @@ def check_promotion_delta(allow_delta=False):
 
     LDM-#1754 recorded this as a rule in the release skill. A rule that fires
     once per release, months apart, is not one anyone retains -- hence the check.
+
+    ## Both refs, because the tag does not land where the gate stood (LDM-#1777)
+
+    The gate runs straight after the "promotion must be run from a `release/`
+    branch" guard, so `HEAD` is the RELEASE BRANCH. `create_and_push_tag` then
+    checks out `master` and tags THAT. They are different refs, and a commit
+    merged to `master` but never backported into the release branch therefore
+    ships in the stable tag while a `HEAD`-only diff reports nothing -- the
+    exact failure this gate exists to prevent, arriving by another route.
+
+    Demonstrated live during the v2.23.0 cycle: `2224d81d` sat on `master` and
+    not on `release/v2.23.0`. It was test-only, so nothing shipped; the gate
+    would have been equally silent had it been `pipelines/run.py`.
+
+    So the verified tag is compared against BOTH refs and the results unioned,
+    which is what the tagged tree will actually contain. The issue also offered
+    refusing outright whenever `origin/master` is not an ancestor of `HEAD`.
+    That is rejected deliberately: it would have refused the promotion above,
+    where nothing was wrong, and a gate that fires on a correct configuration
+    gets disabled. The backport gap is REPORTED instead, on every run.
     """
     version_stamps = {"ldm_core/constants.py", "ldm_core/resources/ldm.1"}
 
     run_cmd(["git", "fetch", "--tags", "origin"], check=False)
+    run_cmd(["git", "fetch", "origin", "master"], check=False)
     tags = run_cmd(
         ["git", "tag", "--list", "v*-pre.*", "--sort=-creatordate"],
         capture=True,
@@ -365,20 +386,60 @@ def check_promotion_delta(allow_delta=False):
         return
 
     verified_tag = tags[0]
-    changed = run_cmd(
-        ["git", "diff", "--name-only", verified_tag, "HEAD", "--", "ldm_core/"],
-        capture=True,
-        check=False,
-    ).stdout.split()
-    shipped = sorted(
-        f for f in changed if f and "/tests/" not in f and f not in version_stamps
+
+    # An unresolvable `origin/master` must not pass quietly as "no delta":
+    # half a gate reporting success is how LDM-#1774 happened.
+    have_master = (
+        run_cmd(
+            ["git", "rev-parse", "--verify", "--quiet", "origin/master"],
+            capture=True,
+            check=False,
+        ).returncode
+        == 0
     )
+    if not have_master:
+        print(
+            "⚠️  Could not resolve 'origin/master'; the delta below covers this "
+            "branch ONLY, and --promote tags master (LDM-#1777)."
+        )
+
+    refs = [("HEAD", "this branch")] + (
+        [("origin/master", "master")] if have_master else []
+    )
+
+    origins = {}
+    for ref, label in refs:
+        changed = run_cmd(
+            ["git", "diff", "--name-only", verified_tag, ref, "--", "ldm_core/"],
+            capture=True,
+            check=False,
+        ).stdout.split()
+        for f in changed:
+            if f and "/tests/" not in f and f not in version_stamps:
+                origins.setdefault(f, set()).add(label)
+
+    shipped = sorted(origins)
+
+    # Reported whether or not anything shipped: the operator should see the
+    # backport gap even when today's commits happen to be harmless.
+    if have_master:
+        ahead = run_cmd(
+            ["git", "log", "--oneline", "origin/master", "^HEAD"],
+            capture=True,
+            check=False,
+        ).stdout.strip()
+        if ahead:
+            listing = "\n".join(f"     {line}" for line in ahead.splitlines())
+            print(
+                f"\nℹ️  master carries {len(ahead.splitlines())} commit(s) this release "
+                f"branch does not, and --promote tags master:\n{listing}"
+            )
 
     if not shipped:
         print(f"✅ Promotion delta: only version stamps changed since {verified_tag}.")
         return
 
-    listing = "\n".join(f"     {f}" for f in shipped)
+    listing = "\n".join(f"     {f}  [{', '.join(sorted(origins[f]))}]" for f in shipped)
     print(
         f"\n⚠️  Promotion delta: {len(shipped)} shipped file(s) changed since "
         f"{verified_tag}, the verified pre-release:\n{listing}\n"

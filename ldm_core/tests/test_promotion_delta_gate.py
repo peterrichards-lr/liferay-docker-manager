@@ -55,14 +55,30 @@ class FakeResult:
         self.stderr = stderr
 
 
-def git_stub(tags, changed):
-    """A `run_cmd` that answers the two git questions the gate asks."""
+def git_stub(tags, changed, master_changed=None, ahead=(), have_master=True):
+    """A `run_cmd` answering the git questions the gate asks.
+
+    `changed` is what `HEAD` differs by; `master_changed` what `origin/master`
+    differs by, defaulting to the same -- which is the ordinary case, where the
+    release branch and master carry the same work. LDM-#1777 is about the case
+    where they do not.
+    """
+    if master_changed is None:
+        master_changed = changed
 
     def _run(argv, **kwargs):
         if argv[:2] == ["git", "tag"]:
             return FakeResult(stdout="\n".join(tags))
+        if argv[:3] == ["git", "rev-parse", "--verify"]:
+            return FakeResult(returncode=0 if have_master else 128)
+        if argv[:2] == ["git", "log"]:
+            return FakeResult(stdout="\n".join(ahead))
         if argv[:2] == ["git", "diff"]:
-            return FakeResult(stdout="\n".join(changed))
+            # argv is [git, diff, --name-only, <tag>, <ref>, --, ldm_core/]
+            ref = argv[4]
+            return FakeResult(
+                stdout="\n".join(master_changed if ref == "origin/master" else changed)
+            )
         return FakeResult()
 
     return _run
@@ -78,9 +94,23 @@ class GateHarness(unittest.TestCase):
         # measures the real file and always answers yes.
         self.release = load_release(RELEASE_PY)
 
-    def run_gate(self, changed, tags=("v2.22.0-pre.9",), allow_delta=False):
+    def run_gate(
+        self,
+        changed,
+        tags=("v2.22.0-pre.9",),
+        allow_delta=False,
+        master_changed=None,
+        ahead=(),
+        have_master=True,
+    ):
         """Returns (refused, output). `refused` is True when the gate exits."""
-        self.release.run_cmd = git_stub(list(tags), list(changed))
+        self.release.run_cmd = git_stub(
+            list(tags),
+            list(changed),
+            master_changed=None if master_changed is None else list(master_changed),
+            ahead=list(ahead),
+            have_master=have_master,
+        )
         buffer = io.StringIO()
         refused = False
         try:
@@ -156,6 +186,79 @@ class TheGateRefuses(GateHarness):
         )
 
         self.assertIn("v2.22.0-pre.9", out)
+
+
+class TheGateLooksAtWhatWillActuallyBeTagged(GateHarness):
+    """LDM-#1777. The gate runs on the RELEASE BRANCH; `create_and_push_tag`
+    checks out `master` and tags THAT.
+
+    A commit merged to master and never backported therefore ships in the
+    stable tag while a `HEAD`-only diff reports a clean delta -- the very
+    failure this gate exists to prevent, arriving by a different route.
+    """
+
+    def test_a_shipped_file_on_master_only_is_refused(self):
+        """The whole point. Nothing on the release branch, a shipped file on
+        master, and master is what gets tagged."""
+        refused, out = self.run_gate(
+            ["ldm_core/constants.py"],
+            master_changed=["ldm_core/constants.py", "ldm_core/pipelines/run.py"],
+        )
+
+        self.assertTrue(refused, "the gate allowed a shipped file only master carries")
+        self.assertIn("ldm_core/pipelines/run.py", out)
+
+    def test_the_refusal_says_which_ref_carries_it(self):
+        """ "A file changed" is not actionable without knowing where it is; the
+        remedy for a master-only file is a backport, not a new pre-release."""
+        _, out = self.run_gate(
+            [],
+            master_changed=["ldm_core/pipelines/run.py"],
+        )
+
+        self.assertIn("master", out)
+
+    def test_a_file_on_both_refs_is_reported_once(self):
+        """The two diffs overlap almost entirely in the ordinary case. Counting
+        it twice would make the delta count meaningless."""
+        _, out = self.run_gate(["ldm_core/pipelines/run.py"])
+
+        self.assertIn("1 shipped file(s)", out)
+
+    def test_master_only_tests_still_do_not_ship(self):
+        """The live example from the issue: `2224d81d` was on master and not on
+        the release branch, and was test-only. Refusing there would fire the
+        gate on a correct configuration."""
+        refused, _ = self.run_gate(
+            [], master_changed=["ldm_core/tests/test_release_contract_gate.py"]
+        )
+
+        self.assertFalse(refused)
+
+    def test_the_backport_gap_is_reported_even_when_nothing_ships(self):
+        """Reported rather than refused -- the operator should see the gap the
+        one time per release it matters, without the gate crying wolf."""
+        refused, out = self.run_gate(
+            [],
+            master_changed=["ldm_core/tests/test_x.py"],
+            ahead=["2224d81d test(release): drive the two release gates"],
+        )
+
+        self.assertFalse(refused)
+        self.assertIn("2224d81d", out)
+        self.assertIn("tags master", out)
+
+    def test_an_unresolvable_master_is_announced_not_swallowed(self):
+        """Half a gate reporting success is how LDM-#1774 happened. If the ref
+        cannot be read, the operator must know the master half did not run."""
+        _, out = self.run_gate(
+            ["ldm_core/constants.py"],
+            master_changed=["ldm_core/pipelines/run.py"],
+            have_master=False,
+        )
+
+        self.assertIn("Could not resolve", out)
+        self.assertIn("tags master", out)
 
 
 class ItCatchesTheRealIncident(GateHarness):
