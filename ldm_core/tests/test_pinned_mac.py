@@ -208,6 +208,101 @@ class TheCliCanRecordIt(unittest.TestCase):
 
         self.assertNotIn("--mac-address", options)
 
+    def test_the_value_actually_reaches_storage(self):
+        """Parse -> dispatch -> stored, end to end (LDM-#1759).
+
+        The flag was declared, parsed correctly, and then **not passed to the
+        handler** -- so `cmd_target_add` took its default and wrote
+        `mac_address: ""`. `target add` reported success, `~/.ldmrc` carried
+        the key with an empty value, and nothing downstream ever saw a
+        configured MAC. Shipped in v2.23.0-pre.2 and found by running it.
+
+        The existing tests asserted the flag was DECLARED and that the docs
+        named it. Neither followed the value, which is the difference between
+        testing a configuration and testing a behaviour -- and it is why a
+        feature that could not work at all passed its own suite.
+
+        This drives the real dispatch table rather than calling the handler
+        directly: the broken link was the dispatch, so a test that skipped it
+        would have passed against the bug.
+        """
+        import json
+        import tempfile
+        from unittest.mock import MagicMock, patch
+
+        from ldm_core.cli import get_parser
+
+        parser, _subparsers = get_parser()
+        args = parser.parse_args(
+            [
+                "target",
+                "add",
+                "aws-1",
+                "--host",
+                # localhost on purpose: a remote host makes cmd_target_add
+                # create a real docker context, which the suite's LDM-#1409
+                # guard rightly refuses. The MAC path does not depend on it.
+                "localhost",
+                "--mac-address",
+                "06:D0:95:E5:26:A7",
+                "-y",
+            ]
+        )
+
+        with tempfile.TemporaryDirectory() as home:
+            captured = {}
+
+            def fake_save(node):
+                captured["node"] = node
+
+            with (
+                patch.dict("os.environ", {"LDM_HOME": home}),
+                patch("ldm_core.config.save_target_node", side_effect=fake_save),
+            ):
+                from ldm_core.cli import _build_command_map
+                from ldm_core.handlers.config import ConfigService
+
+                service = ConfigService.__new__(ConfigService)
+                service.manager = MagicMock()
+                manager = MagicMock()
+                manager.config = service
+
+                # The REAL dispatch table. Calling cmd_target_add directly
+                # would re-implement the wiring under test and pass against
+                # the very bug this exists to catch -- which it did, on the
+                # first attempt at this test.
+                cmds = _build_command_map(args, manager)
+                cmds[("target", "add")]()
+
+            node = captured.get("node")
+            # assertIsNotNone does not narrow for mypy; self.fail is NoReturn.
+            if node is None:
+                self.fail("the target was never saved")
+            self.assertEqual(
+                node.mac_address,
+                "06:d0:95:e5:26:a7",
+                "the parsed MAC did not reach storage -- lower-cased on write "
+                "so `docker inspect` casing cannot read as a mismatch",
+            )
+            self.assertNotEqual(node.mac_address, "", "stored empty (LDM-#1759)")
+            self.assertIn("06:d0:95", json.dumps(node.to_dict()))
+
+    def test_the_dispatch_passes_the_flag_to_the_handler(self):
+        """The specific broken link, asserted directly.
+
+        The dispatch table is a dict of lambdas, so a missing keyword argument
+        is invisible until the value is read back from storage.
+        """
+        from pathlib import Path as _Path
+
+        src = (_Path(__file__).resolve().parent.parent / "cli.py").read_text(
+            encoding="utf-8"
+        )
+        start = src.index('("target", "add")')
+        block = src[start : start + 600]
+
+        self.assertIn("mac_address=", block, "the dispatch drops the parsed value")
+
     def test_the_docs_name_the_command_that_exists(self):
         """The docs and the parser must agree, or the instruction is fiction."""
         from pathlib import Path
