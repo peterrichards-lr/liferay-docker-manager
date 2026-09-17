@@ -78,6 +78,40 @@ EOF
 # These checks run BEFORE the ~10-minute quality gates, so a staging mistake
 # costs a second rather than ten minutes followed by an empty push.
 # ---------------------------------------------------------------------------
+# LDM-#1764: refuse to commit onto a protected branch.
+#
+# On 2026-09-16 a commit landed on `master` this way. Only the server-side
+# ruleset stopped the push, and the recovery was a checkpoint tag, a branch
+# move and a hard reset -- all avoidable. The release branch is worse: it is
+# push-able, so `release/*` work merges into the next tag with nobody
+# reviewing it, which is exactly what "fix on master first, then backport"
+# exists to prevent.
+#
+# Escape hatch: LDM_ALLOW_PROTECTED_BRANCH=1 for the genuine cases -- the
+# backport merge commit and the release-branch CHANGELOG entry, both of which
+# are made deliberately and cannot be expressed as a feature branch.
+CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+case "$CURRENT_BRANCH" in
+  master|main|release/*)
+    if [ "${LDM_ALLOW_PROTECTED_BRANCH:-0}" != "1" ]; then
+      echo "=> [ERROR] Refusing to commit on '$CURRENT_BRANCH'."
+      echo ""
+      echo "    Work belongs on a branch off master. Committing here either"
+      echo "    gets rejected by the ruleset (master) or lands unreviewed in"
+      echo "    the next tag (release/*)."
+      echo ""
+      echo "    Move the work to a branch:"
+      echo "        git checkout -B <type>/<issue>-<slug> origin/master"
+      echo ""
+      echo "    If this IS a deliberate release-branch commit -- a backport"
+      echo "    merge or a CHANGELOG entry -- re-run with:"
+      echo "        LDM_ALLOW_PROTECTED_BRANCH=1 ./scripts/agent_push.sh \"<msg>\""
+      exit 1
+    fi
+    echo "=> [WARN] Committing on protected branch '$CURRENT_BRANCH' (override set)."
+    ;;
+esac
+
 STAGED_FILES="$(git diff --cached --name-only)"
 UNSTAGED_FILES="$(git diff --name-only)"
 UNTRACKED_FILES="$(git ls-files --others --exclude-standard)"
