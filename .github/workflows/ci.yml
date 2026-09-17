@@ -664,3 +664,26 @@ jobs:
             ```
           draft: false
           prerelease: ${{ steps.check_release.outputs.is_release != 'true' }}
+
+      # LDM-#1774: this has to live here, not in verify-published-release.yml.
+      # GitHub does not start a workflow run from an event triggered by
+      # GITHUB_TOKEN, and the step above publishes with exactly that token -- so
+      # `on: release: [published]` never fires for a CI-published release. The
+      # standalone workflow had zero runs across every release since it was
+      # added, while reading as though published releases were being checked.
+      #
+      # Running it here is also the more honest placement: it checks what GitHub
+      # actually serves, at the only moment that can be known, and fails the
+      # release job loudly when the artifact is wrong. That is what was missing
+      # when v2.22.0-pre.7 published with no installer and CI stayed green.
+      #
+      # No pip install: the checker is deliberately standard-library only.
+      - name: Verify the Published Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The release was created moments ago; let the API settle before
+          # asking it for every asset.
+          sleep 15
+          python3 scripts/verify_published_release.py --tag "${{ github.ref_name }}"

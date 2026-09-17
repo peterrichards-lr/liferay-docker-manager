@@ -6,8 +6,17 @@
 # claiming an activation key it could not carry, and an installer absent from
 # checksums.txt. Each is trivial to catch once you hold the published bytes.
 #
-# Runs after the release publishes rather than as part of it: the point is to
-# check what GitHub actually serves, which cannot be known until it serves it.
+# LDM-#1774: the `release` trigger below CANNOT fire for a release published by
+# CI. GitHub does not start a workflow run from an event triggered by
+# GITHUB_TOKEN, and `ci.yml` publishes with exactly that token -- so this
+# workflow recorded zero runs while reading as though every release was being
+# checked. The real gate is now a step at the end of `ci.yml`'s release job.
+#
+# The trigger is kept because it still fires for a release published by a human
+# or a PAT, but it must never again be mistaken for the automatic path.
+#
+# `workflow_dispatch` is the genuinely useful half: it verifies any historical
+# tag on demand, which is how the v2.22.0-pre.7 and -pre.5 evidence was gathered.
 name: Verify Published Release
 
 on:

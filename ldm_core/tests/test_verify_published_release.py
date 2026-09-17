@@ -136,5 +136,85 @@ class TheWorkflowRunsIt(unittest.TestCase):
         self.assertIn("verify_published_release.py", self.src)
 
 
+class TheCheckerActuallyRuns(unittest.TestCase):
+    """LDM-#1774: the standalone workflow could never fire.
+
+    GitHub does not start a workflow run from an event triggered by
+    GITHUB_TOKEN, and `ci.yml` publishes the release with exactly that token,
+    so `on: release: [published]` never reached it. Measured: zero runs of that
+    workflow had ever existed, across every release since it was added, while
+    it read as though published releases were being verified automatically.
+
+    That is the third "wired, green, never executes" defect of this cycle, after
+    the #1618 module rung and the #1770 gates. So the property worth asserting
+    is not that a workflow exists -- it is that the release job itself runs the
+    checker.
+    """
+
+    def setUp(self):
+        self.ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+
+    def test_the_release_job_runs_the_checker(self):
+        self.assertIn("verify_published_release.py", self.ci)
+
+    def test_it_runs_after_the_release_is_created(self):
+        """Before publication there is nothing to download."""
+        created_at = self.ci.index("Create GitHub Release")
+        checked_at = self.ci.index("verify_published_release.py")
+        self.assertLess(
+            created_at,
+            checked_at,
+            "the checker runs before the release exists, so it can only fail",
+        )
+
+    def test_the_checker_needs_no_pip_install(self):
+        """The release job installs nothing.
+
+        This is the constraint that actually broke: the first version imported
+        `ldm_core.utils` for `safe_extract`, which pulls in `requests`, so the
+        step would have died on import in that job. Asserted by parsing the
+        imports rather than by reading the source, because a comment saying
+        "standard library only" is not a check.
+        """
+        import ast
+        import sys
+
+        tree = ast.parse(CHECKER.read_text(encoding="utf-8"))
+        modules = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                modules |= {a.name.split(".")[0] for a in node.names}
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                modules.add(node.module.split(".")[0])
+
+        stdlib = getattr(sys, "stdlib_module_names", None)
+        if stdlib is None:  # pragma: no cover - Python < 3.10
+            self.skipTest("sys.stdlib_module_names unavailable")
+
+        third_party = sorted(
+            m for m in modules if m not in stdlib and m != "__future__"
+        )
+        self.assertEqual(
+            third_party,
+            [],
+            f"the checker imports {third_party}, which the release job does not install",
+        )
+
+    def test_it_does_not_extract_the_downloaded_archive(self):
+        """The safest extraction is the one that does not happen.
+
+        Members are read straight out of the zip, so a tampered release has no
+        path to traverse. This also keeps the script dependency-free, since the
+        repo's `enforce-safe-extract` rule would otherwise require importing
+        `ldm_core.utils`.
+        """
+        src = CHECKER.read_text(encoding="utf-8")
+        self.assertNotIn("extractall(", src)
+        self.assertNotIn("safe_extract(", src)
+        self.assertIn("archive.read(name)", src)
+
+
 if __name__ == "__main__":
     unittest.main()
