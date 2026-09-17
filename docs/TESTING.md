@@ -927,6 +927,70 @@ into the Linux workflow.
 deliberate: it lets the suite step fail on its own and produce a report plus
 debug logs, instead of aborting the job on a bare brew/colima trace.)
 
+### **Fragment override: a CI job, deliberately not a script check (LDM-#1745)**
+
+The fragment-override chain — LDM's most intricate runtime feature — had **no
+test that exercised it end to end**. `verify_e2e_refactor.{sh,ps1}` contain zero
+fragment assertions, and the unit suite mocks both Docker and Liferay, so
+nothing had ever demonstrated the thing users care about: *a configured
+override reaches the rendered page*.
+
+It is now measured by `.github/workflows/fragment-override.yml`, on `v*` tags
+and `workflow_dispatch`, mirroring `release-e2e.yml`'s shape. The job runs
+`scripts/fragment_override_harness.py`, which builds a site-initializer client
+extension, boots a licensed DXP, lets the Site Initializer place the fragment
+on a page, has LDM apply the override, restarts, and asserts four observations
+in order: the default value in `fragmententrylink.editablevalues`, the default
+value in the rendered HTML, the overridden value in `editablevalues`, and the
+overridden value in the rendered HTML with the default gone. The first two
+exist so the last two cannot pass vacuously.
+
+**It stays out of the verification scripts on purpose.** Fragment override is
+platform-independent — LDM talking to Liferay's API and database, with nothing
+that varies by host OS — so running it across macOS, Windows and Linux would
+cost three Liferay boots for one bit of information. It also depends on a
+Liferay boot and on Site Initializer population, which are durations the suite
+does not own: the principle LDM-#1383 set out, LDM-#1444 applied, and LDM-#1728
+was a reminder of. `test_fragment_override_harness.py` asserts both halves of
+that decision — that neither script invokes the harness, and that the workflow
+exists.
+
+**It needs a licensed DXP**, which is why this one job takes a repository
+secret. An unlicensed portal serves the DXP Activation page in place of the
+site, so the two rendered-page observations — the only ones that answer the
+question — cannot be made at all. The job reads `LIFERAY_ACTIVATION_KEY_XML`
+(the XML text of a **developer** activation key, which carries no machine
+binding and so works on an ephemeral runner), writes it to a file at run time,
+and hands the path to the harness. The job fails loudly when the secret is
+absent rather than running and reporting a weaker result as a pass. Never
+commit an activation key.
+
+**Measured budget.** A full run on a local Apple-silicon Colima VM (4 CPU,
+8 GiB) against DXP `2026.q3.0` with the image already pulled took **341 s**:
+
+| Step | Seconds |
+|---|---|
+| `ldm import` | 18.9 |
+| `ldm run` (first Liferay startup, 110.7 s of it) | 188.5 |
+| Headless answering | 8.2 |
+| Site Initializer placing the fragment | 10.1 |
+| `ldm wait` applying the override | 71.0 |
+| `ldm restart` (second startup is warm — 10.9 s) | 2.8 |
+| Rendered page carrying the new value | 0.3 |
+| **Total** | **341.1** |
+
+Two of those are worth knowing. The override step is 71 s because LDM spends
+its whole `--fragment-patch-timeout` waiting for two Headless rungs that are
+*known* dead on a published site-initializer page before falling through to the
+database fallback; the harness passes `60` rather than accept the 300 s default,
+which is otherwise pure wall clock. And the restart is cheap because the OSGi
+state and database are warm — 10.9 s against 110.7 s for the cold boot.
+
+A GitHub `ubuntu-latest` runner is slower than this VM and a first run also pays
+the ~5 GB DXP image pull, so the job's ceiling is 90 minutes. **Do not treat the
+table above as the CI budget** — the workflow prints its own timings from
+`report.json` on every run, which is the number to read.
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-16* | *Last Reviewed: 2026-09-16*
+*Last Updated: 2026-09-17* | *Last Reviewed: 2026-09-17*

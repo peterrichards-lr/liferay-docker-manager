@@ -1,22 +1,28 @@
-"""The LDM-#1618 harness builds a fixture Liferay and LDM both accept.
+"""The LDM-#1745 harness builds a fixture Liferay and LDM both accept.
 
 `scripts/fragment_override_harness.py` needs a live Liferay, so it is not part
 of the default gate. Its *fixture builder* needs nothing, and it is the half
-that silently rots: a fragment zip missing its marker is ignored by LDM without
-a word, and a `fragment-overrides.json` in the wrong shape is rejected by a
-validator these tests can call directly.
+that silently rots: a client-extension zip missing its header is ignored by
+Liferay without a word, and a `fragment-overrides.json` in the wrong shape is
+rejected by a validator these tests can call directly.
 
-So this pins the two contracts the harness depends on, against the real
+So this pins the contracts the harness depends on, against their real
 consumers:
 
-* `_sync_fragments` (`workspace/hydration.py:48`) only treats a zip as a
-  fragment bundle when it contains `liferay-deploy-fragments.json`.
+* `_sync_client_extensions` (`workspace/hydration.py:17`) moves
+  `client-extensions/*.zip` into the project's `osgi/client-extensions/`,
+  which is the only wiring the fixture needs.
 * `_validate_fragment_overrides` (`runtime/fragments.py`) defines the overrides
   schema, and is asserted against here rather than restated.
 
-The fragment shape itself is taken from a real collection rather than invented
--- `fragmentEntryKey` in `fragment.json` is what LDM matches on, and
-`index.json` carries the configuration the override replaces.
+The site-initializer shape itself is taken from a real, deployed one --
+`ldm-cx-samples/client-extensions/ecopulse-site-initializer`, whose built
+artifact was read back out of a running bundle's `tomcat/temp` -- rather than
+invented. Guessing that schema is what produced the 400 in LDM-#1729, so these
+tests exist mostly to stop it drifting back into a guess.
+
+None of this proves the override works. That needs a Liferay boot and is what
+the harness itself does; see `.github/workflows/fragment-override.yml`.
 """
 
 import importlib.util
@@ -51,78 +57,237 @@ class TheHarnessExists(unittest.TestCase):
         self.assertTrue(_load().FRAGMENT_KEY)
 
 
-class TheFragmentCollection(unittest.TestCase):
+class TheSiteInitializerContent(unittest.TestCase):
+    """The tree Liferay's Site Initializer reads."""
+
     def setUp(self):
         self.mod = _load()
         self._tmp = TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        self.collection = self.mod.build_fragment_collection(Path(self._tmp.name))
-
-    def test_the_collection_is_declared(self):
-        data = json.loads((self.collection / "collection.json").read_text())
-        self.assertEqual(data["name"], self.mod.COLLECTION_NAME)
-
-    def test_the_fragment_declares_the_key_ldm_matches_on(self):
-        fragment = self.collection / self.mod.FRAGMENT_NAME / "fragment.json"
-        data = json.loads(fragment.read_text())
-        self.assertEqual(
-            data["fragmentEntryKey"],
-            self.mod.FRAGMENT_KEY,
-            "LDM matches overrides against fragmentEntryKey; a mismatch here "
-            "makes the harness silently patch nothing",
+        self.root = self.mod.build_site_initializer(Path(self._tmp.name))
+        self.fragment = (
+            self.root
+            / "fragments"
+            / "group"
+            / self.mod.COLLECTION_KEY
+            / self.mod.FRAGMENT_NAME
         )
+
+    def _json(self, path):
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def test_the_collection_declares_the_key_the_page_references(self):
+        data = self._json(
+            self.root
+            / "fragments"
+            / "group"
+            / self.mod.COLLECTION_KEY
+            / "collection.json"
+        )
+
+        self.assertEqual(data["externalReferenceCode"], self.mod.COLLECTION_KEY)
+
+    def test_the_fragment_declares_the_key_the_page_references(self):
+        """`externalReferenceCode` is what the page's fragment key resolves to.
+
+        Taken from the ecopulse reference, where `eco-hero` and `grid-monitor`
+        are the fragments' `externalReferenceCode` values and the page names
+        exactly those. LDM-#1729 measured the cost of getting this wrong: the
+        harness matched on a key that never existed in the database.
+        """
+        data = self._json(self.fragment / "fragment.json")
+
+        self.assertEqual(data["externalReferenceCode"], self.mod.FRAGMENT_KEY)
+        self.assertEqual(data["htmlPath"], "index.html")
+
+    def test_the_fragment_names_its_configuration_file(self):
+        """Without `configurationPath` the configuration is never loaded.
+
+        Measured on DXP 2026.q3.0 (LDM-#1745): `fragmententry.configuration`
+        comes back empty, every `fragmententrylink.editablevalues` is written
+        as `{}`, and LDM's database fallback -- whose WHERE clause is
+        `editablevalues LIKE '%"<field>":%'` -- then matches zero rows. The
+        ecopulse reference omits this property, so copying it was not enough.
+        """
+        data = self._json(self.fragment / "fragment.json")
+
+        self.assertEqual(data["configurationPath"], "configuration.json")
+        self.assertTrue((self.fragment / "configuration.json").is_file())
 
     def test_the_configuration_field_has_a_known_default(self):
         """The assertion is 'it changed FROM this', so the default must be real."""
-        index = self.collection / self.mod.FRAGMENT_NAME / "index.json"
-        fields = json.loads(index.read_text())["fieldSets"][0]["fields"]
+        fields = self._json(self.fragment / "configuration.json")["fieldSets"][0][
+            "fields"
+        ]
         field = next(f for f in fields if f["name"] == self.mod.FIELD_NAME)
 
         self.assertEqual(field["defaultValue"], self.mod.DEFAULT_VALUE)
+        self.assertEqual(
+            field["type"],
+            "text",
+            "only text/select/length configuration fields are stored as a "
+            "plain string in fragmententrylink.editablevalues; a checkbox "
+            "becomes a boolean and LDM's regex fallback would not match it",
+        )
         self.assertNotEqual(
             self.mod.DEFAULT_VALUE,
             self.mod.OVERRIDE_VALUE,
             "default and override must differ or the test cannot fail",
         )
 
-    def test_the_renderable_files_exist(self):
-        for name in ("index.html", "index.css", "index.js"):
-            self.assertTrue(
-                (self.collection / self.mod.FRAGMENT_NAME / name).is_file(), name
-            )
+    def test_the_field_name_is_distinctive(self):
+        """docs/how-to/runtime_overrides.md: the database fallback's WHERE
+        clause matches on the key name alone, so a generic key is rewritten in
+        every fragment carrying it across the whole instance."""
+        self.assertNotIn(
+            self.mod.FIELD_NAME.lower(),
+            {"url", "endpoint", "title", "name", "value"},
+        )
+
+    def test_the_html_renders_the_configuration_value_safely(self):
+        """Both halves of this are measured, not stylistic (LDM-#1745).
+
+        A bare `${configuration.<field>}` aborts the whole Site Initializer
+        import with `FragmentEntryContentException: FreeMarker syntax is
+        invalid` -- the importer renders the HTML once while computing default
+        editable values, and `configuration` is not bound yet.
+
+        The `[configuration.<field>]` form the ecopulse reference uses survives
+        the import but is never substituted: it reaches the browser as literal
+        text. FreeMarker's default operator is the only form that does both.
+        """
+        html = (self.fragment / "index.html").read_text(encoding="utf-8")
+
+        self.assertIn(f"${{(configuration.{self.mod.FIELD_NAME})!", html)
+        self.assertNotIn(f"${{configuration.{self.mod.FIELD_NAME}}}", html)
+        self.assertNotIn(f"[configuration.{self.mod.FIELD_NAME}]", html)
+        self.assertIn(self.mod.RENDER_MARKER, html)
+
+    def test_the_page_definition_places_the_fragment(self):
+        """The whole point of the fixture, and the thing Headless cannot do.
+
+        The content goes in `page-definition.json`, NOT in an inline
+        `pageDefinition` inside `page.json`. The inline form is what the
+        ecopulse reference carries and it is never read -- measured on DXP
+        2026.q3.0 (LDM-#1745): the site, the collection, the fragment entry and
+        the layout are all created, `addOrUpdateLayoutsContent` reports `0 ms`,
+        `fragmententrylink` has no row, and nothing warns.
+
+        The schema here is the headless `PageElement` DTO, so the types are
+        capitalised and the fragment is addressed as
+        `{"fragment": {"key": ...}}`.
+        """
+        page_def = self._json(self.root / "layouts" / "1_home" / "page-definition.json")
+        root = page_def["pageElement"]
+
+        self.assertEqual(root["type"], "Root")
+        element = root["pageElements"][0]
+        self.assertEqual(element["type"], "Fragment")
+        self.assertEqual(
+            element["definition"]["fragment"]["key"], self.mod.FRAGMENT_KEY
+        )
+
+    def test_the_page_metadata_does_not_carry_a_dead_inline_definition(self):
+        """Keeping the ignored inline form would read as working coverage."""
+        page = self._json(self.root / "layouts" / "1_home" / "page.json")
+
+        self.assertNotIn("pageDefinition", page)
+
+    def test_the_page_has_a_friendly_url_with_a_leading_slash(self):
+        """The rendered-page fetch is built from it; `home` would 404."""
+        page = self._json(self.root / "layouts" / "1_home" / "page.json")
+
+        self.assertTrue(page["friendlyURL"].startswith("/"))
+        self.assertEqual(page["friendlyURL"], self.mod.PAGE_FRIENDLY_URL)
 
 
-class TheFragmentZip(unittest.TestCase):
+class TheClientExtensionArtifact(unittest.TestCase):
+    """The zip LDM hands Liferay, and Liferay's rule for recognising it."""
+
     def setUp(self):
         self.mod = _load()
         self._tmp = TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         base = Path(self._tmp.name)
-        collection = self.mod.build_fragment_collection(base)
-        self.zip_path = self.mod.package_fragment_zip(collection, base / "frag.zip")
+        content = self.mod.build_site_initializer(base / "fixture")
+        self.zip_path = self.mod.package_site_initializer(content, base / "cx.zip")
 
-    def test_it_carries_the_marker_ldm_requires(self):
-        """Without this, `_sync_fragments` ignores the zip and says nothing."""
+    def test_it_declares_itself_a_site_initializer(self):
+        """`SiteInitializerClientExtension` tracks bundles on this header alone.
+
+        A zip without it deploys, logs nothing unusual, and initialises no
+        site -- which looks identical to a site initializer that ran and found
+        nothing to do.
+        """
         with zipfile.ZipFile(self.zip_path) as archive:
-            names = archive.namelist()
+            props = archive.read("WEB-INF/liferay-plugin-package.properties").decode()
 
         self.assertIn(
-            "liferay-deploy-fragments.json",
-            names,
-            "workspace/hydration.py:48 keys on this filename; a zip without it "
-            "is skipped silently",
+            "Liferay-Client-Extension-Site-Initializer=site-initializer/", props
         )
+        self.assertIn("Bundle-SymbolicName=", props)
 
-    def test_it_contains_the_collection(self):
+    def test_it_names_the_site_to_create(self):
+        """The portal creates the site from this, keyed on the reference code."""
         with zipfile.ZipFile(self.zip_path) as archive:
+            site = json.loads(
+                archive.read("site-initializer/site-initializer.json").decode()
+            )
+
+        self.assertEqual(site["externalReferenceCode"], self.mod.SITE_ERC)
+        self.assertEqual(site["name"], self.mod.SITE_NAME)
+
+    def test_the_content_is_nested_as_a_zip_rooted_at_site_initializer(self):
+        """Read back out of a running bundle's tomcat/temp, not guessed."""
+        with zipfile.ZipFile(self.zip_path) as archive:
+            self.assertIn("site-initializer/site-initializer.zip", archive.namelist())
+            inner = archive.read("site-initializer/site-initializer.zip")
+
+        (Path(self._tmp.name) / "inner.zip").write_bytes(inner)
+        with zipfile.ZipFile(Path(self._tmp.name) / "inner.zip") as archive:
             names = archive.namelist()
 
         self.assertTrue(
-            any(n.endswith("fragment.json") for n in names), "no fragment.json"
+            all(n.startswith("site-initializer/") for n in names),
+            f"content zip is not rooted at site-initializer/: {names}",
         )
-        self.assertTrue(
-            any(n.endswith("collection.json") for n in names), "no collection.json"
+        self.assertIn("site-initializer/layouts/1_home/page.json", names)
+
+
+class TheWorkspace(unittest.TestCase):
+    """What `ldm import` consumes."""
+
+    def setUp(self):
+        self.mod = _load()
+        self._tmp = TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.source, self.artifact = self.mod.build_workspace(
+            Path(self._tmp.name), "2026.q3.0"
         )
+
+    def test_the_artifact_is_kept_out_of_the_imported_workspace(self):
+        """It must NOT reach `osgi/client-extensions/` before the first boot.
+
+        `_sync_client_extensions` (hydration.py:17-21) would put it there, and
+        on a first boot the extender dies in
+        `SiteInitializerClientExtension.addingBundle` with an NPE from
+        `PortalImpl.getCanonicalURL` -- the tracker opens before the built-in
+        site initializers have created the Guest site's layouts. The bundle
+        logs STARTED, no site is created, and the only sign is a stack trace
+        among thousands of startup lines. Measured on DXP 2026.q3.0
+        (LDM-#1745); the same artifact deployed into the running portal
+        initialises in ~100 ms.
+        """
+        self.assertEqual(sorted(self.source.glob("client-extensions/*.zip")), [])
+        self.assertTrue(self.artifact.is_file())
+        self.assertNotIn(self.source, self.artifact.parents)
+
+    def test_the_product_pin_matches_the_tag_that_will_be_booted(self):
+        """LDM warns and offers the pinned tag when they disagree, which would
+        stall an unattended run at a prompt."""
+        props = (self.source / "gradle.properties").read_text(encoding="utf-8")
+
+        self.assertIn("liferay.workspace.product=dxp-2026.q3.0", props)
 
 
 class TheOverridesFile(unittest.TestCase):
@@ -173,7 +338,7 @@ class TheMeasurement(unittest.TestCase):
         self.assertTrue(found[0]["has_fragmentEntryLinkId"])
 
     def test_a_non_numeric_id_is_reported_as_such(self):
-        """The outcome that would resolve #1618 by removing the rung."""
+        """The outcome LDM-#1618 measured: a UUID, so the module rung is dead."""
         tree = {"id": "abc-def", "key": self.mod.FRAGMENT_KEY}
 
         found = self.mod.find_fragment_element(tree, [])
@@ -200,159 +365,72 @@ class TheMeasurement(unittest.TestCase):
         self.assertEqual(found, [])
 
 
-class ThePageIsCreated(unittest.TestCase):
-    """LDM-#1719: the harness must not need a human to place the fragment.
+class TheWait(unittest.TestCase):
+    """LDM-#1728: every poll in this repository must be bounded and must say so."""
 
-    It used to walk existing pages and, finding none, ask the operator to add
-    the fragment by hand -- while its docstring claimed it built the page
-    itself. Both halves are fixed: it creates the page, and when it cannot it
-    says so rather than reporting the indistinguishable "no fragment found".
-    """
+    def setUp(self):
+        self.mod = _load()
+
+    def test_it_returns_the_first_truthy_value(self):
+        answers = iter([None, None, "found"])
+
+        value, _seconds = self.mod.wait_for(
+            "a thing", lambda: next(answers), timeout=30, interval=0
+        )
+
+        self.assertEqual(value, "found")
+
+    def test_it_gives_up_rather_than_spinning_forever(self):
+        value, _seconds = self.mod.wait_for(
+            "a thing that never arrives", lambda: None, timeout=0, interval=0
+        )
+
+        self.assertIsNone(value)
+
+
+class TheSitePageUrl(unittest.TestCase):
+    """Derived from the portal, never hardcoded: Liferay builds the site's
+    friendly URL from its name, and a guess fails quietly on the next line
+    that changes the rule."""
 
     def setUp(self):
         self.mod = _load()
 
     class _Api:
-        """POST result and read-back are separate: LDM-#1729 measured that a
-        2xx create does not mean the fragment was placed."""
-
-        def __init__(self, create_response, read_back=None):
-            self.create_response = create_response
-            self.read_back = read_back if read_back is not None else {}
-            self.calls = []
+        def __init__(self, response):
+            self.response = response
 
         def request(self, method, path, payload=None):
-            self.calls.append((method, path, payload))
-            if method == "POST":
-                return self.create_response
-            return self.read_back
+            return self.response
 
-    @staticmethod
-    def _placed():
-        """A read-back showing the fragment actually on the page."""
-        return {
-            "friendlyUrlPath": "/ldm-verify",
-            "pageDefinition": {
-                "pageElement": {
-                    "type": "Root",
-                    "pageElements": [{"type": "Fragment", "id": "uuid-1"}],
-                }
-            },
-        }
+    def test_it_reads_the_friendly_url_off_the_initializers_site(self):
+        api = self._Api(
+            {
+                "items": [
+                    {"externalReferenceCode": "L_GLOBAL", "friendlyUrlPath": "/global"},
+                    {
+                        "externalReferenceCode": self.mod.SITE_ERC,
+                        "friendlyUrlPath": "/ldm-verify",
+                    },
+                ]
+            }
+        )
 
-    @staticmethod
-    def _empty():
-        """What the API actually returns: Root only, children discarded."""
-        return {
-            "friendlyUrlPath": "/ldm-verify",
-            "pageDefinition": {"pageElement": {"type": "Root"}},
-        }
+        self.assertEqual(
+            self.mod.resolve_site_page_url(api),
+            f"/web/ldm-verify{self.mod.PAGE_FRIENDLY_URL}",
+        )
 
-    def _sites(self):
-        # Delivery addresses sites by numeric id; admin-site supplies it.
-        return {"items": [{"externalReferenceCode": "SITE-1", "id": 20127}]}
-
-    def test_it_posts_a_page_carrying_the_fragment_key(self):
-        api = self._Api({"friendlyUrlPath": "/ldm-verify"}, self._placed())
-
-        result = self.mod.ensure_page_with_fragment(api, self._sites())
-
-        self.assertTrue(result["ok"])
-        method, path, payload = api.calls[0]
-        self.assertEqual(method, "POST")
-        self.assertIn("site-pages", path)
-        self.assertIn(self.mod.FRAGMENT_KEY, str(payload))
-
-    def test_it_posts_to_headless_delivery_with_the_numeric_site_id(self):
-        """LDM-#1729: this payload shape is delivery's, not admin-site's.
-
-        Posted to admin-site it returned
-        `The property "title" is not defined in SitePage.`
-        """
-        api = self._Api({}, self._placed())
-
-        self.mod.ensure_page_with_fragment(api, self._sites())
-
-        _m, path, _p = api.calls[0]
-        self.assertIn("headless-delivery", path)
-        self.assertIn("20127", path)
-        self.assertNotIn("headless-admin-site", path)
-
-    def test_the_friendly_url_has_a_leading_slash(self):
-        """Without it: LayoutFriendlyURLException (LDM-#1729)."""
-        api = self._Api({}, self._placed())
-
-        self.mod.ensure_page_with_fragment(api, self._sites())
-
-        _m, _p, payload = api.calls[0]
-        self.assertTrue(str(payload["friendlyUrlPath"]).startswith("/"))
-
-    def test_the_page_starts_at_the_default_value(self):
-        """The override has to change something, so it must start unchanged."""
-        api = self._Api({"friendlyUrlPath": "/ldm-verify"}, self._placed())
-
-        self.mod.ensure_page_with_fragment(api, self._sites())
-
-        _m, _p, payload = api.calls[0]
-        self.assertIn(self.mod.DEFAULT_VALUE, str(payload))
-
-    def test_an_existing_page_is_accepted(self):
-        """A second run must not fail because the page is already there.
-
-        The read-back is what decides, so a 409 on create is irrelevant when
-        the fragment is on the page.
-        """
-        api = self._Api({"_error": 409}, self._placed())
-
-        result = self.mod.ensure_page_with_fragment(api, self._sites())
-
-        self.assertTrue(result["ok"])
-
-    def test_a_created_page_without_the_fragment_is_not_success(self):
-        """The measured reality: POST returns 2xx and discards the children.
-
-        Trusting the status here hands the rest of the harness an empty page,
-        which then reports "no page element carried the fragment key" -- the
-        exact false negative LDM-#1729 was filed for.
-        """
-        api = self._Api({"friendlyUrlPath": "/ldm-verify"}, self._empty())
-
-        result = self.mod.ensure_page_with_fragment(api, self._sites())
-
-        self.assertFalse(result["ok"], "a 2xx was taken as proof of placement")
-        self.assertIn("NOT placed", result["summary"])
-
-    def test_the_limitation_is_explained_not_just_reported(self):
-        """Whoever reads this needs to know it is an API wall, not a bug."""
-        api = self._Api({}, self._empty())
-
-        summary = self.mod.ensure_page_with_fragment(api, self._sites())["summary"]
-
-        self.assertIn("site initializer", summary)
-
-    def test_a_failure_reports_the_api_response_verbatim(self):
-        """Silent fallback would be indistinguishable from a broken fragment."""
-        api = self._Api({"_error": 400, "_reason": "bad schema"}, {})
-
-        result = self.mod.ensure_page_with_fragment(api, self._sites())
-
-        self.assertFalse(result["ok"])
-        self.assertIn("400", result["summary"])
-        self.assertIn("bad schema", result["summary"])
-
-    def test_no_site_is_reported_rather_than_crashing(self):
-        api = self._Api({})
-
-        result = self.mod.ensure_page_with_fragment(api, {"items": []})
-
-        self.assertFalse(result["ok"])
-        self.assertEqual(api.calls, [])
+    def test_an_absent_site_is_reported_rather_than_guessed(self):
+        self.assertIsNone(self.mod.resolve_site_page_url(self._Api({"items": []})))
 
 
 class TheDocstringDoesNotOverclaim(unittest.TestCase):
-    """It said the harness created the page while it did not (LDM-#1719)."""
+    """It once said the harness created its own page while it could not do so
+    (LDM-#1719/#1729). Now it can -- through a site initializer -- and the
+    docstring has to be just as explicit about what that costs."""
 
-    def test_it_describes_the_failure_path_too(self):
+    def test_it_names_what_the_harness_proves_and_what_it_needs(self):
         import ast
 
         # The module docstring via the AST, not string arithmetic: the file
@@ -364,23 +442,22 @@ class TheDocstringDoesNotOverclaim(unittest.TestCase):
             self.fail("the harness lost its module docstring")
 
         self.assertIn(
-            "CANNOT CURRENTLY RUN UNATTENDED",
+            "rendered page",
             head,
-            "the docstring must lead with the limitation, not bury it: it "
-            "claimed the harness created its own page long after that was "
-            "measured impossible (LDM-#1729)",
+            "the claim the harness exists to make is about the rendered page, "
+            "not about a database row",
         )
         self.assertIn(
-            "WHAT IT DOES NOT PROVE",
+            "LICENSED",
             head,
-            "the docstring must state what happens when placement fails, or "
-            "it overclaims again",
+            "an unlicensed portal serves the DXP Activation page instead of "
+            "the site, so this requirement must be impossible to miss",
         )
-        self.assertNotIn(
-            "overridden end to end",
+        self.assertIn(
+            "Never commit an activation key",
             head,
-            "no override has been demonstrated end to end -- the fragment "
-            "cannot be placed on a page yet",
+            "the harness takes a licence file as an argument; the warning has "
+            "to sit next to it",
         )
 
 
@@ -484,22 +561,34 @@ class TheModuleJar(unittest.TestCase):
 
 
 class ItStaysOutOfTheDefaultGate(unittest.TestCase):
-    """LDM-#1444's principle: no assertion on a dependency the suite cannot control.
+    """LDM-#1745's own conclusion, and LDM-#1444's principle.
 
-    The harness needs a Liferay boot and content it creates over HTTP. Wiring
-    it into the verification scripts would make the whole suite depend on both.
+    Fragment override is platform-independent, so running it across three
+    operating systems would cost three Liferay boots for one bit of
+    information. It also needs a Liferay boot and Site Initializer population
+    -- durations the verification suite does not own.
     """
 
+    _ROOT = Path(__file__).resolve().parent.parent.parent
+
     def test_the_verify_scripts_do_not_invoke_it(self):
-        root = Path(__file__).resolve().parent.parent.parent
         for name in ("verify_e2e_refactor.sh", "verify_e2e_refactor.ps1"):
-            body = (root / "scripts" / name).read_text(encoding="utf-8")
+            body = (self._ROOT / "scripts" / name).read_text(encoding="utf-8")
             self.assertNotIn(
                 "fragment_override_harness",
                 body,
                 f"{name} calls the live harness -- it needs a Liferay boot and "
-                "content it creates itself, which the suite does not own",
+                "a Site Initializer run, which the suite does not own",
             )
+
+    def test_it_has_a_ci_workflow_instead(self):
+        """The deferral has to land somewhere, or it evaporates (LDM-#1745)."""
+        workflow = self._ROOT / ".github" / "workflows" / "fragment-override.yml"
+
+        self.assertTrue(workflow.is_file(), f"{workflow} is missing")
+        body = workflow.read_text(encoding="utf-8")
+        self.assertIn("fragment_override_harness.py", body)
+        self.assertIn("LIFERAY_ACTIVATION_KEY_XML", body)
 
 
 if __name__ == "__main__":
