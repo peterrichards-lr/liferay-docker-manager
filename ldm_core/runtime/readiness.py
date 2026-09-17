@@ -360,6 +360,60 @@ class ReadinessService(BaseHandler):
             log_proc.terminate()
         return True
 
+    def _report_oom_kill(
+        self, container_name: str, target_name: str | None = None
+    ) -> bool:
+        """Say so when the kernel OOM-killed this container. LDM-#1773.
+
+        An out-of-memory kill was being reported as a health-check timeout:
+        LDM printed "Timed out waiting for Liferay to become healthy" after
+        eight minutes while `docker inspect` said `OOMKilled: true` and the log
+        said `Killed  start_liferay.sh`. Those are very different problems --
+        one says "wait longer or check the application", the other says "this
+        machine does not have enough memory" -- and the operator was being
+        pointed at the wrong one.
+
+        Neither of the two ways the wait ends could report it. The JVM is
+        killed while the entrypoint survives, so the container stays up, never
+        goes healthy, and falls out of the loop as a timeout; and when the
+        entrypoint does die too, `exited unexpectedly` is equally silent about
+        the reason. Both call this.
+
+        Returns True when it reported an OOM, so the caller can suppress its
+        own, less accurate message. A container that cannot be inspected
+        returns False -- "could not ask" must not become "not an OOM" in the
+        message, but there is nothing accurate to say instead, so the caller's
+        original wording stands.
+        """
+        try:
+            from ldm_core.docker_service import DockerService
+
+            killed = DockerService.container_was_oom_killed(
+                container_name, target_name=target_name
+            )
+        except Exception:
+            return False
+
+        if not killed:
+            return False
+
+        UI.error(
+            "\nLiferay was killed by the kernel for running out of memory "
+            "-- it did not simply take too long."
+        )
+        UI.detail(
+            "Docker reports OOMKilled on this container. Waiting longer will "
+            "not help; the container needs more memory than this machine is "
+            "giving it."
+        )
+        UI.detail(
+            "Raise Docker's memory allocation, or reduce what the stack asks "
+            "for -- an imported package can pin an embedded Elasticsearch "
+            "alongside the shared one, which doubles the heap ceiling "
+            "(LDM-#1773)."
+        )
+        return True
+
     def _wait_for_ready(  # noqa: C901, PLR0912, PLR0915
         self,
         project_meta,
@@ -863,12 +917,17 @@ class ReadinessService(BaseHandler):
                     container_name, target_name=target_name
                 )
                 if container_state == "exited":
+                    if self._report_oom_kill(container_name, target_name):
+                        return False
                     UI.error(
                         f"Liferay container '{container_name}' exited unexpectedly."
                     )
                     return False
 
                 time.sleep(5)  # Shorter sleep for more responsive status checks
+
+        if self._report_oom_kill(container_name, target_name):
+            return False
 
         UI.error("\nTimed out waiting for Liferay to become healthy.")
         return False

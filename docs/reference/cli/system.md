@@ -547,6 +547,20 @@ not infer it: a node typically shows `ens5` beside `docker0` and `br-*`, all
 plausible and only one licensed, and a wrong value produces the failure above.
 Re-run `ldm target add` with the same name to change it.
 
+`target add` reads the node's interfaces over SSH and **warns** when the value
+you gave matches none of them, naming each one so you can pick the right one:
+
+```text
+⚠️  MAC 02:42:de:ad:be:ef matches none of 'aws-1's interfaces
+    (docker0 02:42:11:22:33:44, ens5 06:1a:2b:3c:4d:5e).
+```
+
+It warns rather than refuses, and records the value as given: Liferay validates
+the *container's* MAC against the licence and does not care what the host's
+interfaces are, so a licence bound to a MAC that is not a current NIC is
+legitimate, if unusual. A node that cannot be reached says nothing at all --
+unable to ask is not the same as wrong (LDM-#1780).
+
 LDM re-reads the MAC from the running container and **refuses** when it does
 not match, because writing the value into the compose file is a request rather
 than a guarantee. The MAC can only be set at container creation, so a changed
@@ -568,4 +582,4 @@ ldm target migrate win-wsl aws-1
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-16* | *Last Reviewed: 2026-09-16*
+*Last Updated: 2026-09-17* | *Last Reviewed: 2026-09-17*

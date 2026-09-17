@@ -197,6 +197,46 @@ class DockerService:
         return None
 
     @staticmethod
+    def container_was_oom_killed(
+        container_name: str, target_name: str | None = None
+    ) -> bool | None:
+        """Did the kernel OOM-kill something in this container?
+
+        LDM-#1773. An out-of-memory kill was being reported as a health-check
+        timeout: LDM printed "Timed out waiting for Liferay to become healthy"
+        after eight minutes while `docker inspect` said `OOMKilled: true` and
+        the log said `Killed  start_liferay.sh`. Those are very different
+        problems -- one says "wait longer or check the app", the other says
+        "this machine does not have enough memory" -- and the operator was
+        being pointed at the wrong one.
+
+        The existing `exited` fast-fail does not catch it. The JVM is killed
+        while the entrypoint survives, so the container stays up and simply
+        never becomes healthy.
+
+        Returns None when the flag cannot be read: unreadable is not the same
+        as false, and the caller must not turn "could not ask" into "not an
+        OOM".
+        """
+        cmd = [
+            *DockerService.get_docker_cmd_prefix(target_name),
+            "inspect",
+            "-f",
+            "{{.State.OOMKilled}}",
+            container_name,
+        ]
+        try:
+            out = run_command(cmd, check=False, capture_output=True)
+        except Exception:
+            return None
+        if not out:
+            return None
+        value = str(out).strip().lower()
+        if value in ("true", "false"):
+            return value == "true"
+        return None
+
+    @staticmethod
     def container_publishing_port(
         port: int, target_name: str | None = None
     ) -> str | None:

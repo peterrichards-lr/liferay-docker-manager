@@ -2272,6 +2272,49 @@ class ConfigService:
             "Run 'ldm run' or 'ldm deploy' to regenerate docker-compose.yml and bring up the updated stack."
         )
 
+    @staticmethod
+    def _warn_if_mac_matches_no_interface(node) -> None:
+        """Say so when a pinned MAC belongs to none of the node's interfaces.
+
+        LDM-#1780. The post-start guard compares the *container's* MAC against
+        the *configured* one, so a typo passes it: LDM pins the wrong value
+        faithfully, both agree, and Liferay then refuses the licence. What the
+        operator sees is the LDM-#1752 symptom all over again -- healthy
+        container, "License registered" in the log, Activation page instead of
+        Sign In -- roughly twenty minutes after the mistake was made.
+
+        **Warns, never refuses.** Liferay validates the container's MAC against
+        the licence and does not care what the host's interfaces are, so a
+        licence bound to a MAC that is not a current NIC is legitimate, if
+        unusual. Refusing would block a working configuration to catch a likely
+        typo, which is the wrong trade.
+
+        Silent when the node cannot be asked: unreachable is not wrong.
+        """
+        configured = (getattr(node, "mac_address", "") or "").strip().lower()
+        if not configured:
+            return
+
+        from ldm_core.config import remote_interface_macs
+
+        interfaces = remote_interface_macs(node)
+        if not interfaces:
+            return  # could not ask -- say nothing rather than guess
+
+        if configured in interfaces.values():
+            return
+
+        listing = ", ".join(f"{n} {m}" for n, m in sorted(interfaces.items()))
+        UI.warning(
+            f"MAC {configured} matches none of '{node.name}'s interfaces ({listing})."
+        )
+        UI.detail(
+            "Liferay binds the licence to the MAC, so if this is a typo the "
+            "container will start healthy, log 'License registered', and serve "
+            "the Activation page instead of Sign In. Left as configured -- a "
+            "licence bound to a MAC that is not a current interface is valid."
+        )
+
     def cmd_target_add(
         self,
         name: str,
@@ -2301,6 +2344,7 @@ class ConfigService:
             mac_address=(mac_address or "").strip().lower(),
         )
         save_target_node(node)
+        self._warn_if_mac_matches_no_interface(node)
 
         # Auto-create/update Docker CLI context for remote SSH targets
         if not is_local_host(host):
