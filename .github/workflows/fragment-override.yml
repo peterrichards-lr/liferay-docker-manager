@@ -1,0 +1,241 @@
+# LDM Fragment Override E2E (LDM-#1745)
+#
+# Boots a real, licensed Liferay, lets a Site Initializer place a fragment on a
+# page, and asserts that a configured override reaches the RENDERED PAGE. That
+# claim had never been demonstrated anywhere: `verify_e2e_refactor.sh` carries
+# no fragment assertion and the unit suite mocks both Docker and Liferay.
+#
+# WHY IT IS HERE AND NOT IN THE VERIFICATION SCRIPTS
+#   Fragment override is platform-independent -- LDM talking to Liferay's API
+#   and database, with nothing that varies by host OS. `verify_e2e_refactor.sh`
+#   answers "does LDM work on this machine", so running this across macOS,
+#   Windows and Linux would cost three Liferay boots for one bit of
+#   information. It also depends on a Liferay boot and on Site Initializer
+#   population -- durations the suite does not own (LDM-#1383, LDM-#1444,
+#   LDM-#1728).
+#
+# REQUIRED REPOSITORY SECRET
+#   LIFERAY_ACTIVATION_KEY_XML
+#     The full XML text of a DXP **developer** activation key. Developer keys
+#     carry no machine binding, which is what makes one usable on an ephemeral
+#     runner. The job writes it to a file at run time and hands the path to the
+#     harness, which stages it into the project's `deploy/` before the boot.
+#
+#     It is required, not optional. An unlicensed portal serves the DXP
+#     Activation page in place of the site, so the rendered-page assertions --
+#     the only ones that answer the question this workflow exists for -- cannot
+#     be made at all. The job therefore fails loudly when the secret is absent
+#     rather than running and reporting a weaker result as success.
+#
+#     Never commit an activation key to this repository.
+
+name: LDM Fragment Override E2E
+
+on:
+  push:
+    tags: ["v*"] # Same trigger as release-e2e.yml
+  workflow_dispatch: # Ad-hoc verification without burning a -pre.N tag
+
+# LDM-385: one queue for the whole workflow; a newer tag cancels an older run.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  validate-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip check if not a tag push
+        id: check_trigger
+        shell: bash
+        env:
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "is_tag=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_tag=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout Code
+        if: steps.check_trigger.outputs.is_tag == 'true'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Validate Tag and Branch Alignment
+        if: steps.check_trigger.outputs.is_tag == 'true'
+        shell: bash
+        run: |
+          TAG_NAME="${{ github.ref_name }}"
+          if [[ "$TAG_NAME" == *"-"* ]]; then
+            IS_PRERELEASE=true
+          else
+            IS_PRERELEASE=false
+          fi
+
+          git fetch origin master
+          if git branch -r --contains ${{ github.sha }} | grep -E 'origin/master$' >/dev/null; then
+            ON_MASTER=true
+          else
+            ON_MASTER=false
+          fi
+
+          echo "Tag: $TAG_NAME"
+          echo "Is Pre-release: $IS_PRERELEASE"
+          echo "Is on master: $ON_MASTER"
+
+          if [ "$IS_PRERELEASE" = "true" ] && [ "$ON_MASTER" = "true" ]; then
+            echo "::error::Pre-release tags (containing '-') cannot be pushed on master branch!"
+            exit 1
+          elif [ "$IS_PRERELEASE" = "false" ] && [ "$ON_MASTER" = "false" ]; then
+            echo "::error::Stable release tags (no '-') must only be pushed on master branch!"
+            exit 1
+          fi
+          echo "Tag validation successful!"
+
+  fragment-override:
+    needs: validate-tag
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    # One Liferay boot, a Site Initializer run, an override and a restart.
+    # Measured locally at ~30 minutes end to end; the ceiling is deliberately
+    # generous rather than tight, because a job that is killed mid-boot
+    # produces no evidence at all.
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e . # Ensure local package is prioritized
+
+      - name: Synchronize Resources
+        run: |
+          python3 scripts/sync_baseline.py
+          python3 scripts/sync_colors.py
+
+      # LDM-#1701: ubuntu-latest defaults to JDK 17 and `ldm import` refuses
+      # anything below 21 in ImportValidationStage, so without this the harness
+      # dies at its first step. Same step, same reasoning, as release-e2e.yml.
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      # The DXP image is ~5GB and the bundle unpacks on top of it. The runner
+      # ships with several GB of preinstalled toolchains this job never uses,
+      # and reclaiming them is cheaper than diagnosing an out-of-space failure
+      # 20 minutes into a boot.
+      - name: Reclaim runner disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+          docker image prune -af || true
+          df -h /
+
+      - name: Stage the DXP activation key
+        env:
+          ACTIVATION_KEY_XML: ${{ secrets.LIFERAY_ACTIVATION_KEY_XML }}
+        run: |
+          if [ -z "${ACTIVATION_KEY_XML}" ]; then
+            echo "::error::The LIFERAY_ACTIVATION_KEY_XML repository secret is not set."
+            echo "::error::An unlicensed portal serves the DXP Activation page instead of the"
+            echo "::error::site, so the rendered-page assertion cannot be made. See this"
+            echo "::error::workflow's header for what the secret must contain."
+            exit 1
+          fi
+          mkdir -p "${RUNNER_TEMP}/licence"
+          printf '%s' "${ACTIVATION_KEY_XML}" > "${RUNNER_TEMP}/licence/activation-key.xml"
+          # Never echo the file. Its size is enough to tell an empty secret from
+          # a populated one, and it is the only thing safe to print.
+          echo "Wrote $(wc -c < "${RUNNER_TEMP}/licence/activation-key.xml") bytes."
+
+      - name: Run the fragment-override harness
+        id: harness
+        env:
+          # Keep every byte of LDM state inside the runner's workspace, so
+          # nothing reaches a real developer's ~/.ldm if this is ever run
+          # outside CI (testing-and-ci: "Tests MUST NOT Touch the Developer's
+          # Real State").
+          LDM_HOME: ${{ runner.temp }}/ldm-home
+          LDM_WORKSPACE: ${{ runner.temp }}/ldm-workspace
+          LDM_ACTIVATION_KEY: ${{ runner.temp }}/licence/activation-key.xml
+        run: |
+          mkdir -p "${LDM_HOME}" "${LDM_WORKSPACE}"
+          START=$(date +%s)
+          set +e
+          python3 scripts/fragment_override_harness.py \
+            --project fragverify \
+            --tag 2026.q3.0 \
+            --port 8080
+          RC=$?
+          set -e
+          echo "Harness wall clock: $(( $(date +%s) - START ))s"
+          exit "$RC"
+
+      - name: Collect the evidence
+        if: always()
+        env:
+          LDM_WORKSPACE: ${{ runner.temp }}/ldm-workspace
+        run: |
+          mkdir -p fragment-override-evidence
+          cp -r "${LDM_WORKSPACE}/fragverify-fragment-override/." \
+            fragment-override-evidence/ 2>/dev/null || true
+          ls -la fragment-override-evidence || true
+
+      - name: Upload the evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fragment-override-evidence
+          path: fragment-override-evidence/
+          retention-days: 14
+
+      # A second, independent signal, in the shape scheduled-verification.yml
+      # uses. The harness's exit status is the primary one, but an exit status
+      # has been silently lost before in this repository, and when it is, a
+      # green job manufactures coverage that does not exist. The report names
+      # its own outcome, so cross-check it.
+      - name: Assert the report says the override reached the page
+        if: always()
+        run: |
+          REPORT=fragment-override-evidence/report.json
+          if [ ! -f "$REPORT" ]; then
+            echo "::error::The harness produced no report.json; nothing was verified."
+            exit 1
+          fi
+          python3 - "$REPORT" <<'PY'
+          import json, sys
+          report = json.load(open(sys.argv[1]))
+          obs = report.get("observations", {})
+          for key, seconds in (report.get("timings_seconds") or {}).items():
+              print(f"{key:<18} {seconds:7.1f}s")
+          for key in (
+              "default_in_db_before",
+              "default_in_html_before",
+              "override_in_db_after",
+              "override_in_html_after",
+              "default_in_html_after",
+          ):
+              print(f"{key:<26} {obs.get(key)}")
+          if not report.get("verified_end_to_end"):
+              print("::error::The report does not record an end-to-end override.")
+              sys.exit(1)
+          PY

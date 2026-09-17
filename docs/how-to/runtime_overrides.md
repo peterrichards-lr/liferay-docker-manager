@@ -177,6 +177,62 @@ Two further limitations of the fallback are worth knowing, since it is a regex r
 * A setting whose **current value is empty** (`"key":""`) is not matched and stays unpatched — LDM reports `0 rows` for it.
 * The `WHERE` clause matches on the key name alone, so a **generic key** (e.g. `url`) is rewritten in every fragment carrying that key across the whole instance. Prefer distinctive key names.
 
+## Verified end to end
+
+Until LDM-#1745 none of the above had been *demonstrated* — the unit suite
+mocks both Docker and Liferay, and `verify_e2e_refactor.sh` carries no fragment
+assertion at all. It is now measured on every `v*` tag by
+[`.github/workflows/fragment-override.yml`](https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/.github/workflows/fragment-override.yml),
+which runs `scripts/fragment_override_harness.py` against a real licensed DXP
+and asserts four observations in order:
+
+1. the Site Initializer's `fragmententrylink.editablevalues` carries the
+   fragment's **default** value
+2. the **rendered page** carries the default value
+3. after LDM applies the override, `editablevalues` carries the **new** value
+4. after `ldm restart`, the **rendered page** carries the new value and no
+   longer carries the default
+
+(1) and (2) are there so that (3) and (4) cannot pass vacuously. The run fails
+if any of them does not hold.
+
+It is not in the verification scripts on purpose: fragment override is
+platform-independent, so running it on macOS, Windows and Linux would cost
+three Liferay boots for one bit of information, and it depends on a Liferay
+boot and Site Initializer population — durations that suite does not own.
+
+### Authoring a site initializer whose fragments can be overridden
+
+Building the fixture surfaced four requirements that are easy to get wrong and
+that fail **silently**. All four were measured on DXP 2026.q3.0. If an override
+is not landing, check these before anything else:
+
+* **The page content belongs in `layouts/<n>_<name>/page-definition.json`**, in
+  the headless `PageElement` schema — `"type": "Root"` / `"type": "Fragment"`,
+  capitalised, with the fragment addressed as `{"fragment": {"key": "..."}}`.
+  An inline `pageDefinition` inside `page.json` is **not read**: the site, the
+  fragment collection, the fragment entry and the layout are all created,
+  `addOrUpdateLayoutsContent` reports `0 ms`, and `fragmententrylink` ends up
+  with no row for the page. Nothing warns.
+* **`fragment.json` must declare `"configurationPath": "configuration.json"`.**
+  Without it `fragmententry.configuration` is empty, every `editablevalues` is
+  written as `{}`, and the database fallback matches zero rows — the same
+  symptom as a wrong fragment key.
+* **Use `${(configuration.myField)!'unset'}`, never a bare
+  `${configuration.myField}`.** The importer renders the fragment HTML once
+  while computing default editable values, before `configuration` is bound, and
+  a bare reference aborts the whole import with
+  `FragmentEntryContentException: FreeMarker syntax is invalid`. The
+  `[configuration.myField]` form seen in some samples survives the import but
+  is never substituted — it reaches the browser as literal text.
+* **Deploy a site-initializer client extension into a portal that is already
+  up.** Present in `osgi/client-extensions/` at first boot, the extender fails
+  with `NullPointerException: Cannot invoke "Layout.getGroupId()" because
+  "layout" is null` from `PortalImpl.getCanonicalURL` — its bundle tracker
+  opens before the built-in site initializers have created the Guest site's
+  layouts. The bundle still logs `STARTED` and no site is created. The same
+  artifact dropped into the running portal initialises in about 100 ms.
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-05* | *Last Reviewed: 2026-09-05*
+*Last Updated: 2026-09-17* | *Last Reviewed: 2026-09-17*

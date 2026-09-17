@@ -1,21 +1,30 @@
 #!/usr/bin/env python3
-"""Live harness for the fragment-override chain (LDM-#1618).
+"""Live end-to-end harness for the fragment-override chain (LDM-#1745).
 
-`_patch_via_override_module` (`ldm_core/runtime/fragments.py`) shipped in
-v2.21.0 without ever being exercised. Its own docstring says so, and names the
-most likely way it silently never fires:
+WHAT IT PROVES
+    That a configured override **reaches the rendered page**. That claim had
+    never been demonstrated: `verify_e2e_refactor.sh` carries no fragment
+    assertion, the unit suite mocks Docker and Liferay, and LDM-#1618
+    established only what the code *does*, not what a user sees.
 
-    `element_id` comes from the Headless page-element representation and may
-    not be a `fragmentEntryLinkId` at all.
+    The harness boots a real Liferay, lets a real Site Initializer build a
+    site with the fragment on a page, and then records four observations in
+    order:
 
-**That measurement has now been taken** (LDM-#1618): `element_id` is a UUID,
-never a `fragmentEntryLinkId`, so the module rung -- whose endpoint declares
-`@PathParam("fragmentEntryLinkId") long` -- could never have fired.
+        1. `fragmententrylink.editablevalues` carries DEFAULT_VALUE
+        2. the rendered page carries DEFAULT_VALUE
+        3. after LDM applies the override, `editablevalues` carries
+           OVERRIDE_VALUE
+        4. after a restart, the rendered page carries OVERRIDE_VALUE and no
+           longer carries DEFAULT_VALUE
 
-THE HARNESS CANNOT CURRENTLY RUN UNATTENDED, AND SAYS SO
-    The original plan assumed a page carrying the fragment could be created
-    through the Headless API. It cannot (LDM-#1729, all measured on DXP
-    2026.q1.7-lts):
+    (4) is the one that matters. (1) and (2) exist so that (3) and (4) cannot
+    pass by accident -- a fixture that never had the default value in it would
+    make the whole run vacuous.
+
+WHY A SITE INITIALIZER, AND NOT THE HEADLESS API
+    The harness used to try to create the page over Headless. It cannot be
+    done. Measured on DXP 2026.q1.7-lts (LDM-#1729):
 
         * POST /o/headless-delivery/v1.0/sites/{id}/site-pages accepts nested
           `pageElements`, returns 2xx, and discards them -- confirmed in the
@@ -26,164 +35,349 @@ THE HARNESS CANNOT CURRENTLY RUN UNATTENDED, AND SAYS SO
 
     There is no create-a-page-element endpoint. LDM-#883 records the same wall
     from the other side. A page carrying a fragment has to come from a site
-    initializer or the UI -- which is precisely the scenario LDM's override
-    feature exists for, so a self-contained harness needs a site-initializer
-    fixture rather than a Headless call.
+    initializer or the UI -- and a published site-initializer page is
+    *precisely* the case LDM's override feature exists for, because that is
+    the case where Headless refuses the update (upstream LPD-99955) and LDM
+    falls through to its database fallback.
 
-    Until then the harness stops at that point and explains it, rather than
-    falling through to "no page element carried the fragment key" -- which
-    looks identical to a fragment that deployed but never rendered, and is the
-    false negative LDM-#1729 was filed for.
+    So the fixture is a site-initializer client extension. Its shape is taken
+    from a real, working one -- `ecopulse-site-initializer` in the
+    `ldm-cx-samples` workspace -- not invented. Guessing the schema is what
+    produced the 400 in LDM-#1729.
 
-WHAT IT PROVES TODAY
-    * the fixture builds, packages and deploys as a real Liferay fragment
-      collection (verified: `fragmententryid=1` after the post-boot redeploy)
-    * what `element_id` actually is in the page-element representation --
-      printed, and written to the report
+IT NEEDS A LICENSED DXP
+    An unlicensed portal serves the DXP Activation page in place of the site,
+    so observations (2) and (4) cannot be made at all. Pass `--activation-key`
+    (or set `LDM_ACTIVATION_KEY`) and the harness drops the XML into the
+    project's `deploy/` before the boot. Developer activation keys carry no
+    machine binding, which is what makes this runnable on a CI runner.
 
-WHAT IT DOES NOT PROVE
-    * that a configuration override is applied end to end. That needs the
-      fragment placed on a page, which is the gap above.
-    * the module rung (rung 2). Verified unreachable rather than untested:
-      see LDM-#1618.
+    **Never commit an activation key.** `.github/workflows/fragment-override.yml`
+    reads one from the `LIFERAY_ACTIVATION_KEY_XML` repository secret and
+    writes it to a file at run time.
 
 WHY IT IS NOT IN verify_e2e_refactor.sh
-    It depends on a Liferay boot and on content it must create through the
-    Headless API. Those are durations and states the verification suite does
-    not own, which is the principle LDM-#1383 set out and LDM-#1444 applied
-    when it skipped a check rather than let it hang on an `ssh` client. This is
-    an on-demand harness, run deliberately, not part of the default gate.
+    Fragment override is platform-independent -- it is LDM talking to Liferay's
+    API and database, and nothing in it varies by host OS. The verification
+    scripts answer "does LDM work on this machine", so running this across
+    macOS, Windows and Linux would cost three Liferay boots to yield one bit of
+    information. It also depends on a Liferay boot and on Site Initializer
+    population, which are durations the suite does not own -- the principle
+    LDM-#1383 set out, LDM-#1444 applied, and LDM-#1728 was a reminder of.
+
+    It runs in CI instead, on `ubuntu-latest`, from
+    `.github/workflows/fragment-override.yml`.
 
 USAGE
-    python3 scripts/fragment_override_harness.py --project fragverify
+    python3 scripts/fragment_override_harness.py --project fragverify \\
+        --activation-key /path/to/activation-key.xml
+
     python3 scripts/fragment_override_harness.py --project fragverify --keep
-    python3 scripts/fragment_override_harness.py --project fragverify \
+    python3 scripts/fragment_override_harness.py --project fragverify \\
         --require-module            # additionally assert the module rung
 
-The fixture builder below is importable and has unit tests
-(`ldm_core/tests/test_fragment_override_harness.py`) so its shape can be
+    LDM_BIN=./ldm python3 scripts/fragment_override_harness.py ...
+        # run the source tree rather than an installed `ldm`
+
+The fixture builders below are importable and have unit tests
+(`ldm_core/tests/test_fragment_override_harness.py`) so their shape can be
 checked without Docker.
 """
 
 from __future__ import annotations
 
 import argparse
+import http.cookiejar
 import json
 import os
 import shutil
+import ssl
 import subprocess  # nosec B404 - drives the ldm CLI deliberately
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from base64 import b64encode
 from pathlib import Path
 
-# The fragment the harness builds. `FRAGMENT_KEY` is what LDM matches against
+# The fixture the harness builds. `FRAGMENT_KEY` is what LDM matches against
 # the keys in fragment-overrides.json, and `FIELD_NAME`/`DEFAULT_VALUE` are the
 # configuration it then overrides -- so the assertion is "the field changed
 # from DEFAULT_VALUE to OVERRIDE_VALUE", which cannot pass by accident.
-COLLECTION_NAME = "ldm-verify-collection"
-# LDM-#1729: this was "ldmVerifyFragment", and Liferay ignored it. What lands
-# in `fragmententry.fragmententrykey` is derived from the fragment's `name`:
-#
-#     select fragmententrykey, name from fragmententry;
-#      ldm-verify-fragment | ldm-verify-fragment
-#
-# so the harness was matching on a key that never existed and would have
-# reported "no page element carried the fragment key" even once everything
-# else worked. Keeping the two equal removes the discrepancy rather than
-# encoding it.
-FRAGMENT_NAME = "ldm-verify-fragment"
-FRAGMENT_KEY = FRAGMENT_NAME
-FIELD_NAME = "endpoint"
+CX_NAME = "ldm-verify-site-initializer"
+SITE_ERC = "ldm-verify-site"
+SITE_NAME = "LDM Verify"
+PAGE_ERC = "ldm-verify-home"
+PAGE_FRIENDLY_URL = "/home"
+
+COLLECTION_KEY = "ldm-verify-collection"
+COLLECTION_NAME = "LDM Verify Collection"
+
+# LDM-#1729: `fragmentEntryKey` in fragment.json was "ldmVerifyFragment" and
+# Liferay ignored it -- what landed in `fragmententry.fragmententrykey` was
+# derived from `name`. The site-initializer form keys on
+# `externalReferenceCode` instead (verified against ecopulse: `eco-hero`,
+# `grid-monitor`). Keeping `name` and `externalReferenceCode` equal, and equal
+# to what the page references, removes the discrepancy rather than encoding it.
+FRAGMENT_KEY = "ldm-verify-fragment"
+FRAGMENT_NAME = FRAGMENT_KEY
+
+# Deliberately distinctive. `docs/how-to/runtime_overrides.md` warns that the
+# database fallback's WHERE clause matches on the key name alone, so a generic
+# key ("url", "endpoint") is rewritten in every fragment carrying it across the
+# whole instance.
+FIELD_NAME = "ldmVerifyEndpoint"
 DEFAULT_VALUE = "https://default.invalid/original"
 OVERRIDE_VALUE = "https://overridden.invalid/patched"
 
+# Rendered into index.html so the HTML assertion has something unambiguous to
+# find, rather than matching a bare URL that could appear anywhere on a page.
+RENDER_MARKER = "ldm-verify-endpoint"
 
-def build_fragment_collection(dest: Path) -> Path:
-    """Write a minimal, valid Liferay fragment collection under `dest`.
 
-    Shape taken from a real collection rather than invented:
-    `collection.json` beside one fragment directory holding `fragment.json`
-    (which carries the `fragmentEntryKey` LDM matches on), `index.json` (the
-    configuration that gets overridden) and the html/css/js the fragment
-    renders.
+def build_site_initializer(dest: Path) -> Path:
+    """Write the site-initializer *content* tree under `dest`.
+
+        site-initializer/
+          site-initializer.json
+          fragments/group/<collection>/collection.json
+          fragments/group/<collection>/<fragment>/fragment.json
+          fragments/group/<collection>/<fragment>/configuration.json
+          fragments/group/<collection>/<fragment>/index.html
+          fragments/group/<collection>/<fragment>/index.css
+          layouts/1_home/page.json
+          layouts/1_home/page-definition.json
+
+    The starting point was a real, deployed site initializer --
+    `ldm-cx-samples/client-extensions/ecopulse-site-initializer` -- but three
+    details of it do not do what they look like they do, and each was measured
+    on a live DXP 2026.q3.0 rather than reasoned about (LDM-#1745):
+
+    **The page content lives in `page-definition.json`, not in `page.json`.**
+    ecopulse carries an inline `pageDefinition` inside `page.json`, spelled with
+    lowercase types and `fragmentCollectionKey`/`fragmentKey`. That key is never
+    read: `BundleSiteInitializer._addOrUpdateLayoutContent` opens the sibling
+    file `page-definition.json` and hands it to `LayoutsImporterImpl`, which
+    deserialises the headless `PageElement` DTO -- so the types are `"Root"` and
+    `"Fragment"`, capitalised, and the fragment is addressed as
+    `{"fragment": {"key": ...}}`. Observed with the inline form only: the site,
+    the collection, the fragment entry and the layout are all created,
+    `addOrUpdateLayoutsContent` reports `0 ms`, and `fragmententrylink` has no
+    row. Nothing logs a warning.
+
+    **`fragment.json` must name its `configurationPath`.** Without it the
+    `fragmententry.configuration` column is empty, so the fragment has no
+    configuration fields, so `editablevalues` is written as `{}` -- and LDM's
+    database fallback (`WHERE editablevalues LIKE '%"<field>":%'`) then matches
+    zero rows. Observed, twice, before the property was added. ecopulse omits
+    it too, which is why copying it was not enough.
+
+    **`${configuration.x}` cannot be used bare.** The importer renders the
+    fragment HTML once while computing default editable values, and at that
+    moment `configuration` is not yet bound, so FreeMarker aborts the whole
+    import with `FragmentEntryContentException: FreeMarker syntax is invalid`.
+    The `[configuration.x]` form ecopulse uses survives the import -- but it is
+    never substituted at render time either; it reaches the browser as the
+    literal text `[configuration.ldmVerifyEndpoint]`. The form that does both is
+    FreeMarker's default operator, `${(configuration.x)!'unset'}`: it imports
+    cleanly and renders the value.
     """
-    collection = dest / COLLECTION_NAME
-    fragment = collection / FRAGMENT_NAME
+    root = dest / "site-initializer"
+    fragment = root / "fragments" / "group" / COLLECTION_KEY / FRAGMENT_NAME
     fragment.mkdir(parents=True, exist_ok=True)
+    (root / "layouts" / "1_home").mkdir(parents=True, exist_ok=True)
 
-    (collection / "collection.json").write_text(
-        json.dumps(
-            {
-                "description": "Built by fragment_override_harness.py (LDM-#1618).",
-                "name": COLLECTION_NAME,
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
+    _write_json(
+        root / "site-initializer.json",
+        {
+            "description": "Built by fragment_override_harness.py (LDM-#1745).",
+            "name": SITE_NAME,
+            "siteExternalReferenceCode": SITE_ERC,
+            "siteName": SITE_NAME,
+        },
     )
-    (fragment / "fragment.json").write_text(
-        json.dumps(
-            {
-                "fragmentEntryKey": FRAGMENT_KEY,
-                "icon": "cog",
-                "name": FRAGMENT_NAME,
-                "type": "component",
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
+
+    _write_json(
+        root / "fragments" / "group" / COLLECTION_KEY / "collection.json",
+        {
+            "description": "Fragments for the LDM fragment-override verification.",
+            "externalReferenceCode": COLLECTION_KEY,
+            "name": COLLECTION_NAME,
+        },
     )
+
+    _write_json(
+        fragment / "fragment.json",
+        {
+            # Without this the configuration is never loaded and every
+            # `editablevalues` is `{}` -- see the docstring above.
+            "configurationPath": "configuration.json",
+            "cssPath": "index.css",
+            "externalReferenceCode": FRAGMENT_KEY,
+            "htmlPath": "index.html",
+            "name": FRAGMENT_NAME,
+            "type": "component",
+        },
+    )
+
     # One text field with a known default. The override changes exactly this.
-    (fragment / "index.json").write_text(
-        json.dumps(
-            {
-                "fieldSets": [
-                    {
-                        "fields": [
-                            {
-                                "defaultValue": DEFAULT_VALUE,
-                                "description": "ldm-verify-endpoint",
-                                "label": "Endpoint",
-                                "name": FIELD_NAME,
-                                "type": "text",
-                            }
-                        ]
-                    }
-                ]
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
+    _write_json(
+        fragment / "configuration.json",
+        {
+            "fieldSets": [
+                {
+                    "fields": [
+                        {
+                            "dataType": "string",
+                            "defaultValue": DEFAULT_VALUE,
+                            "label": "LDM Verify Endpoint",
+                            "name": FIELD_NAME,
+                            "type": "text",
+                        }
+                    ]
+                }
+            ]
+        },
     )
+
+    # `!'unset'` is load-bearing, not defensive: a bare
+    # `${configuration.<field>}` aborts the Site Initializer import outright.
+    # The value is rendered twice, once in an attribute and once as visible
+    # text, so a change in how Liferay escapes attributes cannot make the
+    # assertion silently unfindable.
+    token = f"${{(configuration.{FIELD_NAME})!'unset'}}"
     (fragment / "index.html").write_text(
-        '<div class="ldm-verify" data-endpoint="${configuration.'
-        + FIELD_NAME
-        + '}">LDM verification fragment</div>\n',
+        f'<div class="ldm-verify-fragment" data-{RENDER_MARKER}="{token}">\n'
+        f"\t<p>{RENDER_MARKER}: {token}</p>\n"
+        f"</div>\n",
         encoding="utf-8",
     )
-    (fragment / "index.css").write_text(".ldm-verify { display: block; }\n", "utf-8")
-    (fragment / "index.js").write_text("// intentionally empty\n", encoding="utf-8")
-    return collection
+    (fragment / "index.css").write_text(
+        ".ldm-verify-fragment { display: block; }\n", encoding="utf-8"
+    )
+
+    # page.json carries the layout's METADATA only.
+    _write_json(
+        root / "layouts" / "1_home" / "page.json",
+        {
+            "externalReferenceCode": PAGE_ERC,
+            "friendlyURL": PAGE_FRIENDLY_URL,
+            "name": "Home",
+            "name_i18n": {"en_US": "Home"},
+            "parentLayoutExternalReferenceCode": "",
+            "type": "content",
+        },
+    )
+
+    # page-definition.json carries the CONTENT, in the headless PageElement
+    # schema -- capitalised types, and the fragment addressed by key.
+    _write_json(
+        root / "layouts" / "1_home" / "page-definition.json",
+        {
+            "pageElement": {
+                "pageElements": [
+                    {
+                        "definition": {"fragment": {"key": FRAGMENT_KEY}},
+                        "type": "Fragment",
+                    }
+                ],
+                "type": "Root",
+            }
+        },
+    )
+
+    return root
 
 
-def package_fragment_zip(collection: Path, target: Path) -> Path:
-    """Zip the collection with the marker LDM looks for.
+def package_site_initializer(content_root: Path, target: Path) -> Path:
+    """Package the content tree as a deployable client-extension artifact.
 
-    `workspace/hydration.py:_sync_fragments` only treats a zip as a fragment
-    bundle when it contains `liferay-deploy-fragments.json`; without it the
-    file is ignored silently.
+    The layout is taken from the built `ecopulse-site-initializer.zip`, whose
+    deployed form was read back out of a running bundle's
+    `tomcat/temp/clientextension*` directory:
+
+        WEB-INF/liferay-plugin-package.properties
+        site-initializer/site-initializer.json
+        site-initializer/site-initializer.zip   <- the content, nested
+
+    `Liferay-Client-Extension-Site-Initializer` names the *directory*, and the
+    portal extracts `site-initializer.zip` from inside it. The content zip's
+    own entries are rooted at `site-initializer/`.
     """
     target.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("liferay-deploy-fragments.json", json.dumps({"version": 1}))
-        for path in sorted(collection.rglob("*")):
+
+    inner = target.parent / "site-initializer.zip"
+    with zipfile.ZipFile(inner, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(content_root.rglob("*")):
             if path.is_file():
-                archive.write(path, arcname=str(path.relative_to(collection.parent)))
+                archive.write(path, arcname=str(path.relative_to(content_root.parent)))
+
+    symbolic_name = CX_NAME.replace("-", "")
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "WEB-INF/liferay-plugin-package.properties",
+            f"Bundle-SymbolicName={symbolic_name}\n"
+            "Liferay-Client-Extension-Site-Initializer=site-initializer/\n"
+            "module-group-id=liferay\n"
+            f"name={CX_NAME}\n",
+        )
+        archive.writestr(
+            "site-initializer/site-initializer.json",
+            json.dumps(
+                {"externalReferenceCode": SITE_ERC, "name": SITE_NAME}, indent=2
+            ),
+        )
+        archive.write(inner, arcname="site-initializer/site-initializer.zip")
+
+    inner.unlink()
     return target
+
+
+def build_workspace(scratch: Path, tag: str) -> tuple[Path, Path]:
+    """Assemble the fixture. Returns (workspace to import, artifact to deploy).
+
+    **The client extension is deliberately NOT placed in the workspace's
+    `client-extensions/` directory**, even though `_sync_client_extensions`
+    (`workspace/hydration.py:17`) would happily move it into the project's
+    `osgi/client-extensions/` for us. Doing so puts it there *before the first
+    boot*, and on a first boot that fails -- measured on DXP 2026.q3.0:
+
+        SiteInitializerClientExtension.addingBundle(...) :
+        java.lang.NullPointerException: Cannot invoke
+        "com.liferay.portal.kernel.model.Layout.getGroupId()"
+        because "layout" is null
+            at PortalImpl.getCanonicalURL(PortalImpl.java:1556)
+            at ServiceContextFactory._getInstance(...)
+            at SiteResourceImpl._addGroup(SiteResourceImpl.java:482)
+
+    The extender's bundle tracker opens during portal startup, before the
+    built-in `welcome` and `cms` site initializers have created the Guest
+    site's layouts, and `ServiceContextFactory` needs one. The bundle logs
+    `STARTED`, no site is created, and the only sign is a stack trace among
+    thousands of startup lines. Dropping the same artifact into the running
+    portal afterwards initialises the site in ~100 ms.
+
+    So the harness deploys it itself, once the portal is answering. LDM-#1729
+    recorded the same shape of fault for a fragment collection deployed during
+    import; this is that lesson applied rather than rediscovered.
+    """
+    source = scratch / "workspace"
+    source.mkdir(parents=True, exist_ok=True)
+
+    content = build_site_initializer(scratch / "fixture")
+    artifact = package_site_initializer(
+        content, scratch / "artifacts" / f"{CX_NAME}.zip"
+    )
+
+    # Keep the workspace's product pin and the tag we boot in step: LDM warns
+    # (and offers the pinned tag) when they disagree, which would stall an
+    # unattended run.
+    (source / "gradle.properties").write_text(
+        f"liferay.workspace.product=dxp-{tag}\n", encoding="utf-8"
+    )
+    return source, artifact
 
 
 def build_overrides(path: Path) -> Path:
@@ -200,6 +394,18 @@ def build_overrides(path: Path) -> Path:
     return path
 
 
+def _write_json(path: Path, payload) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _insecure_context() -> ssl.SSLContext:
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
 class Headless:
     """The few Headless calls the harness needs, with LDM's own auth convention."""
 
@@ -213,24 +419,120 @@ class Headless:
         }
 
     def request(self, method: str, path: str, payload=None):
-        import ssl
-
         req = urllib.request.Request(
             f"{self.base_url}{path}", headers=self.headers, method=method
         )
         if payload is not None:
             req.data = json.dumps(payload).encode("utf-8")
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
         try:
-            with urllib.request.urlopen(req, context=ctx, timeout=60) as res:  # nosec B310
+            with urllib.request.urlopen(  # nosec B310
+                req, context=_insecure_context(), timeout=60
+            ) as res:
                 body = res.read().decode()
                 return json.loads(body) if body else {}
         except urllib.error.HTTPError as e:
             return {"_error": e.code, "_reason": e.reason, "_body": e.read().decode()}
         except Exception as e:  # The harness reports failures, never raises
             return {"_error": "connection", "_reason": str(e)}
+
+
+def fetch_page(base_url: str, path: str, email: str, password: str) -> str:
+    """Return the rendered HTML of a portal page.
+
+    Anonymous first, because a site initializer's public pages are guest
+    viewable and that is the cheapest, most representative read. If the marker
+    is absent we log in through `/c/portal/login` with a cookie jar and try
+    again -- Basic auth is not accepted on portal pages (it is a Headless
+    convention), so an authenticated read has to be a real session.
+    """
+    url = f"{base_url.rstrip('/')}{path}"
+
+    def _get(opener) -> str:
+        req = urllib.request.Request(url, headers={"Accept": "text/html"})
+        with opener.open(req, timeout=120) as res:  # nosec B310
+            return res.read().decode("utf-8", errors="replace")
+
+    anonymous = urllib.request.build_opener(
+        urllib.request.HTTPSHandler(context=_insecure_context())
+    )
+    try:
+        body = _get(anonymous)
+    except Exception as e:
+        body = f"<!-- anonymous fetch failed: {e} -->"
+
+    if RENDER_MARKER in body:
+        return body
+
+    jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(jar),
+        urllib.request.HTTPSHandler(context=_insecure_context()),
+    )
+    try:
+        # Liferay refuses the login unless it can see that cookies work.
+        opener.open(f"{base_url.rstrip('/')}/c/portal/login", timeout=60).read()  # nosec B310
+        data = urllib.parse.urlencode(
+            {"login": email, "password": password, "rememberMe": "false"}
+        ).encode()
+        opener.open(  # nosec B310
+            urllib.request.Request(f"{base_url.rstrip('/')}/c/portal/login", data=data),
+            timeout=60,
+        ).read()
+        return _get(opener)
+    except Exception as e:
+        return f"{body}\n<!-- authenticated fetch failed: {e} -->"
+
+
+def docker_prefix(node: str | None) -> list[str]:
+    """`docker` plus whatever routes it at an LDM compute node, if any."""
+    if not node:
+        return ["docker"]
+    try:
+        from ldm_core.docker_service import DockerService
+
+        return list(DockerService.get_docker_cmd_prefix(node))
+    except Exception:
+        return ["docker", "--context", node]
+
+
+def db_query(project: str, sql: str, node: str | None = None) -> str:
+    """Run one read-only statement against the project's PostgreSQL container.
+
+    The database is the only place the override's effect is unambiguous:
+    `fragmententrylink.editablevalues` is the column LDM's fallback rewrites,
+    and it is what the rendered page is built from.
+    """
+    cmd = [
+        *docker_prefix(node),
+        "exec",
+        f"{project}-db",
+        "psql",
+        "-U",
+        "lportal",
+        "-d",
+        "lportal",
+        "-t",
+        "-A",
+        "-c",
+        sql,
+    ]
+    proc = subprocess.run(  # nosec B603 - fixed argv, no shell
+        cmd, capture_output=True, text=True, timeout=120, check=False
+    )
+    if proc.returncode != 0:
+        return f"<query failed: {proc.stderr.strip()}>"
+    return proc.stdout.strip()
+
+
+def fragment_entry_links(project: str, node: str | None = None) -> list[str]:
+    """Every `editablevalues` document that mentions the fixture's field."""
+    raw = db_query(
+        project,
+        "SELECT fragmententrylinkid || '|' || editablevalues FROM fragmententrylink "
+        f"WHERE editablevalues LIKE '%{FIELD_NAME}%';",
+        node=node,
+    )
+    return [line for line in raw.splitlines() if line.strip()]
 
 
 MODULE_REPO = "peterrichards-lr/liferay-custom-osgi-modules"
@@ -300,156 +602,31 @@ def resolve_module_jar(tag: str, explicit: Path | None, dest: Path):
     return target, f"fetched {asset['name']} from {release.get('tag_name')}"
 
 
-def ensure_page_with_fragment(api, sites):
-    """Create a site page carrying the fragment, if one is not there already.
-
-    LDM-#1719. The harness used to walk *existing* pages and, finding none,
-    tell the operator to place the fragment by hand -- so it could not run
-    unattended, and the docstring claiming it built "a page it creates itself"
-    was wrong.
-
-    The page-element schema is not guessed silently: the request is made, the
-    page is then read back, and whichever happened is reported verbatim. A
-    harness that cannot create the page must say so plainly rather than fall
-    through to "no fragment found", which would look identical to a fragment
-    that deployed but did not render.
-    """
-    items = [
-        s
-        for s in (sites.get("items") or [])
-        if s.get("externalReferenceCode") != "L_GLOBAL"
-    ]
-    if not items:
-        return {"ok": False, "summary": "no site to create a page in"}
-
-    site = items[0]
-    # LDM-#1729: the payload below is headless-DELIVERY's SitePage schema
-    # (`title`, `friendlyUrlPath`, `pageDefinition`) and was being posted to
-    # headless-admin-site, whose SitePage has none of those properties -- it
-    # uses `name_i18n`, `friendlyUrlPath_i18n` and `pageSpecifications`.
-    # Observed: 400 `The property "title" is not defined in SitePage.`
-    #
-    # Delivery takes the numeric site id, not the external reference code,
-    # and has no `/sites` listing of its own -- which is why the lookup above
-    # stays on admin-site.
-    site_id = site.get("id")
-    if not site_id:
-        return {"ok": False, "summary": f"site has no numeric id: {site}"}
-
-    page = {
-        "title": "LDM Verify",
-        # A leading slash is required; "ldm-verify" is rejected with
-        # LayoutFriendlyURLException (LDM-#1729).
-        "friendlyUrlPath": "/ldm-verify",
-        "pageDefinition": {
-            "pageElement": {
-                "type": "Root",
-                "pageElements": [
-                    {
-                        "type": "Fragment",
-                        "definition": {
-                            "fragment": {"key": FRAGMENT_KEY},
-                            "fragmentConfig": {FIELD_NAME: DEFAULT_VALUE},
-                        },
-                    }
-                ],
-            }
-        },
-    }
-
-    res = api.request(
-        "POST", f"/o/headless-delivery/v1.0/sites/{site_id}/site-pages", page
-    )
-    # LDM-#1729: creating the page is not the same as placing the fragment.
-    # Read the page back and check, because the POST accepts the nested
-    # `pageElements` and then silently discards them -- measured on DXP
-    # 2026.q1.7-lts, with both the bare key and the collection-qualified one,
-    # and confirmed in the database (zero `fragmententrylink` rows for the new
-    # plid). Reporting "created" on the strength of a 2xx would hand the rest
-    # of the harness an empty page and produce "no page element carried the
-    # fragment key" -- indistinguishable from a fragment that deployed but did
-    # not render, which is the specific confusion this check exists to stop.
-    written = api.request(
-        "GET", f"/o/headless-delivery/v1.0/sites/{site_id}/site-pages/ldm-verify"
-    )
-    root = (written or {}).get("pageDefinition", {}).get("pageElement", {})
-    if root.get("pageElements"):
-        # Reached on a fresh create and on a re-run alike: a 409 means the page
-        # is already there, which is success for this step, so the read-back is
-        # the authority rather than the POST status.
-        return {
-            "ok": True,
-            "summary": f"page carries the fragment: {written.get('friendlyUrlPath')}",
-        }
-
-    if not isinstance(res, dict) or res.get("_error"):
-        return {
-            "ok": False,
-            "summary": f"could not create the page -- Headless answered {res}",
-        }
-
-    return {
-        "ok": False,
-        "summary": (
-            "the page was created but the fragment was NOT placed on it. The "
-            "Headless API has no way to create a page element: POST discards "
-            "nested pageElements, PUT on a delivery site-page is 405, and the "
-            "admin-site element PUT targets an element that must already "
-            "exist (LDM-#883 records the same wall from the other side). A "
-            "page carrying a fragment has to come from a site initializer or "
-            "the UI -- which is the scenario LDM's override feature is FOR, "
-            "so an unattended harness needs a site-initializer fixture rather "
-            "than a Headless call. Tracked in LDM-#1729."
-        ),
-    }
-
-
-def redeploy_fragment_collection(
-    workspace: Path, project: str, node: str | None
-) -> str:
-    """Drop the collection zip into the running project's deploy directory.
-
-    Returns a human-readable outcome; never raises. A failure here is worth
-    reporting but is not worth aborting over -- the page-creation step reports
-    an absent fragment clearly enough on its own.
-    """
-    zips = sorted(workspace.rglob("*.zip"))
-    if not zips:
-        return "no collection zip to redeploy"
-    if node:
-        return (
-            "skipping the post-boot redeploy: the deploy directory is on "
-            f"node '{node}', not reachable as a local path"
-        )
-    root = Path.cwd() / project
-    deploy = root / "deploy"
-    if not deploy.is_dir():
-        return f"no deploy directory at {deploy}"
-    shutil.copy2(zips[0], deploy / zips[0].name)
-    # The file-install watcher polls; a fragment collection registers in a few
-    # seconds. This is a fixed wait rather than a poll because the harness has
-    # no cheap way to observe registration without the database.
-    time.sleep(30)
-    return f"redeployed {zips[0].name} after boot"
-
-
 def run_ldm(
     args: list[str], cwd: Path, node: str | None = None, check: bool = True
 ) -> subprocess.CompletedProcess:
+    """Invoke the LDM CLI.
+
+    `LDM_BIN` lets a source checkout drive its own wrapper (`./ldm`) rather
+    than needing an installed console script -- which is also the reliable
+    spelling on a developer machine, where endpoint protection deletes
+    `.venv/bin` wrappers by name (see the ldm-developer skill).
+    """
+    binary = os.environ.get("LDM_BIN", "ldm")
     # `--target` is a GLOBAL flag, so it precedes the subcommand.
-    cmd = ["ldm", *(["--target", node] if node else []), *args]
-    print(f"  $ {' '.join(cmd)}")
+    cmd = [binary, *(["--target", node] if node else []), *args]
+    print(f"  $ {' '.join(cmd)}", flush=True)
     proc = subprocess.run(  # nosec B603 - fixed argv, no shell
         cmd,
         cwd=str(cwd),
         capture_output=True,
         text=True,
-        timeout=3600,
+        timeout=5400,
         check=False,
     )
     if check and proc.returncode != 0:
-        print(proc.stdout[-4000:])
-        print(proc.stderr[-4000:], file=sys.stderr)
+        print(proc.stdout[-8000:])
+        print(proc.stderr[-8000:], file=sys.stderr)
         raise SystemExit(f"ldm {' '.join(args)} failed with {proc.returncode}")
     return proc
 
@@ -457,8 +634,9 @@ def run_ldm(
 def find_fragment_element(node, found: list):
     """Collect every page element that carries our fragment key, with its id.
 
-    The shape of `id` here IS the open question in LDM-#1618, so the harness
-    records it verbatim rather than interpreting it.
+    The shape of `id` here IS the question LDM-#1618 answered -- a UUID, never
+    a `fragmentEntryLinkId` -- so the harness records it verbatim rather than
+    interpreting it, and the answer stays checkable on every new DXP line.
     """
     if isinstance(node, dict):
         blob = json.dumps(node)
@@ -480,6 +658,63 @@ def find_fragment_element(node, found: list):
     return found
 
 
+def wait_for(description: str, probe, timeout: int, interval: int = 10):
+    """Poll `probe` until it returns something truthy, or the budget is gone.
+
+    Returns (value, seconds). A None value means the wait expired -- reported,
+    never raised, because a harness that dies mid-run leaves containers behind
+    and says less than one that finishes and explains.
+    """
+    started = time.time()
+    deadline = started + timeout
+    announced = started
+    while time.time() < deadline:
+        value = probe()
+        if value:
+            return value, time.time() - started
+        if time.time() - announced >= 60:
+            announced = time.time()
+            print(
+                f"  still waiting for {description} "
+                f"({int(deadline - time.time())}s of budget left)",
+                flush=True,
+            )
+        time.sleep(interval)
+    print(f"  gave up waiting for {description} after {timeout}s")
+    return None, time.time() - started
+
+
+def resolve_site_page_url(api: Headless) -> str | None:
+    """The public URL path of the initializer's page, read from the portal.
+
+    Derived rather than assumed: Liferay builds the site's friendly URL from
+    its name, and hardcoding a guess is the kind of thing that fails quietly
+    on a DXP line that changes the rule.
+    """
+    sites = api.request("GET", "/o/headless-admin-site/v1.0/sites")
+    if not isinstance(sites, dict):
+        return None
+    for site in sites.get("items") or []:
+        if site.get("externalReferenceCode") != SITE_ERC:
+            continue
+        friendly = site.get("friendlyUrlPath") or site.get("key")
+        if not friendly:
+            return None
+        return f"/web/{str(friendly).lstrip('/')}{PAGE_FRIENDLY_URL}"
+    return None
+
+
+def headless_answered(api: Headless):
+    """The sites listing, or None while the API is not answering yet."""
+    res = api.request("GET", "/o/headless-admin-site/v1.0/sites")
+    return res if isinstance(res, dict) and "_error" not in res else None
+
+
+def _report(path: Path, report: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+
 def main() -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915 - linear by design
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", default="fragverify")
@@ -494,6 +729,17 @@ def main() -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915 - linear by design
     parser.add_argument("--admin-email", default="test@liferay.com")
     parser.add_argument("--admin-password", default="test")  # nosec B107
     parser.add_argument("--port", default="8080")
+    parser.add_argument(
+        "--activation-key",
+        type=Path,
+        default=os.environ.get("LDM_ACTIVATION_KEY") or None,
+        help=(
+            "DXP activation key XML, dropped into the project's deploy/ before "
+            "the boot. Without a licence the portal serves the DXP Activation "
+            "page instead of the site, so the rendered-page assertions cannot "
+            "be made. Also read from LDM_ACTIVATION_KEY."
+        ),
+    )
     parser.add_argument(
         "--search-mode",
         default="sidecar",
@@ -513,6 +759,27 @@ def main() -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915 - linear by design
             "instead of local Docker. The Headless base URL follows the node's "
             "host automatically -- pointing it at localhost while the container "
             "runs elsewhere is the obvious way to get this wrong."
+        ),
+    )
+    parser.add_argument(
+        "--initializer-timeout",
+        type=int,
+        default=1200,
+        help=(
+            "seconds to wait for the Site Initializer to place the fragment. "
+            "Bounded deliberately: an unbounded poll is the failure mode "
+            "LDM-#1728 was filed for."
+        ),
+    )
+    parser.add_argument(
+        "--fragment-patch-timeout",
+        type=int,
+        default=60,
+        help=(
+            "seconds LDM may spend waiting for the Headless rungs before it "
+            "falls through to the database fallback. Well below LDM's own 300s "
+            "default because both Headless rungs are known-dead on a published "
+            "site-initializer page, so the full budget is pure wall clock."
         ),
     )
     parser.add_argument("--keep", action="store_true", help="leave the project behind")
@@ -536,28 +803,62 @@ def main() -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915 - linear by design
     )
     args = parser.parse_args()
 
+    started = time.time()
+    timings: dict[str, float] = {}
     workspace = Path(os.environ.get("LDM_WORKSPACE", Path.cwd())).resolve()
     scratch = workspace / f".{args.project}-fixture"
     if scratch.exists():
         shutil.rmtree(scratch)
 
-    print("▶ Building the fragment fixture...")
-    collection = build_fragment_collection(scratch)
-    source = scratch / "workspace"
-    (source / "fragments").mkdir(parents=True, exist_ok=True)
-    package_fragment_zip(collection, source / "fragments" / f"{COLLECTION_NAME}.zip")
-    (source / "gradle.properties").write_text(
-        "liferay.workspace.product=dxp-2026.q3.0\n", encoding="utf-8"
-    )
-    print(f"  fixture at {source}")
+    report: dict = {
+        "fragment_key": FRAGMENT_KEY,
+        "field_name": FIELD_NAME,
+        "default_value": DEFAULT_VALUE,
+        "override_value": OVERRIDE_VALUE,
+        "tag": args.tag,
+        "observations": {},
+        "timings_seconds": timings,
+    }
+    # Deliberately outside the project directory: `--keep` is the exception,
+    # not the rule, and the cleanup below deletes the project. Evidence that
+    # only survives a successful, kept run is not evidence.
+    evidence = workspace / f"{args.project}-fragment-override"
+    evidence.mkdir(parents=True, exist_ok=True)
+    out = evidence / "report.json"
 
-    print("▶ Creating the project...")
+    print("▶ Building the site-initializer fixture...", flush=True)
+    source, artifact = build_workspace(scratch, args.tag)
+    print(f"  fixture at {source}", flush=True)
+
+    print("▶ Creating the project...", flush=True)
+    mark = time.time()
     run_ldm(
         ["-y", "import", str(source), args.project, "--no-run", "--port", args.port],
         cwd=workspace,
         node=args.node,
     )
-    build_overrides(workspace / args.project / ".ldm" / "fragment-overrides.json")
+    timings["import"] = time.time() - mark
+
+    project_root = workspace / args.project
+    deploy_dir = project_root / "deploy"
+    deploy_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.activation_key:
+        key = Path(args.activation_key)
+        if not key.is_file():
+            print(f"  --activation-key {key} does not exist.")
+            return 1
+        shutil.copy2(key, deploy_dir / key.name)
+        print(f"  staged activation key {key.name} into deploy/", flush=True)
+        report["licensed"] = True
+    else:
+        print(
+            "  NO ACTIVATION KEY. An unlicensed portal serves the DXP Activation\n"
+            "  page instead of the site, so the rendered-page observations will\n"
+            "  not be made. Pass --activation-key to complete the chain.",
+            flush=True,
+        )
+        report["licensed"] = False
 
     module_note = None
     run_flags = [
@@ -572,8 +873,6 @@ def main() -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915 - linear by design
     if args.require_module:
         # Into deploy/ before the boot: OSGi resolves bundles at startup, so a
         # jar dropped afterwards needs a second restart to take effect.
-        deploy_dir = workspace / args.project / "deploy"
-        deploy_dir.mkdir(parents=True, exist_ok=True)
         jar, module_note = resolve_module_jar(args.tag, args.module_jar, deploy_dir)
         print(f"  {module_note}")
         if jar is None:
@@ -584,8 +883,10 @@ def main() -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915 - linear by design
         # register it as a known flag.
         run_flags += ["--feature", "LPD-99955"]
 
-    print("▶ Booting (this pulls and starts Liferay; several minutes)...")
+    print("▶ Booting (this pulls and starts Liferay; several minutes)...", flush=True)
+    mark = time.time()
     run_ldm(run_flags, cwd=workspace, node=args.node)
+    timings["boot"] = time.time() - mark
 
     host = "localhost"
     if args.node:
@@ -607,73 +908,200 @@ def main() -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915 - linear by design
     base_url = f"http://{host}:{args.port}"
     api = Headless(base_url, args.admin_email, args.admin_password)
 
-    print("▶ Waiting for Headless to answer...")
-    sites = None
-    for _ in range(60):
-        sites = api.request("GET", "/o/headless-admin-site/v1.0/sites")
-        if isinstance(sites, dict) and "_error" not in sites:
-            break
-        time.sleep(10)
-    if not isinstance(sites, dict) or "_error" in sites:
-        print(f"  Headless never answered: {sites}")
+    print("▶ Waiting for Headless to answer...", flush=True)
+    mark = time.time()
+    sites, waited = wait_for(
+        "the Headless API", lambda: headless_answered(api), timeout=600
+    )
+    timings["headless_ready"] = waited
+    if sites is None:
+        print("  Headless never answered.")
+        _report(out, report)
         return 3
 
-    # LDM-#1729: the collection is deployed during `ldm import`, so it lands
-    # while the portal is still starting and the deploy throws:
-    #
-    #   NoSuchResourcePermissionException: {name=com.liferay.fragment, ...}
-    #
-    # Liferay then logs "Deployed ldm-verify-collection.zip successfully"
-    # anyway, so nothing looks wrong -- but `fragmententry` is empty, and every
-    # later step fails for a reason that has nothing to do with what is being
-    # verified. Re-dropping the same zip now that Headless answers deploys it
-    # properly (measured: `fragmententryid=1` afterwards, nothing before).
-    redeployed = redeploy_fragment_collection(workspace, args.project, args.node)
-    print(f"  {redeployed}")
+    # Only now -- see build_workspace() for why not before the boot.
+    print("▶ Deploying the site initializer into the running portal...", flush=True)
+    cx_dir = project_root / "osgi" / "client-extensions"
+    if args.node:
+        # The project directory lives on the node, so this copy would write to
+        # a path that does not exist here and the run would then fail much
+        # later, looking like a Site Initializer problem. Refuse instead.
+        print(
+            f"  The artifact has to be placed in {cx_dir} ON node "
+            f"{args.node!r}, which this script cannot reach as a local path.\n"
+            f"  Copy {artifact} there and re-run without --node, or run the "
+            "harness on the node itself."
+        )
+        _report(out, report)
+        return 2
+    cx_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(artifact, cx_dir / artifact.name)
+    print(f"  dropped {artifact.name} into {cx_dir}", flush=True)
 
-    print("▶ Creating a page that carries the fragment...")
-    created = ensure_page_with_fragment(api, sites)
-    print(f"  {created['summary']}")
+    print("▶ Waiting for the Site Initializer to place the fragment...", flush=True)
+    rows, waited = wait_for(
+        "the fragment on a page",
+        lambda: fragment_entry_links(args.project, args.node) or None,
+        timeout=args.initializer_timeout,
+    )
+    timings["site_initializer"] = waited
+    report["observations"]["fragmententrylink_before"] = rows or []
 
-    print("▶ Reading the page tree and recording what `id` actually is...")
-    report = {
-        "fragment_key": FRAGMENT_KEY,
-        "default_value": DEFAULT_VALUE,
-        "override_value": OVERRIDE_VALUE,
-        "elements": find_fragment_element(sites, []),
-    }
+    if not rows:
+        print()
+        print("  The Site Initializer never placed the fragment.")
+        print("  `fragmententrylink` has no row mentioning the field, so there is")
+        print("  nothing for the override chain to patch. Check the portal log for")
+        print("  a client-extension deployment failure before reading anything")
+        print("  else into this run.")
+        _report(out, report)
+        return 3
+
+    print(f"  {len(rows)} fragmententrylink row(s) carry {FIELD_NAME}", flush=True)
+    for row in rows:
+        print(f"    {row}", flush=True)
+
+    before_has_default = any(DEFAULT_VALUE in row for row in rows)
+    report["observations"]["default_in_db_before"] = before_has_default
+
+    page_path = resolve_site_page_url(api)
+    report["page_path"] = page_path
+    print(f"▶ The initializer's page is at {page_path}", flush=True)
+
+    rendered_before = ""
+    if page_path:
+        rendered_before = fetch_page(
+            base_url, page_path, args.admin_email, args.admin_password
+        )
+    report["observations"]["default_in_html_before"] = DEFAULT_VALUE in rendered_before
+    report["observations"]["marker_in_html_before"] = RENDER_MARKER in rendered_before
+
+    print(
+        "▶ Writing fragment-overrides.json and re-running LDM's patcher...", flush=True
+    )
+    build_overrides(project_root / ".ldm" / "fragment-overrides.json")
+    mark = time.time()
+    # `ldm wait` runs the same readiness path `ldm run` does, and that path is
+    # what calls _patch_fragment_overrides (runtime/readiness.py:684). Doing it
+    # as a second step rather than on the initial boot is what makes the
+    # before/after pair observable at all.
+    #
+    # --fragment-patch-timeout is cut from its 300s default on purpose. Both
+    # Headless rungs are known-dead on a published site-initializer page
+    # (LDM-#883/LPD-99955 for the specification PUT; LDM-#1618 for the module),
+    # so the full budget is spent waiting for an answer that will not come --
+    # measured at 300s of pure wall clock before the database fallback ran.
+    # Shortening it does not weaken the test: the fallback is the rung being
+    # verified, and the run still fails if it patches nothing.
+    patch_proc = run_ldm(
+        [
+            "-y",
+            "wait",
+            args.project,
+            "--fragment-patch-timeout",
+            str(args.fragment_patch_timeout),
+        ],
+        cwd=workspace,
+        node=args.node,
+        check=False,
+    )
+    timings["patch"] = time.time() - mark
+    report["patch_exit_code"] = patch_proc.returncode
+    tail = (patch_proc.stdout or "")[-4000:]
+    report["patch_output_tail"] = tail
+    print(tail, flush=True)
+
+    after_rows = fragment_entry_links(args.project, args.node)
+    report["observations"]["fragmententrylink_after"] = after_rows
+    after_has_override = any(OVERRIDE_VALUE in row for row in after_rows)
+    report["observations"]["override_in_db_after"] = after_has_override
+
+    print(
+        "▶ Restarting -- the database fallback is invisible until the portal reloads",
+        flush=True,
+    )
+    mark = time.time()
+    run_ldm(["-y", "restart", args.project], cwd=workspace, node=args.node, check=False)
+    timings["restart"] = time.time() - mark
+
+    wait_for(
+        "the portal after the restart", lambda: headless_answered(api), timeout=900
+    )
+
+    def overridden_html():
+        html = fetch_page(base_url, page_path, args.admin_email, args.admin_password)
+        return html if OVERRIDE_VALUE in html else None
+
+    rendered_after = ""
+    if page_path:
+        rendered_after, waited = wait_for(
+            "the overridden value on the rendered page",
+            overridden_html,
+            timeout=300,
+            interval=15,
+        )
+        timings["render_after"] = waited
+        if rendered_after is None:
+            rendered_after = fetch_page(
+                base_url, page_path, args.admin_email, args.admin_password
+            )
+
+    report["observations"]["override_in_html_after"] = OVERRIDE_VALUE in rendered_after
+    report["observations"]["default_in_html_after"] = DEFAULT_VALUE in rendered_after
+    report["observations"]["marker_in_html_after"] = RENDER_MARKER in rendered_after
+
+    # The raw HTML is evidence, not output -- kept beside the report rather
+    # than printed, because a portal page is tens of thousands of characters.
+    (evidence / "rendered-before.html").write_text(rendered_before, encoding="utf-8")
+    (evidence / "rendered-after.html").write_text(rendered_after, encoding="utf-8")
+
+    print("▶ Recording what `element_id` actually is (LDM-#1618)...", flush=True)
+    elements = find_fragment_element(sites, [])
     for site in sites.get("items", []) or []:
         erc = site.get("externalReferenceCode") or site.get("id")
         pages = api.request(
             "GET", f"/o/headless-admin-site/v1.0/sites/{erc}/site-pages"
         )
-        report["elements"].extend(find_fragment_element(pages, []))
+        elements.extend(find_fragment_element(pages, []))
+    report["elements"] = elements
 
-    out = workspace / args.project / ".ldm" / "fragment-override-harness.json"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    timings["total"] = time.time() - started
+    _report(out, report)
+
+    obs = report["observations"]
+    verified = bool(
+        obs.get("default_in_db_before")
+        and obs.get("override_in_db_after")
+        and obs.get("override_in_html_after")
+        and not obs.get("default_in_html_after")
+    )
+    report["verified_end_to_end"] = verified
+    _report(out, report)
 
     print()
     print("=" * 70)
-    print("  LDM-#1618 measurement: what is `element_id`?")
+    print("  LDM-#1745: does a configured override reach the rendered page?")
     print("=" * 70)
-    if not report["elements"]:
-        print("  No page element carried the fragment key.")
-        print("  The fragment deployed but is not placed on any page -- add it to a")
-        print("  page in the UI and re-run, or the chain has nothing to patch.")
-    for element in report["elements"]:
+    for label, key in (
+        ("default value in editablevalues, before ", "default_in_db_before"),
+        ("default value in rendered HTML, before  ", "default_in_html_before"),
+        ("override value in editablevalues, after ", "override_in_db_after"),
+        ("override value in rendered HTML, after  ", "override_in_html_after"),
+        ("default value STILL in HTML, after      ", "default_in_html_after"),
+    ):
+        print(f"  {label} : {obs.get(key)}")
+    print()
+    for element in elements:
         print(
             f"  id={element['id']!r}  type={element['id_type']}  "
             f"numeric={element['id_is_numeric']}  "
             f"fragmentEntryLinkId present={element['has_fragmentEntryLinkId']}"
         )
     print()
-    print("  A non-numeric id means the module rung can NEVER fire: the endpoint")
-    print('  declares `@PathParam("fragmentEntryLinkId") long`, and a path param')
-    print("  that cannot be coerced is a 404 by JAX-RS specification -- which")
-    print("  `_api_request` swallows as expected. That would resolve LDM-#1618 by")
-    print("  fixing or removing the rung, with no live positive path needed.")
-    print(f"  Full report: {out}")
+    print(f"  VERIFIED END TO END: {verified}")
+    print(f"  Report: {out}")
+    for name, seconds in timings.items():
+        print(f"  {name:<18} {seconds:7.1f}s")
     print("=" * 70)
 
     if args.require_module:
@@ -699,7 +1127,7 @@ def main() -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915 - linear by design
         )
         shutil.rmtree(scratch, ignore_errors=True)
 
-    return 0
+    return 0 if verified else 1
 
 
 if __name__ == "__main__":
