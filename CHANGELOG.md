@@ -7,9 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.23.0-pre.8] - 2026-09-18
 
+**No change to the binary.** `-pre.7` and `-pre.8` differ only in the E2E
+verification scripts. It exists so that a new assertion is exercised on a
+pre-release tag rather than first running on the stable one.
+
 ### Added
 
--
+- **The E2E suite now asserts that the MAC pin's refusal actually fires** (LDM-#1808). That branch had **never executed in the feature's life**: LDM-#1798 established it was unreachable by any supported command, because `mac_address` is part of the compose service spec, so `ldm run` recreates the container whenever it changes and the two values always agree. Exit `3` was in the documented contract and in `-pre.4`'s CHANGELOG, and had never once fired. The suite now pins a MAC, boots, changes only the *configured* value, runs `ldm restart`, and requires exit `3` naming both addresses. It needs **no remote node and no licence**, and takes about 40 seconds: a target named anything other than `local` and pointed at `127.0.0.1` is checked (`configured_mac` skips only the reserved name) while compose drives the local daemon. Observed to FAIL against `v2.23.0-pre.5`, where `restart` performs no check and exits 0, before being committed.
+
+### Why this needed its own pre-release
+
+`--promote` tags **`master`**, not the release branch, so a script-only change on
+`master` ships in the stable release regardless of which pre-release was
+verified. This assertion boots and tears down a container inside a suite that
+already juggles ports and projects, and it had never run there. Left alone it
+would have executed for the first time during the **stable** tag's CI, across
+five distros -- the worst place to discover a problem. The Promotion Delta Gate
+would not have caught it either: that gate diffs `ldm_core/`, and this is
+`scripts/`.
 
 ## [v2.23.0-pre.7] - 2026-09-18
 
