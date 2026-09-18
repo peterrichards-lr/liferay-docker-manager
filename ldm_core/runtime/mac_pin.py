@@ -64,6 +64,7 @@ def verify_pinned_mac(
     *,
     dry_run: bool = False,
     recreate_hint: str = "ldm run",
+    check_interfaces: bool = True,
 ) -> None:
     """Confirm the container carries the MAC that was configured.
 
@@ -113,7 +114,17 @@ def verify_pinned_mac(
             exit_code=3,
         )
 
-    _warn_if_not_a_node_interface(expected, target_name)
+    # LDM-#1804: the interface cross-check is an SSH round trip, measured at
+    # ~1.4s against a real node. That is noise inside `ldm run` (a multi-minute
+    # boot) and 48% of an `ldm restart`, which took 2.9s unpinned and 4.3s
+    # pinned. So it is on by default where the container is created and off on
+    # the lifecycle fast path, where `--verify-mac` opts back in.
+    #
+    # Little is lost: a wrong pin is caught at `ldm target add` (LDM-#1780),
+    # which runs once rather than on every restart. What this catches is the
+    # narrower case of a node whose interfaces changed after registration.
+    if check_interfaces:
+        _warn_if_not_a_node_interface(expected, target_name)
     UI.detail(f"Container MAC pinned to {actual} as configured for '{target_name}'.")
 
 

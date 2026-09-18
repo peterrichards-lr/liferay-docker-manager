@@ -509,6 +509,12 @@ class OrchestrationService(BaseHandler):
             target_name,
             dry_run=bool(getattr(self.manager, "dry_run", False)),
             recreate_hint=f"ldm run {root.name}",
+            # LDM-#1804: off by default here. The MAC comparison itself is a
+            # local `docker inspect` and stays -- it is the interface
+            # cross-check that costs an SSH round trip, measured turning a 2.9s
+            # restart into 4.3s. `--verify-mac` opts back in for a node whose
+            # interfaces may have changed since it was registered.
+            check_interfaces=bool(getattr(self.manager.args, "verify_mac", False)),
         )
 
     @staticmethod
