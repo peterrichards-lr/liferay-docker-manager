@@ -528,6 +528,76 @@ class SnapshotService(BaseHandler):
                     f"Run {UI.CYAN}ldm run {paths['root'].name}{UI.COLOR_OFF} to start the project."
                 )
 
+    def _compatibility_claim_args(self, announce=True):
+        """Validate `--verified` / `--refuted` / `--evidence`; return the trio.
+
+        LDM-#1791. The producer half of the compatibility claim: what this
+        package has actually been TESTED on, as distinct from the `tag` it
+        happens to have been built with.
+
+        **Evidence is mandatory.** LDM-#1791 is explicit that if `verified` can
+        be produced by something that did not actually run, it becomes noise
+        within a month -- so there is no way to declare a claim here without
+        pointing at what produced it, and LDM never manufactures one of its
+        own. A package that declares nothing keeps the default, which is "no
+        claim", which is what every package published so far already carries.
+
+        Refusal is exit code `1`: a missing required argument is a user-input
+        validation error, the same class as any other bad flag combination.
+
+        Called from the top of `cmd_package`, deliberately. Stamping happens
+        much later, after a snapshot has been taken -- refusing there would
+        mean the user pays for a full snapshot before being told a flag is
+        missing, which is the wrong order for an argument check.
+        """
+        args = self.manager.args
+        verified = getattr(args, "verified", None)
+        refuted = getattr(args, "refuted", None)
+        evidence = getattr(args, "evidence", None)
+
+        if not verified and not refuted:
+            if evidence and announce:
+                UI.warning(
+                    "--evidence was given with neither --verified nor "
+                    "--refuted, so there is no claim for it to support. "
+                    "Ignoring it."
+                )
+            return None, None, None
+
+        if not evidence:
+            UI.die(
+                "A compatibility claim must point at its evidence: pass "
+                "--evidence <url or reference> alongside --verified/--refuted.\n"
+                "  A claim LDM could mint without anything having run would be "
+                "worth nothing within a month (LDM-#1791).",
+                exit_code=1,
+            )
+
+        return verified, refuted, evidence
+
+    def _record_compatibility_claim(self, meta) -> None:
+        """Stamp the validated claim into the manifest about to be packaged."""
+        from ldm_core import compatibility
+        from ldm_core.constants import VERSION
+
+        verified, refuted, evidence = self._compatibility_claim_args(announce=False)
+
+        claim = compatibility.build_claim(
+            verified=verified,
+            refuted=refuted,
+            evidence=evidence,
+            ldm_version=VERSION,
+        )
+        if claim:
+            meta[compatibility.CLAIM_KEY] = claim
+            if verified:
+                UI.detail(f"Package declares {verified} verified ({evidence}).")
+            if refuted:
+                UI.detail(
+                    f"Package declares {refuted} refuted -- tried and failed "
+                    f"({evidence})."
+                )
+
     def cmd_package(  # noqa: C901, PLR0912, PLR0915
         self,
         project_id=None,
@@ -537,6 +607,11 @@ class SnapshotService(BaseHandler):
         snapshot=None,
     ):
         """Bundles a project snapshot into a .ldmp package for GitHub release."""
+        # LDM-#1791: before anything is created. A claim with no evidence is
+        # refused, and paying for a full snapshot first would be the wrong
+        # order for an argument check.
+        self._compatibility_claim_args()
+
         is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
         if is_dry_run:
             UI.detail(f"[DRY RUN] Would package project: {project_id}")
@@ -621,6 +696,7 @@ class SnapshotService(BaseHandler):
         # 3. Write repo manifest to meta file in snapshot directory
         meta = self.manager.read_meta(latest_snap_dir)
         meta["github_repository"] = repo
+        self._record_compatibility_claim(meta)
         self.manager.write_meta(latest_snap_dir, meta)
 
         # 4. Generate package tarball (.ldmp)
