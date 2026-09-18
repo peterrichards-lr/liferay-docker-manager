@@ -789,6 +789,94 @@ function Test-CascadingDefaultGuard {
     return @{ Ok = $true; Message = "[SUCCESS] Cascading default write refused with the working command named; non-cascading keys still write." }
 }
 
+function Test-MacPinRefusal {
+    # LDM-#1808: exercise the MAC pin's REFUSAL, which had never executed.
+    #
+    # LDM-#1798 established that exit 3 was unreachable by any supported
+    # command: 'mac_address' is part of the compose service spec, so 'ldm run'
+    # recreates the container whenever it changes and the values always agree.
+    # 'ldm restart' is the route that leaves a stale container, and as of that
+    # fix it is where the check runs.
+    #
+    # No remote node and no licence are needed. A target named anything other
+    # than 'local', pointed at 127.0.0.1, is checked (configured_mac skips only
+    # the reserved name) while compose drives the LOCAL daemon (is_local_host).
+    # That combination is deliberate: a proposal to skip the check for any
+    # loopback host was rejected under LDM-#1804, because on AWS a loopback
+    # address can front a genuinely remote daemon via an SSH tunnel or nginx.
+    #
+    # '--no-wait' is what makes this ~40s rather than a full boot: the container
+    # only has to exist for its MAC to be readable.
+    #
+    # Parity with verify_mac_pin_refusal in verify_e2e_refactor.sh.
+    param($LdmCmd, $WorkDir)
+
+    $isoHome = Join-Path $WorkDir "mac-refusal-home"
+    $runDir = Join-Path $WorkDir "mac-refusal-work"
+    $node = "ldm-macrefuse-node"
+    $proj = "ldmmacrefuse"
+    $macA = "02:aa:bb:cc:dd:01"
+    $macB = "02:aa:bb:cc:dd:02"
+
+    foreach ($d in @($isoHome, $runDir)) {
+        if (Test-Path $d) { Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue }
+        New-Item -ItemType Directory -Path $d -Force | Out-Null
+    }
+
+    $prevHome = $env:LDM_HOME
+    $env:LDM_HOME = $isoHome
+    $startLocation = Get-Location
+    try {
+        $out = & $LdmCmd -y target add $node --host 127.0.0.1 --mac-address $macA 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: could not register the pinned target.`n   Output was: ${out}" }
+        }
+
+        Set-Location $runDir
+        $out = & $LdmCmd run $proj --node $node -y -t 2026.q1.7-lts --no-wait 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: could not start the pinned project.`n   Output was: ${out}" }
+        }
+
+        $actual = (& docker inspect -f '{{range .NetworkSettings.Networks}}{{.MacAddress}}{{end}}' $proj 2>&1 | Out-String).Trim()
+        if ($actual -ne $macA) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: the container did not take the pinned MAC (got '${actual}', wanted ${macA}). Compose accepted the request but the toolchain did not honour it (LDM-#1752)." }
+        }
+
+        # Change what is CONFIGURED, leaving the running container alone: this
+        # is the only way to make the two disagree -- 'ldm run' would recreate it.
+        & $LdmCmd target add $node --mac-address $macB 2>&1 | Out-Null
+        $ldmrc = Join-Path $isoHome ".ldmrc"
+        if (-not ((Test-Path $ldmrc) -and ((Get-Content -Raw $ldmrc) -match [regex]::Escape($macB)))) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: could not change the configured MAC to ${macB}." }
+        }
+
+        $restartOut = & $LdmCmd restart $proj 2>&1 | Out-String
+        $restartCode = $LASTEXITCODE
+
+        if ($restartCode -ne 3) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm restart' exited ${restartCode}; the MAC refusal did not fire.`n        The container carries ${macA} while ${macB} is configured, so this must exit 3.`n        Left unchecked it boots healthy, logs 'License registered' and serves the DXP`n        Activation page instead of Sign In (LDM-#1752/#1798).`n   Output was: ${restartOut}" }
+        }
+        if (($restartOut -notmatch [regex]::Escape($macA)) -or ($restartOut -notmatch [regex]::Escape($macB))) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: the refusal did not name both the actual and configured MAC.`n   Output was: ${restartOut}" }
+        }
+    } finally {
+        & $LdmCmd rm $proj --delete -y 2>&1 | Out-Null
+        & docker rm -f $proj "$proj-db" 2>&1 | Out-Null
+        Set-Location $startLocation
+        if ($null -eq $prevHome) {
+            Remove-Item Env:LDM_HOME -ErrorAction SilentlyContinue
+        } else {
+            $env:LDM_HOME = $prevHome
+        }
+        foreach ($d in @($isoHome, $runDir)) {
+            if (Test-Path $d) { Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue }
+        }
+    }
+
+    return @{ Ok = $true; Message = "[SUCCESS] A stale container's MAC is refused with exit 3, naming both values (LDM-#1798)." }
+}
+
 function Test-MacAddressPersisted {
     # LDM-#1771: '--mac-address' (LDM-#1752) is the v2.23.0 cycle's headline
     # feature, and it shipped in v2.23.0-pre.2 parsed and then discarded --
@@ -1343,6 +1431,15 @@ try {
         Write-Verdict $macPin.Message
     } else {
         Write-Host $macPin.Message -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying the MAC pin's refusal fires (LDM-#1798/#1808)..."
+    $macRefusal = Test-MacPinRefusal -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE
+    if ($macRefusal.Ok) {
+        Write-Verdict $macRefusal.Message
+    } else {
+        Write-Host $macRefusal.Message -ForegroundColor Red
         exit 1
     }
 
