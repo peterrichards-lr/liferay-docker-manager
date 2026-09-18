@@ -112,6 +112,80 @@ case "$CURRENT_BRANCH" in
     ;;
 esac
 
+# LDM-#1801: refuse a branch that was cut from release history instead of master.
+#
+# `git checkout -b <feature>` while standing on `release/*` inherits every
+# release commit -- the version bump, the CHANGELOG entry, the compatibility
+# sync, the verification reports. The PR then arrives as tens of files instead
+# of the handful you touched, and conflicts on files the change never went near,
+# because `master` already has that content via the promotion squash.
+#
+# This is documented in release-orchestration/SKILL.md, with the exact two
+# commands that catch it. It has now happened twice -- once on a fix branch that
+# arrived as 33 files, and once on LDM-#1798, which reached `pr-sprawl-check` as
+# 24 files. Documenting it demonstrably does not work, which is the same
+# argument that turned LDM-#1754 into #1765 and the CHANGELOG ratchet into
+# #1758.
+#
+# The signal is precise rather than heuristic: a commit that is reachable from a
+# release branch, is NOT on master, and is sitting in your feature branch can
+# only have got there by branching off release history. Matching on file names
+# would misfire on a legitimate CHANGELOG edit.
+case "$CURRENT_BRANCH" in
+  master|main|release/*) ;;
+  *)
+    git fetch origin master --quiet 2>/dev/null || true
+    STRAY_RELEASE_COMMITS=""
+    for _rel in $(git for-each-ref --format='%(refname)' 'refs/remotes/origin/release/*' 2>/dev/null); do
+      # Commits on this branch, not on master, that the release branch also has.
+      _shared="$(git rev-list origin/master.."$CURRENT_BRANCH" 2>/dev/null \
+                 | git rev-list --stdin --no-walk 2>/dev/null \
+                 | while read -r _c; do
+                     if git merge-base --is-ancestor "$_c" "$_rel" 2>/dev/null; then
+                       echo "$_c"
+                     fi
+                   done)"
+      if [ -n "$_shared" ]; then
+        STRAY_RELEASE_COMMITS="$_shared"
+        STRAY_RELEASE_REF="$_rel"
+        break
+      fi
+    done
+
+    if [ -n "$STRAY_RELEASE_COMMITS" ]; then
+      echo "=> [ERROR] '$CURRENT_BRANCH' was branched from release history, not master."
+      echo ""
+      echo "    These commits are on ${STRAY_RELEASE_REF#refs/remotes/} and not on master,"
+      echo "    so they came with the branch rather than from your work:"
+      echo ""
+      # `--stdin`, not argument expansion: the list is newline-separated and
+      # can run to dozens of commits, which git rejects with "failed to stat".
+      printf '%s\n' "$STRAY_RELEASE_COMMITS" \
+        | git log --oneline --no-decorate --no-walk --stdin 2>/dev/null \
+        | head -10 \
+        | sed 's/^/        /'
+      _stray_count="$(printf '%s\n' "$STRAY_RELEASE_COMMITS" | grep -c .)"
+      if [ "$_stray_count" -gt 10 ]; then
+        echo "        ... and $((_stray_count - 10)) more ($_stray_count in total)"
+      fi
+      echo ""
+      echo "    The PR would carry the version bump, the CHANGELOG entry and the"
+      echo "    verification reports, and conflict on files your change never"
+      echo "    touched -- master already has that content via the promotion squash."
+      echo ""
+      echo "    REBUILD it rather than resolving the conflicts; resolving merges"
+      echo "    the release commits a second time:"
+      echo ""
+      echo "        git tag -f checkpoint/\$(date +%s) HEAD"
+      echo "        git branch -f $CURRENT_BRANCH origin/master"
+      echo "        git checkout $CURRENT_BRANCH"
+      echo "        git cherry-pick <your commit(s)>"
+      echo ""
+      exit 1
+    fi
+    ;;
+esac
+
 STAGED_FILES="$(git diff --cached --name-only)"
 UNSTAGED_FILES="$(git diff --name-only)"
 UNTRACKED_FILES="$(git ls-files --others --exclude-standard)"
