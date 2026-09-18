@@ -2208,68 +2208,34 @@ class ComposerStage(PipelineStage):
 
 
 def _verify_pinned_mac(manager, context, project_meta) -> None:
-    """Refuse when the container's MAC is not the one that was configured.
+    """Pipeline wrapper around the shared MAC check (LDM-#1752).
 
-    LDM-#1752. Silent on a local target and when no MAC is configured -- this
-    exists to catch a pin that did not take, not to require one.
+    The body moved to `ldm_core.runtime.mac_pin` so `ldm start` and
+    `ldm restart` can run it too -- this pipeline is the one path where a
+    mismatch cannot occur, because `mac_address` is part of the compose service
+    spec and compose recreates the container whenever it changes (LDM-#1798).
 
-    Exit 3 (infrastructure/data): the configuration is right and the
-    environment did not honour it, which is not a user-input error.
+    LDM-#1799: dry-run is read from the manager, not the context. The previous
+    `context.get("dry_run")` was never true -- nothing writes that key -- so a
+    dry run inspected a container it had not created and warned that it could
+    not read its MAC. The rest of this file reads `manager.dry_run`, which is
+    the tell that should have been checked before writing the guard.
     """
-    if context.get("dry_run"):
-        return
+    from ldm_core.runtime.mac_pin import verify_pinned_mac
 
     target_name = getattr(manager, "target", None) or (
         project_meta.get("target") if isinstance(project_meta, dict) else None
     )
-    if not target_name or target_name == "local":
-        return
-
-    try:
-        from ldm_core.config import load_targets
-
-        node = load_targets().get(target_name)
-    except Exception:
-        return
-    expected = (getattr(node, "mac_address", "") or "").strip().lower() if node else ""
-    if not expected:
-        return
-
-    from ldm_core.docker_service import DockerService
-    from ldm_core.utils import liferay_container_of
-
-    container = liferay_container_of(project_meta)
-    actual = DockerService.container_mac_address(container, target_name)
-
-    if actual is None:
-        # Unreadable is not the same as wrong. Say so and continue rather than
-        # blocking a boot on a diagnosis that did not run.
-        UI.warning(
-            f"Could not read the MAC of '{container}' to confirm it was pinned "
-            f"(LDM-#1752). Liferay's licence binds to it, so if activation "
-            f"fails, check it by hand."
-        )
-        return
-
-    if actual != expected:
-        UI.die(
-            f"The container's MAC is {actual}, not the {expected} configured "
-            f"for node '{target_name}'.",
-            details=(
-                "Liferay's licence binds to the MAC. Left alone, this boots a "
-                "healthy container that logs 'License registered' and then "
-                "serves the DXP Activation page instead of the Sign In form."
-            ),
-            tip=(
-                "The MAC can only be set when a container is created, so an "
-                "existing one cannot be corrected in place. Recreate it:\n"
-                f"    ldm rm {context.get('project_id')} && ldm run "
-                f"{context.get('project_id')}"
-            ),
-            exit_code=3,
-        )
-
-    UI.detail(f"Container MAC pinned to {actual} as configured for '{target_name}'.")
+    project_id = context.get("project_id")
+    verify_pinned_mac(
+        project_meta,
+        target_name,
+        dry_run=bool(getattr(manager, "dry_run", False)),
+        # From the run pipeline the container has just been created, so a
+        # mismatch means the toolchain ignored the request -- a plain re-run
+        # would recreate it identically. Removing it first is the escape.
+        recreate_hint=f"ldm rm {project_id} && ldm run {project_id}",
+    )
 
 
 def _patch_docker_prefix(manager, target_context):

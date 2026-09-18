@@ -85,6 +85,10 @@ class TheRunningContainerIsChecked(unittest.TestCase):
 
         manager = MagicMock()
         manager.target = target
+        # LDM-#1799: an unset MagicMock attribute is TRUTHY, so leaving
+        # `manager.dry_run` to the mock sends the check down the dry-run branch
+        # and it silently verifies nothing. Set it explicitly.
+        manager.dry_run = dry_run
         context = MagicMock()
         context.get.side_effect = lambda k, d=None: {
             "dry_run": dry_run,
@@ -105,8 +109,13 @@ class TheRunningContainerIsChecked(unittest.TestCase):
                 return_value=actual,
             ),
             patch("ldm_core.utils.liferay_container_of", return_value="proj"),
-            patch("ldm_core.pipelines.run.UI.die", side_effect=capture_die),
-            patch("ldm_core.pipelines.run.UI.warning") as warned,
+            # LDM-#1798: the body lives in `ldm_core.runtime.mac_pin` now, so
+            # patching the pipeline module would intercept nothing.
+            patch("ldm_core.runtime.mac_pin.UI.die", side_effect=capture_die),
+            patch("ldm_core.runtime.mac_pin.UI.warning") as warned,
+            # The new NIC cross-check would otherwise open a real SSH
+            # connection to whatever this target names.
+            patch("ldm_core.config.remote_interface_macs", return_value=None),
         ):
             try:
                 _verify_pinned_mac(manager, context, {"container_name": "proj"})

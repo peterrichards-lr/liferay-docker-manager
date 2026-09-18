@@ -141,6 +141,7 @@ class DoctorRunner:
         self._check_tooling_and_integrity()
         self._check_docker_runtime()
         self._check_global_config_and_network()
+        self._check_target_ssh_users()
         self._check_project_specific()
         self._check_dangling_and_print()
 
@@ -1943,6 +1944,76 @@ class DoctorRunner:
             f"Recreate with a current client: "
             f"{UI.WHITE}ldm rm {p_path.name} && ldm run {p_path.name}{UI.COLOR_OFF}.",
         )
+
+    def _check_target_ssh_users(self):
+        """Does each remote node's Docker context still dial the user we stored?
+
+        LDM-#1797. A target's SSH user is recorded in two places that nothing
+        keeps in step: `~/.ldmrc` holds `user`, and the Docker context holds
+        `ssh://<user>@<host>`. `ldm target add` writes both, so they agree at
+        the moment it runs -- and afterwards a `docker context update`, a
+        hand-edited `~/.ldmrc`, or a context rebuilt by anything other than LDM
+        separates them silently.
+
+        Measured on `aws-1`:
+
+            context : ssh://ldm-automation@13.49.210.78
+            ~/.ldmrc: user=ec2-user
+            $ docker --context aws-1 version
+              ldm-automation@13.49.210.78: Permission denied (publickey,...).
+
+        That is the worst shape a failure can take: `ldm target ls` showed a
+        correct configuration, the node was genuinely reachable, and every
+        command that went through the context failed naming a user the operator
+        had never configured. Nothing in LDM said the two disagreed.
+
+        This is the same shape as `_check_pinned_mac` above -- two sources of
+        truth for one fact, compared against reality here rather than trusted.
+        Local targets have no context and no SSH user, so they are skipped.
+        """
+        try:
+            from ldm_core.config import load_targets
+
+            targets = load_targets()
+        except Exception:
+            return
+
+        from ldm_core.docker_service import DockerService
+
+        for name, node in targets.items():
+            host = getattr(node, "host", "") or ""
+            if not host or is_local_host(host):
+                continue
+
+            configured = (getattr(node, "user", "") or "").strip()
+            if not configured:
+                # Nothing was configured, so there is nothing to disagree with.
+                # SSH picks the local user and LDM never claimed otherwise.
+                continue
+
+            actual = DockerService.get_context_endpoint_user(name)
+            if actual is None:
+                # No context, unreadable, or not an SSH endpoint. A node may be
+                # registered before its context exists; reporting drift here
+                # would be a finding on a configuration that is merely absent.
+                continue
+
+            if actual == configured:
+                self.results.append((f"[{name}] SSH user", "In step", True))
+                continue
+
+            dialled = actual or "the local username"
+            self.results.append((f"[{name}] SSH user", f"DRIFTED ({dialled})", "warn"))
+            self.add_hint(
+                f"[{name}] Target '{name}' is configured for SSH user "
+                f"'{configured}', but its Docker context dials {dialled}. "
+                f"'ldm target ls' shows the configured value while every "
+                f"command goes through the context, so this fails as "
+                f"'Permission denied (publickey)' naming a user you never "
+                f"configured. Rebuild the context: "
+                f"{UI.WHITE}ldm target add {name} --user {configured}"
+                f"{UI.COLOR_OFF} (other stored settings are kept).",
+            )
 
     def _check_absolute_disk_space(self, docker_prefix=None):
         """LDM-#1095: `docker system df`'s Reclaimable figure only reports

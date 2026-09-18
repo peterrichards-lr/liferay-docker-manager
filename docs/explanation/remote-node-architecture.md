@@ -216,7 +216,9 @@ ldm target add aws-1 --host <node-ip> --user ec2-user \
 
 `ldm target set` is a different command -- it assigns a target to the active
 project, not node properties -- so re-run `ldm target add` with the same name
-to record or change the MAC.
+to record or change the MAC. Re-running it **merges**: flags you do not pass
+keep the values already stored, so changing one setting cannot lose another
+(see section 8).
 
 LDM does **not** infer the value. `ip a` on a typical node shows `ens5`
 alongside `docker0` and `br-*`: all plausible, only one licensed. A wrong guess
@@ -307,6 +309,101 @@ On **macvlan** or **host** networking that containment disappears and the
 duplicate address is on the physical segment, where it will cause the problems
 duplicate MACs normally cause. The same option is reachable in those setups, so
 the safety here is a property of bridge networking -- not of the option.
+
+## 8. A target's SSH user lives in two places
+
+A remote target is described twice, and only one of the two is LDM's:
+
+| Fact | `~/.ldmrc` | Docker context |
+|------|-----------|----------------|
+| host | `host` | `ssh://<user>@<host>` |
+| SSH user | `user` | `ssh://<user>@<host>` |
+
+`ldm target add` writes both, so they agree *at the moment it runs*. Nothing
+afterwards keeps them in step. A `docker context update`, a hand-edited
+`~/.ldmrc`, or a context rebuilt by anything other than LDM separates them
+silently -- and the result is the least legible failure in the product,
+measured on `aws-1` while preparing `v2.23.0-pre.5`:
+
+```text
+$ docker context inspect aws-1 --format '{{.Endpoints.docker.Host}}'
+ssh://ldm-automation@13.49.210.78
+
+$ ldm target ls    # ~/.ldmrc
+aws-1  host=13.49.210.78  user=ec2-user
+
+$ docker --context aws-1 version
+ldm-automation@13.49.210.78: Permission denied (publickey,...).
+```
+
+`ldm target ls` showed a correct configuration, the node was genuinely
+reachable, and every command that went through the context failed naming a user
+nobody had configured.
+
+`ldm doctor` now reports it, the same way it reports a dropped MAC pin --
+configured state compared against reality rather than trusted:
+
+```text
+[aws-1] SSH user     DRIFTED (ldm-automation)
+```
+
+The host half of the same divergence is reported by `ldm target status`
+(LDM-#1346). Both are silent when the two agree, when the node is local, when
+no user is configured, and when the context cannot be read at all -- a node may
+legitimately be registered before its context exists.
+
+### `target add` merges; it used to replace
+
+The repair is to re-register the node with the right user. That used to be the
+trap rather than the fix. `save_target_node` does
+`raw_targets[target.name] = target.to_dict()` -- a replace -- and `target add`
+built a fresh node from only the flags it was given, so:
+
+```bash
+ldm target add aws-1 --host 13.49.210.78 --user ec2-user   # no --mac-address
+```
+
+reported *"registered successfully"* and **destroyed the node's MAC pin**. The
+next `ldm run` then booted a container with a bridge address, Liferay refused
+the licence, and the operator got the section 7 symptom -- healthy container,
+`License registered` in the log, Activation page instead of Sign In. Section 7
+is where LDM learned to *detect* a dropped pin; this dropped one using the
+documented command, during routine maintenance, with no warning (LDM-#1797).
+
+`target add` on an existing node now keeps every setting it was not passed,
+which is how the command already reads -- "add or update this node". Clearing
+is still expressible, because an absent flag and a flag passed empty are
+different inputs:
+
+```bash
+ldm target add aws-1 --user ec2-user        # keeps host, key and MAC pin
+ldm target add aws-1 --mac-address ""       # removes the pin, deliberately
+```
+
+`--default` is the one exception. A `store_true` flag has no empty spelling, so
+`target add` can only *set* it; moving the default to another node is what
+`ldm target use <name>` is for.
+
+An update is never silent. It names what changed and what it kept, on `UI.info`
+rather than `UI.detail`, because detail is gated behind `--info`/`--verbose`
+(LDM-#1036) and would be invisible in exactly the invocation that matters:
+
+```text
+✅  Target node 'aws-1' (13.49.210.78) updated.
+ℹ  Changed SSH user: ldm-automation -> ec2-user
+ℹ  Docker context 'aws-1' rebuilt to dial ssh://ec2-user@13.49.210.78.
+ℹ  Kept host 13.49.210.78, MAC pin 06:ff:c5:f9:cf:a5 (not passed).
+ℹ  Pass a flag with an empty value to clear one, e.g. --mac-address "".
+```
+
+An update that moves nothing in `~/.ldmrc` reports `stored settings unchanged`
+rather than "nothing changed" -- because the Docker context is rebuilt on every
+remote add, and in the drift repair above `~/.ldmrc` was right all along:
+
+```text
+✅  Target node 'aws-1' (13.49.210.78) already matched; stored settings unchanged.
+ℹ  Docker context 'aws-1' rebuilt to dial ssh://ec2-user@13.49.210.78.
+```
 
 <!-- markdownlint-disable MD049 -->
 ---

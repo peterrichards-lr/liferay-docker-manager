@@ -318,6 +318,8 @@ class OrchestrationService(BaseHandler):
                 if all_projects and res is None:
                     UI.warning(f"Could not start '{root.name}'; continuing.")
                     failures.append(root.name)
+                else:
+                    self._verify_pinned_mac_after_lifecycle(root, meta, target_name)
         self._report_batch_failures(failures, "start")
 
     @staticmethod
@@ -482,7 +484,32 @@ class OrchestrationService(BaseHandler):
             if all_projects and res is None:
                 UI.warning(f"Could not restart '{root.name}'; continuing.")
                 failures.append(root.name)
+            else:
+                self._verify_pinned_mac_after_lifecycle(root, meta, target_name)
         self._report_batch_failures(failures, "restart")
+
+    def _verify_pinned_mac_after_lifecycle(self, root, meta, target_name):
+        """Confirm the pin survived a start or restart (LDM-#1798).
+
+        These are the routes where a stale container is actually reachable.
+        `ldm run` cannot produce one -- `mac_address` is part of the compose
+        service spec, so changing the configured value makes compose recreate
+        the container by itself -- which is why the refusal branch had never
+        executed despite being the guard the whole feature rests on.
+
+        The hint is `ldm run`, not `ldm rm && ldm run`: from here a plain re-run
+        recreates the container with the new MAC, and telling an operator to
+        remove the project first would be destructive advice for a problem that
+        does not need it.
+        """
+        from ldm_core.runtime.mac_pin import verify_pinned_mac
+
+        verify_pinned_mac(
+            meta,
+            target_name,
+            dry_run=bool(getattr(self.manager, "dry_run", False)),
+            recreate_hint=f"ldm run {root.name}",
+        )
 
     @staticmethod
     def _project_removal_facts(root):

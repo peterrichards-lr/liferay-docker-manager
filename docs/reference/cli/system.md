@@ -13,6 +13,14 @@ version; a client below that floor is explained when `ldm share` runs. A
 missing client is a warning, not a failure -- sharing is optional, and the
 containerised `lfr-tunnel-docker` provider needs no host binary.
 
+For every registered remote target, `doctor` also compares the SSH user in
+`~/.ldmrc` against the user that node's Docker context actually dials, and
+reports a `DRIFTED` row when they disagree (LDM-#1797). The two are stored
+separately and nothing keeps them in step, so the failure shows up as
+`Permission denied (publickey)` naming a user `ldm target ls` never mentions.
+The repair it names is `ldm target add <name> --user <user>`, which keeps the
+node's other settings.
+
 ```bash
 ldm system doctor          # Health check for current/selected project
 ldm system doctor --all    # Batch validate every project in your workspace
@@ -530,6 +538,43 @@ ldm target migrate local win-wsl
 ldm target rm win-wsl
 ```
 
+### `target add` adds **or updates** -- omitted flags are kept
+
+Running `target add` against a name that already exists **merges** onto the
+stored node: any flag you do not pass keeps its stored value (LDM-#1797).
+
+```bash
+ldm target add aws-1 --user ec2-user     # host, key, MAC pin and default kept
+```
+
+It used to replace the node wholesale, so the obvious repair for a wrong SSH
+user reported *"registered successfully"* and silently erased the node's
+`--mac-address`, producing the activation failure described below.
+
+Clearing a value is still possible -- an absent flag and a flag passed with an
+empty value are different inputs:
+
+```bash
+ldm target add aws-1 --mac-address ""    # removes the pin
+ldm target add aws-1 --user ""           # removes the SSH user
+```
+
+`--default` is the exception: a `store_true` flag has no empty spelling, so
+`target add` can only set it. Use `ldm target use <name>` to move the default.
+
+An update reports what it changed and what it kept:
+
+```text
+✅  Target node 'aws-1' (13.49.210.78) updated.
+ℹ  Changed SSH user: ldm-automation -> ec2-user
+ℹ  Docker context 'aws-1' rebuilt to dial ssh://ec2-user@13.49.210.78.
+ℹ  Kept host 13.49.210.78, MAC pin 06:ff:c5:f9:cf:a5 (not passed).
+```
+
+An update that moves nothing reports `stored settings unchanged` rather than a
+bare success -- and still names the Docker context it rebuilt, since a remote
+`target add` always rebuilds one.
+
 ### `--mac-address` (licence activation on remote nodes)
 
 Liferay's licence binds to a MAC address. On a remote node the container takes
@@ -545,7 +590,8 @@ ldm target add aws-1 --host 10.0.0.9 --user ec2-user \
 Use the node's own primary NIC address (the one the licence allows). LDM does
 not infer it: a node typically shows `ens5` beside `docker0` and `br-*`, all
 plausible and only one licensed, and a wrong value produces the failure above.
-Re-run `ldm target add` with the same name to change it.
+Re-run `ldm target add` with the same name to change it -- and see above: the
+re-run keeps every other setting you do not pass.
 
 `target add` reads the node's interfaces over SSH and **warns** when the value
 you gave matches none of them, naming each one so you can pick the right one:
@@ -593,4 +639,4 @@ ldm target migrate win-wsl aws-1
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-17* | *Last Reviewed: 2026-09-17*
+*Last Updated: 2026-09-18* | *Last Reviewed: 2026-09-18*

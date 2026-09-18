@@ -2328,44 +2328,211 @@ class ConfigService:
             "licence bound to a MAC that is not a current interface is valid."
         )
 
+    @staticmethod
+    def _describe_target_value(value) -> str:
+        """Renders a stored target field for the change announcement."""
+        if isinstance(value, bool):
+            return "yes" if value else "no"
+        return str(value) if value else "(none)"
+
+    def _diff_target_node(self, existing, node, passed: dict):
+        """Returns (changes, kept) between the stored node and the resolved one.
+
+        LDM-#1797. `kept` names a field that was *not* passed and holds a
+        non-default value -- i.e. exactly what the old replace-everything
+        behaviour would have silently discarded. "Did I just lose my MAC pin?"
+        is the question this command used to answer wrong, so the answer goes
+        on screen rather than into `~/.ldmrc` alone.
+        """
+        # `unset` is the value a field would have reverted to under that old
+        # behaviour -- `TargetNode`'s default. Only a field that differs from
+        # it was ever at risk, so only those are worth naming.
+        # Keyed on the parameter name, not the display label, so a reworded
+        # label cannot silently stop matching the `passed` map.
+        fields = (
+            ("host", "host", "localhost", existing.host, node.host),
+            ("user", "SSH user", "", existing.user, node.user),
+            ("key", "SSH key", "", existing.key_path, node.key_path),
+            ("mac_address", "MAC pin", "", existing.mac_address, node.mac_address),
+            ("default", "default", False, existing.is_default, node.is_default),
+        )
+
+        changes: list[str] = []
+        kept: list[str] = []
+        for field, label, unset, was, now in fields:
+            if field not in passed:
+                raise KeyError(f"target field {field!r} missing from `passed`")
+            if was != now:
+                changes.append(
+                    f"{label}: {self._describe_target_value(was)} -> "
+                    f"{self._describe_target_value(now)}"
+                )
+            elif passed[field] is None and was != unset:
+                kept.append(f"{label} {self._describe_target_value(was)}")
+        return changes, kept
+
+    @staticmethod
+    def _announce_target_add(
+        name: str,
+        host: str,
+        *,
+        is_update: bool,
+        changes: list[str],
+        kept: list[str],
+        context_endpoint: str | None = None,
+    ) -> None:
+        """An update is never silent (LDM-#1797).
+
+        `UI.info`, not `UI.detail`: detail is gated behind `--info`/`--verbose`
+        (LDM-#1036), so this would be invisible in exactly the ordinary
+        invocation where the operator needs to see what moved.
+        """
+        if not is_update:
+            UI.success(f"Target node '{name}' ({host}) registered successfully.")
+            if context_endpoint:
+                UI.info(f"Docker context '{name}' dials {context_endpoint}.")
+            return
+
+        if changes:
+            UI.success(f"Target node '{name}' ({host}) updated.")
+            for change in changes:
+                UI.info(f"Changed {change}")
+        else:
+            # Silence here reads as "it took my flags", which is the misreading
+            # that made the old replace-everything behaviour so damaging.
+            #
+            # "stored settings", not "nothing": the Docker context is rebuilt on
+            # every remote add, and the repair for a drifted SSH user (the other
+            # half of LDM-#1797) changes the context while `~/.ldmrc` was right
+            # all along. Claiming nothing happened there would be false.
+            UI.success(
+                f"Target node '{name}' ({host}) already matched; "
+                f"stored settings unchanged."
+            )
+
+        if context_endpoint:
+            UI.info(f"Docker context '{name}' rebuilt to dial {context_endpoint}.")
+
+        if kept:
+            UI.info(f"Kept {', '.join(kept)} (not passed).")
+            UI.info(
+                'Pass a flag with an empty value to clear one, e.g. --mac-address "".'
+            )
+
     def cmd_target_add(
         self,
         name: str,
-        host: str = "localhost",
-        user: str = "",
-        key: str = "",
-        default: bool = False,
-        mac_address: str = "",
+        host: str | None = None,
+        user: str | None = None,
+        key: str | None = None,
+        default: bool | None = None,
+        mac_address: str | None = None,
     ) -> None:
-        """Handler for 'ldm target add <name> --host <host>'."""
-        from ldm_core.config import TargetNode, save_target_node
+        """Handler for 'ldm target add <name> --host <host>'.
+
+        **`add` on an existing node merges** (LDM-#1797). Every parameter
+        defaults to `None`, meaning "the flag was not given", and an omitted
+        flag keeps whatever the node already has.
+
+        It used to replace. `save_target_node` does
+        `raw_targets[target.name] = target.to_dict()`, and this handler built a
+        fresh `TargetNode` from only the flags it was passed, so any field not
+        re-passed reverted to its default. The documented repair for a wrong
+        SSH user --
+
+            ldm target add aws-1 --host 13.49.210.78 --user ec2-user
+
+        -- therefore reported "registered successfully" and silently destroyed
+        the node's `mac_address`. The next `ldm run` booted a container with a
+        bridge MAC, Liferay refused the licence, and the operator got the
+        LDM-#1752 symptom: healthy container, `License registered` in the log,
+        Activation page instead of Sign In. LDM-#1789 exists specifically to
+        detect a dropped pin, and this dropped one using the documented command
+        during routine maintenance, with no warning.
+
+        **Clearing a value is still expressible, and deliberately so**: pass the
+        flag with an empty string. `--mac-address ""` removes a pin,
+        `--user ""` removes the SSH user. `None` (absent) and `""` (given, and
+        empty) are different inputs, which is what makes "keep" the default
+        without making "clear" impossible. `--default` is the exception -- a
+        `store_true` flag has no empty spelling, so it can only be *set* here;
+        moving the default elsewhere is what `ldm target use <other>` is for.
+
+        An update is never silent: what changed is named, and so is the fact
+        that nothing did.
+        """
+        from ldm_core.config import TargetNode, load_targets, save_target_node
 
         if not name:
             UI.die(
                 "Target name is required (e.g. 'ldm target add win-wsl --host 192.168.1.50')."
             )
 
-        node = TargetNode(
-            name=name,
-            host=host,
-            user=user,
-            key_path=key,
-            is_default=default,
+        try:
+            existing = load_targets().get(name)
+        except Exception:
+            existing = None
+
+        # For a brand-new node this is simply the field defaults, so both paths
+        # resolve through the same expressions below.
+        base = existing or TargetNode(name=name)
+
+        resolved_host = (base.host if host is None else host) or "localhost"
+        resolved_user = base.user if user is None else user
+        resolved_key = base.key_path if key is None else key
+        resolved_default = base.is_default if default is None else default
+        resolved_mac = (
+            base.mac_address
+            if mac_address is None
             # LDM-#1752: normalised to lower case so a value typed in upper
             # case does not read as a mismatch against `docker inspect`, which
             # reports lower case.
-            mac_address=(mac_address or "").strip().lower(),
+            else mac_address.strip().lower()
         )
+
+        node = TargetNode(
+            name=name,
+            host=resolved_host,
+            user=resolved_user,
+            key_path=resolved_key,
+            is_default=resolved_default,
+            # Registration time belongs to the original registration, not to
+            # the most recent edit of it.
+            created_at=base.created_at,
+            mac_address=resolved_mac,
+        )
+
+        changes, kept = (
+            ([], [])
+            if existing is None
+            else self._diff_target_node(
+                existing,
+                node,
+                passed={
+                    "host": host,
+                    "user": user,
+                    "key": key,
+                    "mac_address": mac_address,
+                    "default": default,
+                },
+            )
+        )
+
         save_target_node(node)
         self._warn_if_mac_matches_no_interface(node)
 
-        # Auto-create/update Docker CLI context for remote SSH targets
-        if not is_local_host(host):
-            ssh_prefix = f"{user}@" if user else ""
-            endpoint = f"ssh://{ssh_prefix}{host}"
+        # Auto-create/update Docker CLI context for remote SSH targets.
+        # LDM-#1797: rebuilt from the *resolved* node, so an update that only
+        # supplies `--user` still rebuilds the context against the stored host
+        # -- which is the whole repair for a context dialling the wrong user.
+        context_endpoint: str | None = None
+        if not is_local_host(resolved_host):
+            ssh_prefix = f"{resolved_user}@" if resolved_user else ""
+            endpoint = f"ssh://{ssh_prefix}{resolved_host}"
+            context_endpoint = endpoint
             # Add SSH key to ssh-agent if key path provided
-            if key:
-                expanded_key = Path(key).expanduser()
+            if resolved_key:
+                expanded_key = Path(resolved_key).expanduser()
                 if expanded_key.exists():
                     run_command(
                         ["ssh-add", str(expanded_key)], check=False, capture_output=True
@@ -2377,7 +2544,7 @@ class ConfigService:
                 ssh_dir = Path.home() / ".ssh"
                 ssh_dir.mkdir(parents=True, exist_ok=True)
                 scan_res = subprocess.run(
-                    ["ssh-keyscan", "-H", host],
+                    ["ssh-keyscan", "-H", resolved_host],
                     capture_output=True,
                     text=True,
                     check=False,
@@ -2404,8 +2571,16 @@ class ConfigService:
                 capture_output=True,
             )
 
-        UI.success(f"Target node '{name}' ({host}) registered successfully.")
-        if default:
+        self._announce_target_add(
+            name,
+            resolved_host,
+            is_update=existing is not None,
+            changes=changes,
+            kept=kept,
+            context_endpoint=context_endpoint,
+        )
+
+        if resolved_default:
             UI.detail(f"Target node '{name}' set as active global default.")
 
     def cmd_target_ls(self) -> None:
