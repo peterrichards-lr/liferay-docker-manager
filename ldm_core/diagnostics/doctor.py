@@ -1292,6 +1292,8 @@ class DoctorRunner:
             else:
                 self.results.append((f"[{p_path.name}] Metadata", "Healthy", True))
 
+            self._check_pinned_mac(p_path, meta)
+
             from ldm_core.handlers.validation import CustomContainerValidator
 
             custom_containers = meta.get("custom_containers")
@@ -1870,6 +1872,77 @@ class DoctorRunner:
                     )
             except Exception:
                 pass
+
+    def _check_pinned_mac(self, p_path, meta):
+        """Is the running container still carrying the node's pinned MAC?
+
+        LDM-#1789. `_verify_pinned_mac` runs in the `ldm run` pipeline and
+        nowhere else, so it can only catch a pin that failed during a run *this
+        client performed*. It cannot see the case that actually bites:
+
+            compose is generated CLIENT-side. An `ldm` older than v2.23.0 has
+            no `--mac-address` at all, so running one against a node configured
+            for a pin renders a compose file without it, the container takes a
+            bridge address, and the command exits 0 saying "started".
+
+        Measured on a real node: configured `06:ff:c5:f9:cf:a5`, container
+        `02:42:ac:12:00:03`, exit 0, and no mention of the MAC anywhere in the
+        output. That is the original LDM-#1752 symptom -- healthy container,
+        `License registered`, Activation page -- reachable purely by using an
+        older binary.
+
+        The fix cannot live in the old client, so it lives here: `ldm doctor`
+        reads the MAC the container actually has and compares it with the one
+        the node is configured for. Re-running a current `ldm run` repairs it,
+        which is worth saying, because otherwise the finding is a puzzle rather
+        than an instruction.
+
+        Silent unless there is something to report. A project with no target,
+        no configured MAC, or no running container has nothing to say.
+        """
+        target_name = meta.get("target")
+        if not target_name or target_name == "local":
+            return
+
+        try:
+            from ldm_core.config import load_targets
+
+            node = load_targets().get(target_name)
+        except Exception:
+            return
+
+        expected = (
+            (getattr(node, "mac_address", "") or "").strip().lower() if node else ""
+        )
+        if not expected:
+            return
+
+        from ldm_core.docker_service import DockerService
+        from ldm_core.utils import liferay_container_of
+
+        container = liferay_container_of(meta)
+        actual = DockerService.container_mac_address(container, target_name)
+
+        if actual is None:
+            # Unreadable is not wrong -- the container may simply not be
+            # running. Saying "mismatch" here would be a false alarm on every
+            # stopped project, which is how a check gets ignored.
+            return
+
+        if actual == expected:
+            self.results.append((f"[{p_path.name}] MAC pin", "Pinned", True))
+            return
+
+        self.results.append((f"[{p_path.name}] MAC pin", f"DROPPED ({actual})", "warn"))
+        self.add_hint(
+            f"[{p_path.name}] The container's MAC is {actual}, not the "
+            f"{expected} configured for node '{target_name}'. Liferay's licence "
+            f"binds to it, so the portal will serve the Activation page rather "
+            f"than Sign In. Compose is generated client-side, so this is what "
+            f"an 'ldm' older than v2.23.0 produces against a pinned node. "
+            f"Recreate with a current client: "
+            f"{UI.WHITE}ldm rm {p_path.name} && ldm run {p_path.name}{UI.COLOR_OFF}.",
+        )
 
     def _check_absolute_disk_space(self, docker_prefix=None):
         """LDM-#1095: `docker system df`'s Reclaimable figure only reports
