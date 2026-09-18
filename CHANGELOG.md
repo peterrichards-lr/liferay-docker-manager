@@ -7,9 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.23.0-pre.7] - 2026-09-18
 
+A single measured change. `-pre.6` and `-pre.7` differ only in whether an SSH
+round trip happens on `start` and `restart`; the licence path, activation and the
+MAC refusal are identical between them.
+
 ### Added
 
--
+- **`ldm start --verify-mac` / `ldm restart --verify-mac`** (LDM-#1804): opts into checking the pinned MAC against the node's own interfaces. It is **off by default on these two commands** because that check is an SSH round trip, and it was measured turning a 2.9s restart into 4.3s -- 48%, unconditionally, on a hot command. That cost was never a considered trade: LDM-#1798 added the check and only its *failure* path was ever exercised, because a mismatch refuses before the cross-check runs, so the success path went unmeasured until it was timed against a real node. It remains **on by default for `ldm run`**, where 1.4s is noise against a multi-minute boot and the container is being created. Little is lost by the new default -- a wrong pin is already caught once at `ldm target add` (LDM-#1780), where a typo is cheapest to fix and costs one round trip rather than one per restart; `--verify-mac` covers the narrower case of a node whose interfaces changed after it was registered.
+
+### Unchanged, and deliberately so
+
+- **The MAC comparison itself still runs on `run`, `start` and `restart`.** It is a local `docker inspect`, it is free, and it is the refusal path LDM-#1798 made reachable -- dropping it to save an SSH call would have undone the fix that prompted this. There is an explicit test that switching the cross-check off does not take the exit `3` with it.
+- **A loopback host is still treated as a node that may need its MAC pinned.** A change to skip the check for any loopback address was written and then **rejected before merging**: on AWS a target's host can be a loopback address while the Docker daemon is genuinely remote -- an SSH tunnel or an nginx front end -- and that node needs its pin. Configuring a MAC is the statement of intent, and `is_local_host` answers a routing question, not that one.
 
 ## [v2.23.0-pre.6] - 2026-09-18
 
