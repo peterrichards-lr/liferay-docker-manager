@@ -48,7 +48,86 @@ To monitor live deployment logs and hot-reloading events:
 ldm logs -f
 ```
 
-## 🔐 4. Testing Authorisation
+## 🌱 4. Site Initializers Are Deployed After the First Boot
+
+A **site-initializer** client extension is the one CX type LDM does *not* hand
+to Liferay during `ldm import`. It is staged under
+`<project>/.ldm/deferred-client-extensions/` and copied into
+`osgi/client-extensions/` once the portal reports healthy.
+
+### Why
+
+Measured on a live DXP `2026.q3.0`. When a site initializer is already present
+in `osgi/client-extensions/` as the portal starts against an empty database,
+`SiteInitializerClientExtension`'s bundle tracker opens *before* the built-in
+`welcome` and `cms` site initializers have created the Guest site's layouts,
+and `ServiceContextFactory` needs one:
+
+```text
+ERROR bundle com.liferay.site.initializer.extender:1.0.147
+  [SiteInitializerClientExtension(4567)] : The activate method has thrown an exception
+java.lang.RuntimeException: java.lang.NullPointerException:
+  Cannot invoke "com.liferay.portal.kernel.model.Layout.getGroupId()" because "layout" is null
+    at com.liferay.portal.util.PortalImpl.getCanonicalURL(PortalImpl.java:1556)
+    at com.liferay.portal.kernel.service.ServiceContextFactory._getInstance(ServiceContextFactory.java:176)
+    at ...SiteResourceImpl.putSiteSiteInitializer(SiteResourceImpl.java:201)
+    at ...SiteInitializerClientExtension.addingBundle(SiteInitializerClientExtension.java:94)
+```
+
+**The failure is silent.** The bundle still logs `STARTED`, no site is created,
+no fragments are imported, no page exists, and the only sign is one stack trace
+among several thousand startup lines. The same artifact dropped into the
+already-running portal initialises in ~100 ms.
+
+It does not reproduce on a *later* boot, because
+`SiteResourceImpl.putSiteByExternalReferenceCode` early-returns once a group
+with that external reference code exists — so a project hydrated from a
+database snapshot never sees it. Only a **fresh** project does, which is
+exactly what `ldm import` creates.
+
+### How LDM detects one
+
+By the header the extender itself tracks — `Liferay-Client-Extension-Site-Initializer`
+in the built zip's `WEB-INF/liferay-plugin-package.properties`. Not the file
+name, and not the `type: siteInitializer` line in `client-extension.yaml`:
+that is a source-side descriptor which the Gradle build consumes and does not
+place in the artifact.
+
+### What you will see
+
+```text
+  + Held back Site Initializer until first boot completes: my-site-initializer.zip
+```
+
+...during `ldm import`, and then, once the portal is healthy:
+
+```text
+Deploying site initializer(s) held back from the first boot: my-site-initializer.zip
+```
+
+### Scope of the deferral
+
+| Path | Behaviour |
+|---|---|
+| `ldm import` hydration | Deferred — the portal has not booted yet |
+| `ldm deploy` | **Not** deferred — the portal is already up, which is the moment that works |
+| `ldm dev` file monitor | **Not** deferred — same reason |
+| Every other CX type | **Not** deferred — they are fine where they are |
+
+If you boot with `--no-wait`, readiness is never reached and the artifact stays
+staged until a later `ldm run` or `ldm wait` completes. Nothing is lost; the
+zip is still in `.ldm/deferred-client-extensions/` and travels with a `.ldmp`
+package built from the project.
+
+To deploy a staged initializer by hand into a portal that is already running:
+
+```bash
+cp .ldm/deferred-client-extensions/*.zip osgi/client-extensions/
+```
+
+---
+
+## 🔐 5. Testing Authorisation
 
 **Your LDM project is more permissive than a customer's instance.** An
 authorisation check that passes here can fail in production, and the local test
@@ -95,4 +174,4 @@ optimistic.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-05* | *Last Reviewed: 2026-09-05*
+*Last Updated: 2026-09-18* | *Last Reviewed: 2026-09-18*

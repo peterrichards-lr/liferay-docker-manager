@@ -9,6 +9,9 @@ from ldm_core.handlers.base import BaseHandler
 from ldm_core.handlers.composer import resolve_access_url
 from ldm_core.ui import UI
 from ldm_core.utils import liferay_container_of, open_browser
+from ldm_core.workspace.site_initializers import (
+    deploy_pending as deploy_pending_site_initializers,
+)
 
 
 class ReadinessService(BaseHandler):
@@ -735,6 +738,17 @@ class ReadinessService(BaseHandler):
                         project_id=project_id, for_init=True
                     )
                     paths = self.manager.setup_paths(root_path)
+
+                    # LDM-#1779: a site-initializer client extension held back
+                    # by `ldm import` is deployed here, now that the portal is
+                    # healthy. Deliberately BEFORE the fragment-override
+                    # patcher, which waits on the Site Initializer having
+                    # populated the page specifications it patches.
+                    if root_path:
+                        deploy_pending_site_initializers(
+                            self.manager, root_path, paths, project_meta
+                        )
+
                     self.manager.runtime.fragments._patch_fragment_overrides(
                         project_meta, paths, timeout=fragment_patch_timeout
                     )

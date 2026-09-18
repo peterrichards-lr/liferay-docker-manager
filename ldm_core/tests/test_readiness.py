@@ -472,6 +472,51 @@ class TestReadiness(unittest.TestCase):
             # Metadata should have been updated to clear flag
             self.assertEqual(project_meta["reindex_required"], "false")
 
+    def test_wait_for_ready_deploys_a_deferred_site_initializer(self):
+        """LDM-#1779: a site initializer held back by import lands here.
+
+        `ldm import` stages a site-initializer client extension under
+        `.ldm/deferred-client-extensions/` rather than deploying it, because a
+        site initializer present in `osgi/client-extensions/` when the portal
+        first starts dies in `SiteInitializerClientExtension.addingBundle` with
+        an NPE from `PortalImpl.getCanonicalURL` and then logs STARTED anyway.
+        The artifact has to reach Liferay once the portal is healthy, which is
+        this function, and nothing else in LDM runs at that moment.
+        """
+        from ldm_core.workspace.site_initializers import deferred_dir
+
+        staged = deferred_dir(self.tmp_dir) / "ldm-verify-site-initializer.zip"
+        staged.parent.mkdir(parents=True, exist_ok=True)
+        payload = b"PK\x03\x04 staged site initializer"
+        staged.write_bytes(payload)
+
+        cx_dir = self.tmp_dir / "osgi" / "client-extensions"
+        landed = cx_dir / staged.name
+
+        def mock_run_command_side_effect(cmd, **kwargs):
+            return "healthy" if "inspect" in " ".join(cmd) else ""
+
+        self.handler.args.total_start = None
+        self.handler.args.browser = False
+        with (
+            patch("time.sleep"),
+            patch.object(
+                self.handler, "run_command", side_effect=mock_run_command_side_effect
+            ),
+        ):
+            self.assertFalse(landed.exists(), "precondition: not deployed yet")
+            self.handler.handler.readiness._wait_for_ready(
+                {"container_name": "test-container"}, "test.local"
+            )
+
+        self.assertTrue(
+            landed.is_file(),
+            "a deferred site initializer was never deployed after readiness, "
+            "so its site would silently never be created",
+        )
+        self.assertEqual(landed.read_bytes(), payload)
+        self.assertFalse(staged.exists(), "the staging directory was not drained")
+
     @patch("ldm_core.ui.UI.success")
     def test_print_ngrok_url_success(self, mock_success):
         with patch.object(BaseHandler, "run_command") as mock_run:
