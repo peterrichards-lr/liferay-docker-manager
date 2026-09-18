@@ -777,7 +777,10 @@ class ConfigResolutionStage(PipelineStage):
             UI.detail(f"Using the workspace's pinned tag: {pinned_tag}")
             return pinned_tag, bool(pinned_is_portal)
 
-        UI.detail(f"Proceeding with the resolved tag: {tag}")
+        # LDM-#1790: visible. Which Liferay line is being booted is not a
+        # detail -- it is the first thing anyone needs when a boot misbehaves,
+        # and its absence is what made LDM-#1782 expensive.
+        UI.info(f"Using Liferay tag {tag}.")
         return tag, is_portal
 
     @staticmethod
@@ -2618,7 +2621,44 @@ class ExecutionStage(PipelineStage):
                     offer_shared_database_tip(
                         manager, db_mode, context.get("is_new_project")
                     )
-                return ready
+                    return ready
+
+                # LDM-#1790. A boot that never became healthy must not exit 0.
+                #
+                # `_wait_for_ready` has already said what went wrong -- a
+                # timeout, or the OOM kill of LDM-#1773 -- so this adds the
+                # exit code and what to do next, rather than a second error
+                # saying the same thing.
+                #
+                # It used to `return ready`, which reached nothing:
+                # `PipelineStage.execute` is declared `-> None` and the runner
+                # discards the value, so the False was dropped on the floor.
+                # A caller under `set -e` therefore carried on against an
+                # instance that was never up -- observed in LDM-#1782, where
+                # the first visible symptom was a seeding failure twenty-five
+                # minutes later, in a different subsystem.
+                #
+                # Exit 3, not 1: the configuration was accepted and the
+                # environment did not deliver, which is the same reading
+                # `_verify_pinned_mac` takes.
+                #
+                # Rollback runs on the way out and is a no-op here:
+                # `ProjectInitializationStage` only deletes a project it
+                # created *and* whose init did not succeed, and `init_success`
+                # is set by `EnvironmentSetupStage`, two stages earlier. The
+                # stack is deliberately left running -- it is the evidence.
+                UI.die(
+                    f"Project '{project_id}' did not become ready.",
+                    details=(
+                        "The containers are still running so they can be "
+                        "inspected; nothing has been torn down."
+                    ),
+                    tip=(
+                        f"    ldm logs {project_id} --tail 200\n"
+                        f"    ldm status {project_id}"
+                    ),
+                    exit_code=3,
+                )
 
         no_wait = getattr(manager.args, "no_wait", False)
         if no_wait:

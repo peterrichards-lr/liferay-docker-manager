@@ -471,14 +471,23 @@ class UI:
 
     @staticmethod
     def print_banner():
-        """Prints a stylish ASCII banner for LDM initialization."""
+        """Prints a stylish ASCII banner for LDM initialization.
+
+        The version is part of it (LDM-#1790). Neither run in LDM-#1782
+        recorded one anywhere, so attributing a boot regression to a release
+        had to be reconstructed from `releases/latest` publication timestamps.
+        A tool is better placed to print its own version than every caller is
+        to remember to.
+        """
+        from ldm_core.constants import VERSION
+
         banner = rf"""{UI.CYAN}
     __    ____  __  ___
    / /   / __ \/  |/  /
   / /   / / / / /|_/ /
  / /___/ /_/ / /  / /
 /_____/_____/_/  /_/
-{UI.BOLD}Liferay Docker Manager{UI.COLOR_OFF}
+{UI.BOLD}Liferay Docker Manager{UI.COLOR_OFF} {UI.DIM}v{VERSION}{UI.COLOR_OFF}{UI.get_beta_label(VERSION)}
 """
         print(banner)
 
