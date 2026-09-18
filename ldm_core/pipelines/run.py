@@ -777,7 +777,10 @@ class ConfigResolutionStage(PipelineStage):
             UI.detail(f"Using the workspace's pinned tag: {pinned_tag}")
             return pinned_tag, bool(pinned_is_portal)
 
-        UI.detail(f"Proceeding with the resolved tag: {tag}")
+        # LDM-#1790: visible. Which Liferay line is being booted is not a
+        # detail -- it is the first thing anyone needs when a boot misbehaves,
+        # and its absence is what made LDM-#1782 expensive.
+        UI.info(f"Using Liferay tag {tag}.")
         return tag, is_portal
 
     @staticmethod

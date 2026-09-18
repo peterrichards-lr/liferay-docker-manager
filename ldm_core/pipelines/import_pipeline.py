@@ -516,7 +516,26 @@ class ProjectSetupStage(PipelineStage):
             # nothing -- `2026.q1.7` is still the right image, just unconfirmed.
             project_meta["tag"] = re.sub(r"^(dxp|portal)-", "", raw_product)
 
-        UI.detail(f"Workspace pins {raw_product}; using tag {project_meta['tag']}.")
+        # LDM-#1790: UI.info, not UI.detail. `detail` prints only under
+        # `--info`/`--verbose` (LDM-#1036), so in a default non-interactive CI
+        # run this line -- the one that says which Liferay line is about to be
+        # booted, and why -- was invisible.
+        #
+        # That is not hypothetical. On 2026-09-17 LDM-#1693 changed the
+        # accelerator's E2E from the tag discovery returned (2026.q1.12-lts) to
+        # the tag its workspace pins (2026.q1.7-lts). The boot failed, and
+        # reconstructing WHY took a binary-hash comparison, two local scaffolds
+        # and three Liferay boots -- because the one line that explained it was
+        # emitted at a verbosity nobody runs CI at (LDM-#1782).
+        #
+        # A pin is a statement of the version that has been TESTED, so a
+        # consumer may be running an older line entirely deliberately. Anything
+        # that changes which line boots is therefore a decision they need to
+        # see, not a detail.
+        UI.info(
+            f"Using tag {project_meta['tag']}, from the workspace pin "
+            f"{raw_product} -- not from tag discovery."
+        )
 
     @staticmethod
     def _record_linked_workspace(context: PipelineContext, project_meta: dict) -> None:
