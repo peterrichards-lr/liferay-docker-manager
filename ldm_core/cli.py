@@ -1240,6 +1240,23 @@ def get_parser():  # noqa: PLR0915
         )
         p.add_argument("project", nargs="?")
 
+        if cmd in ("start", "restart"):
+            # LDM-#1804: the MAC comparison always runs on these commands -- it
+            # is a local `docker inspect`. This opts into the extra interface
+            # cross-check, which is an SSH round trip to the node and was
+            # measured turning a 2.9s restart into 4.3s. Off by default because
+            # a wrong pin is already caught once at `ldm target add`
+            # (LDM-#1780); this covers the narrower case of a node whose
+            # interfaces changed after it was registered.
+            p.add_argument(
+                "--verify-mac",
+                action="store_true",
+                help=(
+                    "Also check the pinned MAC against the node's interfaces "
+                    "(adds an SSH round trip)"
+                ),
+            )
+
         if cmd == "deploy":
             p.add_argument(
                 "targets",
