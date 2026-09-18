@@ -784,6 +784,64 @@ class ConfigResolutionStage(PipelineStage):
         return tag, is_portal
 
     @staticmethod
+    def _apply_compatibility_claim(manager, paths, project_meta, tag) -> None:
+        """Enforce a declared ceiling, then announce what is claimed (LDM-#1791).
+
+        A package's `tag` says how it was **built**. Its `compatibility` claim
+        says what it has been **tested** on, and until LDM-#1791 nothing could
+        tell the two apart -- so a consumer deviating from the pin had no way
+        to know whether they were doing something the publisher tested and
+        rejected, something nobody has tried, or something fine.
+
+        Two behaviours, and both are deliberate about their tone:
+
+        * **A declared ceiling refuses.** A refutation is a tested fact
+          ("we tried a later line and it failed"), so refusing above the last
+          verified line is defensible where refusing on a bare pin would not
+          be. `--ignore-verified-ceiling` overrides it, because packages get
+          fixed and a consumer may know more than the publisher did -- and the
+          override is written into the project meta, not merely tolerated.
+
+        * **No claim is announced, not implied.** Every package already in the
+          wild has no `compatibility` key and inherits this. LDM-#1782 was
+          silence being read as success, so the default state gets a line of
+          its own at the moment the tag is resolved rather than being left to
+          look like approval. `UI.info`, not `UI.detail`, for the same reason
+          LDM-#1790 moved the pin announcement: `detail` prints only under
+          `--info`/`--verbose`, which is not the verbosity CI runs at.
+
+        The refusal is exit code `1`. Per the LDM-#996 triage of this very
+        file, `4` is for LDM-internal orchestration failures and `3` for
+        external data/API failures; a requested tag colliding with a
+        precondition the package declares is neither. It is a validation
+        problem in the inputs, which the triage deliberately left under `1`.
+        """
+        from ldm_core import compatibility
+        from ldm_core.constants import VERSION
+
+        if not tag:
+            return
+
+        claim = compatibility.read_claim(project_meta)
+
+        top = compatibility.ceiling(claim)
+        if top and compatibility.exceeds_ceiling(claim, tag):
+            if not getattr(manager.args, compatibility.OVERRIDE_ARG, False):
+                UI.die(compatibility.refusal_message(tag, top), exit_code=1)
+
+            record = compatibility.override_record(tag, top, VERSION)
+            project_meta[compatibility.OVERRIDE_KEY] = record
+            with contextlib.suppress(Exception):
+                manager.write_meta(paths["root"], project_meta)
+            UI.warning(
+                f"Overriding the package's verified ceiling {record['ceiling']} "
+                f"to run {tag}. Recorded in the project metadata as "
+                f"'{compatibility.OVERRIDE_KEY}'."
+            )
+
+        UI.info(compatibility.describe(claim, tag))
+
+    @staticmethod
     def _apply_inert_flags(manager, project_meta) -> None:
         """Wire up `--env` and `--gogo-port`; warn that `--mount-logs` is a no-op.
 
@@ -1004,6 +1062,12 @@ class ConfigResolutionStage(PipelineStage):
         tag, is_portal = self._warn_on_workspace_product_mismatch(
             manager, paths, project_meta, tag, is_portal
         )
+
+        # LDM-#1791: the tag is now settled, which is the only moment at which
+        # "and has anyone actually tested this?" can be answered before it
+        # matters. Enforces a declared ceiling; otherwise announces the claim,
+        # including the default of no claim at all.
+        self._apply_compatibility_claim(manager, paths, project_meta, tag)
 
         host_name = (
             manager.args.host_name

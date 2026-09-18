@@ -29,7 +29,7 @@ LDM maintains a local cache of all downloaded assets (seeds, samples, configurat
 Display an overview of all initialized LDM sandbox environments.
 .TP
 \fBrun\fR [\fIPROJECT\fR] (alias: \fBup\fR)
-Initialize and start a project stack. Automatically detects context if run inside a project folder. Use \fB--open\fR to launch the browser automatically after startup. Use \fB--scale SERVICE=N\fR to boot a scaled stack in one command. Use \fB--clean-state\fR to wipe the OSGi state volume contents before starting. Use \fB--fix-permissions\fR to reclaim root ownership on bind-mounted directories for macOS/Windows external drives.
+Initialize and start a project stack. Automatically detects context if run inside a project folder. Use \fB--open\fR to launch the browser automatically after startup. Use \fB--scale SERVICE=N\fR to boot a scaled stack in one command. Use \fB--clean-state\fR to wipe the OSGi state volume contents before starting. Use \fB--fix-permissions\fR to reclaim root ownership on bind-mounted directories for macOS/Windows external drives. Use \fB--ignore-verified-ceiling\fR to boot a Liferay tag above the ceiling a package declares verified; the override is recorded in the project metadata.
 .TP
 \fBstart\fR [\fIPROJECT\fR]
 Start project containers gracefully. Use \fB--clean-state\fR to wipe the OSGi state volume contents before starting. Use \fB--fix-permissions\fR to reclaim root ownership on bind-mounted directories for macOS/Windows external drives.
@@ -72,6 +72,7 @@ Backup and recover exact project states.
 .TP
 \fBpackage\fR [\fIPROJECT\fR] [\fB--output\fR \fIDIR\fR] [\fB--repo\fR \fIREPO\fR] [\fB--use-latest\fR]
 Package a project snapshot into a portable LDM package (\fB.ldmp\fR) with SHA-256 signature.
+Use \fB--verified\fR \fITAG\fR and \fB--refuted\fR \fITAG\fR, each with a mandatory \fB--evidence\fR \fIREF\fR, to record what the package has actually been tested on as opposed to what it was built with. A refutation declares a verified ceiling that \fBldm run\fR refuses to boot above.
 .TP
 \fBhydrate\fR \fIBACKUP_PATH\fR
 Create or restore a project from a local Liferay Cloud backup archive.

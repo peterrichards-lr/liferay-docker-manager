@@ -155,6 +155,73 @@ LDM stays quiet when:
 (`gradle.properties` at the root) and a Liferay Cloud workspace
 (`liferay/gradle.properties`) are recognised.
 
+### Compatibility Claims ![Added in v2.22.0](https://img.shields.io/badge/Added%20in-v2.22.0-blue)
+
+A pin states a version but makes no claim. `tag` in an `.ldmp` manifest — and
+`liferay.workspace.product` in a workspace — is a fact about how the package was
+**built**; every consumer reads it as a claim about what it **supports**. Those
+are different, and a consumer deviating from the pin could not tell whether they
+were doing something the publisher tested and rejected, something nobody has
+tried, or something fine (LDM-#1791).
+
+> [!IMPORTANT]
+> **There is no such thing as a "stale" pin.** A package legitimately pins an
+> older line because a later one was tried and failed, or because nobody has had
+> time to qualify one. The pin is the statement of what is known to work.
+
+A package may therefore carry a separate `compatibility` claim, recording what
+it has actually been *tested* on. Every `.ldmp` published before v2.22.0 carries
+none, and that absence is the default: **no claim**.
+
+Whenever `ldm run` settles on a tag it says which of the three applies:
+
+```text
+ℹ  Liferay tag 2026.q1.7-lts is declared verified by the package
+   (evidence: https://…/actions/runs/123, tested 2026-09-17, with LDM 2.22.0).
+
+ℹ  The package declares 2026.q1.7-lts verified; this run resolved
+   2026.q1.12-lts, unverified -- nothing has been tested for it.
+
+ℹ  Liferay tag 2026.q1.12-lts carries no compatibility claim: the package
+   records the tag it was built with, not one it has been tested against.
+```
+
+The third line is the default, and it is printed rather than left silent
+deliberately. LDM-#1782 was silence being read as success.
+
+#### The declared ceiling, and `--ignore-verified-ceiling`
+
+Declaring a *refuted* tag — one that was tried and failed — sets a ceiling at
+the highest verified tag. A refutation is a tested fact, so LDM refuses to boot
+above it and exits `1`:
+
+```text
+❌  The package declares 2026.q1.7-lts as its verified ceiling, and
+    2026.q1.12-lts is above it.
+      2026.q1.12-lts was tried and it failed (evidence: …, tested 2026-09-17).
+      A pin records the version that has been TESTED -- this one is a tested
+      negative result, not a package lagging behind.
+      Pass --ignore-verified-ceiling to proceed anyway. The override is
+      recorded in the project metadata.
+```
+
+Packages get fixed, and a consumer may know more than the publisher did, so
+`--ignore-verified-ceiling` proceeds anyway. It is accepted by every command
+that boots a project — `run`/`up`, `init`, `import`, `link`, `clone`,
+`init-from`, `restore` and `quickstart` — because the ceiling is enforced in the
+run pipeline they all share. It
+is never silent: LDM warns, and writes a `compatibility_override` record into the
+project metadata naming the tag, the ceiling it crossed, the evidence and the
+timestamp.
+
+Nothing is refused that LDM cannot reason about. A tag with no version in it —
+`nightly`, `master` — orders against nothing and is announced as unknown, never
+refused. A `verified` claim with no refutation is a point claim and sets no
+ceiling at all: promoting it to a refusal would invent a tested fact that nobody
+tested.
+
+See [`package`](#package) for how a publisher declares a claim.
+
 ### `--vanilla` Switch ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue)
 
 Bypasses downloading the pre-warmed database seed from GitHub releases. Spawns the Liferay project stack with a pristine, empty database.
@@ -344,6 +411,44 @@ ldm package my-project --repo my-owner/my-repo --use-latest
 ldm package my-project --host-name custom.demo --ssl
 ldm package my-project --host-name custom.demo --no-ssl
 ```
+
+### Declaring What Was Tested ![Added in v2.22.0](https://img.shields.io/badge/Added%20in-v2.22.0-blue)
+
+The manifest's `tag` says how the package was **built**. These three flags say
+what it has been **tested** on — see *Compatibility Claims* under
+[`run`](#run-alias-up) for how a consumer then reads it.
+
+| Flag | Meaning |
+| :--- | :--- |
+| `--verified <tag>` | This package has been tested against this Liferay tag and it worked. |
+| `--refuted <tag>` | This tag was tried and it failed. Declares the verified ceiling. |
+| `--evidence <ref>` | URL or reference to whatever produced that result. **Mandatory** for either. |
+
+```bash
+# A point claim: tested here, nothing said about anything else
+ldm package my-project \
+  --verified 2026.q1.7-lts \
+  --evidence https://github.com/my-org/my-repo/actions/runs/123
+
+# A ceiling: verified at q1.7, and q1.12 was tried and failed
+ldm package my-project \
+  --verified 2026.q1.7-lts \
+  --refuted 2026.q1.12-lts \
+  --evidence https://github.com/my-org/my-repo/issues/1782
+```
+
+`--evidence` is not optional politeness. A claim that LDM could mint without
+anything having run becomes noise within a month, so a claim without it is
+refused with exit code `1`, before any snapshot is taken. LDM never manufactures
+a claim of its own — a package that declares nothing keeps the default of "no
+claim", which is what every package published before v2.22.0 already carries.
+
+The claim is written into the manifest under `compatibility`, with a `tested_on`
+date and the LDM version that recorded it (a January claim is weaker in
+December), and each entry has a `platform` slot for the day claims become
+architecture-qualified — `2026.q1.7-lts` has booted green on `aarch64` while
+failing on an `x86_64` runner, so that dimension is real even though LDM does
+not yet read it.
 
 ## Data Management Commands
 
@@ -626,4 +731,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-14* | *Last Reviewed: 2026-09-14*
+*Last Updated: 2026-09-18* | *Last Reviewed: 2026-09-18*

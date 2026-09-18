@@ -381,6 +381,8 @@ class ProjectSetupStage(PipelineStage):
         if manifest.get("db_type"):
             project_meta["db_type"] = manifest["db_type"]
 
+        self._carry_compatibility_claim(manifest, project_meta)
+
         if not is_ldmp:
             self._apply_workspace_product(context, project_meta)
 
@@ -437,6 +439,26 @@ class ProjectSetupStage(PipelineStage):
         self._resolve_cloud_project_id(context, project_meta)
 
         manager.write_meta(project_path, project_meta)
+
+    @staticmethod
+    def _carry_compatibility_claim(manifest: dict, project_meta: dict) -> None:
+        """Carry the package's compatibility claim into the project (LDM-#1791).
+
+        `tag` says how the package was **built**; this says what it has been
+        **tested** on. `ldm run` answers the question at the moment it resolves
+        a tag, and it can only do that if the claim survives the import.
+
+        A copy, deliberately, and never a fill-in. Every package published
+        before LDM-#1791 has no such key, and that absence *is* the default --
+        "no claim". Manufacturing one here would turn every existing package
+        into a claimant overnight, which is LDM-#1782's mistake (silence read
+        as success) rebuilt with more ceremony.
+        """
+        from ldm_core.compatibility import CLAIM_KEY
+
+        claim = (manifest or {}).get(CLAIM_KEY)
+        if claim:
+            project_meta[CLAIM_KEY] = claim
 
     @staticmethod
     def _apply_workspace_product(context: PipelineContext, project_meta: dict) -> None:
