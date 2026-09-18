@@ -7,9 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.23.0-pre.6] - 2026-09-18
 
-### Added
+**Everything here came out of verifying `-pre.5` on a real remote node.** The MAC
+pin worked; what did not work was the machinery that exists to tell you when it
+does not. Two of the three fixes below close branches that had never executed in
+the feature's life.
 
--
+### Fixed
+
+- **The MAC pin's refusal could not be reached by any supported command** (LDM-#1798). `_verify_pinned_mac` ran only in the `ldm run` pipeline — which is the one path where a mismatch cannot occur, because `mac_address` is part of the compose *service spec*, so changing the configured value makes compose recreate the container by itself. Measured: a changed pin followed by `ldm run` with no `ldm rm` produced a container created seconds earlier carrying the *new* address. Meanwhile `ldm start` and `ldm restart` — the routes that genuinely leave a stale container — never ran the check at all. So exit `3` was in the documented contract, described in `-pre.4`'s CHANGELOG, and unreachable. The check now lives in `ldm_core/runtime/mac_pin.py` and runs after `start` and `restart` too, and the refusal has now fired on a real node for the first time. Its recovery hint is also caller-specific: from `start`/`restart` a plain `ldm run` recreates the container, so the previous `ldm rm && ldm run` was destructive advice for a problem that does not need it.
+- **A wrong-but-applied pin passed silently** (LDM-#1798). The check compared the container's MAC against the *configured* one and never consulted the node, so a MAC belonging to no interface satisfied it perfectly — and Liferay then logged `MAC address matching failed` and served the Activation page, which is the exact LDM-#1752 symptom this check exists to prevent. After a match, the configured value is now checked against the node's interfaces and **warns** when it is on none of them. It warns rather than refuses for LDM-#1780's reason: Liferay validates against the licence, not the host, so a licence bound to a MAC that is not a current NIC is legitimate, if unusual.
+- **`--dry-run` inspected a container it never created** (LDM-#1799). The guard read `context.get("dry_run")`; nothing writes that key, and the rest of the pipeline reads `manager.dry_run`. So the guard never fired and a dry run against a pinned node warned that it could not read the MAC of a container that did not exist.
+- **A target's SSH user was stored twice and the copies drifted silently** (LDM-#1797). `~/.ldmrc` holds `user`; the Docker context holds `ssh://<user>@<host>`. `ldm target add` writes both, and nothing afterwards kept them in step. Found live: a node's context dialled a user nobody had configured, so every command through it failed with `Permission denied (publickey)` while `ldm target ls` showed a correct configuration. `ldm doctor` now reports the divergence, naming both users and the repair.
+- **`ldm target add` erased the fields you did not re-pass** (LDM-#1797). It rebuilt the node from only the flags given, so the obvious repair for the drift above — re-running `add` with the right `--user` — reported success and **silently destroyed the MAC pin**, after which Liferay refused the licence. Sharper than it looks, because LDM-#1789 exists specifically to detect a dropped pin and this dropped one using the documented command during routine maintenance. `add` on an existing node now merges: an omitted flag keeps the stored value, a flag passed empty clears it, and the update says both what changed and what it kept.
+
+### Internal
+
+- **`agent_push.sh` refuses a branch cut from release history** (LDM-#1801). Creating a feature branch while standing on `release/*` inherits every release commit, so the PR arrives as tens of files and conflicts on files the change never touched. It is documented, with the two commands that catch it, and it happened twice anyway — most recently reaching `pr-sprawl-check` as 24 files in a session where those commands had been run before every other PR that day. The signal is commit reachability, not file names: a commit in `origin/master..HEAD` that is also on a release branch can only have arrived that way, whereas matching filenames would misfire on a legitimate CHANGELOG edit. It prints the rebuild recipe, because resolving the conflicts merges the release commits a second time.
 
 ## [v2.23.0-pre.5] - 2026-09-18
 
