@@ -1931,6 +1931,24 @@ zf.close()
         throw "Insufficient Docker disk space for the snapshot phase."
     }
 
+    # LDM-#1786 / LDM-#1773: seed a search property LDM never emits, plus a
+    # non-search canary, so the restore below can be asserted to strip the one
+    # and keep the other. Written BEFORE the snapshot so both travel inside it.
+    #
+    # 'sidecarDebug' rather than 'operationMode', deliberately. cmd_restore
+    # calls cmd_run(..., no_up=True) after the strip, which runs
+    # _resolve_properties_cascade, and in SIDECAR mode LDM legitimately
+    # regenerates operationMode and the sidecar ports. Asserting on those would
+    # pass or fail according to the mode this project happens to resolve to,
+    # which is not the property under test. 'sidecarDebug' shares the stripped
+    # prefix and is never regenerated, so the assertion holds in either mode.
+    #
+    # Parity with verify_e2e_refactor.sh.
+    $searchStripKey = "module.framework.properties.com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.sidecarDebug"
+    $searchStripCanary = "ldm.e2e.search.canary"
+    Add-Content -Path "files/portal-ext.properties" -Value "$searchStripKey=true"
+    Add-Content -Path "files/portal-ext.properties" -Value "$searchStripCanary=kept"
+
     Log-AndRun "Creating Snapshot" $LDM_CMD "-y snapshot --name Binary-Verify"
     $latestSnapshotDir = (Get-ChildItem snapshots | Sort LastWriteTime -Desc | Select -First 1).FullName
     $shaFile = Join-Path $latestSnapshotDir "files.tar.gz.sha256"
@@ -1941,6 +1959,51 @@ zf.close()
         throw "Integrity block failed" 
     }
     Log-AndRun "Bypassing Integrity" $LDM_CMD "-y restore --latest --no-verify"
+
+    # LDM-#1786: the restored portal-ext lands in BOTH ends of the cascade --
+    # layer 5 where it sits, and a copy at
+    # .liferay-docker/ldmp-portal-ext.properties as layer 2. Stripping only the
+    # layer-2 copy achieves nothing, because the key then stops matching the
+    # baseline and is promoted to a layer-5 customisation, which outranks every
+    # other layer. That was the first draft's bug, so BOTH files are asserted.
+    #
+    # The canary half is not decoration: a strip broad enough to take the
+    # publisher's own properties with it would be a worse regression than the
+    # one being fixed, and nothing else in this suite would notice.
+    #
+    # Parity with verify_e2e_refactor.sh.
+    Write-Host ">> Verifying restored search settings are stripped (LDM-#1773/#1786)..."
+    $searchStripL5 = "files/portal-ext.properties"
+    $searchStripL2 = ".liferay-docker/ldmp-portal-ext.properties"
+    $searchStripFailed = $false
+
+    if (-not (Test-Path $searchStripL2)) {
+        Write-Verdict "[ERROR] ERROR: the restore wrote no $searchStripL2."
+        Write-Verdict "        Layer 2 of the properties cascade is missing, so nothing was stripped."
+        $searchStripFailed = $true
+    }
+
+    foreach ($pe in @($searchStripL5, $searchStripL2)) {
+        if (-not (Test-Path $pe)) { continue }
+        $peText = Get-Content -Raw $pe
+        if ($peText -match [regex]::Escape($searchStripKey)) {
+            Write-Verdict "[ERROR] ERROR: $pe still carries the restored search setting."
+            Write-Verdict "        A package built on a --sidecar machine would therefore start an"
+            Write-Verdict "        embedded Elasticsearch alongside the shared one (LDM-#1773)."
+            $searchStripFailed = $true
+        }
+        if (-not ($peText -match [regex]::Escape($searchStripCanary))) {
+            Write-Verdict "[ERROR] ERROR: $pe lost the non-search canary '$searchStripCanary'."
+            Write-Verdict "        The strip is too broad -- it is discarding the publisher's own"
+            Write-Verdict "        properties, not just the search settings LDM owns."
+            $searchStripFailed = $true
+        }
+    }
+
+    if ($searchStripFailed) {
+        throw "Restored search settings were not stripped correctly (LDM-#1773/#1786)."
+    }
+    Write-Verdict "[SUCCESS] Restored search settings stripped from both cascade layers; publisher properties kept."
 
     Write-Host ">> Verifying Legacy Command Translation..."
     $legacyDoc = & $LDM_CMD doctor --help 2>&1
