@@ -2190,21 +2190,27 @@ def get_parser():  # noqa: PLR0915
     t_add.add_argument(
         "name", help="Name identifier for the target node (e.g. win-wsl, aws-1)"
     )
+    # LDM-#1797: every default is None -- the sentinel for "the flag was not
+    # given". `add` on an existing node merges, so an omitted flag keeps the
+    # stored value; passing a flag with an empty string clears it. A literal
+    # default here would be indistinguishable from an omission, which is how
+    # `ldm target add aws-1 --user ec2-user` used to erase the node's MAC pin.
     t_add.add_argument(
         "--host",
-        default="localhost",
-        help="Host IP or SSH connection string (e.g. 192.168.1.50)",
+        default=None,
+        help="Host IP or SSH connection string (e.g. 192.168.1.50); default localhost",
     )
-    t_add.add_argument("--user", default="", help="SSH user name")
-    t_add.add_argument("--key", default="", help="Path to SSH key identity file")
+    t_add.add_argument("--user", default=None, help="SSH user name")
+    t_add.add_argument("--key", default=None, help="Path to SSH key identity file")
     t_add.add_argument(
         "--default",
         action="store_true",
+        default=None,
         help="Set this target node as active global default",
     )
     t_add.add_argument(
         "--mac-address",
-        default="",
+        default=None,
         help=(
             "Pin the Liferay container to this MAC on the node. Liferay's "
             "licence binds to it; without a pin the container takes a bridge "
@@ -3265,13 +3271,14 @@ def _build_command_map(args, manager):
         # target namespace:
         ("target", "add"): lambda: manager.config.cmd_target_add(
             args.name,
-            host=getattr(args, "host", "localhost"),
-            user=getattr(args, "user", ""),
-            key=getattr(args, "key", ""),
-            default=getattr(args, "default", False),
+            # LDM-#1797: None means "not given" -- never coerce with `or ""`.
+            host=getattr(args, "host", None),
+            user=getattr(args, "user", None),
+            key=getattr(args, "key", None),
+            default=getattr(args, "default", None),
             # LDM-#1759: the flag was declared and parsed, and then not passed
             # here -- so `cmd_target_add` took its default and stored "".
-            mac_address=getattr(args, "mac_address", "") or "",
+            mac_address=getattr(args, "mac_address", None),
         ),
         ("target", "ls"): manager.config.cmd_target_ls,
         ("target", "list"): manager.config.cmd_target_ls,

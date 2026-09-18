@@ -133,10 +133,10 @@ ldm target use prod-node
 
 A node's address is held in **two** places: the `host` in `~/.ldmrc`, and the endpoint of the Docker CLI context of the same name. Every remote command dials the *context*, so both must agree.
 
-`ldm target add` writes both, which makes re-registering the node the reliable way to move it:
+`ldm target add` writes both, which makes re-registering the node the reliable way to move it. Since LDM-#1797 it **merges** onto the stored node, so only the setting that actually moved needs restating -- the SSH key, the MAC pin and the default flag are kept:
 
 ```bash
-ldm target add prod-node --host <new-ip> --user ubuntu --key ~/.ssh/id_rsa
+ldm target add prod-node --host <new-ip>
 ```
 
 `ldm target status` compares the two and warns when they disagree, because the probe result belongs to whichever host the context names -- not the one the table shows:
@@ -151,6 +151,27 @@ ldm target add prod-node --host <new-ip> --user ubuntu --key ~/.ssh/id_rsa
 > On AWS, an instance without an Elastic IP is assigned a **new public address every time it is stopped and started**. Allocating an Elastic IP per node removes this class of problem entirely; note that AWS bills for public IPv4 addresses either way.
 
 If you use `scripts/manage_target_nodes.py` to power nodes on, it resolves the new address and updates `~/.ldmrc`, `.node-power-config.json` and the Docker context together. Starting an instance from the AWS console -- or via the `node-power-manager` workflow, which runs on a CI runner and updates that runner's files -- leaves your own machine unaware, and re-registering is the fix.
+
+### When a Node's SSH User Changes
+
+The user is held in the same two places -- `user` in `~/.ldmrc`, and the `ssh://<user>@<host>` endpoint of the Docker context -- and they drift for the same reasons. The failure is harder to read than a changed IP, because `ldm target ls` keeps showing a correct configuration while every command fails as somebody else:
+
+```text
+$ docker --context aws-1 version
+ldm-automation@13.49.210.78: Permission denied (publickey,...).
+```
+
+`ldm doctor` compares the two and reports the disagreement (LDM-#1797):
+
+```text
+[aws-1] SSH user     DRIFTED (ldm-automation)
+```
+
+Re-register to rebuild the context. Nothing else about the node is disturbed:
+
+```bash
+ldm target add aws-1 --user ec2-user
+```
 
 ### SSH Key Selection and `IdentitiesOnly`
 
@@ -276,4 +297,4 @@ ldm run my-project --target prod-node --share --share-provider lfr-tunnel-docker
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*
+*Last Updated: 2026-09-18* | *Last Reviewed: 2026-09-18*

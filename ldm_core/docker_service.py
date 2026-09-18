@@ -29,13 +29,12 @@ class DockerService:
         return ["docker"]
 
     @staticmethod
-    def get_context_endpoint_host(context_name: str) -> str | None:
-        """Returns the host a Docker context dials, or None if it has none.
+    def get_context_endpoint(context_name: str) -> str | None:
+        """Returns the raw endpoint URL a Docker context dials, or None.
 
-        LDM-#1346: a context's endpoint is stored by Docker, not by LDM, so it
-        can disagree with the `host` recorded in `~/.ldmrc` -- and when it does,
-        LDM reports the stored host while dialling the context's. Reading it
-        back is what makes that disagreement visible instead of silent.
+        The one place that asks Docker. `get_context_endpoint_host` and
+        `get_context_endpoint_user` both parse what this returns, so a context
+        is inspected the same way for both halves of the endpoint.
         """
         res = run_command(
             [
@@ -54,6 +53,52 @@ class DockerService:
             return None
 
         endpoint = res.strip()
+        return endpoint or None
+
+    @staticmethod
+    def get_context_endpoint_user(context_name: str) -> str | None:
+        """Returns the SSH user a Docker context dials as.
+
+        LDM-#1797: the user is stored twice -- `~/.ldmrc` holds `user`, the
+        Docker context holds `ssh://<user>@<host>` -- and nothing keeps them in
+        step. Measured on a real node: the context said `ldm-automation@...`
+        while `~/.ldmrc` said `ec2-user`, so every context command failed with
+        `Permission denied (publickey)` naming a user nobody had configured,
+        while `ldm target ls` showed a correct configuration.
+
+        Three outcomes, deliberately distinct:
+
+        - `None`  -- nothing to compare. The context is missing or unreadable,
+          or its endpoint is not SSH at all (a `unix://` context dials no user).
+        - `""`    -- an SSH endpoint with no `user@`. That is not "unknown": SSH
+          then falls back to the *local* username, which is itself a drift from
+          a configured `user` and must be reportable.
+        - a name  -- the user the context actually dials as.
+        """
+        endpoint = DockerService.get_context_endpoint(context_name)
+        if not endpoint:
+            return None
+
+        scheme, separator, remainder = endpoint.partition("://")
+        if not separator or scheme.lower() != "ssh":
+            return None
+
+        # An IPv6 literal contains colons but never an "@", so splitting on the
+        # last "@" cannot be confused by the address.
+        if "@" not in remainder:
+            return ""
+        return remainder.rsplit("@", 1)[0]
+
+    @staticmethod
+    def get_context_endpoint_host(context_name: str) -> str | None:
+        """Returns the host a Docker context dials, or None if it has none.
+
+        LDM-#1346: a context's endpoint is stored by Docker, not by LDM, so it
+        can disagree with the `host` recorded in `~/.ldmrc` -- and when it does,
+        LDM reports the stored host while dialling the context's. Reading it
+        back is what makes that disagreement visible instead of silent.
+        """
+        endpoint = DockerService.get_context_endpoint(context_name)
         if not endpoint:
             return None
 
