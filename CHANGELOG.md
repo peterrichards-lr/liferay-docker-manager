@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.23.0-pre.6] - 2026-09-18
+
+### Added
+
+-
+
 ## [v2.23.0-pre.5] - 2026-09-18
 
 **The build the stable release is cut from.** `-pre.4` was verified on three remote nodes,
