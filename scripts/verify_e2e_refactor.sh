@@ -1299,11 +1299,120 @@ else
     exit 1
 fi
 
+# LDM-#1808: exercise the MAC pin's REFUSAL, which had never executed.
+#
+# LDM-#1798 established that exit 3 was unreachable by any supported command:
+# `mac_address` is part of the compose service spec, so `ldm run` recreates the
+# container whenever it changes and the values always agree. `ldm restart` is
+# the route that leaves a stale container, and as of that fix it is where the
+# check runs.
+#
+# No remote node and no licence are needed. A target named anything other than
+# `local`, pointed at 127.0.0.1, is checked (`configured_mac` skips only the
+# reserved name) while compose drives the LOCAL daemon (`is_local_host`). That
+# combination is deliberate and load-bearing -- a proposal to skip the check for
+# any loopback host was rejected under LDM-#1804, because on AWS a loopback
+# address can front a genuinely remote daemon through an SSH tunnel or nginx.
+#
+# `--no-wait` is what makes this ~40s rather than a full boot: the container
+# only has to exist for its MAC to be readable.
+verify_mac_pin_refusal() {
+    local ldm_cmd="$1"
+    local work_dir="$2"
+
+    local iso_home="${work_dir}/mac-refusal-home"
+    local run_dir="${work_dir}/mac-refusal-work"
+    local node="ldm-macrefuse-node"
+    local proj="ldmmacrefuse"
+    local mac_a="02:aa:bb:cc:dd:01"
+    local mac_b="02:aa:bb:cc:dd:02"
+
+    rm -rf "$iso_home" "$run_dir"
+    mkdir -p "$iso_home" "$run_dir" || return 1
+
+    _macrefuse_teardown() {
+        (cd "$run_dir" 2>/dev/null && LDM_HOME="$iso_home" "$ldm_cmd" rm "$proj" --delete -y >/dev/null 2>&1)
+        docker rm -f "$proj" "${proj}-db" >/dev/null 2>&1
+        rm -rf "$iso_home" "$run_dir"
+    }
+
+    local out code
+    out=$(LDM_HOME="$iso_home" "$ldm_cmd" -y target add "$node" \
+        --host 127.0.0.1 --mac-address "$mac_a" 2>&1) && code=0 || code=$?
+    if [ "$code" -ne 0 ]; then
+        _macrefuse_teardown
+        echo "❌ ERROR: could not register the pinned target (exit ${code})."
+        echo "   Output was: $out"
+        return 1
+    fi
+
+    # Boot far enough for the container to exist; its MAC is readable from
+    # creation, so waiting for Liferay would cost minutes for no extra signal.
+    out=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" run "$proj" \
+        --node "$node" -y -t 2026.q1.7-lts --no-wait 2>&1) && code=0 || code=$?
+    if [ "$code" -ne 0 ]; then
+        _macrefuse_teardown
+        echo "❌ ERROR: could not start the pinned project (exit ${code})."
+        echo "   Output was: $(echo "$out" | tail -5)"
+        return 1
+    fi
+
+    local actual
+    actual=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.MacAddress}}{{end}}' "$proj" 2>/dev/null)
+    if [ "$actual" != "$mac_a" ]; then
+        _macrefuse_teardown
+        echo "❌ ERROR: the container did not take the pinned MAC (got '${actual}', wanted ${mac_a})."
+        echo "   Compose accepted the request but the toolchain did not honour it (LDM-#1752)."
+        return 1
+    fi
+
+    # Change what is CONFIGURED, leaving the running container alone. This is
+    # the only way to make the two disagree -- `ldm run` would recreate it.
+    LDM_HOME="$iso_home" "$ldm_cmd" target add "$node" --mac-address "$mac_b" \
+        >/dev/null 2>&1 || true
+    if ! grep -qi "$mac_b" "${iso_home}/.ldmrc" 2>/dev/null; then
+        _macrefuse_teardown
+        echo "❌ ERROR: could not change the configured MAC to ${mac_b}."
+        return 1
+    fi
+
+    local restart_out restart_code
+    restart_out=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" restart "$proj" 2>&1) \
+        && restart_code=0 || restart_code=$?
+
+    _macrefuse_teardown
+
+    if [ "$restart_code" -ne 3 ]; then
+        echo "❌ ERROR: 'ldm restart' exited ${restart_code}; the MAC refusal did not fire."
+        echo "   The container carries ${mac_a} while ${mac_b} is configured, so this must"
+        echo "   exit 3. Left unchecked it boots healthy, logs 'License registered' and"
+        echo "   serves the DXP Activation page instead of Sign In (LDM-#1752/#1798)."
+        echo "   Output was: $(echo "$restart_out" | tail -5)"
+        return 1
+    fi
+    if ! echo "$restart_out" | grep -qi "$mac_a" || ! echo "$restart_out" | grep -qi "$mac_b"; then
+        echo "❌ ERROR: the refusal did not name both the actual and configured MAC."
+        echo "   Output was: $(echo "$restart_out" | tail -5)"
+        return 1
+    fi
+
+    echo "✅ A stale container's MAC is refused with exit 3, naming both values (LDM-#1798)."
+    return 0
+}
+
 echo ">> Verifying --mac-address is persisted (LDM-#1759/#1771)..."
 if MAC_PIN_OUT=$(verify_mac_address_persisted "$LDM_CMD" "$LDM_WORKSPACE"); then
     report_ok "$MAC_PIN_OUT"
 else
     echo "$MAC_PIN_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying the MAC pin's refusal fires (LDM-#1798/#1808)..."
+if MAC_REFUSAL_OUT=$(verify_mac_pin_refusal "$LDM_CMD" "$LDM_WORKSPACE"); then
+    report_ok "$MAC_REFUSAL_OUT"
+else
+    echo "$MAC_REFUSAL_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
 
