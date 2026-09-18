@@ -44,18 +44,28 @@ from ldm_core.ui import UI
 def configured_mac(target_name: str | None) -> str:
     """The MAC pinned for a target, or "" when there is none to check.
 
-    Empty for the local target and for any node without a pin -- this exists to
+    Empty for a LOCAL target and for any node without a pin -- this exists to
     catch a pin that did not take, not to require one.
+
+    "Local" means what it means everywhere else in `config.py`: the target named
+    `local`, **or any target whose host is a loopback address**. Checking only
+    the name was wrong, and not theoretically -- LDM's own E2E registers
+    `127.0.0.2` under a different name, and pinning is a remote-node concept, so
+    such a target would have been inspected and could have refused (exit 3) on a
+    purely local project.
     """
     if not target_name or target_name == "local":
         return ""
     try:
         from ldm_core.config import load_targets
+        from ldm_core.utils import is_local_host
 
         node = load_targets().get(target_name)
+        if node is None or is_local_host(getattr(node, "host", "")):
+            return ""
     except Exception:
         return ""
-    return (getattr(node, "mac_address", "") or "").strip().lower() if node else ""
+    return (getattr(node, "mac_address", "") or "").strip().lower()
 
 
 def verify_pinned_mac(

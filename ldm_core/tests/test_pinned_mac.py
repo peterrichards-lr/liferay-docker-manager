@@ -61,7 +61,13 @@ class TheComposeFileRequestsIt(unittest.TestCase):
 
         composer = ComposerService.__new__(ComposerService)
         composer.manager = SimpleNamespace(target=target)
-        node = TargetNode(name=target or "local", mac_address=configured)
+        # LDM-#1804: `host` defaults to "localhost", and a loopback host is
+        # LOCAL however the target is named -- pinning is a remote-node
+        # concept. Without a real host these build a node the check now
+        # (correctly) skips, so the fixture, not the behaviour, was wrong.
+        node = TargetNode(
+            name=target or "local", host="10.0.0.1", mac_address=configured
+        )
         with patch("ldm_core.config.load_targets", return_value={target: node}):
             return composer._resolve_target_mac({"target": target})
 
@@ -95,7 +101,12 @@ class TheRunningContainerIsChecked(unittest.TestCase):
             "project_id": "proj",
         }.get(k, d)
 
-        node = TargetNode(name=target or "local", mac_address=configured)
+        # LDM-#1804: a loopback host is LOCAL however the target is named,
+        # and `host` defaults to "localhost" -- so without a real host this
+        # builds a node the check now (correctly) skips.
+        node = TargetNode(
+            name=target or "local", host="10.0.0.1", mac_address=configured
+        )
         died: dict = {}
 
         def capture_die(msg, details=None, tip=None, exit_code=1):
