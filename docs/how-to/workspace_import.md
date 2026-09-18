@@ -46,6 +46,21 @@ ldm import <source-path-or-url>
 | **Local Liferay Workspace** | `ldm link /path/to/local/liferay-workspace` | Maps folders, executes `gradlew` build (if `--build` is specified), and configures the container paths. |
 | **Local Cloud Workspace** | `ldm link /path/to/local/lcp-workspace` | Detects `LCP.json`, resolves the nested `liferay/` folder structure, and configures environment variables and properties. |
 
+### Site Initializers Are Held Back
+
+`ldm import` deploys every built client extension it finds into
+`osgi/client-extensions/` — with one exception. A **site-initializer** client
+extension is staged under `<project>/.ldm/deferred-client-extensions/` instead,
+and deployed once the portal reports healthy.
+
+A site initializer present at the first boot of a fresh database dies inside
+`SiteInitializerClientExtension.addingBundle` with an NPE from
+`PortalImpl.getCanonicalURL`, logs `STARTED` regardless, and silently creates
+no site. Detection is by the `Liferay-Client-Extension-Site-Initializer` header
+in the artifact's `WEB-INF/liferay-plugin-package.properties`. See
+[Client Extensions](client_extensions.md#-4-site-initializers-are-deployed-after-the-first-boot)
+for the full mechanism and the manual deployment command.
+
 ### Manifest Verification
 
 Every `.ldmp` carries a `meta` manifest describing the package. It used to be
@@ -233,4 +248,4 @@ This scaffolds a `.github/workflows/ldm-package-release.yml` file which:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-17* | *Last Reviewed: 2026-09-17*
+*Last Updated: 2026-09-18* | *Last Reviewed: 2026-09-18*

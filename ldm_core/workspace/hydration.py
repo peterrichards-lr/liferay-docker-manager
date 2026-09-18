@@ -12,13 +12,19 @@ from ldm_core.utils import (
     safe_copy,
     safe_move,
 )
+from ldm_core.workspace.site_initializers import (
+    is_site_initializer_zip,
+    stage_for_deferred_deploy,
+)
 
 
 def _sync_client_extensions(self, workspace_root, paths, overwrite):
     ce_dir = workspace_root / "client-extensions"
     if ce_dir.exists():
         for dist_zip in list(ce_dir.glob("*.zip")) + list(ce_dir.glob("*/dist/*.zip")):
-            _sync_cx_artifact(self, dist_zip, paths, overwrite=overwrite)
+            _sync_cx_artifact(
+                self, dist_zip, paths, overwrite=overwrite, defer_site_initializers=True
+            )
 
 
 def _sync_modules_and_themes(self, workspace_root, paths, overwrite):
@@ -55,7 +61,13 @@ def _sync_fragments(self, workspace_root, paths, overwrite):
                         atomic_copy(zip_file, dest)
                         UI.detail(f"  + Synced Fragment: {zip_file.name}")
                     else:
-                        _sync_cx_artifact(self, zip_file, paths, overwrite=overwrite)
+                        _sync_cx_artifact(
+                            self,
+                            zip_file,
+                            paths,
+                            overwrite=overwrite,
+                            defer_site_initializers=True,
+                        )
             except Exception:
                 pass
 
@@ -91,8 +103,22 @@ def _hydrate_from_workspace(self, workspace_root, paths, overwrite=True):
     return True
 
 
-def _sync_cx_artifact(self, zip_path, paths, overwrite=True):
-    """Internal helper for the mandatory 3-step CX sync sequence."""
+def _sync_cx_artifact(
+    self, zip_path, paths, overwrite=True, defer_site_initializers=False
+):
+    """Internal helper for the mandatory 3-step CX sync sequence.
+
+    ``defer_site_initializers`` (LDM-#1779) applies to callers that run
+    *before* the portal boots -- i.e. ``ldm import`` hydration. A
+    site-initializer client extension present in ``osgi/client-extensions/``
+    at first boot silently fails to initialise its site, so step 3 parks it in
+    ``.ldm/deferred-client-extensions/`` and ``_wait_for_ready`` deploys it
+    once the portal is healthy. See ``workspace/site_initializers.py``.
+
+    It defaults to ``False`` because ``ldm deploy`` and the ``ldm dev`` file
+    monitor also call this helper, and for them the portal is already running
+    -- which is the moment a site initializer works.
+    """
     ce_source_truth = paths["root"] / "client-extensions"
     ce_source_truth.mkdir(parents=True, exist_ok=True)
 
@@ -147,6 +173,16 @@ def _sync_cx_artifact(self, zip_path, paths, overwrite=True):
                 os.remove(root_zip_path)
             return
         os.remove(dest_zip)
+
+    # LDM-#1779: ...unless it is a site initializer and the portal has not
+    # booted yet, in which case it is staged for post-readiness deployment.
+    if defer_site_initializers and is_site_initializer_zip(root_zip_path):
+        stage_for_deferred_deploy(root_zip_path, paths["root"])
+        UI.detail(
+            f"  + Held back Site Initializer until first boot completes: {zip_path.name}"
+        )
+        return
+
     safe_move(str(root_zip_path), str(dest_zip))
 
 
