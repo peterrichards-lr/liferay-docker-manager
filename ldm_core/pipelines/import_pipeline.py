@@ -381,6 +381,8 @@ class ProjectSetupStage(PipelineStage):
         if manifest.get("db_type"):
             project_meta["db_type"] = manifest["db_type"]
 
+        self._carry_compatibility_claim(manifest, project_meta)
+
         if not is_ldmp:
             self._apply_workspace_product(context, project_meta)
 
@@ -437,6 +439,26 @@ class ProjectSetupStage(PipelineStage):
         self._resolve_cloud_project_id(context, project_meta)
 
         manager.write_meta(project_path, project_meta)
+
+    @staticmethod
+    def _carry_compatibility_claim(manifest: dict, project_meta: dict) -> None:
+        """Carry the package's compatibility claim into the project (LDM-#1791).
+
+        `tag` says how the package was **built**; this says what it has been
+        **tested** on. `ldm run` answers the question at the moment it resolves
+        a tag, and it can only do that if the claim survives the import.
+
+        A copy, deliberately, and never a fill-in. Every package published
+        before LDM-#1791 has no such key, and that absence *is* the default --
+        "no claim". Manufacturing one here would turn every existing package
+        into a claimant overnight, which is LDM-#1782's mistake (silence read
+        as success) rebuilt with more ceremony.
+        """
+        from ldm_core.compatibility import CLAIM_KEY
+
+        claim = (manifest or {}).get(CLAIM_KEY)
+        if claim:
+            project_meta[CLAIM_KEY] = claim
 
     @staticmethod
     def _apply_workspace_product(context: PipelineContext, project_meta: dict) -> None:
@@ -516,7 +538,26 @@ class ProjectSetupStage(PipelineStage):
             # nothing -- `2026.q1.7` is still the right image, just unconfirmed.
             project_meta["tag"] = re.sub(r"^(dxp|portal)-", "", raw_product)
 
-        UI.detail(f"Workspace pins {raw_product}; using tag {project_meta['tag']}.")
+        # LDM-#1790: UI.info, not UI.detail. `detail` prints only under
+        # `--info`/`--verbose` (LDM-#1036), so in a default non-interactive CI
+        # run this line -- the one that says which Liferay line is about to be
+        # booted, and why -- was invisible.
+        #
+        # That is not hypothetical. On 2026-09-17 LDM-#1693 changed the
+        # accelerator's E2E from the tag discovery returned (2026.q1.12-lts) to
+        # the tag its workspace pins (2026.q1.7-lts). The boot failed, and
+        # reconstructing WHY took a binary-hash comparison, two local scaffolds
+        # and three Liferay boots -- because the one line that explained it was
+        # emitted at a verbosity nobody runs CI at (LDM-#1782).
+        #
+        # A pin is a statement of the version that has been TESTED, so a
+        # consumer may be running an older line entirely deliberately. Anything
+        # that changes which line boots is therefore a decision they need to
+        # see, not a detail.
+        UI.info(
+            f"Using tag {project_meta['tag']}, from the workspace pin "
+            f"{raw_product} -- not from tag discovery."
+        )
 
     @staticmethod
     def _record_linked_workspace(context: PipelineContext, project_meta: dict) -> None:

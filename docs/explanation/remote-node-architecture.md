@@ -239,8 +239,25 @@ does not match, with both values named. That one check covers three failures
 that are otherwise indistinguishable:
 
 - a Docker/Compose version that ignores the form LDM wrote
-- a container created before the configured value changed
 - a compose key the running Docker does not honour
+
+**Measured caveat: on Docker 25.0.16 the check cannot be made to fire through
+the CLI at all.** `ldm run` regenerates `docker-compose.yml`, and Compose
+recreates the container whenever the MAC changes -- so LDM never reaches the
+"stale container" state the check was partly written for. Verified on a real
+node with the container ids captured either side:
+
+```text
+before : 7d32972afe3d  02:42:54:0d:a3:56   (configured: docker0)
+         # reconfigure the node to ens5, `ldm run` again, no `ldm rm`
+after  : 0fcdfec4a18e  06:ff:c5:f9:cf:a5   (configured: ens5)
+exit   : 0
+```
+
+A different container, and the MAC followed the configuration. The check stayed
+silent because it had nothing to report. It remains a correct safety net for a
+toolchain that accepts `mac_address` and ignores it -- which is what it was
+written for, and which this combination does not exhibit (LDM-#1789).
 
 **What it cannot catch is a wrong configured value**, and this is worth stating
 plainly because the check reads as though it covers it. It compares the
@@ -253,7 +270,31 @@ by the interface warning above, where the typo is cheapest to fix (LDM-#1780).
 
 **The MAC can only be set when a container is created.** `docker network
 connect --mac-address` does not exist in Docker 25.0.14, so an existing
-container cannot be corrected in place -- it has to be recreated.
+container cannot be corrected in place -- it has to be recreated. In practice
+`ldm run` performs that recreate itself, as the measurement above shows.
+
+### An older client drops the pin, and says nothing
+
+Compose is generated **client-side**, so the client's version is the whole
+compatibility surface. An `ldm` older than `v2.23.0` has no `--mac-address` at
+all; run one against a node configured for a pin and it renders a compose file
+without it:
+
+```text
+node configured : mac_address = 06:ff:c5:f9:cf:a5
+$ ldm-2.22.0 -y run myproject --node aws-1
+  exit          : 0
+  container MAC : 02:42:ac:12:00:03     <- bridge address
+```
+
+Exit `0`, "Project started", and no mention of the MAC anywhere. That is the
+original failure at the top of this page, reachable purely by using an older
+binary against a correctly configured node.
+
+The fix cannot live in the old client, so `ldm doctor` detects it after the
+fact: it reads the MAC the container actually has, compares it with the node's
+configured value, and names the recreate that repairs it. Re-running a current
+`ldm run` restores the pin (LDM-#1789).
 
 ### The duplicate-MAC caveat, stated precisely
 
@@ -269,4 +310,4 @@ the safety here is a property of bridge networking -- not of the option.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-17* | *Last Reviewed: 2026-09-17*
+*Last Updated: 2026-09-18* | *Last Reviewed: 2026-09-18*

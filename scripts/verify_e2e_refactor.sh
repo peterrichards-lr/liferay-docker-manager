@@ -1962,6 +1962,25 @@ if ! check_docker_disk 5 "for the snapshot" warn; then
     exit 1
 fi
 
+# LDM-#1786 / LDM-#1773: seed a search property LDM never emits, plus a
+# non-search canary, so the restore below can be asserted to strip the one and
+# keep the other. Written BEFORE the snapshot so both travel inside it.
+#
+# `sidecarDebug` rather than `operationMode`, deliberately. `cmd_restore` calls
+# `cmd_run(..., no_up=True)` after the strip, which runs
+# `_resolve_properties_cascade`, and in SIDECAR mode LDM legitimately
+# regenerates `operationMode`, `sidecarHttpPort`, `sidecarTransportTcpPort`,
+# `transportTcpPort` and `sidecarNetworkHost`. Asserting on any of those would
+# pass or fail according to the mode this project happens to resolve to, which
+# is not the property under test. `sidecarDebug` shares the stripped prefix and
+# is never regenerated, so the assertion holds in either mode.
+SEARCH_STRIP_KEY="module.framework.properties.com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.sidecarDebug"
+SEARCH_STRIP_CANARY="ldm.e2e.search.canary"
+{
+    echo "${SEARCH_STRIP_KEY}=true"
+    echo "${SEARCH_STRIP_CANARY}=kept"
+} >> files/portal-ext.properties
+
 log_and_run "Creating Snapshot" "$LDM_CMD" -y snapshot --name "Binary-Verify"
 LATEST_DIR=$(find snapshots -maxdepth 1 -mindepth 1 -type d -print0 | xargs -0 ls -td | head -n 1)
 SHA_FILE="${LATEST_DIR}/files.tar.gz.sha256"
@@ -1972,6 +1991,48 @@ else
     echo "❌ ERROR: Integrity check failed to block corruption." && exit 1
 fi
 log_and_run "Bypassing Integrity" "$LDM_CMD" -y restore --latest --no-verify
+
+# LDM-#1786: the restored portal-ext lands in BOTH ends of the cascade -- layer
+# 5 where it sits, and a copy at `.liferay-docker/ldmp-portal-ext.properties` as
+# layer 2. Stripping only the layer-2 copy achieves nothing, because the key
+# then stops matching the baseline and is promoted to a layer-5 customisation,
+# which outranks every other layer. That was the first draft's bug, so BOTH
+# files are asserted here.
+#
+# The canary half is not decoration: a strip broad enough to take the
+# publisher's own properties with it would be a worse regression than the one
+# being fixed, and nothing else in this suite would notice.
+echo ">> Verifying restored search settings are stripped (LDM-#1773/#1786)..."
+SEARCH_STRIP_L5="files/portal-ext.properties"
+SEARCH_STRIP_L2=".liferay-docker/ldmp-portal-ext.properties"
+SEARCH_STRIP_FAILED=false
+
+if [ ! -f "$SEARCH_STRIP_L2" ]; then
+    echo "❌ ERROR: the restore wrote no ${SEARCH_STRIP_L2}." | tee -a "$RESULTS_FILE_TMP"
+    echo "   Layer 2 of the properties cascade is missing, so nothing was stripped." | tee -a "$RESULTS_FILE_TMP"
+    SEARCH_STRIP_FAILED=true
+fi
+
+for _pe in "$SEARCH_STRIP_L5" "$SEARCH_STRIP_L2"; do
+    [ -f "$_pe" ] || continue
+    if grep -q "$SEARCH_STRIP_KEY" "$_pe"; then
+        echo "❌ ERROR: ${_pe} still carries the restored search setting." | tee -a "$RESULTS_FILE_TMP"
+        echo "   A package built on a --sidecar machine would therefore start an" | tee -a "$RESULTS_FILE_TMP"
+        echo "   embedded Elasticsearch alongside the shared one (LDM-#1773)." | tee -a "$RESULTS_FILE_TMP"
+        SEARCH_STRIP_FAILED=true
+    fi
+    if ! grep -q "$SEARCH_STRIP_CANARY" "$_pe"; then
+        echo "❌ ERROR: ${_pe} lost the non-search canary '${SEARCH_STRIP_CANARY}'." | tee -a "$RESULTS_FILE_TMP"
+        echo "   The strip is too broad -- it is discarding the publisher's own" | tee -a "$RESULTS_FILE_TMP"
+        echo "   properties, not just the search settings LDM owns." | tee -a "$RESULTS_FILE_TMP"
+        SEARCH_STRIP_FAILED=true
+    fi
+done
+
+if [ "$SEARCH_STRIP_FAILED" = true ]; then
+    exit 1
+fi
+report_ok "✅ Restored search settings stripped from both cascade layers; publisher properties kept."
 
 echo ">> Verifying Legacy Command Translation..."
 if "$LDM_CMD" doctor --help >/dev/null && "$LDM_CMD" infra-setup --help >/dev/null; then

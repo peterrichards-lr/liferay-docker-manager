@@ -447,6 +447,20 @@ def get_parser():  # noqa: PLR0915
         action="store_true",
         help="Force pull latest Docker image layers before running or starting",
     )
+    # LDM-#1791: a declared ceiling is a tested negative result, so LDM refuses
+    # above it. Packages do get fixed, and a consumer may know more than the
+    # publisher did -- hence an explicit override, recorded rather than silent.
+    #
+    # Declared here rather than on `run` alone because the ceiling is enforced
+    # in the run *pipeline*, which `init`, `import`, `link`, `clone`,
+    # `init-from`, `restore` and `quickstart` all reach. Nine copies of the
+    # flag would drift; one shared declaration cannot. Same reasoning that put
+    # `--pull` and `--nightly` here.
+    base_sub_parent.add_argument(
+        "--ignore-verified-ceiling",
+        action="store_true",
+        help="Boot a Liferay tag above the package's declared verified ceiling; the override is recorded in the project metadata",
+    )
     base_sub_parent.add_argument(
         "--info", action="store_true", help="Show informational logging"
     )
@@ -1807,6 +1821,21 @@ def get_parser():  # noqa: PLR0915
         action="store_false",
         dest="ssl",
         help="Force disable HTTPS (SSL) default in the package metadata",
+    )
+    # LDM-#1791: what the package has been TESTED on, as opposed to the tag it
+    # happens to have been built with. Absent means "no claim", which is what
+    # every package published before this inherits.
+    package_cmd.add_argument(
+        "--verified",
+        help="Record a Liferay tag this package has been tested against (requires --evidence)",
+    )
+    package_cmd.add_argument(
+        "--refuted",
+        help="Record a Liferay tag that was tried and failed; declares the verified ceiling (requires --evidence)",
+    )
+    package_cmd.add_argument(
+        "--evidence",
+        help="URL or reference to what produced the --verified/--refuted result (mandatory for either)",
     )
 
     # ==================== NAMESPACES ====================
