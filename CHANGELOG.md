@@ -7,9 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.23.0-pre.5] - 2026-09-18
 
+**The build the stable release is cut from.** `-pre.4` was verified on three remote nodes,
+two with a MAC-bound licence; this closes every remaining actionable issue so the final
+verification happens once, against what ships.
+
 ### Added
 
--
+- **A package pin now records a claim, not just a version** (LDM-#1791). `tag` in an `.ldmp` manifest, and `liferay.workspace.product` in a workspace, are facts about how a package was *built*, and every consumer reads them as statements about what it *supports*. Those are different, and nothing distinguished them — so a consumer deviating from the pin could not tell whether they were doing something the publisher had tested and rejected, something nobody had tried, or something fine. A package can now declare a **ceiling** ("tested above this and it failed"), which is enforced with an explicit, recorded override, because packages get fixed and a consumer may know more than the publisher did. Everything else defaults to **no claim**, announced visibly when the tag is resolved rather than left silent — a field defaulting to anything reassuring would recreate LDM-#1782, which is silence being read as success. Worth stating plainly, because the whole design follows from it: **there is no such thing as a stale pin.** A package legitimately pins an older line because a later one was tried and failed, or because nobody has had time to qualify one. The pin is the statement of what is known to work.
+- **`ldm doctor` detects a MAC pin an older client dropped** (LDM-#1789). Compose runs client-side, so a node configured with a MAC gets no pin at all if the binary that rendered the compose file predates the feature — silently, and with the node's configuration looking correct throughout.
+
+### Fixed
+
+- **A site-initializer client extension present at first boot never initialised its site** (LDM-#1779). `ldm import` moved every `client-extensions/*.zip` into `osgi/client-extensions/`, which for a site initializer is the wrong moment: its bundle tracker opens before the built-in `welcome`/`cms` initializers have created the Guest site's layouts, and `ServiceContextFactory` needs one — so it threw a `NullPointerException` in `PortalImpl.getCanonicalURL` while the portal went on logging `STARTED`. Nothing surfaced it; the site was simply never initialised. The same artifact dropped into the already-running portal initialises in about 100 ms, so LDM now stages a site-initializer zip and deploys it once the portal is ready. Detection keys on `Liferay-Client-Extension-Site-Initializer` in the built zip's `WEB-INF/liferay-plugin-package.properties` — the header the extender itself tracks — and deliberately not on `client-extension.yaml`, which declares `type: siteInitializer` but is a *source* descriptor that is not present in the built artifact at all. A zip that cannot be read is treated as **not** a site initializer: deferring something LDM failed to identify would change the deployment moment for extensions that are fine where they are. Found while building the LDM-#1745 harness, on a live DXP `2026.q3.0`.
+- **A failed boot exited zero, and the run did not say what it had booted** (LDM-#1790). Automation could not distinguish a healthy start from a timeout, and a report of either named neither the LDM version nor the tag it resolved — nor whether that tag came from a flag, a workspace pin or discovery. That last distinction is what made LDM-#1782 expensive to diagnose: green runs had been qualifying one product line while declaring another, and nothing in the output showed it.
+
+### Internal
+
+- **The E2E suite asserts that restored search settings are stripped** (LDM-#1786). LDM-#1773's strip shipped with unit tests driving the real methods, but nothing exercised it through the binary. The suite now seeds a search property LDM never emits, plus a non-search canary, before the snapshot, and asserts after the restore that the search key is gone from **both** cascade layers while the canary survives in both — both layers because stripping only the layer-2 copy promotes the key to a layer-5 customisation that outranks everything, which was the first draft's bug. Observed to fail against `v2.23.0-pre.3` (pre-fix) and pass against `-pre.4`, against the real published binaries rather than from source.
 
 ## [v2.23.0-pre.4] - 2026-09-17
 
