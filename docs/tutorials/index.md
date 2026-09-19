@@ -20,12 +20,12 @@ which assume you have a specific task in mind.
   environment down to your machine. Written around the demo-rescue case, when a
   PaaS environment is unstable and waiting for support is not an option.
 
-## Installing, or something is broken
+## Not here
 
-- **[Quick Start](quick_start.md)** — despite the name this is the full
-  installation and setup reference: prerequisites, per-OS SSL tooling, Docker
-  permissions, shell completion, and four troubleshooting sections. Reach for it
-  when you need to *install* something or *fix* something, not to learn LDM.
+- **Installing LDM, or fixing a broken setup** — see
+  [Installation & Setup](quick_start.md) under How-To. It covers
+  prerequisites, per-OS SSL tooling, Docker permissions, shell completion and
+  troubleshooting. It is a reference to reach into, not a tutorial to read.
 
 <!-- markdownlint-disable MD049 -->
 ---

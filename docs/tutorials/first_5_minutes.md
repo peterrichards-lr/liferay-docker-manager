@@ -2,6 +2,8 @@
 
 > [!NOTE]
 > Welcome to Liferay Docker Manager (LDM)! This 5-minute interactive tutorial guides you from initial setup to running a local Liferay Portal/DXP environment, attaching Client Extensions, monitoring logs, and managing your stack.
+>
+> **This assumes LDM and Docker are already installed and working.** If you still need to install them, or something is broken, start with [Installation & Setup](quick_start.md) instead.
 
 ---
 

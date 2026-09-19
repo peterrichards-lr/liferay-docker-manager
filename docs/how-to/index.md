@@ -7,6 +7,10 @@ walked through from the start, begin with
 
 ## Install
 
+- **[Installation & Setup](../tutorials/quick_start.md)** — the full guide:
+  prerequisites, per-OS SSL tooling, Docker permissions, shell completion, and
+  troubleshooting for the things that commonly go wrong. Start here if LDM is
+  not installed yet, or if something is broken.
 - **[macOS](install_macos.md)** · **[Windows](install_windows.md)** ·
   **[Linux](install_linux.md)** — per-platform installation.
 
