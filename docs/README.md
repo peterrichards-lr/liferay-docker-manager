@@ -16,7 +16,8 @@ Check out our **[Video Showcase](showcase/README.md)** to see short demonstratio
 
 ### 1. Getting Started & Core Reference
 
-- **[Installation Guide](tutorials/quick_start.md)** — Step-by-step setup for macOS (Colima/OrbStack), Linux, and Windows (WSL2/Native).
+- **[The First 5 Minutes](tutorials/first_5_minutes.md)** — **Start here.** From nothing to a running Liferay, with Client Extensions attached and logs streaming.
+- **[Installation & Setup](tutorials/quick_start.md)** — Step-by-step setup for macOS (Colima/OrbStack), Linux, and Windows (WSL2/Native). Reach for this if LDM is not installed yet, or something is broken.
 - **[Key Features](explanation/conventions.md)** — What LDM gives you out of the box: session isolation, zero-config SSL, snapshots, fail-fast checks.
 - **[Conventions & Configuration](explanation/conventions_and_config.md)** — The default stack, and how an LDM setting is resolved.
 - **[CLI Reference & Automation](reference/cli/core.md)** — Subcommands, global options, and scripting parameters.

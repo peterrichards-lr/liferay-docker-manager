@@ -81,7 +81,6 @@ nav:
   - Tutorials:
     - tutorials/index.md
     - First 5 Minutes: tutorials/first_5_minutes.md
-    - Quick Start: tutorials/quick_start.md
     - PaaS Local Dev: tutorials/paas_local_dev.md
     - Liferay Workspace Local Dev: tutorials/workspace_development.md
   - How-To:
@@ -89,6 +88,12 @@ nav:
     # LDM-#1816: grouped to match how-to/index.md, so the sidebar and the
     # landing page tell the same story. Nav-only -- no page URL changes.
     - Install:
+      # LDM-#1838: this is the installation guide -- 610 lines of prerequisites,
+      # per-OS SSL tooling, permissions and troubleshooting. It was labelled
+      # "Quick Start" and filed under Tutorials, where it contested the front
+      # door and made the docs look far larger than they are. The file keeps its
+      # path so no published URL breaks; only its label and place change.
+      - Installation & Setup: tutorials/quick_start.md
       - macOS: how-to/install_macos.md
       - Windows: how-to/install_windows.md
       - Linux: how-to/install_linux.md
