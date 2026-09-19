@@ -595,7 +595,11 @@ def get_parser():  # noqa: PLR0915
     run.add_argument(
         "-c",
         "--container",
-        help="(no-op) Accepted but read by nothing; see LDM-#1836",
+        help=(
+            "Name the project's containers explicitly instead of deriving "
+            "the name from the directory. Sanitised to a Docker-safe form, "
+            "and refused on a project that already exists"
+        ),
     )
     run.add_argument("--host-name")
     run.add_argument("--ssl", action="store_true", default=None)
