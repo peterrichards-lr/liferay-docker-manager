@@ -162,13 +162,18 @@ releases before anyone looked (LDM-#1482).
 | **Man page** | `ldm_core/resources/ldm.1` | `check-cli-drift` (stale flags), `check-version-sync` (`.TH` version), `check-docs-review` (roff review stamp) |
 | **CLI help text** | `help=` strings in `ldm_core/cli.py` | `check-cli-drift`, indirectly |
 
-The man page is **not** a mirror of the CLI reference. Measured with the same
-regex `stale_man_page_options` uses, it documents **54** option strings against
-a parser exposing **246** -- by design, so an undocumented flag is not drift
-there, which is why the guard only checks the reverse direction, that
-everything it *does* document still exists. (The figure recorded here was
-"roughly 42 of 238" until LDM-#1833; neither number had been re-measured since
-it was first written.)
+The man page is **not** a mirror of the CLI reference. It documents well under
+a third of the parser's options **by design**, so an undocumented flag is not
+drift there -- which is why the guard only checks the reverse direction, that
+everything it *does* document still exists.
+
+No exact ratio is recorded here, deliberately (LDM-#1842). This file carried
+"roughly 42 of 238" long enough for both numbers to be wrong; LDM-#1833
+corrected it to a measured 54 of 246, and documenting a few more options **in
+that same change** made it 59 before it landed. A precise count in prose decays
+on every edit to either side and nothing checks it, so it is a liability rather
+than information. `stale_man_page_options` in `ldm_core/utils.py` carries the
+one-line recipe if you need the current figure.
 
 When adding or renaming a command or a flag that a user would reasonably look
 up:

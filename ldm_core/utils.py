@@ -3905,12 +3905,23 @@ def get_all_options(parser):
 def stale_man_page_options(options, project_root):
     """Options documented in ldm.1 that no longer exist in the parser (#1482).
 
-    Only this direction is checked. The man page is a CURATED subset -- it
-    documents roughly 42 of 238 options by design -- so an undocumented flag
-    is not drift there, and requiring parity would mean documenting ~200
-    flags. An option it documents that has been REMOVED is unambiguously
-    wrong, though: ldm.1 carried `--shared`/`--dedicated` long after
-    `ldm db mode` became `ldm config database-mode`.
+    Only this direction is checked. The man page is a CURATED subset,
+    documenting well under a third of the parser's options by design -- so an
+    undocumented flag is not drift there, and requiring parity would mean
+    documenting a couple of hundred flags. An option it documents that has been
+    REMOVED is unambiguously wrong, though: ldm.1 carried `--shared`/
+    `--dedicated` long after `ldm db mode` became `ldm config database-mode`.
+
+    Deliberately no exact ratio here (LDM-#1842). This docstring carried
+    "roughly 42 of 238" for long enough that both numbers were wrong; LDM-#1833
+    replaced them with a measured 54 of 246, and documenting a handful more
+    options in that same change made it 59 before the change had even landed. A
+    precise count in prose is a liability, not information -- it decays on every
+    edit to either side and nothing checks it. Measure it if you need it:
+
+        re.findall(r"\\fB(--?[a-zA-Z0-9][a-zA-Z0-9-]*)\\fR", man_text)
+
+    which is the same pattern this function uses below.
 
     Args:
         options (set): every option string the parser accepts.
