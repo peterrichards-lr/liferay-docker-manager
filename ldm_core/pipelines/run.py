@@ -1362,7 +1362,16 @@ class ConfigResolutionStage(PipelineStage):
                 "tag": tag or "",
                 "portal": str(is_portal).lower(),
                 "host_name": host_name,
-                "container_name": project_id,
+                # LDM-#1836: `or project_id`, not a bare reset. This bulk
+                # update runs AFTER `_apply_inert_flags` has honoured
+                # `-c/--container`, so assigning `project_id` unconditionally
+                # threw that value away -- while `db_container_name`, set a
+                # few lines earlier and absent from this dict, kept it. The
+                # result was a split-brain naming: liferay container named
+                # after the directory, database container after the flag.
+                # Caught by the E2E assertion, not by the unit test, which
+                # called the helper directly and so never crossed this line.
+                "container_name": project_meta.get("container_name") or project_id,
                 "ssl": str(ssl_val).lower(),
                 "db_type": db_type or project_meta.get("db_type", "postgresql"),
                 "port": port,

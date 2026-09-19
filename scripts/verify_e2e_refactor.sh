@@ -1316,6 +1316,172 @@ fi
 #
 # `--no-wait` is what makes this ~40s rather than a full boot: the container
 # only has to exist for its MAC to be readable.
+verify_force_is_not_a_positional() {
+    # LDM-#1835. `--force` was declared once on a shared parent parser and
+    # `parents=` copies action REFERENCES, so a `conflict_handler="resolve"`
+    # child that redeclared `-f` or `--force` emptied `option_strings` on the
+    # object all 103 subparsers held. argparse renders such an action as a
+    # POSITIONAL -- and a positional with nargs=0 always matches, so `force`
+    # was True on every invocation of 54 commands with no flag passed. Every
+    # guard reading `args.force` was disabled.
+    #
+    # This asserts the VISIBLE symptom: `--force` renders as an option, not as
+    # a bare `force`. It does not assert the parsed value -- there is no CLI
+    # surface that prints it, and the guards it gates only fire on paths this
+    # script cannot reach safely (forcing a downgrade, bypassing a failed
+    # verification). `test_force_is_not_always_on.py` covers the parse; this
+    # covers what a user can see, on the real binary.
+    local ldm_cmd="$1"
+    local out
+
+    out=$("$ldm_cmd" run --help 2>&1) || true
+
+    if printf '%s\n' "$out" | grep -qE '^[[:space:]]+force[[:space:]]'; then
+        echo "❌ ERROR: 'ldm run --help' renders --force as a bare positional."
+        echo "   That is LDM-#1835: the flag is not merely mis-rendered, it is"
+        echo "   permanently ON for every command that shares the parent parser."
+        echo "   --- the offending line ---"
+        printf '%s\n' "$out" | grep -E '^[[:space:]]+force[[:space:]]' | while IFS= read -r l; do
+            echo "   | ${l}"
+        done
+        return 1
+    fi
+
+    if ! printf '%s\n' "$out" | grep -q -- '--force'; then
+        echo "❌ ERROR: 'ldm run --help' does not mention --force at all."
+        echo "   Expected it as an option; the flag may have been removed."
+        return 1
+    fi
+
+    echo "✅ '--force' renders as an option, not an always-firing positional (LDM-#1835)."
+    return 0
+}
+
+verify_container_name_honoured() {
+    # LDM-#1836. `-c/--container` was accepted and read by nothing: the project
+    # was named after its directory instead, silently.
+    #
+    # The value is stored SANITISED, and that is what this asserts. composer.py
+    # runs the name through sanitize_id() before stamping the ownership labels,
+    # while prune.py reads meta["container_name"] raw to decide which projects
+    # are live. A raw value would be labelled as one string and matched as
+    # another, and prune would offer a LIVE project's containers as orphans.
+    local ldm_cmd="$1"
+    local work_dir="$2"
+
+    local iso_home="${work_dir}/cname-home"
+    local run_dir="${work_dir}/cname-work"
+    local proj="ldmcname"
+    local requested="LDM Cname"
+    local expected="LDM-Cname"
+
+    rm -rf "$iso_home" "$run_dir"
+    mkdir -p "$iso_home" "$run_dir" || return 1
+
+    _cname_teardown() {
+        (cd "$run_dir" 2>/dev/null && LDM_HOME="$iso_home" "$ldm_cmd" rm "$proj" --delete -y >/dev/null 2>&1)
+        rm -rf "$iso_home" "$run_dir"
+    }
+
+    # --no-up: the meta write is what is under test, so booting Liferay would
+    # cost minutes for no additional signal.
+    local out code
+    out=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" run "$proj" \
+        -c "$requested" --no-up -y 2>&1) && code=0 || code=$?
+    if [ "$code" -ne 0 ]; then
+        _cname_teardown
+        echo "❌ ERROR: 'ldm run --container' exited ${code}."
+        echo "   Output was: $out"
+        return 1
+    fi
+
+    local meta_file
+    meta_file=$(find "$run_dir" -maxdepth 3 -name meta -type f 2>/dev/null | head -1)
+    if [ -z "$meta_file" ]; then
+        _cname_teardown
+        echo "❌ ERROR: no project 'meta' file was written under ${run_dir}."
+        return 1
+    fi
+
+    local stored
+    stored=$(grep -E '^[[:space:]]*"?container_name"?[[:space:]]*[:=]' "$meta_file" 2>/dev/null \
+        | head -1 | sed -E 's/.*[:=][[:space:]]*"?([^",]*)"?.*/\1/' | tr -d '[:space:]')
+
+    if [ -z "$stored" ]; then
+        _cname_teardown
+        echo "❌ ERROR: meta carries no container_name -- '--container' was ignored (LDM-#1836)."
+        echo "   --- meta was ---"
+        sed -n '1,20p' "$meta_file" | while IFS= read -r l; do echo "   | ${l}"; done
+        return 1
+    fi
+
+    if [ "$stored" = "$requested" ]; then
+        _cname_teardown
+        echo "❌ ERROR: container_name was stored RAW as '${stored}'."
+        echo "   composer sanitises before labelling and prune matches raw, so a"
+        echo "   live project would be offered as an orphan (LDM-#1836)."
+        return 1
+    fi
+
+    if [ "$stored" != "$expected" ]; then
+        _cname_teardown
+        echo "❌ ERROR: expected container_name '${expected}', got '${stored}'."
+        return 1
+    fi
+
+    # LDM-#1836 second half: a bulk project_meta.update() reset container_name
+    # to the project id AFTER the flag was honoured, while db_container_name --
+    # derived earlier and absent from that dict -- kept the flag's value. The
+    # result was a Liferay container named after the directory and a database
+    # container named after the flag. Assert they agree, or that passes unseen.
+    local stored_db
+    stored_db=$(grep -E '^[[:space:]]*"?db_container_name"?[[:space:]]*[:=]' "$meta_file" 2>/dev/null \
+        | head -1 | sed -E 's/.*[:=][[:space:]]*"?([^",]*)"?.*/\1/' | tr -d '[:space:]')
+    if [ "$stored_db" != "${expected}-db" ]; then
+        _cname_teardown
+        echo "❌ ERROR: split naming -- container_name '${stored}' but db_container_name '${stored_db}' (LDM-#1836)."
+        return 1
+    fi
+
+    _cname_teardown
+    echo "✅ '--container' is honoured and stored sanitised as '${expected}' (LDM-#1836)."
+    return 0
+}
+
+verify_guide_precedence() {
+    # LDM-#1824. `ldm guide` advertised three precedence levels, one of which
+    # (.ldm/config.json) does not exist, omitted the project meta file, and
+    # recommended `ldm config set database_mode` -- which LDM refuses, because
+    # `ldm config set` writes where the defaults resolver never looks.
+    #
+    # It is step 1 of docs/tutorials/first_5_minutes.md, so it was the first
+    # thing a new user saw.
+    local ldm_cmd="$1"
+    local out
+
+    out=$("$ldm_cmd" guide 2>&1) || true
+
+    if printf '%s\n' "$out" | grep -q '\.ldm/config\.json'; then
+        echo "❌ ERROR: 'ldm guide' still names .ldm/config.json as a precedence level."
+        echo "   No such cascade level exists (LDM-#1824)."
+        return 1
+    fi
+
+    if printf '%s\n' "$out" | grep -qE 'ldm config set[[:space:]]+database_mode'; then
+        echo "❌ ERROR: 'ldm guide' recommends 'ldm config set database_mode',"
+        echo "   which LDM refuses for any cascading default (LDM-#1824)."
+        return 1
+    fi
+
+    if ! printf '%s\n' "$out" | grep -q 'ldm defaults'; then
+        echo "❌ ERROR: 'ldm guide' offers no working way to set a default."
+        return 1
+    fi
+
+    echo "✅ 'ldm guide' describes the real precedence and a command that works (LDM-#1824)."
+    return 0
+}
+
 verify_mac_pin_refusal() {
     local ldm_cmd="$1"
     local work_dir="$2"
@@ -1413,6 +1579,30 @@ if MAC_REFUSAL_OUT=$(verify_mac_pin_refusal "$LDM_CMD" "$LDM_WORKSPACE"); then
     report_ok "$MAC_REFUSAL_OUT"
 else
     echo "$MAC_REFUSAL_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying --force is not an always-firing positional (LDM-#1835)..."
+if FORCE_POS_OUT=$(verify_force_is_not_a_positional "$LDM_CMD"); then
+    report_ok "$FORCE_POS_OUT"
+else
+    echo "$FORCE_POS_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying --container is honoured and sanitised (LDM-#1836)..."
+if CNAME_OUT=$(verify_container_name_honoured "$LDM_CMD" "$LDM_WORKSPACE"); then
+    report_ok "$CNAME_OUT"
+else
+    echo "$CNAME_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying 'ldm guide' precedence output (LDM-#1824)..."
+if GUIDE_OUT=$(verify_guide_precedence "$LDM_CMD"); then
+    report_ok "$GUIDE_OUT"
+else
+    echo "$GUIDE_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
 
