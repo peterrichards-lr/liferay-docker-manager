@@ -48,7 +48,7 @@ To monitor live deployment logs and hot-reloading events:
 ldm logs -f
 ```
 
-## 🌱 4. Site Initializers Are Deployed After the First Boot
+## 4. Site Initializers Are Deployed After the First Boot
 
 A **site-initializer** client extension is the one CX type LDM does *not* hand
 to Liferay during `ldm import`. It is staged under
