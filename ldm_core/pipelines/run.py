@@ -92,6 +92,29 @@ def _resolve_pipeline_target_context(manager, project_meta, root):
     )
 
 
+def compose_db_service_name(paths, meta):
+    """The compose SERVICE name for this project's database.
+
+    Must agree with `composer.write_docker_compose`, which derives it as
+    `sanitize_id(meta["container_name"] or <dir>) + "-db"`. This existed twice
+    as `sanitize_id(paths["root"].name) + "-db"` -- the directory name only --
+    so the two disagreed for any project whose `container_name` differed from
+    its folder.
+
+    That was invisible until LDM-#1836, because a bulk `project_meta.update()`
+    reset `container_name` to the project id on every run, guaranteeing they
+    matched. Honouring `-c/--container` removed that guarantee and the
+    disagreement surfaced immediately: compose emitted `smoke-test-db` while
+    the pipeline ran `docker compose up -d smoke-project-db`, which failed with
+    "no such service".
+
+    Derived in one place so they cannot drift apart again -- the same reasoning
+    as `project_has_own_db_service` above.
+    """
+    base = (meta or {}).get("container_name") or paths["root"].name
+    return f"{sanitize_id(base)}-db"
+
+
 def project_has_own_db_service(db_mode):
     """Whether compose defines a `<project>-db` service for this project.
 
@@ -1698,7 +1721,7 @@ class ComposerStage(PipelineStage):
                         UI.detail(
                             "Starting database container temporarily to take a snapshot backup..."
                         )
-                        db_svc = f"{sanitize_id(paths['root'].name)}-db"
+                        db_svc = compose_db_service_name(paths, project_meta)
                         db_args = (
                             ["up", "-d", db_svc] if not use_shared_db else ["up", "-d"]
                         )
@@ -2326,9 +2349,10 @@ class ExecutionStage(PipelineStage):
         # sanitize_id. The compose file defines services and containers under
         # the sanitized name, so a raw project id -- which may contain any
         # Unicode the user typed -- never resolves against it.
-        from ldm_core.utils import sanitize_id
-
-        safe_project_id = sanitize_id(project_id) if project_id else project_id
+        # LDM-#1836: `safe_project_id` lived here solely to build
+        # `f"{safe_project_id}-db"`, which disagreed with the name compose
+        # actually emits. `compose_db_service_name()` owns that derivation now,
+        # so both the variable and its local import are dead.
 
         is_samples = context.get("is_samples")
         external_snapshot = context.get("external_snapshot")
@@ -2402,7 +2426,7 @@ class ExecutionStage(PipelineStage):
             )
 
         if is_samples or external_snapshot:
-            db_svc = f"{sanitize_id(paths['root'].name)}-db"
+            db_svc = compose_db_service_name(paths, project_meta)
             db_args = ["up", "-d", db_svc] if not use_shared_db else ["up", "-d"]
             manager.run_command([*compose_base, *db_args], cwd=str(paths["root"]))
             time.sleep(5)
@@ -2527,7 +2551,14 @@ class ExecutionStage(PipelineStage):
             # emitted -- and `docker compose up -d <project>-db` failed on a
             # service the compose file does not define.
             if project_has_own_db_service(db_mode):
-                deps.append(f"{safe_project_id}-db")
+                # LDM-#1836: derive this the way composer names the service,
+                # not from the project id. The two agreed only while a bulk
+                # update forced `container_name` to equal the project id;
+                # honouring `-c/--container` removed that and this queued
+                # `<project>-db` against a compose file defining
+                # `<container_name>-db`. Same failure the LDM-#1511 comment
+                # above describes, reached by a different route.
+                deps.append(compose_db_service_name(paths, project_meta))
 
             if deps:
                 UI.detail(

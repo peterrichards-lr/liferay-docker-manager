@@ -188,5 +188,64 @@ class TheBulkUpdateDoesNotClobberIt(unittest.TestCase):
         self.assertNotEqual(base, "My Project")
 
 
+class TheDbServiceNameAgreesWithCompose(unittest.TestCase):
+    """LDM-#1836, third half -- found by the CI smoke test, not by any unit test.
+
+    `composer.write_docker_compose` names the database service
+    `sanitize_id(meta["container_name"] or <dir>) + "-db"`. Three places in the
+    pipeline derived it from the DIRECTORY name alone, so they disagreed for any
+    project whose `container_name` differed from its folder.
+
+    That was unreachable while the bulk update forced `container_name` to equal
+    the project id. Honouring `-c/--container` removed the guarantee and the CI
+    smoke test failed immediately -- its fixture sets `container_name=smoke-test`
+    in a directory called `smoke-project`, so compose emitted `smoke-test-db`
+    while the pipeline ran `docker compose up -d smoke-project-db`:
+
+        Command failed (Exit 1): docker compose up -d smoke-project-db
+        Error Details: no such service: smoke-project-db
+
+    The same failure the LDM-#1511 comment in `run.py` describes, reached by a
+    different route -- which is why the derivation now lives in one function.
+    """
+
+    def test_the_helper_matches_composers_rule(self):
+        from pathlib import Path
+
+        from ldm_core.pipelines.run import compose_db_service_name
+
+        cases = [
+            ({"container_name": "smoke-test"}, "smoke-project", "smoke-test-db"),
+            ({}, "smoke-project", "smoke-project-db"),
+            ({"container_name": "My Project"}, "anything", "My-Project-db"),
+            (None, "plain", "plain-db"),
+        ]
+        for meta, dirname, expected in cases:
+            with self.subTest(meta=meta, dirname=dirname):
+                paths = {"root": Path("/tmp") / dirname}
+                self.assertEqual(compose_db_service_name(paths, meta), expected)
+
+    def test_no_site_still_derives_it_from_the_directory_alone(self):
+        """Three sites did. Asserting on the source keeps them converged --
+        a new one written the old way reintroduces the smoke-test failure."""
+        import inspect
+
+        from ldm_core.pipelines import run as run_mod
+
+        src = inspect.getsource(run_mod)
+
+        self.assertNotIn(
+            "f\"{sanitize_id(paths['root'].name)}-db\"",
+            src,
+            "a db service name is being derived from the directory alone again; "
+            "use compose_db_service_name() so it agrees with composer",
+        )
+        self.assertNotIn(
+            'deps.append(f"{safe_project_id}-db")',
+            src,
+            "the startup dependency is derived from the project id again",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
