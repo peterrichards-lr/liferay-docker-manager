@@ -1,7 +1,15 @@
 import re
+import time
 
 from ldm_core.config import get_active_target
 from ldm_core.utils import is_local_host, run_command
+
+# LDM-#1805: how long to let the daemon settle before calling a `docker stop`
+# that reported success a failure. `docker stop` defaults to a 10s SIGTERM
+# grace before SIGKILL, so the ceiling sits just above it -- a container still
+# listed after that has not merely been slow to be reaped.
+STOP_SETTLE_TIMEOUT = 15.0
+STOP_SETTLE_INTERVAL = 0.5
 
 
 class DockerService:
@@ -146,6 +154,60 @@ class DockerService:
         ]
         res = run_command(cmd, check=False)
         return bool(res and res.strip())
+
+    @staticmethod
+    def wait_until_stopped(
+        container_name: str,
+        target_name: str | None = None,
+        timeout: float | None = None,
+        interval: float | None = None,
+    ) -> bool:
+        """Waits for a container to stop being listed as running.
+
+        LDM-#1805. `docker stop` is synchronous and succeeds, but `docker ps`
+        can still list the container for a moment afterwards. Reading the state
+        back with no tolerance for that turns a successful stop into a refusal.
+
+        Measured on a real failure (v2.22.0, Fedora). In one run one engine
+        settled instantly and the other did not:
+
+            [CMD] docker stop liferay-db-global
+            [STDOUT] liferay-db-global
+            [CMD] docker ps -q -f name=^liferay-db-global$
+                                               <- gone, correctly
+
+            [CMD] docker stop liferay-db-mysql-global
+            [STDOUT] liferay-db-mysql-global    <- the stop SUCCEEDED
+            [CMD] docker ps -q -f name=^liferay-db-mysql-global$
+            [STDOUT] 92e4917f4414               <- still listed
+
+        MySQL loses that race more often because InnoDB shutdown makes it the
+        slower of the two to be reaped. It has cost at least seven CI failures
+        across distros and workflows (LDM-#1615, LDM-#1805), every one passing
+        on a re-run with no code change.
+
+        Returns True once the container is gone, False if it is still running
+        when the deadline passes -- so a caller still refuses on a stop that
+        genuinely did not happen. A bounded poll, deliberately, not a fixed
+        sleep: a sleep would slow every correct stop and still guess wrong on a
+        slow one. A correct stop pays one `docker ps`; only a stop that never
+        settles pays the full `timeout`, and that path was already a failure.
+
+        `timeout`/`interval` default to the module constants rather than to
+        literals so a test can shrink the window -- driving the real call path
+        with a container that never stops otherwise costs a real 15 seconds
+        per test.
+        """
+        timeout = STOP_SETTLE_TIMEOUT if timeout is None else timeout
+        interval = STOP_SETTLE_INTERVAL if interval is None else interval
+
+        deadline = time.monotonic() + timeout
+        while True:
+            if not DockerService.is_running(container_name, target_name):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(interval)
 
     @staticmethod
     def published_host_ports(target_name: str | None = None) -> set[int]:

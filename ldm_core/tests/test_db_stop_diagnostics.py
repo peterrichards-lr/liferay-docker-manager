@@ -202,6 +202,11 @@ class TestTheGuardsReportIt(unittest.TestCase):
                 docker.is_running.side_effect = [running_before, running_after]
                 docker.start.return_value = res
                 docker.stop.return_value = res
+                # LDM-#1805: `cmd_stop` reads the state back through
+                # `wait_until_stopped`, not a bare `is_running`. Left
+                # unconfigured this returns a truthy MagicMock, so the guard
+                # silently never fires and the test passes by not asserting.
+                docker.wait_until_stopped.return_value = not running_after
                 with patch("ldm_core.handlers.database.UI") as ui:
                     ui.die.side_effect = SystemExit(3)
                     with self.assertRaises(SystemExit):
@@ -316,12 +321,19 @@ class TestStopGuardOnTheRealCallPath(_RealPathsIsolated):
         # function and cut the wire one level lower instead, at
         # `subprocess.run`, which is also where conftest's `block_real_docker`
         # guard sits -- so no docker CLI can be reached either way.
+        # LDM-#1805: `cmd_stop` now polls until the container settles. These
+        # doubles model a container that never stops, so the guard must reach
+        # its deadline -- at the 15s production ceiling that is a real minute
+        # across the four tests below. Shrink the window; the behaviour under
+        # test is the refusal, not how long it waits for it.
         with patch(
             "ldm_core.handlers.database._shared_db_engines", return_value=["postgresql"]
         ):
             with (
                 patch("ldm_core.docker_service.run_command", utils_module.run_command),
                 patch("ldm_core.utils.subprocess.run", side_effect=double),
+                patch("ldm_core.docker_service.STOP_SETTLE_TIMEOUT", 0.05),
+                patch("ldm_core.docker_service.STOP_SETTLE_INTERVAL", 0.01),
             ):
                 with self.captured() as (out, err):
                     try:

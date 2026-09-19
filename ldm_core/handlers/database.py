@@ -316,7 +316,17 @@ class DatabaseService(BaseHandler):
             # LDM-#1547: `DockerService.stop` discards failure exactly as
             # `start` did. Reporting a stop that did not happen is the same
             # defect on the same pair of commands, so it gets the same guard.
-            if DockerService.is_running(db_name, target_name):
+            #
+            # LDM-#1805: but read the state back with a bounded wait, not
+            # instantly. `docker stop` is synchronous and succeeds, and
+            # `docker ps` can still list the container for a moment afterwards
+            # -- measured on Fedora, where one engine settled immediately and
+            # MySQL did not, so a successful stop was reported as a refusal.
+            # That has cost at least seven CI failures across distros and
+            # workflows, every one passing on a re-run with no code change.
+            # `wait_until_stopped` still returns False on a stop that genuinely
+            # did not happen, so the guard keeps its teeth.
+            if not DockerService.wait_until_stopped(db_name, target_name):
                 UI.die(
                     f"Global shared database '{db_name}' is still running.",
                     details=_docker_failure_detail(res),
