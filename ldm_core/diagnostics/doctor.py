@@ -2869,7 +2869,7 @@ def _check_docker_resources(self, docker_info_raw):
                 f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Hint: Allocate more CPU cores in your Docker provider settings."
             )
             UI.raw(
-                f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#docker-resource-alignment-windowswsl2macos{UI.COLOR_OFF}"
+                f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/tutorials/quick_start.md#docker-resource-alignment-windowswsl2macos{UI.COLOR_OFF}"
             )
 
         mem_ok: Any = True
@@ -2883,7 +2883,7 @@ def _check_docker_resources(self, docker_info_raw):
                 f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Hint: Allocate more RAM in your Docker provider settings."
             )
             UI.raw(
-                f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#docker-resource-alignment-windowswsl2macos{UI.COLOR_OFF}"
+                f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/tutorials/quick_start.md#docker-resource-alignment-windowswsl2macos{UI.COLOR_OFF}"
             )
 
         return results

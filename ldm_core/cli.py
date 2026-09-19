@@ -2836,7 +2836,7 @@ def _check_root_safety(args):
                         "LDM will prompt for your password only when elevated privileges are needed (e.g. hosts file updates)."
                     )
                     UI.detail(
-                        f"\nSee troubleshooting: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/INSTALLATION.md#troubleshooting-sudo--root-issues{UI.COLOR_OFF}"
+                        f"\nSee troubleshooting: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/tutorials/quick_start.md#troubleshooting-sudo--root-issues{UI.COLOR_OFF}"
                     )
                     if platform.system().lower() == "linux":
                         UI.detail(
