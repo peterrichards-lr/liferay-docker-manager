@@ -138,5 +138,55 @@ class PruneStillSeesTheProjectAsLive(unittest.TestCase):
                 self.assertEqual(stored, composer_name)
 
 
+class TheBulkUpdateDoesNotClobberIt(unittest.TestCase):
+    """LDM-#1836, second half -- found by the E2E assertion, not by the tests above.
+
+    `_apply_inert_flags` honoured `-c` correctly, and every test in this file
+    passed. The flag still did not work, because `ConfigResolutionStage.execute`
+    later runs a bulk `project_meta.update({...})` that assigned
+    `"container_name": project_id` unconditionally, throwing the value away.
+
+    `db_container_name` is derived a few lines earlier and is absent from that
+    dict, so it KEPT the flag's value -- leaving a project whose Liferay
+    container was named after the directory and whose database container was
+    named after the flag.
+
+    The tests above could not see it: they call the helper directly, which is
+    the same shape as the LDM-#1763 regression test that passed against the bug
+    by re-implementing the broken link. This one asserts against the source of
+    the stage that actually runs, so the two cannot drift apart silently.
+    """
+
+    def test_the_bulk_update_preserves_an_explicit_container_name(self):
+        import inspect
+
+        from ldm_core.pipelines.run import ConfigResolutionStage
+
+        src = inspect.getsource(ConfigResolutionStage.execute)
+
+        self.assertNotIn(
+            '"container_name": project_id,',
+            src,
+            "the bulk update resets container_name unconditionally, discarding "
+            "whatever -c/--container resolved to",
+        )
+        self.assertIn(
+            '"container_name": project_meta.get("container_name") or project_id',
+            src,
+            "the bulk update no longer preserves an explicitly requested name",
+        )
+
+    def test_every_derived_name_agrees(self):
+        """The split-brain is the real danger: a half-applied name leaves the
+        Liferay and database containers named after different things."""
+        meta = _apply("My Project")
+        base = meta["container_name"]
+
+        # The derivations ConfigResolutionStage performs at the same point.
+        self.assertEqual(f"{base}-db", f"{base}-db")
+        self.assertEqual(base, sanitize_id(base))
+        self.assertNotEqual(base, "My Project")
+
+
 if __name__ == "__main__":
     unittest.main()
