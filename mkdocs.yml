@@ -79,11 +79,13 @@ markdown_extensions:
 nav:
   - Home: README.md
   - Tutorials:
+    - tutorials/index.md
     - First 5 Minutes: tutorials/first_5_minutes.md
     - Quick Start: tutorials/quick_start.md
     - PaaS Local Dev: tutorials/paas_local_dev.md
     - Liferay Workspace Local Dev: tutorials/workspace_development.md
   - How-To:
+    - how-to/index.md
     - Install macOS: how-to/install_macos.md
     - Install Windows: how-to/install_windows.md
     - Install Linux: how-to/install_linux.md
@@ -105,6 +107,7 @@ nav:
     - Portal Patches: how-to/portal_patches.md
     - Target Node IAM Least Privilege: how-to/target_node_iam_least_privilege.md
   - Reference:
+    - reference/index.md
     - Configuration: reference/configuration.md
     - CLI Reference:
       - Core: reference/cli/core.md
@@ -119,6 +122,7 @@ nav:
     - JVM & Database Tuning: reference/tuning.md
     - Logging Strategy: reference/logging-strategy.md
   - Explanation:
+    - explanation/index.md
     - Architecture: explanation/architecture.md
     - Remote Node Architecture: explanation/remote-node-architecture.md
     - Properties: explanation/properties.md
