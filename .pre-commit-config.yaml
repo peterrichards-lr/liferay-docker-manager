@@ -118,7 +118,8 @@ repos:
         name: Check Documentation Review Status
         entry: scripts/run_python.sh scripts/check_docs_review.py --max-review-days 180 --max-gap-days 180
         language: system
-        files: \.md$
+        # LDM-#1833: the man page is a reviewed document too.
+        files: \.md$|^ldm_core/resources/.*\.1$
         pass_filenames: false
         always_run: true
 

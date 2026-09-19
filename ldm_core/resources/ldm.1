@@ -10,7 +10,7 @@ ldm \- Liferay Docker Manager orchestrator (Hardened Edition)
 .SH DESCRIPTION
 \fBldm\fR is a professional command-line orchestrator for Liferay Portal and DXP environments. It simplifies the creation, management, and synchronization of Liferay instances using Docker Compose, providing near-instant boot times via pre-warmed seeds and seamless integration with Liferay Workspace and Client Extensions.
 
-Commands are organized into logical \fBnamespaces\fR (\fBinfra\fR, \fBcloud\fR, \fBconfig\fR, \fBsystem\fR) for discoverability. All legacy flat-form commands (e.g. \fBldm prune\fR, \fBldm infra-setup\fR) remain fully supported as transparent aliases.
+Commands are organized into logical \fBnamespaces\fR (\fBinfra\fR, \fBshare\fR, \fBcloud\fR, \fBconfig\fR, \fBtarget\fR, \fBnode\fR, \fBdb\fR, \fBsystem\fR) for discoverability. All legacy flat-form commands (e.g. \fBldm prune\fR, \fBldm infra-setup\fR) remain fully supported as transparent aliases.
 
 .SH CONFIGURATION REDLINES
 .TP
@@ -91,6 +91,12 @@ Clear the local Docker Hub tag cache.
 .TP
 \fBinfo\fR [\fIPROJECT\fR]
 Display formatted project metadata.
+.TP
+\fBtray\fR [\fB\-\-autostart\fR|\fB\-\-uninstall\-autostart\fR]
+Launch the cross-platform System Tray GUI menu bar application. Use \fB\-\-autostart\fR to configure launch-on-login. This is a top-level command; there is no \fBldm system tray\fR.
+.TP
+\fBdashboard\fR [\fB\-\-port\fR \fIPORT\fR] [\fB\-\-token\fR \fITOKEN\fR]
+Launch the web-based Visual Diagnostics Dashboard and property editor. Also top-level.
 
 .SH DEVELOPMENT COMMANDS
 .TP
@@ -103,8 +109,8 @@ Initialize a project linked to a source workspace with real-time sync. (legacy a
 \fBclone\fR \fIGIT_URL\fR [\fINAME\fR]
 Clone a Git repository and initialize it as an LDM project workspace.
 .TP
-\fBimport\fR \fISOURCE_PATH\fR [\fINAME\fR]
-One-time static import of a Liferay workspace or data package archive.
+\fBimport\fR \fISOURCE\fR [\fINAME\fR]
+One-time static import of a Liferay workspace or data package archive from a Git remote, URL, or archive file. Pointing it at a local workspace \fIdirectory\fR is an error that redirects to \fBldm link\fR, which keeps the workspace in sync rather than copying it once.
 .TP
 \fBquickstart\fR \fITEMPLATE\fR [\fB--share\fR] [\fB--share-subdomain\fR \fISUBDOMAIN\fR]
 Bootstrap and start a predefined accelerator demo stack (e.g. \fBaica\fR).
@@ -145,13 +151,8 @@ Sync an existing local project directly with a live Liferay Cloud environment. (
 
 .SS db \- Database Utilities
 .TP
-\fBldm db query\fR [\fIPROJECT\fR] \fISQL_QUERY\fR
-Execute a safe, SELECT-only read query against the project database container with formatted table/json output.
-.TP
-\fBldm config database\-mode\fR [\fIisolated\fR|\fIshared\fR] [\fB\-\-global\fR]
-Inspect or set the database topology mode. With no argument the current mode is
-printed. \fBshared\fR points projects at the global database container rather
-than giving each project its own.
+\fBldm db query\fR [\fIPROJECT\fR] [\fB\-s\fR \fISQL\fR] [\fB\-f\fR \fIFORMAT\fR]
+Execute a safe, SELECT-only read query against the project database container. The statement is supplied with \fB\-s\fR/\fB\-\-sql\fR or, when that is omitted, read from standard input; it is not a positional argument. \fB\-f\fR/\fB\-\-format\fR selects \fItable\fR (default), \fIcsv\fR or \fIjson\fR.
 .TP
 \fBldm db start\fR / \fBldm db stop\fR
 Start or stop the shared global database infrastructure.
@@ -185,14 +186,13 @@ Manage Liferay internal Log4j2 logging levels without restarts.
 .TP
 \fBldm config edit\fR [\fIPROJECT\fR]
 Open project config files in \fB$EDITOR\fR.
+.TP
+\fBldm config database\-mode\fR [\fIisolated\fR|\fIshared\fR] [\fB\-\-global\fR]
+Inspect or set the database topology mode. With no argument the current mode is
+printed. \fBshared\fR points projects at the global database container rather
+than giving each project its own.
 
 .SS system \- System Utilities & Diagnostics
-.TP
-\fBldm tray\fR [\fB--autostart\fR|\fB--uninstall-autostart\fR]
-Launch the cross-platform System Tray GUI menu bar application. Use \fB--autostart\fR to configure launch-on-login.
-.TP
-\fBldm dashboard\fR [\fB--port\fR \fIPORT\fR] [\fB--token\fR \fITOKEN\fR]
-Launch the web-based Visual Diagnostics Dashboard and property editor.
 .TP
 \fBldm system doctor\fR [\fB--ssl\fR] [\fB--domain\fR \fIDOMAIN\fR] [\fB--fix\fR]
 Verify host health, Docker resources, and project dependencies. Use \fB--ssl\fR to check certificate routing, and \fB--fix\fR to automatically apply suggested solutions. (legacy: \fBldm doctor\fR)
@@ -204,7 +204,10 @@ Reclaim disk space by removing orphaned containers, search snapshots, and caches
 Automatically update \fBldm\fR to the latest stable or pre-release version. (legacy: \fBldm upgrade\fR)
 .TP
 \fBldm system completion\fR [\fIbash|zsh|fish|powershell\fR]
-Configure shell TAB completion. (legacy: \fBldm completion\fR)
+Print the TAB-completion shellcode for the named shell, for \fBeval\fR in a startup profile. Named with no shell it prints setup instructions for the detected shell instead. Either form refreshes the \fBman ldm\fR symlink under \fB~/.ldm/man/man1\fR. (legacy: \fBldm completion\fR)
+.TP
+\fBldm system setup-completion\fR [\fIbash|zsh|fish|powershell\fR]
+Write that completion block into the shell startup profile automatically, backing the profile up to \fI<profile>.bak\fR first. (legacy: \fBldm setup-completion\fR)
 .TP
 \fBldm system man\fR
 Display this manual page. (legacy: \fBldm man\fR)
@@ -282,16 +285,23 @@ Set \fB\-XX:MaxMetaspaceSize\fR.
 \fB\-\-jvm\-new\-size\fR \fISIZE\fR
 Set the young generation size (\fB\-XX:NewSize\fR).
 .TP
-\fB\-\-jvm\-tiered\-stop\-at\-level\fR \fILEVEL\fR
-Cap JIT tiered compilation. \fB1\fR trades peak throughput for faster startup
-and a much smaller code cache.
+\fB\-\-jvm\-tiered\-stop\-at\-level\fR \fI{true|false}\fR
+Force \fB\-XX:TieredStopAtLevel=1\fR on or off. It takes \fItrue\fR or
+\fIfalse\fR, not a compiler level. It is off by default: the faster-startup
+benefit it was originally added for did not reproduce under measurement, while
+its cost did: the flag drops the JVM code cache from 240MB to 48MB. The
+default was removed in LDM\-#1464. \fB\-\-lean\fR still sets it, trading
+throughput for footprint on purpose.
 .TP
 \fB\-\-jvm\-args\fR \fIARGS\fR
 Replace the computed JVM arguments wholesale. Prefer the individual flags
 above, which layer over the adaptive defaults instead of discarding them.
 .TP
 \fB\-\-no\-jvm\-verify\fR
-Skip the start-up check that the JVM accepted the arguments given.
+Accepted for compatibility and has no effect. The start-up JVM check it once
+suppressed was removed in LDM\-#1446; the flag is still parsed so existing
+scripts keep working. \fB\-\-no\-tld\-skip\fR is retained on the same
+terms.
 
 .SH BACKWARD COMPATIBILITY
 All legacy flat commands are automatically translated to their namespaced equivalents by the \fBpreprocess_args\fR layer and remain fully supported indefinitely. For example:
@@ -308,8 +318,10 @@ ldm completion      \(->  ldm system completion
 
 .SH FILES
 .TP
-\fB.liferay-docker.meta\fR
-Project metadata stored in the project root.
+\fBmeta\fR
+Project metadata stored in the project root. The legacy names
+\fB.liferay-docker.meta\fR and \fB.ldm.meta\fR are still read for projects
+created before the rename.
 .TP
 \fBportal-ext.properties\fR
 Liferay configuration in the \fBfiles/\fR subdirectory.
@@ -341,10 +353,11 @@ Set PostgreSQL as the default database for all new projects.
 Download the latest UAT backup and restore it locally.
 .TP
 \fBldm system completion zsh\fR
-Output the Zsh TAB completion setup command.
+Print the Zsh completion shellcode; wrap it in \fBeval\fR in \fB~/.zshrc\fR, or let \fBldm system setup-completion\fR write it for you.
 
 .SH AUTHOR
 Peter Richards <peter.richards@liferay.com>
 
 .SH SEE ALSO
 .B docker(1), docker-compose(1)
+.\" Last Updated: 2026-09-19 | Last Reviewed: 2026-09-19
