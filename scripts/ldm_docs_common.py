@@ -13,6 +13,38 @@ FOOTER_REGEX = re.compile(
     r"\*Last Updated: ([\d\-]+)\* \| \*Last Reviewed: ([\d\-]+)\*"
 )
 
+# LDM-#1833: roff has no markdown emphasis, so a man page cannot carry the
+# footer above -- `*Last Updated*` would render as literal asterisks. It
+# carries the same two dates in a roff comment (`.\"`), which renders nowhere:
+#
+#     .\" Last Updated: 2026-09-19 | Last Reviewed: 2026-09-19
+#
+# `ldm system version --bump` rewrites only the `.TH` line (handlers/dev.py),
+# so unlike that stamp this date moves only when a human actually reviews the
+# page.
+ROFF_FOOTER_REGEX = re.compile(
+    r'^\.\\"\s*Last Updated: ([\d\-]+) \| Last Reviewed: ([\d\-]+)\s*$',
+    re.MULTILINE,
+)
+
+# Suffixes the review gate scans, mapped to the footer form each one can
+# express. Keeping this here rather than in check_docs_review.py is the same
+# reasoning that put FOOTER_REGEX here: two scripts consume it.
+FOOTER_REGEX_BY_SUFFIX = {
+    ".md": FOOTER_REGEX,
+    ".1": ROFF_FOOTER_REGEX,
+}
+
+
+def footer_regex_for(file_path):
+    """The footer regex appropriate to a file's extension.
+
+    Falls back to the markdown form, which is what every caller predating
+    LDM-#1833 assumed unconditionally.
+    """
+    return FOOTER_REGEX_BY_SUFFIX.get(Path(file_path).suffix, FOOTER_REGEX)
+
+
 # Directories genuinely made of noise (virtual envs, build artifacts, caches,
 # vendored deps) that should never be scanned for doc footers. This is an
 # explicit denylist rather than "skip anything starting with a dot" -- the

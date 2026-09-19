@@ -3,16 +3,27 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from ldm_docs_common import FOOTER_REGEX, is_ignored_path
+from ldm_docs_common import FOOTER_REGEX_BY_SUFFIX, footer_regex_for, is_ignored_path
 
 
 def check_docs(max_review_days, max_update_days, max_gap_days):
     now = datetime.now()
-    md_files = [str(p) for p in Path().rglob("*.md")]
+    # LDM-#1833: this globbed only "*.md", which made ldm_core/resources/ldm.1
+    # structurally invisible to the gate -- the one user-facing document with
+    # no way to express the markdown footer was also the one nothing checked.
+    # Its `.TH` date was rewritten by every version bump, so it advertised
+    # freshness it did not have.
+    doc_files = sorted(
+        {
+            str(p)
+            for suffix in FOOTER_REGEX_BY_SUFFIX
+            for p in Path().rglob(f"*{suffix}")
+        }
+    )
 
     needs_review: list[tuple[str, str, int | None, int | None]] = []
 
-    for file_path in md_files:
+    for file_path in doc_files:
         # NOTE: previously skipped any path starting with "." (e.g. relative
         # paths under .agents/, .gemini/), which silently exempted those
         # governance docs from ever being checked for staleness. Fixed to use
@@ -23,7 +34,7 @@ def check_docs(max_review_days, max_update_days, max_gap_days):
         with open(file_path, encoding="utf-8") as f:
             content = f.read()
 
-        match = FOOTER_REGEX.search(content)
+        match = footer_regex_for(file_path).search(content)
         if not match:
             needs_review.append((file_path, "No timestamp footer found", None, None))
             continue

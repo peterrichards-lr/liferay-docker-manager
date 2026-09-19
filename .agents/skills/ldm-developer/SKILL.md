@@ -159,13 +159,16 @@ releases before anyone looked (LDM-#1482).
 |---------|------|-----------|
 | Reference docs | `docs/**/*.md` | `sync-docs`, `check-docs-review` |
 | CLI reference | `docs/reference/cli/*.md`, `docs/reference/advanced_cli.md` | `check-cli-drift` (both directions) |
-| **Man page** | `ldm_core/resources/ldm.1` | `check-cli-drift` (stale flags), `check-version-sync` (`.TH` version) |
+| **Man page** | `ldm_core/resources/ldm.1` | `check-cli-drift` (stale flags), `check-version-sync` (`.TH` version), `check-docs-review` (roff review stamp) |
 | **CLI help text** | `help=` strings in `ldm_core/cli.py` | `check-cli-drift`, indirectly |
 
-The man page is **not** a mirror of the CLI reference. It documents roughly 42
-of 238 options by design, so an undocumented flag is not drift there -- which
-is why the guard only checks the reverse direction, that everything it *does*
-document still exists.
+The man page is **not** a mirror of the CLI reference. Measured with the same
+regex `stale_man_page_options` uses, it documents **54** option strings against
+a parser exposing **246** -- by design, so an undocumented flag is not drift
+there, which is why the guard only checks the reverse direction, that
+everything it *does* document still exists. (The figure recorded here was
+"roughly 42 of 238" until LDM-#1833; neither number had been re-measured since
+it was first written.)
 
 When adding or renaming a command or a flag that a user would reasonably look
 up:
@@ -173,12 +176,17 @@ up:
 - add it to `docs/reference/cli/*.md` (enforced -- `check-cli-drift` fails on
   any parser option missing from the docs)
 - consider `ldm_core/resources/ldm.1` if it belongs in a curated overview.
-  It ships inside the binary and `ldm system setup-completion` installs it
-  into the user's `man` directory, so `man ldm` is a real surface, not a
-  vestigial file
+  It ships inside the binary, and `ldm system completion` and `ldm system man`
+  refresh a symlink to it under `~/.ldm/man/man1`, so `man ldm` is a real
+  surface, not a vestigial file
 - never hand-edit the `.TH` version: `ldm system version --bump` stamps it,
   the same way it stamps the two verify scripts
+- do hand-edit the roff review stamp at the foot of `ldm.1`
+  (`.\" Last Updated: ... | Last Reviewed: ...`). `check-docs-review` holds it
+  to the same 180-day limit as every `.md` document, and the bump deliberately
+  does **not** touch it -- a review date moved by a release is exactly the lie
+  LDM-#1833 removed
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-08* | *Last Reviewed: 2026-09-08*
+*Last Updated: 2026-09-19* | *Last Reviewed: 2026-09-19*
