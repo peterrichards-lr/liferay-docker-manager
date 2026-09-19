@@ -352,7 +352,10 @@ def get_parser():  # noqa: PLR0915
     base_parent.add_argument("-v", "--verbose", action="store_true")
     base_parent.add_argument("-y", "--non-interactive", action="store_true")
     base_parent.add_argument(
-        "-q", "--quiet", action="store_true", help="Quiet mode (suppress info logs)"
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Suppress progress, info and next-step messages (warnings, successes and errors still print)",
     )
     base_parent.add_argument(
         "--dry-run", action="store_true", help="Preview execution without mutations"
@@ -474,7 +477,10 @@ def get_parser():  # noqa: PLR0915
         help="Accept all defaults and skip confirmation prompts",
     )
     base_sub_parent.add_argument(
-        "-q", "--quiet", action="store_true", help="Suppress all standard output"
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Suppress progress, info and next-step messages (warnings, successes and errors still print)",
     )
     base_sub_parent.add_argument(
         "--dry-run",
@@ -567,7 +573,11 @@ def get_parser():  # noqa: PLR0915
     )
     run.add_argument("--tag-prefix")
     run.add_argument("-p", "--project", dest="project_flag")
-    run.add_argument("-c", "--container")
+    run.add_argument(
+        "-c",
+        "--container",
+        help="(no-op) Accepted but read by nothing; see LDM-#1836",
+    )
     run.add_argument("--host-name")
     run.add_argument("--ssl", action="store_true", default=None)
     run.add_argument("--no-ssl", action="store_false", dest="ssl")
@@ -575,24 +585,26 @@ def get_parser():  # noqa: PLR0915
     run.add_argument(
         "--clean-state",
         action="store_true",
-        help="Wipe the OSGi state volume contents before starting Liferay.",
+        help="Wipe the OSGi state volume contents before starting Liferay",
     )
     run.add_argument(
         "--fix-permissions",
         action="store_true",
-        help="Fix root permissions on bind-mounted directories for macOS/Windows external drives.",
+        help="Fix root permissions on bind-mounted directories for macOS/Windows external drives",
     )
     run.add_argument(
         "--force-recreate",
         action="store_true",
-        help="Recreate containers even if their configuration and image haven't changed.",
+        help="Recreate containers even if their configuration and image haven't changed",
     )
     run.add_argument(
         "--force-portal-patches",
         action="store_true",
-        help="Apply portal-patches/ JARs even when their recorded Liferay version does not match this project's release line, or the target JAR is absent from the image.",
+        help="Apply portal-patches/ JARs even when their recorded Liferay version does not match this project's release line, or the target JAR is absent from the image",
     )
-    run.add_argument("--port", type=int)
+    run.add_argument(
+        "--port", type=int, help="Host port to publish Liferay on (default: 8080)"
+    )
     run.add_argument("--db", choices=["postgresql", "mysql", "hypersonic"])
     run.add_argument(
         "--search-mode",
@@ -602,12 +614,12 @@ def get_parser():  # noqa: PLR0915
     run.add_argument(
         "--database-mode",
         choices=["isolated", "shared", "external", "embedded"],
-        help="Explicitly force a specific Database mode: isolated (a container per project), shared (one global container per engine), external (someone else's server -- LDM writes the JDBC details only) or embedded (in-JVM; Hypersonic only). LDM-#1511.",
+        help="Explicitly force a specific Database mode: isolated (a container per project), shared (one global container per engine), external (someone else's server -- LDM writes the JDBC details only) or embedded (in-JVM; Hypersonic only). LDM-#1511",
     )
     run.add_argument(
         "--release-type",
         choices=["any", "latest", "u", "lts", "qr", "nightly", "master"],
-        help="Release channel to discover the latest tag from when no -t/--tag-prefix is given (LDM-#1061: kept in sync with the interactive prompt's own advertised options).",
+        help="Release channel to discover the latest tag from when no -t/--tag-prefix is given (LDM-#1061: kept in sync with the interactive prompt's own advertised options)",
     )
     run.add_argument("--portal", action="store_true")
     run.add_argument(
@@ -650,12 +662,12 @@ def get_parser():  # noqa: PLR0915
     run.add_argument(
         "--no-jvm-verify",
         action="store_true",
-        help="(no-op) Accepted for compatibility; has no effect. See LDM-#1446.",
+        help="(no-op) Accepted for compatibility; has no effect. See LDM-#1446",
     )
     run.add_argument(
         "--no-tld-skip",
         action="store_true",
-        help="(no-op) Accepted for compatibility; has no effect. See LDM-#1446.",
+        help="(no-op) Accepted for compatibility; has no effect. See LDM-#1446",
     )
     run.add_argument(
         "--no-seed", action="store_true", help="Disable automatic project seeding"
@@ -685,7 +697,12 @@ def get_parser():  # noqa: PLR0915
         nargs="+",
         help="Enable one or more Liferay feature flags (e.g. LPS-122920)",
     )
-    run.add_argument("-f", "--follow", action="store_true")
+    run.add_argument(
+        "-f",
+        "--follow",
+        action="store_true",
+        help="Tail the Liferay logs once the stack is up",
+    )
     run.add_argument("--env", action="append")
     run.add_argument(
         "--samples",
@@ -727,7 +744,7 @@ def get_parser():  # noqa: PLR0915
         help=(
             "Force -XX:TieredStopAtLevel=1 on or off. LDM enables it on "
             "macOS/Windows for faster bundle resolution; note it also reduces "
-            "the JVM code cache from 240MB to 48MB (see docs/reference/tuning.md)."
+            "the JVM code cache from 240MB to 48MB (see docs/reference/tuning.md)"
         ),
     )
     run.add_argument(
@@ -744,7 +761,7 @@ def get_parser():  # noqa: PLR0915
     run.add_argument(
         "--expose",
         action="store_true",
-        help="Start an ngrok container to expose Liferay to the public internet",
+        help="(Legacy) Alias for --share --share-provider ngrok: share the instance through an ngrok tunnel",
     )
     run.add_argument(
         "--share",
@@ -776,7 +793,7 @@ def get_parser():  # noqa: PLR0915
     run.add_argument(
         "--auto-install-lfr-tunnel",
         action="store_true",
-        help="(Deprecated) LDM no longer downloads a client. Still suppresses the prompt when lfr_tunnel_install_cmd is configured.",
+        help="(Deprecated) LDM no longer downloads a client. Still suppresses the prompt when lfr_tunnel_install_cmd is configured",
     )
     run.add_argument(
         "--persist-osgi",
@@ -799,13 +816,20 @@ def get_parser():  # noqa: PLR0915
             "Behaviour when a config file (e.g. fragment-overrides.json) fails "
             "schema validation in non-interactive mode. "
             "'die' (default) aborts with exit code 1; "
-            "'ignore' logs a warning and continues."
+            "'ignore' logs a warning and continues"
         ),
     )
 
     # Command: import
-    imp = subparsers.add_parser("import", parents=[base_sub_parent])
-    imp.add_argument("source")
+    imp = subparsers.add_parser(
+        "import",
+        parents=[base_sub_parent],
+        help="Import a hydrated .ldmp package, archive or Git repository as a project",
+    )
+    imp.add_argument(
+        "source",
+        help="Path or URL to import: a .ldmp package, an archive, or a Git repository",
+    )
     imp.add_argument("project", nargs="?")
     imp.add_argument("-p", "--project", dest="project_flag")
     imp.add_argument("--cloud-project", help="Liferay Cloud project ID")
@@ -861,7 +885,7 @@ def get_parser():  # noqa: PLR0915
     imp.add_argument(
         "--database-mode",
         choices=["isolated", "shared", "external", "embedded"],
-        help="Explicitly force a specific Database mode: isolated (a container per project), shared (one global container per engine), external (someone else's server -- LDM writes the JDBC details only) or embedded (in-JVM; Hypersonic only). LDM-#1511.",
+        help="Explicitly force a specific Database mode: isolated (a container per project), shared (one global container per engine), external (someone else's server -- LDM writes the JDBC details only) or embedded (in-JVM; Hypersonic only). LDM-#1511",
     )
     imp.add_argument(
         "--share-domain",
@@ -870,7 +894,7 @@ def get_parser():  # noqa: PLR0915
     imp.add_argument(
         "--auto-install-lfr-tunnel",
         action="store_true",
-        help="(Deprecated) LDM no longer downloads a client. Still suppresses the prompt when lfr_tunnel_install_cmd is configured.",
+        help="(Deprecated) LDM no longer downloads a client. Still suppresses the prompt when lfr_tunnel_install_cmd is configured",
     )
     imp.add_argument("--backup-dir")
     imp.add_argument("--build", action="store_true")
@@ -893,8 +917,16 @@ def get_parser():  # noqa: PLR0915
     imp.add_argument("--tag-prefix", help="Prefix for Liferay tag discovery")
     imp.add_argument("--no-vol-cache", action="store_true")
     imp.add_argument("--internal-state", action="store_true")
-    imp.add_argument("--no-jvm-verify", action="store_true")
-    imp.add_argument("--no-tld-skip", action="store_true")
+    imp.add_argument(
+        "--no-jvm-verify",
+        action="store_true",
+        help="(no-op) Accepted for compatibility; has no effect. See LDM-#1446",
+    )
+    imp.add_argument(
+        "--no-tld-skip",
+        action="store_true",
+        help="(no-op) Accepted for compatibility; has no effect. See LDM-#1446",
+    )
     imp.add_argument("--no-seed", action="store_true")
     imp.add_argument(
         "--clone-only",
@@ -964,7 +996,7 @@ def get_parser():  # noqa: PLR0915
     init.add_argument(
         "--db",
         choices=["postgresql", "mysql", "hypersonic", "external"],
-        help="Database engine. 'external' is the legacy spelling of '--database-mode external' and still works: LDM infers the engine from the JDBC URL you supply (LDM-#1511). Prefer '--db postgresql --database-mode external' to keep the dialect and driver.",
+        help="Database engine. 'external' is the legacy spelling of '--database-mode external' and still works: LDM infers the engine from the JDBC URL you supply (LDM-#1511). Prefer '--db postgresql --database-mode external' to keep the dialect and driver",
     )
     init.add_argument(
         "--search-mode",
@@ -974,7 +1006,7 @@ def get_parser():  # noqa: PLR0915
     init.add_argument(
         "--database-mode",
         choices=["isolated", "shared", "external", "embedded"],
-        help="Explicitly force a specific Database mode: isolated (a container per project), shared (one global container per engine), external (someone else's server -- LDM writes the JDBC details only) or embedded (in-JVM; Hypersonic only). LDM-#1511.",
+        help="Explicitly force a specific Database mode: isolated (a container per project), shared (one global container per engine), external (someone else's server -- LDM writes the JDBC details only) or embedded (in-JVM; Hypersonic only). LDM-#1511",
     )
     init.add_argument("--internal-state", action="store_true")
     init.add_argument(
@@ -984,7 +1016,7 @@ def get_parser():  # noqa: PLR0915
     init.add_argument(
         "--expose",
         action="store_true",
-        help="Configure an ngrok container to expose Liferay to the public internet",
+        help="(Legacy) Alias for --share --share-provider ngrok: record ngrok sharing in the project metadata",
     )
     init.add_argument(
         "--no-captcha",
@@ -1019,7 +1051,7 @@ def get_parser():  # noqa: PLR0915
         help=(
             "Link the workspace without starting the file watcher. The link is "
             "still recorded, so 'ldm monitor <project>' can attach later. "
-            "Without this, 'ldm init-from' ends in a watcher that runs until Ctrl-C."
+            "Without this, 'ldm init-from' ends in a watcher that runs until Ctrl-C"
         ),
     )
     init_from.add_argument(
@@ -1028,7 +1060,7 @@ def get_parser():  # noqa: PLR0915
         help=(
             "Set the project up without starting it. `cmd_import` has always "
             "honoured this; the flag was simply never declared here, so "
-            "'ldm init-from' could not be scripted without booting Liferay (LDM-#1689)."
+            "'ldm init-from' could not be scripted without booting Liferay (LDM-#1689)"
         ),
     )
     init_from.add_argument("--cloud-project", help="Liferay Cloud project ID")
@@ -1064,8 +1096,16 @@ def get_parser():  # noqa: PLR0915
     init_from.add_argument("--tag-prefix", help="Prefix for Liferay tag discovery")
     init_from.add_argument("--no-vol-cache", action="store_true")
     init_from.add_argument("--internal-state", action="store_true")
-    init_from.add_argument("--no-jvm-verify", action="store_true")
-    init_from.add_argument("--no-tld-skip", action="store_true")
+    init_from.add_argument(
+        "--no-jvm-verify",
+        action="store_true",
+        help="(no-op) Accepted for compatibility; has no effect. See LDM-#1446",
+    )
+    init_from.add_argument(
+        "--no-tld-skip",
+        action="store_true",
+        help="(no-op) Accepted for compatibility; has no effect. See LDM-#1446",
+    )
     init_from.add_argument("--no-seed", action="store_true")
     init_from.add_argument("--no-osgi-seed", action="store_true")
     init_from.add_argument("--no-captcha", action="store_true")
@@ -1088,7 +1128,7 @@ def get_parser():  # noqa: PLR0915
         help=(
             "Link the workspace without starting the file watcher. The link is "
             "still recorded, so 'ldm monitor <project>' can attach later. "
-            "Without this, 'ldm link' ends in a watcher that runs until Ctrl-C."
+            "Without this, 'ldm link' ends in a watcher that runs until Ctrl-C"
         ),
     )
     link.add_argument(
@@ -1097,7 +1137,7 @@ def get_parser():  # noqa: PLR0915
         help=(
             "Set the project up without starting it. `cmd_import` has always "
             "honoured this; the flag was simply never declared here, so "
-            "'ldm link' could not be scripted without booting Liferay (LDM-#1689)."
+            "'ldm link' could not be scripted without booting Liferay (LDM-#1689)"
         ),
     )
     link.add_argument("--cloud-project", help="Liferay Cloud project ID")
@@ -1129,7 +1169,7 @@ def get_parser():  # noqa: PLR0915
     link.add_argument(
         "--database-mode",
         choices=["isolated", "shared", "external", "embedded"],
-        help="Explicitly force a specific Database mode: isolated (a container per project), shared (one global container per engine), external (someone else's server -- LDM writes the JDBC details only) or embedded (in-JVM; Hypersonic only). LDM-#1511.",
+        help="Explicitly force a specific Database mode: isolated (a container per project), shared (one global container per engine), external (someone else's server -- LDM writes the JDBC details only) or embedded (in-JVM; Hypersonic only). LDM-#1511",
     )
     link.add_argument("--mount-logs", action="store_true")
     link.add_argument("--gogo-port", type=int)
@@ -1142,8 +1182,16 @@ def get_parser():  # noqa: PLR0915
     link.add_argument("--tag-prefix", help="Prefix for Liferay tag discovery")
     link.add_argument("--no-vol-cache", action="store_true")
     link.add_argument("--internal-state", action="store_true")
-    link.add_argument("--no-jvm-verify", action="store_true")
-    link.add_argument("--no-tld-skip", action="store_true")
+    link.add_argument(
+        "--no-jvm-verify",
+        action="store_true",
+        help="(no-op) Accepted for compatibility; has no effect. See LDM-#1446",
+    )
+    link.add_argument(
+        "--no-tld-skip",
+        action="store_true",
+        help="(no-op) Accepted for compatibility; has no effect. See LDM-#1446",
+    )
     link.add_argument("--no-seed", action="store_true")
     link.add_argument("--no-osgi-seed", action="store_true")
     link.add_argument("--no-captcha", action="store_true")
@@ -1192,7 +1240,7 @@ def get_parser():  # noqa: PLR0915
     clone.add_argument(
         "--database-mode",
         choices=["isolated", "shared", "external", "embedded"],
-        help="Explicitly force a specific Database mode: isolated (a container per project), shared (one global container per engine), external (someone else's server -- LDM writes the JDBC details only) or embedded (in-JVM; Hypersonic only). LDM-#1511.",
+        help="Explicitly force a specific Database mode: isolated (a container per project), shared (one global container per engine), external (someone else's server -- LDM writes the JDBC details only) or embedded (in-JVM; Hypersonic only). LDM-#1511",
     )
     clone.add_argument("--mount-logs", action="store_true")
     clone.add_argument("--gogo-port", type=int)
@@ -1205,8 +1253,16 @@ def get_parser():  # noqa: PLR0915
     clone.add_argument("--tag-prefix", help="Prefix for Liferay tag discovery")
     clone.add_argument("--no-vol-cache", action="store_true")
     clone.add_argument("--internal-state", action="store_true")
-    clone.add_argument("--no-jvm-verify", action="store_true")
-    clone.add_argument("--no-tld-skip", action="store_true")
+    clone.add_argument(
+        "--no-jvm-verify",
+        action="store_true",
+        help="(no-op) Accepted for compatibility; has no effect. See LDM-#1446",
+    )
+    clone.add_argument(
+        "--no-tld-skip",
+        action="store_true",
+        help="(no-op) Accepted for compatibility; has no effect. See LDM-#1446",
+    )
     clone.add_argument("--no-seed", action="store_true")
     clone.add_argument("--no-osgi-seed", action="store_true")
     clone.add_argument("--no-captcha", action="store_true")
@@ -1221,7 +1277,7 @@ def get_parser():  # noqa: PLR0915
     fork.add_argument("target", help="The ID/name of the new forked project")
     fork.add_argument(
         "--snapshot",
-        help="The name of the snapshot to use. If not specified, a new one will be created.",
+        help="The name of the snapshot to use. If not specified, a new one will be created",
     )
 
     # Command: monitor
@@ -1276,7 +1332,7 @@ def get_parser():  # noqa: PLR0915
                 "-V",
                 "--volumes",
                 action="store_true",
-                help="Also remove the project's Docker Compose volumes (implied by --delete).",
+                help="Also remove the project's Docker Compose volumes (implied by --delete)",
             )
             p.add_argument(
                 "--keep-credentials",
@@ -1286,7 +1342,7 @@ def get_parser():  # noqa: PLR0915
                     "archive that --delete writes. They are removed by default; "
                     "opting in means the archive holds them in plaintext and "
                     "securing it is yours to do. Set permanently with "
-                    "'ldm config set tombstone_keep_credentials true'."
+                    "'ldm config set tombstone_keep_credentials true'"
                 ),
             )
             p.add_argument(
@@ -1298,13 +1354,13 @@ def get_parser():  # noqa: PLR0915
                     "from the shared database (if applicable), unregister the "
                     "project, and permanently delete its directory from disk. "
                     "This cannot be undone -- use 'ldm rm' without --delete to "
-                    "just tear down containers and keep the project."
+                    "just tear down containers and keep the project"
                 ),
             )
             p.add_argument(
                 "--infra",
                 action="store_true",
-                help="Also tear down the shared global infrastructure (proxy, search, etc.), independently of any project target.",
+                help="Also tear down the shared global infrastructure (proxy, search, etc.), independently of any project target",
             )
             p.add_argument(
                 "--clean-hosts",
@@ -1315,33 +1371,33 @@ def get_parser():  # noqa: PLR0915
             p.add_argument(
                 "--force-recreate",
                 action="store_true",
-                help="Recreate containers (internally aliases to run --force-recreate).",
+                help="Recreate containers (internally aliases to run --force-recreate)",
             )
             p.add_argument(
                 "--force-portal-patches",
                 action="store_true",
-                help="Apply portal-patches/ JARs even when their recorded Liferay version does not match this project's release line, or the target JAR is absent from the image.",
+                help="Apply portal-patches/ JARs even when their recorded Liferay version does not match this project's release line, or the target JAR is absent from the image",
             )
             p.add_argument(
                 "--clean-state",
                 action="store_true",
-                help="Wipe the OSGi state volume contents before starting Liferay.",
+                help="Wipe the OSGi state volume contents before starting Liferay",
             )
             p.add_argument(
                 "--fix-permissions",
                 action="store_true",
-                help="Fix root permissions on bind-mounted directories for macOS/Windows external drives.",
+                help="Fix root permissions on bind-mounted directories for macOS/Windows external drives",
             )
         if cmd == "restart":
             p.add_argument(
                 "--force-recreate",
                 action="store_true",
-                help="Recreate containers during restart (internally aliases to run --force-recreate).",
+                help="Recreate containers during restart (internally aliases to run --force-recreate)",
             )
             p.add_argument(
                 "--force-portal-patches",
                 action="store_true",
-                help="Apply portal-patches/ JARs even when their recorded Liferay version does not match this project's release line, or the target JAR is absent from the image.",
+                help="Apply portal-patches/ JARs even when their recorded Liferay version does not match this project's release line, or the target JAR is absent from the image",
             )
         if cmd == "logs":
             p.add_argument("-f", "--follow", action="store_true")
@@ -1453,7 +1509,11 @@ def get_parser():  # noqa: PLR0915
     snap.add_argument("project", nargs="?")
     snap.add_argument("-p", "--project", dest="project_flag")
     snap.add_argument("-n", "--name")
-    snap.add_argument("--files-only", action="store_true")
+    snap.add_argument(
+        "--files-only",
+        action="store_true",
+        help="Snapshot the document library and volumes only, skipping the database",
+    )
     snap.add_argument(
         "--delete",
         help="Delete a snapshot by name or index",
@@ -1583,14 +1643,14 @@ def get_parser():  # noqa: PLR0915
     scale.add_argument(
         "--no-run",
         action="store_true",
-        help="Update the metadata without automatically restarting the stack.",
+        help="Update the metadata without automatically restarting the stack",
     )
 
     # Command: wait
     wait_cmd = subparsers.add_parser(
         "wait",
         parents=[base_sub_parent],
-        help="Block execution until a project is fully ready (HTTP 200/302).",
+        help="Block execution until a project is fully ready (HTTP 200/302)",
     )
     wait_cmd.add_argument("project", nargs="?")
     wait_cmd.add_argument(
@@ -1635,11 +1695,9 @@ def get_parser():  # noqa: PLR0915
         type=int,
         help=(
             "Per-loop seconds to poll the headless-admin-site API for OSGi/Site "
-            "Initializer readiness before patching fragment overrides (default: 300, "
-            "or 900 when auto-detected on an external drive). Runs after -- and "
-            "additive to -- this command's own --timeout, so raise this on slow or "
-            "external-drive filesystems where redeploys see spurious "
-            "'failed to process deployables' failures. (LDM-#1020)"
+            "Initializer readiness before patching fragment overrides (default: "
+            "300, or 900 on an external drive). See "
+            "docs/how-to/runtime_overrides.md (LDM-#1020)"
         ),
     )
 
@@ -1705,7 +1763,7 @@ def get_parser():  # noqa: PLR0915
     subparsers.add_parser(
         "mcp",
         parents=[base_sub_parent],
-        help="Starts the Model Context Protocol (MCP) JSON-RPC server",
+        help="Start the Model Context Protocol (MCP) JSON-RPC server",
     )
 
     # Command: ai
@@ -1721,7 +1779,7 @@ def get_parser():  # noqa: PLR0915
         "query",
         nargs="?",
         default=None,
-        help="What do you want to ask LDM AI? Omit it for an interactive session.",
+        help="What do you want to ask LDM AI? Omit it for an interactive session",
     )
 
     # Command: guide
@@ -1859,11 +1917,17 @@ def get_parser():  # noqa: PLR0915
 
     # Namespace: infra
     infra = subparsers.add_parser(
-        "infra", parents=[base_sub_parent], help="Infrastructure management"
+        "infra",
+        parents=[base_sub_parent],
+        help="Manage the shared global infrastructure (proxy, network, search)",
     )
     infra_subparsers = infra.add_subparsers(dest="subcommand")
 
-    infra_setup = infra_subparsers.add_parser("setup", parents=[base_sub_parent])
+    infra_setup = infra_subparsers.add_parser(
+        "setup",
+        parents=[base_sub_parent],
+        help="Start the global infrastructure services (Traefik proxy, bridge network)",
+    )
     infra_setup.add_argument(
         "--search",
         action="store_true",
@@ -1883,9 +1947,17 @@ def get_parser():  # noqa: PLR0915
         help="Force recreate Traefik proxy container even if already running",
     )
 
-    infra_subparsers.add_parser("down", parents=[base_sub_parent])
+    infra_subparsers.add_parser(
+        "down",
+        parents=[base_sub_parent],
+        help="Stop and remove the global infrastructure containers",
+    )
 
-    infra_restart = infra_subparsers.add_parser("restart", parents=[base_sub_parent])
+    infra_restart = infra_subparsers.add_parser(
+        "restart",
+        parents=[base_sub_parent],
+        help="Restart all global infrastructure services in one go",
+    )
     infra_restart.add_argument(
         "--search",
         action="store_true",
@@ -1898,12 +1970,20 @@ def get_parser():  # noqa: PLR0915
     infra_subparsers.add_parser(
         "restart-proxy",
         parents=[base_sub_parent],
-        help="Restarts only the Traefik proxy container",
+        help="Restart only the Traefik proxy container",
     )
 
-    infra_subparsers.add_parser("init-common", parents=[base_sub_parent])
+    infra_subparsers.add_parser(
+        "init-common",
+        parents=[base_sub_parent],
+        help="Recreate the baseline global configuration from internal resources",
+    )
 
-    renew_ssl = infra_subparsers.add_parser("renew-ssl", parents=[base_sub_parent])
+    renew_ssl = infra_subparsers.add_parser(
+        "renew-ssl",
+        parents=[base_sub_parent],
+        help="Refresh project-specific SSL certificates",
+    )
     renew_ssl.add_argument("project", nargs="?")
     renew_ssl.add_argument("-p", "--project", dest="project_flag")
     renew_ssl.add_argument(
@@ -1911,7 +1991,9 @@ def get_parser():  # noqa: PLR0915
     )
 
     migrate_search = infra_subparsers.add_parser(
-        "migrate-search", parents=[base_sub_parent]
+        "migrate-search",
+        parents=[base_sub_parent],
+        help="Migrate a project from Sidecar to the shared Global Search container",
     )
     migrate_search.add_argument("project", nargs="?")
     migrate_search.add_argument("-p", "--project", dest="project_flag")
@@ -1924,7 +2006,11 @@ def get_parser():  # noqa: PLR0915
     )
     share_subparsers = share.add_subparsers(dest="subcommand")
 
-    share_start = share_subparsers.add_parser("start", parents=[base_sub_parent])
+    share_start = share_subparsers.add_parser(
+        "start",
+        parents=[base_sub_parent],
+        help="Start the sharing tunnel for a project (lfr-tunnel or ngrok)",
+    )
     share_start.add_argument("project", nargs="?")
     share_start.add_argument("-p", "--project", dest="project_flag")
     share_start.add_argument(
@@ -1956,7 +2042,7 @@ def get_parser():  # noqa: PLR0915
     share_start.add_argument(
         "--auto-install-lfr-tunnel",
         action="store_true",
-        help="(Deprecated) LDM no longer downloads a client. Still suppresses the prompt when lfr_tunnel_install_cmd is configured.",
+        help="(Deprecated) LDM no longer downloads a client. Still suppresses the prompt when lfr_tunnel_install_cmd is configured",
     )
     share_inspector = share_subparsers.add_parser(
         "inspector",
@@ -1972,11 +2058,19 @@ def get_parser():  # noqa: PLR0915
         help="Local port to expose the inspector on (defaults to 4040)",
     )
 
-    share_status = share_subparsers.add_parser("status", parents=[base_sub_parent])
+    share_status = share_subparsers.add_parser(
+        "status",
+        parents=[base_sub_parent],
+        help="Show the status and public URL of the active sharing tunnel",
+    )
     share_status.add_argument("project", nargs="?")
     share_status.add_argument("-p", "--project", dest="project_flag")
 
-    share_stop = share_subparsers.add_parser("stop", parents=[base_sub_parent])
+    share_stop = share_subparsers.add_parser(
+        "stop",
+        parents=[base_sub_parent],
+        help="Terminate the active sharing tunnel for a project",
+    )
     share_stop.add_argument("project", nargs="?")
     share_stop.add_argument("-p", "--project", dest="project_flag")
 
@@ -1988,12 +2082,17 @@ def get_parser():  # noqa: PLR0915
 
     # Namespace: cloud
     cloud = subparsers.add_parser(
-        "cloud", parents=[base_sub_parent], help="Liferay Cloud integrations"
+        "cloud",
+        parents=[base_sub_parent],
+        help="Manage Liferay Cloud PaaS projects and environments",
     )
     cloud_subparsers = cloud.add_subparsers(dest="subcommand")
 
     cloud_fetch = cloud_subparsers.add_parser(
-        "fetch", parents=[base_sub_parent], conflict_handler="resolve"
+        "fetch",
+        parents=[base_sub_parent],
+        conflict_handler="resolve",
+        help="Sync a local project with a live Liferay Cloud environment",
     )
     cloud_fetch.add_argument("project", nargs="?")
     cloud_fetch.add_argument("env_id", nargs="?")
@@ -2013,7 +2112,10 @@ def get_parser():  # noqa: PLR0915
     cloud_fetch.add_argument("-f", "--follow", action="store_true")
 
     cloud_deploy = cloud_subparsers.add_parser(
-        "deploy", parents=[base_sub_parent], conflict_handler="resolve"
+        "deploy",
+        parents=[base_sub_parent],
+        conflict_handler="resolve",
+        help="Deploy a workspace project to a Liferay Cloud environment",
     )
     cloud_deploy.add_argument("project", nargs="?")
     cloud_deploy.add_argument("-p", "--project", dest="project_flag")
@@ -2042,7 +2144,10 @@ def get_parser():  # noqa: PLR0915
     )
 
     cloud_tags = cloud_subparsers.add_parser(
-        "update-tags", parents=[base_sub_parent], conflict_handler="resolve"
+        "update-tags",
+        parents=[base_sub_parent],
+        conflict_handler="resolve",
+        help="Update service image tag references in LCP.json",
     )
     cloud_tags.add_argument("project", nargs="?")
     cloud_tags.add_argument("-p", "--project", dest="project_flag")
@@ -2050,7 +2155,10 @@ def get_parser():  # noqa: PLR0915
     cloud_tags.add_argument("--commit", action="store_true")
 
     cloud_sql = cloud_subparsers.add_parser(
-        "sql", parents=[base_sub_parent], conflict_handler="resolve"
+        "sql",
+        parents=[base_sub_parent],
+        conflict_handler="resolve",
+        help="Execute a SQL script against a Liferay Cloud database",
     )
     cloud_sql.add_argument("project", nargs="?")
     cloud_sql.add_argument("-p", "--project", dest="project_flag")
@@ -2059,7 +2167,10 @@ def get_parser():  # noqa: PLR0915
     cloud_sql.add_argument("--force", action="store_true")
 
     cloud_db_reset = cloud_subparsers.add_parser(
-        "db-reset", parents=[base_sub_parent], conflict_handler="resolve"
+        "db-reset",
+        parents=[base_sub_parent],
+        conflict_handler="resolve",
+        help="Reset the public schema on a Liferay Cloud database",
     )
     cloud_db_reset.add_argument("project", nargs="?")
     cloud_db_reset.add_argument("-p", "--project", dest="project_flag")
@@ -2069,14 +2180,20 @@ def get_parser():  # noqa: PLR0915
     )
 
     cloud_status = cloud_subparsers.add_parser(
-        "status", parents=[base_sub_parent], conflict_handler="resolve"
+        "status",
+        parents=[base_sub_parent],
+        conflict_handler="resolve",
+        help="Show the status of a Liferay Cloud project environment",
     )
     cloud_status.add_argument("project", nargs="?")
     cloud_status.add_argument("-p", "--project", dest="project_flag")
     cloud_status.add_argument("-e", "--environment", dest="env_id")
 
     cloud_logs = cloud_subparsers.add_parser(
-        "logs", parents=[base_sub_parent], conflict_handler="resolve"
+        "logs",
+        parents=[base_sub_parent],
+        conflict_handler="resolve",
+        help="Stream logs for a Liferay Cloud service",
     )
     cloud_logs.add_argument("project", nargs="?")
     cloud_logs.add_argument("-p", "--project", dest="project_flag")
@@ -2087,18 +2204,30 @@ def get_parser():  # noqa: PLR0915
     config_parser = subparsers.add_parser(
         "config",
         parents=[base_sub_parent],
-        help="Cascading and global config management",
+        help="Manage cascading project and global configuration",
     )
     config_subparsers = config_parser.add_subparsers(dest="subcommand")
 
-    cfg_get = config_subparsers.add_parser("get", parents=[base_sub_parent])
+    cfg_get = config_subparsers.add_parser(
+        "get",
+        parents=[base_sub_parent],
+        help="Show one or all generic project config values",
+    )
     cfg_get.add_argument("key", nargs="?")
 
-    cfg_set = config_subparsers.add_parser("set", parents=[base_sub_parent])
+    cfg_set = config_subparsers.add_parser(
+        "set",
+        parents=[base_sub_parent],
+        help="Set a generic project config value",
+    )
     cfg_set.add_argument("key")
     cfg_set.add_argument("value")
 
-    cfg_remove = config_subparsers.add_parser("remove", parents=[base_sub_parent])
+    cfg_remove = config_subparsers.add_parser(
+        "remove",
+        parents=[base_sub_parent],
+        help="Remove a generic project config value",
+    )
     cfg_remove.add_argument("key")
 
     defaults = config_subparsers.add_parser(
@@ -2136,20 +2265,32 @@ def get_parser():  # noqa: PLR0915
         help="Apply to the global system level",
     )
 
-    env = config_subparsers.add_parser("env", parents=[base_sub_parent])
+    env = config_subparsers.add_parser(
+        "env",
+        parents=[base_sub_parent],
+        help="Manage persistent environment variables in project metadata",
+    )
     env.add_argument("vars", nargs="*")
     env.add_argument("-p", "--project", dest="project_flag")
     env.add_argument("-s", "--service")
     env.add_argument("--remove", action="store_true")
     env.add_argument("--import", action="store_true", dest="import_env")
 
-    feat = config_subparsers.add_parser("feature", parents=[base_sub_parent])
+    feat = config_subparsers.add_parser(
+        "feature",
+        parents=[base_sub_parent],
+        help="Toggle Liferay feature flags",
+    )
     feat.add_argument("project", nargs="?")
     feat.add_argument("-p", "--project", dest="project_flag")
     feat.add_argument("--enable", nargs="+", help="Enable one or more feature flags")
     feat.add_argument("--disable", nargs="+", help="Disable one or more feature flags")
 
-    log_level = config_subparsers.add_parser("log-level", parents=[base_sub_parent])
+    log_level = config_subparsers.add_parser(
+        "log-level",
+        parents=[base_sub_parent],
+        help="Manage Liferay Log4j2 logging levels without restarting",
+    )
     log_level.add_argument("project", nargs="?")
     log_level.add_argument("-p", "--project", dest="project_flag")
     log_level.add_argument("-b", "--bundle")
@@ -2161,7 +2302,10 @@ def get_parser():  # noqa: PLR0915
     log_level.add_argument("--list", action="store_true")
 
     edit_cmd = config_subparsers.add_parser(
-        "edit", parents=[base_sub_parent], conflict_handler="resolve"
+        "edit",
+        parents=[base_sub_parent],
+        conflict_handler="resolve",
+        help="Open project config files in $EDITOR",
     )
     edit_cmd.add_argument("project", nargs="?")
     edit_cmd.add_argument("-p", "--project", dest="project_flag")
@@ -2286,7 +2430,7 @@ def get_parser():  # noqa: PLR0915
     node = subparsers.add_parser(
         "node",
         parents=[base_sub_parent],
-        help="Target node power management and cost control utility",
+        help="Manage target node power state and cost control",
     )
     node_subparsers = node.add_subparsers(dest="node_command")
     node_power = node_subparsers.add_parser(
@@ -2380,7 +2524,7 @@ def get_parser():  # noqa: PLR0915
     db = subparsers.add_parser(
         "db",
         parents=[base_sub_parent],
-        help="Database operations",
+        help="Manage shared database infrastructure and query project databases",
     )
     db_subparsers = db.add_subparsers(dest="subcommand")
 
@@ -2429,7 +2573,7 @@ def get_parser():  # noqa: PLR0915
     system = subparsers.add_parser(
         "system",
         parents=[base_sub_parent],
-        help="System utility diagnostics and configurations",
+        help="Run diagnostics and manage global LDM state and utilities",
     )
     system_subparsers = system.add_subparsers(dest="subcommand")
 
@@ -2454,7 +2598,7 @@ def get_parser():  # noqa: PLR0915
     prune = system_subparsers.add_parser(
         "prune",
         parents=[base_sub_parent],
-        help="Reclaim disk space by safely removing orphaned containers, search snapshots, dangling Docker volumes/images/build cache, and temporary files.",
+        help="Reclaim disk space by safely removing orphaned containers, search snapshots, dangling Docker volumes/images/build cache, and temporary files",
     )
     prune.add_argument(
         "--clean-hosts",
@@ -2506,7 +2650,7 @@ def get_parser():  # noqa: PLR0915
     doctor = system_subparsers.add_parser(
         "doctor",
         parents=[base_sub_parent],
-        help="Run comprehensive health checks on your Docker environment, mounts, connectivity, and disk space.",
+        help="Run comprehensive health checks on your Docker environment, mounts, connectivity, and disk space",
     )
     doctor.add_argument("project", nargs="?")
     doctor.add_argument("-p", "--project-id", dest="project_flag")
@@ -2570,7 +2714,10 @@ def get_parser():  # noqa: PLR0915
     )
 
     upgrade = system_subparsers.add_parser(
-        "upgrade", parents=[base_sub_parent], conflict_handler="resolve"
+        "upgrade",
+        parents=[base_sub_parent],
+        conflict_handler="resolve",
+        help="Update ldm to the latest stable or pre-release version",
     )
     upgrade.add_argument(
         "--check",
@@ -2598,7 +2745,11 @@ def get_parser():  # noqa: PLR0915
         help="Target a specific version of LDM (e.g. v2.11.53)",
     )
 
-    version_cmd = system_subparsers.add_parser("version", parents=[base_sub_parent])
+    version_cmd = system_subparsers.add_parser(
+        "version",
+        parents=[base_sub_parent],
+        help="Inspect, bump or stamp the LDM version (maintainer utility)",
+    )
     version_cmd.add_argument(
         "--bump",
         choices=["major", "minor", "patch", "beta", "preminor", "premajor"],
@@ -2622,7 +2773,11 @@ def get_parser():  # noqa: PLR0915
         help="Promote the current beta to a stable release",
     )
 
-    system_subparsers.add_parser("dev-setup", parents=[base_sub_parent])
+    system_subparsers.add_parser(
+        "dev-setup",
+        parents=[base_sub_parent],
+        help="Configure the LDM development environment",
+    )
 
     fix_hosts_cmd = system_subparsers.add_parser(
         "fix-hosts",
@@ -2635,19 +2790,29 @@ def get_parser():  # noqa: PLR0915
         help="Optional hostname/project to fix",
     )
 
-    completion = system_subparsers.add_parser("completion", parents=[base_sub_parent])
+    completion = system_subparsers.add_parser(
+        "completion",
+        parents=[base_sub_parent],
+        help="Print the shell TAB completion setup for your shell",
+    )
     completion.add_argument(
         "shell", choices=["bash", "zsh", "fish", "powershell"], nargs="?"
     )
 
     setup_completion = system_subparsers.add_parser(
-        "setup-completion", parents=[base_sub_parent]
+        "setup-completion",
+        parents=[base_sub_parent],
+        help="Install shell TAB completion into your shell profile",
     )
     setup_completion.add_argument(
         "shell", choices=["bash", "zsh", "fish", "powershell"], nargs="?"
     )
 
-    system_subparsers.add_parser("man", parents=[base_sub_parent])
+    system_subparsers.add_parser(
+        "man",
+        parents=[base_sub_parent],
+        help="Display the LDM manual page",
+    )
 
     roi_cmd = system_subparsers.add_parser(
         "roi",
@@ -2663,7 +2828,7 @@ def get_parser():  # noqa: PLR0915
     nuke_cmd = system_subparsers.add_parser(
         "nuke",
         parents=[base_sub_parent],
-        help="Completely reset/wipe all global LDM state, caches, certificates, registry, and docker infrastructure.",
+        help="Completely reset/wipe all global LDM state, caches, certificates, registry, and docker infrastructure",
     )
     nuke_cmd.add_argument(
         "--keep-config",
@@ -2674,7 +2839,7 @@ def get_parser():  # noqa: PLR0915
     rescue_cmd = system_subparsers.add_parser(
         "rescue",
         parents=[base_sub_parent],
-        help="Recover/self-heal local LDM global proxy or specific project environments.",
+        help="Recover/self-heal local LDM global proxy or specific project environments",
     )
     rescue_cmd.add_argument(
         "project",
@@ -2697,7 +2862,7 @@ def get_parser():  # noqa: PLR0915
     )
     init_ci.add_argument(
         "--repo",
-        help="GitHub Repository Identifier (owner/repo). Auto-detects from git remote if omitted.",
+        help="GitHub Repository Identifier (owner/repo). Auto-detects from git remote if omitted",
     )
     init_ci.add_argument(
         "--workflow-name",
