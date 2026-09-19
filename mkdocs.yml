@@ -86,26 +86,34 @@ nav:
     - Liferay Workspace Local Dev: tutorials/workspace_development.md
   - How-To:
     - how-to/index.md
-    - Install macOS: how-to/install_macos.md
-    - Install Windows: how-to/install_windows.md
-    - Install Linux: how-to/install_linux.md
-    - Fresh Vanilla Start: how-to/vanilla_start.md
-    - Nightly & Master Builds: how-to/nightly_master_builds.md
-    - Workspace Import: how-to/workspace_import.md
-    - Client Extensions: how-to/client_extensions.md
-    - Version Upgrades: how-to/version_upgrades.md
-    - Data Management: how-to/data_management.md
-    - Sharing & Tunnels: how-to/sharing_tunnels.md
-    - Custom Containers: how-to/custom_containers.md
-    - Multi-Compose Architecture: how-to/multi_compose.md
-    - Runtime Overrides: how-to/runtime_overrides.md
-    - End-to-End Testing: how-to/e2e_testing.md
-    - AI MCP Guide: how-to/ai_mcp_guide.md
-    - Multi-Node Orchestration: how-to/multi_node_orchestration.md
-    - Development: how-to/development.md
-    - Cloud Deployment: how-to/cloud_deployment.md
-    - Portal Patches: how-to/portal_patches.md
-    - Target Node IAM Least Privilege: how-to/target_node_iam_least_privilege.md
+    # LDM-#1816: grouped to match how-to/index.md, so the sidebar and the
+    # landing page tell the same story. Nav-only -- no page URL changes.
+    - Install:
+      - macOS: how-to/install_macos.md
+      - Windows: how-to/install_windows.md
+      - Linux: how-to/install_linux.md
+    - Get a project running:
+      - Fresh Vanilla Start: how-to/vanilla_start.md
+      - Workspace Import: how-to/workspace_import.md
+      - Nightly & Master Builds: how-to/nightly_master_builds.md
+      - Version Upgrades: how-to/version_upgrades.md
+    - Develop:
+      - Client Extensions: how-to/client_extensions.md
+      - Portal Patches: how-to/portal_patches.md
+      - Runtime Overrides: how-to/runtime_overrides.md
+      - Development & Building: how-to/development.md
+    - Data & environments:
+      - Data Management: how-to/data_management.md
+      - Custom Containers: how-to/custom_containers.md
+      - Multi-Compose Architecture: how-to/multi_compose.md
+    - Share & connect:
+      - Sharing & Tunnels: how-to/sharing_tunnels.md
+      - AI & MCP: how-to/ai_mcp_guide.md
+    - Operate at scale:
+      - Multi-Node Orchestration: how-to/multi_node_orchestration.md
+      - Cloud Deployment: how-to/cloud_deployment.md
+      - Target Node IAM Least Privilege: how-to/target_node_iam_least_privilege.md
+      - End-to-End Testing: how-to/e2e_testing.md
   - Reference:
     - reference/index.md
     - Configuration: reference/configuration.md
