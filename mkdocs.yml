@@ -134,7 +134,7 @@ nav:
     - Architecture: explanation/architecture.md
     - Remote Node Architecture: explanation/remote-node-architecture.md
     - Properties: explanation/properties.md
-    - Conventions: explanation/conventions.md
+    - Key Features: explanation/conventions.md
     - Conventions & Configuration: explanation/conventions_and_config.md
     - Internationalization & Transcoding: explanation/i18n.md
     - FAQ: explanation/faq.md
