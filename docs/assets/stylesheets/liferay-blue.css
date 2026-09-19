@@ -1,0 +1,138 @@
+/*
+ * Liferay Blue -- LDM documentation palette (LDM-#1822)
+ *
+ * Ported from lfr-tunnel's portal theme
+ * (pkg/server/static/themes/liferay.css, applied there via data-theme="liferay"),
+ * so the two surfaces of the same product family look related.
+ *
+ *   Primary: #0B5FFF -- Liferay.com standard blue
+ *   Shell:   #1a1f35 -- deep navy, DXP 7.4+ dark control panel
+ *
+ * This is a PALETTE, not a port of that theme. The portal's glassmorphism,
+ * login radial gradient, card blur and glow shadows are deliberately not
+ * brought across: they belong to an app shell and would fight Material's
+ * typography and reading measure.
+ *
+ * #0B5FFF is not one of Material's built-in palette colours, so it cannot be
+ * set through `theme.palette.primary` and is applied here instead.
+ *
+ * TWO ROLES, KEPT SEPARATE. Upstream splits --primary (a FOREGROUND: link and
+ * icon colour) from --primary-strong (a FILL sitting under a white label).
+ * That split is deliberate -- lfr-tunnel #1458 and #1514 -- and collapsing the
+ * two makes link text and button fills the same colour, at which point one of
+ * them fails contrast. The same split is preserved below.
+ */
+
+:root {
+  /* Source tokens, named as upstream names them, so a future change there can
+     be diffed against this file rather than reverse-engineered from hex. */
+  --lfr-blue: #0b5fff;
+  --lfr-blue-hover: #0048d4;
+  --lfr-blue-strong: #0b59f0;
+  --lfr-navy: #1a1f35;
+  --lfr-navy-deep: #12162a;
+  --lfr-navy-raised: #1e2442;
+  --lfr-text-main: #f0f2ff;
+  --lfr-text-secondary: #b0b8d8;
+  --lfr-text-muted: #8892b8;
+  --lfr-success: #17d09e;
+  --lfr-warning: #ffb84d;
+  --lfr-danger: #ff4d6a;
+}
+
+/* ---------------------------------------------------------------------------
+ * Light scheme -- white shell, Liferay blue as the accent.
+ *
+ * The source palette is dark-only. A documentation site that is dark-only is a
+ * real accessibility and preference cost, so the brand colour carries into a
+ * light scheme rather than forcing one mode on every reader.
+ * ------------------------------------------------------------------------ */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: var(--lfr-blue);
+  --md-primary-fg-color--light: #4a86ff;
+  --md-primary-fg-color--dark: var(--lfr-blue-hover);
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: rgba(255, 255, 255, 0.7);
+
+  --md-accent-fg-color: var(--lfr-blue-hover);
+  --md-accent-fg-color--transparent: rgba(11, 95, 255, 0.1);
+  --md-accent-bg-color: #ffffff;
+  --md-accent-bg-color--light: rgba(255, 255, 255, 0.7);
+
+  --md-typeset-a-color: var(--lfr-blue);
+
+  --md-footer-bg-color: var(--lfr-navy);
+  --md-footer-bg-color--dark: var(--lfr-navy-deep);
+}
+
+/* ---------------------------------------------------------------------------
+ * Dark scheme -- the Liferay palette as-is.
+ * ------------------------------------------------------------------------ */
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: var(--lfr-navy);
+  --md-default-bg-color--light: var(--lfr-navy-raised);
+  --md-default-bg-color--lighter: rgba(255, 255, 255, 0.06);
+  --md-default-bg-color--lightest: rgba(255, 255, 255, 0.03);
+
+  --md-default-fg-color: var(--lfr-text-main);
+  --md-default-fg-color--light: var(--lfr-text-secondary);
+  --md-default-fg-color--lighter: var(--lfr-text-muted);
+  --md-default-fg-color--lightest: rgba(136, 146, 184, 0.45);
+
+  /* The header/nav fill is the navy shell, not the blue. Not a contrast
+     decision -- white on #0b5fff measures 5.13:1 and clears AA comfortably --
+     but a brand one: upstream's shell IS the navy, with blue as the accent on
+     top of it. A blue header would invert that relationship. */
+  --md-primary-fg-color: var(--lfr-navy-deep);
+  --md-primary-fg-color--light: var(--lfr-navy-raised);
+  --md-primary-fg-color--dark: #0d1020;
+  --md-primary-bg-color: var(--lfr-text-main);
+  --md-primary-bg-color--light: var(--lfr-text-secondary);
+
+  --md-accent-fg-color: #5d9bff;
+  --md-accent-fg-color--transparent: rgba(11, 95, 255, 0.15);
+
+  /* Measured: #0b5fff on #1a1f35 is 3.17:1 -- it FAILS AA as body-size link
+     text. The lifted tint is 5.88:1 and passes. Upstream reaches for the same
+     value for the same reason (--status-info-text), so this follows it rather
+     than inventing a colour. */
+  --md-typeset-a-color: #5d9bff;
+
+  --md-code-bg-color: rgba(0, 0, 0, 0.3);
+  --md-code-fg-color: var(--lfr-text-main);
+
+  --md-footer-bg-color: var(--lfr-navy-deep);
+  --md-footer-bg-color--dark: #0d1020;
+
+  --md-typeset-mark-color: rgba(11, 95, 255, 0.3);
+  --md-typeset-table-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Status colours, shared by both schemes. Upstream values; Material uses these
+   for admonitions, which #1820 is enabling. */
+[data-md-color-scheme="default"],
+[data-md-color-scheme="slate"] {
+  --md-typeset-ins-color: var(--lfr-success);
+  --md-typeset-del-color: var(--lfr-danger);
+  --md-warning-fg-color: #1a1f35;
+  --md-warning-bg-color: var(--lfr-warning);
+}
+
+/* The header keeps the navy shell on both schemes: it is the one element that
+   reads as brand chrome, and flipping it to white in light mode loses the
+   Liferay identity the palette exists to carry. */
+.md-header {
+  background-color: var(--lfr-navy-deep);
+  color: var(--lfr-text-main);
+}
+
+.md-tabs {
+  background-color: var(--lfr-navy);
+  color: var(--lfr-text-main);
+}
+
+/* Selection uses the blue at a low alpha rather than the browser default,
+   which clashes with the navy. */
+::selection {
+  background-color: rgba(11, 95, 255, 0.3);
+}
