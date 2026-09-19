@@ -100,6 +100,32 @@ PIP_INSTALL_TIMEOUT = 600  # 10 min -- plugin/completion dependency installs
 # --- Release Announcements Mapping ---
 # Maps major.minor or exact version keys to lists of (cmd, description) tuples.
 RELEASE_ANNOUNCEMENTS = {
+    "2.24": [
+        (
+            "ldm run --container <name>",
+            "Name a project's containers explicitly instead of deriving the name "
+            "from its directory. The value is sanitised on the way in, because "
+            "the compose builder sanitises before stamping ownership labels "
+            "while prune matches the stored value raw -- a mismatch would make "
+            "prune offer a live project's containers as orphans. Refused on a "
+            "project that already exists, where changing it would rename every "
+            "container and orphan its volumes",
+        ),
+        (
+            "--force is now off unless you pass it",
+            "It had been permanently ON for 54 commands: a shared parser object "
+            "lost its option strings, and argparse treats such an action as a "
+            "positional that always fires. Every guard reading it was disabled, "
+            "and 'ldm system upgrade --force' was prefix-matched into "
+            "'--force-downgrade', performing a forced downgrade",
+        ),
+        (
+            "ldm guide",
+            "Now prints the precedence LDM actually implements -- five levels, "
+            "CLI down to convention -- and recommends 'ldm defaults', not the "
+            "'ldm config set' form that LDM refuses for a cascading key",
+        ),
+    ],
     "2.15": [
         (
             "ldm target <subcmd>",
