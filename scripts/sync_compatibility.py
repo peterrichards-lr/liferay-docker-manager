@@ -234,12 +234,16 @@ def _declared_linux_os(env_label, platform_str):
 # below to decide whether it's provably safe to relabel a compatibility-table
 # entry's pre-release version as its now-stable equivalent (see
 # get_promotable_stable_version()).
+#
+# LDM-#1810: files that DO ship inside the binary belong in
+# _CONDITIONALLY_ALLOWED instead, where each is admitted only when its own diff
+# is provably cosmetic. Putting one here would wave through a substantive edit
+# between pre.N and stable, which is the case the guard exists to catch.
 _METADATA_ONLY_ALLOWLIST = [
     re.compile(r".*\.md$", re.IGNORECASE),
     re.compile(r"^ldm_core/constants\.py$"),
     re.compile(r"^pyproject\.toml$"),
     re.compile(r"^scripts/release\.py$"),
-    re.compile(r"^scripts/verify_e2e_refactor\.(sh|ps1)$"),
     re.compile(r"^scripts/(sync_compatibility|check_version_sync)\.py$"),
     re.compile(r"^references/verification-results/"),
     re.compile(r"^lint\.sh$"),
@@ -274,9 +278,29 @@ def _is_metadata_only_diff(old_ref, new_ref="HEAD"):
     if res.returncode != 0:
         return False
     changed = [f for f in res.stdout.splitlines() if f.strip()]
-    return all(
-        any(pattern.match(f) for pattern in _METADATA_ONLY_ALLOWLIST) for f in changed
-    )
+    unexplained = [
+        f
+        for f in changed
+        if not any(pattern.match(f) for pattern in _METADATA_ONLY_ALLOWLIST)
+    ]
+    if not unexplained:
+        return True
+
+    # LDM-#1810: anything left may still be admitted, but only by proving its
+    # own diff is cosmetic. Each predicate shells out to git, so evaluate each
+    # at most once however many files it covers.
+    verdicts = {}
+    for path in list(unexplained):
+        for pattern, is_cosmetic in _CONDITIONALLY_ALLOWED:
+            if not pattern.match(path):
+                continue
+            if is_cosmetic not in verdicts:
+                verdicts[is_cosmetic] = is_cosmetic(old_ref, new_ref)
+            if verdicts[is_cosmetic]:
+                unexplained.remove(path)
+            break
+
+    return not unexplained
 
 
 # LDM-#1058: a changed/added line in the verify scripts' diff that can only
@@ -314,6 +338,17 @@ def _is_verify_script_diff_cosmetic_only(old_ref, new_ref="HEAD"):
     changed in a way that could affect what they exercise.
     """
     paths = ["scripts/verify_e2e_refactor.sh", "scripts/verify_e2e_refactor.ps1"]
+    return _diff_lines_all_match(_VERIFY_SCRIPT_SAFE_LINE, paths, old_ref, new_ref)
+
+
+def _diff_lines_all_match(safe_line, paths, old_ref, new_ref):
+    """True only if every changed line in `paths` between the two refs matches
+    `safe_line`. Fails safe (False) on any git error or an empty/missing ref.
+
+    Shared by the two cosmetic-diff predicates so they cannot drift in how they
+    fail safe -- the whole value of either is that an inconclusive answer is
+    never mistaken for a green light.
+    """
     try:
         res = subprocess.run(
             ["git", "diff", "--unified=0", old_ref, new_ref, "--", *paths],
@@ -330,9 +365,57 @@ def _is_verify_script_diff_cosmetic_only(old_ref, new_ref="HEAD"):
     for line in res.stdout.splitlines():
         if not line.startswith(("+", "-")) or line.startswith(("+++", "---")):
             continue
-        if not _VERIFY_SCRIPT_SAFE_LINE.match(line):
+        if not safe_line.match(line):
             return False
     return True
+
+
+# LDM-#1810: the man page's only line carrying a version is its `.TH` header,
+# which `ldm system version --bump` stamps on every bump:
+#
+#   -.TH LDM 1 "September 2026" "2.23.0-pre.8" "Liferay Docker Manager Manual"
+#   +.TH LDM 1 "September 2026" "2.23.0" "Liferay Docker Manager Manual"
+#
+# Nothing else in ldm.1 is generated, so a diff limited to this line is the
+# stamp and nothing else.
+_MAN_PAGE_STAMP_LINE = re.compile(r"^[+-]\.TH\s+LDM\s+1\s+.*$")
+
+_MAN_PAGE_PATH = "ldm_core/resources/ldm.1"
+
+
+def _is_man_page_diff_stamp_only(old_ref, new_ref="HEAD"):
+    """True only if the man page's diff between old_ref and new_ref is its
+    `.TH` version stamp and nothing else.
+
+    `ldm.1` ships inside the binary, so it cannot join
+    _METADATA_ONLY_ALLOWLIST unconditionally -- a real documentation change
+    between pre.N and stable must still block relabeling. But the stamp alone
+    is present after *every* promote, which is what stopped
+    get_promotable_stable_version() from ever firing (LDM-#1810).
+
+    Fails safe (False) on any git error, an empty/missing ref, or any changed
+    line this cannot positively classify as the stamp.
+    """
+    return _diff_lines_all_match(
+        _MAN_PAGE_STAMP_LINE, [_MAN_PAGE_PATH], old_ref, new_ref
+    )
+
+
+# LDM-#1810: files that ship inside the binary and so cannot be allowlisted
+# outright, paired with the predicate that proves a given diff of them is
+# cosmetic. Consulted by _is_metadata_only_diff() only for paths the
+# unconditional allowlist did not already explain.
+#
+# The verify scripts were allowlisted unconditionally until now, which meant a
+# promote that changed *what they actually exercise* was still treated as
+# metadata-only. They are admitted on proof like everything else here.
+_CONDITIONALLY_ALLOWED = [
+    (re.compile(r"^ldm_core/resources/ldm\.1$"), _is_man_page_diff_stamp_only),
+    (
+        re.compile(r"^scripts/verify_e2e_refactor\.(sh|ps1)$"),
+        _is_verify_script_diff_cosmetic_only,
+    ),
+]
 
 
 def get_promotable_stable_version(report_version):
