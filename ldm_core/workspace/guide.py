@@ -93,21 +93,51 @@ def _print_conventions_defaults():
 
 
 def _print_customizing_defaults():
-    print("""
-  Customizing LDM behavior (3 Precedence Levels):
+    """Prints the settings precedence, highest-priority first.
 
-  1. Runtime Flags (Single Execution):
+    LDM-#1824: this used to advertise three levels, one of which
+    (`.ldm/config.json` in the project root) does not exist, and omitted the
+    project `meta` file -- the level that actually freezes a project's
+    settings. It also told the user to run `ldm config set database_mode`,
+    which `handlers/config.py` refuses outright for any key in
+    CONVENTION_DEFAULTS because `ldm config set` writes the root of ~/.ldmrc
+    where the defaults resolver never looks.
+
+    That mattered more than a stale help string: `ldm guide` is step 1 of
+    docs/tutorials/first_5_minutes.md, so this was the first thing a new user
+    saw.
+
+    Kept in step with `DefaultsManager.get_resolved` (CONVENTION_DEFAULTS <
+    /etc/ldmrc < ~/.ldmrc) and `resolve_infrastructure_mode` (CLI > project
+    meta > defaults). `test_guide_matches_resolution_order` asserts it.
+    """
+    print("""
+  Customizing LDM behavior (5 Precedence Levels, highest first):
+
+  1. Runtime Flags (this run only):
      $ ldm run --db mysql
      $ ldm run --port 9090
      $ ldm run --database-mode isolated
 
-  2. Workspace Overrides (.ldm/config.json in project root):
-     Lock settings for a specific repository folder.
+  2. Project Metadata (the 'meta' file in the project root):
+     Written when the project is created, and frozen thereafter.
 
-  3. Global User Defaults (~/.ldmrc):
-     $ ldm config set default_db mysql
-     $ ldm config set database_mode isolated
-     (Applies across all LDM workspaces for the current user)
+  3. User Defaults (~/.ldmrc):
+     $ ldm defaults default_db mysql
+     $ ldm defaults database_mode isolated
+     (Applies across all LDM projects for the current user)
+
+  4. Global Defaults (/etc/ldmrc):
+     $ ldm defaults database_mode isolated --global
+     (System-wide; typically set by an administrator or CI provisioning)
+
+  5. Convention Defaults:
+     LDM's built-in fallbacks. Nothing to configure.
+
+  Note: use 'ldm defaults', not 'ldm config set', for any of the above.
+  'ldm config set' writes a different part of ~/.ldmrc that the defaults
+  resolver ignores, and LDM refuses it for these keys rather than silently
+  having no effect.
 """)
 
 
