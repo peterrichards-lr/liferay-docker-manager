@@ -13,6 +13,20 @@ theme:
   font:
     text: Inter
     code: Roboto Mono
+  # LDM-#1820: navigation.indexes and navigation.sections are enabled here
+  # because LDM-#1815 and LDM-#1816 depend on them; they are inert until those
+  # land (a section without an index.md behaves exactly as before).
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - navigation.sections
+    - navigation.indexes
+    - content.code.copy
+    - content.code.annotate
+    - search.suggest
+    - search.highlight
+    - toc.follow
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -30,6 +44,37 @@ extra_css:
 
 plugins:
   - search
+
+# LDM-#1820: the docs use GitHub's alert syntax (`> [!NOTE]`), which MkDocs does
+# not understand -- it emitted a plain blockquote with the marker still visible,
+# in 57 places. Converting the sources to `!!! note` would fix the site and
+# break GitHub, where these files are also read, so the conversion happens at
+# build time instead. A core `hooks:` entry rather than a third-party plugin, so
+# nothing new is taken on -- see the toolchain note in LDM-#1814.
+hooks:
+  - mkdocs_hooks/github_alerts.py
+
+markdown_extensions:
+  # Targets of the hook above.
+  - admonition
+  - pymdownx.details
+  # Required by the card grids LDM-#1815 will add.
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  # Without a mermaid custom fence the 3 architecture diagrams rendered as
+  # syntax-highlighted code blocks, which is worse than no diagram.
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
 
 nav:
   - Home: README.md
