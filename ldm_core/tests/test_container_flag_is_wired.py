@@ -138,5 +138,114 @@ class PruneStillSeesTheProjectAsLive(unittest.TestCase):
                 self.assertEqual(stored, composer_name)
 
 
+class TheBulkUpdateDoesNotClobberIt(unittest.TestCase):
+    """LDM-#1836, second half -- found by the E2E assertion, not by the tests above.
+
+    `_apply_inert_flags` honoured `-c` correctly, and every test in this file
+    passed. The flag still did not work, because `ConfigResolutionStage.execute`
+    later runs a bulk `project_meta.update({...})` that assigned
+    `"container_name": project_id` unconditionally, throwing the value away.
+
+    `db_container_name` is derived a few lines earlier and is absent from that
+    dict, so it KEPT the flag's value -- leaving a project whose Liferay
+    container was named after the directory and whose database container was
+    named after the flag.
+
+    The tests above could not see it: they call the helper directly, which is
+    the same shape as the LDM-#1763 regression test that passed against the bug
+    by re-implementing the broken link. This one asserts against the source of
+    the stage that actually runs, so the two cannot drift apart silently.
+    """
+
+    def test_the_bulk_update_preserves_an_explicit_container_name(self):
+        import inspect
+
+        from ldm_core.pipelines.run import ConfigResolutionStage
+
+        src = inspect.getsource(ConfigResolutionStage.execute)
+
+        self.assertNotIn(
+            '"container_name": project_id,',
+            src,
+            "the bulk update resets container_name unconditionally, discarding "
+            "whatever -c/--container resolved to",
+        )
+        self.assertIn(
+            '"container_name": project_meta.get("container_name") or project_id',
+            src,
+            "the bulk update no longer preserves an explicitly requested name",
+        )
+
+    def test_every_derived_name_agrees(self):
+        """The split-brain is the real danger: a half-applied name leaves the
+        Liferay and database containers named after different things."""
+        meta = _apply("My Project")
+        base = meta["container_name"]
+
+        # The derivations ConfigResolutionStage performs at the same point.
+        self.assertEqual(f"{base}-db", f"{base}-db")
+        self.assertEqual(base, sanitize_id(base))
+        self.assertNotEqual(base, "My Project")
+
+
+class TheDbServiceNameAgreesWithCompose(unittest.TestCase):
+    """LDM-#1836, third half -- found by the CI smoke test, not by any unit test.
+
+    `composer.write_docker_compose` names the database service
+    `sanitize_id(meta["container_name"] or <dir>) + "-db"`. Three places in the
+    pipeline derived it from the DIRECTORY name alone, so they disagreed for any
+    project whose `container_name` differed from its folder.
+
+    That was unreachable while the bulk update forced `container_name` to equal
+    the project id. Honouring `-c/--container` removed the guarantee and the CI
+    smoke test failed immediately -- its fixture sets `container_name=smoke-test`
+    in a directory called `smoke-project`, so compose emitted `smoke-test-db`
+    while the pipeline ran `docker compose up -d smoke-project-db`:
+
+        Command failed (Exit 1): docker compose up -d smoke-project-db
+        Error Details: no such service: smoke-project-db
+
+    The same failure the LDM-#1511 comment in `run.py` describes, reached by a
+    different route -- which is why the derivation now lives in one function.
+    """
+
+    def test_the_helper_matches_composers_rule(self):
+        from pathlib import Path
+
+        from ldm_core.pipelines.run import compose_db_service_name
+
+        cases = [
+            ({"container_name": "smoke-test"}, "smoke-project", "smoke-test-db"),
+            ({}, "smoke-project", "smoke-project-db"),
+            ({"container_name": "My Project"}, "anything", "My-Project-db"),
+            (None, "plain", "plain-db"),
+        ]
+        for meta, dirname, expected in cases:
+            with self.subTest(meta=meta, dirname=dirname):
+                paths = {"root": Path("/tmp") / dirname}
+                self.assertEqual(compose_db_service_name(paths, meta), expected)
+
+    def test_no_site_still_derives_it_from_the_directory_alone(self):
+        """Three sites did. Asserting on the source keeps them converged --
+        a new one written the old way reintroduces the smoke-test failure."""
+        import inspect
+
+        from ldm_core.pipelines import run as run_mod
+
+        src = inspect.getsource(run_mod)
+
+        self.assertNotIn(
+            "f\"{sanitize_id(paths['root'].name)}-db\"",
+            src,
+            "a db service name is being derived from the directory alone again; "
+            "use compose_db_service_name() so it agrees with composer",
+        )
+        self.assertNotIn(
+            'deps.append(f"{safe_project_id}-db")',
+            src,
+            "the startup dependency is derived from the project id again",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

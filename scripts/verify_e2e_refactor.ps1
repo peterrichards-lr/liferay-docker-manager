@@ -789,6 +789,128 @@ function Test-CascadingDefaultGuard {
     return @{ Ok = $true; Message = "[SUCCESS] Cascading default write refused with the working command named; non-cascading keys still write." }
 }
 
+function Test-ForceIsNotAPositional {
+    # LDM-#1835. '--force' was declared once on a shared parent parser, and
+    # argparse 'parents=' copies action REFERENCES. A conflict_handler="resolve"
+    # child that redeclared '-f' or '--force' emptied option_strings on the
+    # object all 103 subparsers held. argparse renders such an action as a
+    # POSITIONAL, and a positional with nargs=0 always matches -- so 'force'
+    # was True on every invocation of 54 commands with no flag passed, which
+    # disabled every guard reading args.force.
+    #
+    # This asserts the visible symptom on the real binary. The parsed value is
+    # covered by test_force_is_not_always_on.py; the guards it gates fire only
+    # on paths this script cannot reach safely (forcing a downgrade, bypassing
+    # a failed verification).
+    param([string]$LdmCmd)
+
+    $out = & $LdmCmd run --help 2>&1 | Out-String
+
+    if ($out -match '(?m)^\s+force\s') {
+        $line = ($out -split "`n" | Where-Object { $_ -match '^\s+force\s' } | Select-Object -First 1)
+        return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm run --help' renders --force as a bare positional.`n   That is LDM-#1835: the flag is not merely mis-rendered, it is permanently ON`n   for every command sharing the parent parser.`n   | ${line}" }
+    }
+
+    if ($out -notmatch '--force') {
+        return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm run --help' does not mention --force at all." }
+    }
+
+    return @{ Ok = $true; Message = "[SUCCESS] '--force' renders as an option, not an always-firing positional (LDM-#1835)." }
+}
+
+function Test-ContainerNameHonoured {
+    # LDM-#1836. '-c/--container' was accepted and read by nothing: the project
+    # was named after its directory instead, silently.
+    #
+    # The value is stored SANITISED, which is what this asserts. composer.py
+    # runs the name through sanitize_id() before stamping the ownership labels,
+    # while prune.py reads meta["container_name"] raw to decide which projects
+    # are live. A raw value would be labelled as one string and matched as
+    # another, and prune would offer a LIVE project's containers as orphans.
+    param([string]$LdmCmd, [string]$WorkDir)
+
+    $isoHome = Join-Path $WorkDir 'cname-home'
+    $runDir  = Join-Path $WorkDir 'cname-work'
+    $proj    = 'ldmcname'
+    $requested = 'LDM Cname'
+    $expected  = 'LDM-Cname'
+
+    Remove-Item -Recurse -Force $isoHome, $runDir -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $isoHome, $runDir | Out-Null
+
+    $prevHome = $env:LDM_HOME
+    $prevLoc  = Get-Location
+    $env:LDM_HOME = $isoHome
+    Set-Location $runDir
+
+    try {
+        # --no-up: the meta write is what is under test, so booting Liferay
+        # would cost minutes for no additional signal.
+        $out = & $LdmCmd run $proj -c $requested --no-up -y 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm run --container' exited ${LASTEXITCODE}.`n   Output was: ${out}" }
+        }
+
+        $metaFile = Get-ChildItem -Path $runDir -Filter 'meta' -Recurse -File -Depth 3 -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $metaFile) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: no project 'meta' file was written under ${runDir}." }
+        }
+
+        $meta = Get-Content -Raw $metaFile.FullName | ConvertFrom-Json
+        $stored = $meta.container_name
+
+        if (-not $stored) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: meta carries no container_name -- '--container' was ignored (LDM-#1836)." }
+        }
+        if ($stored -ceq $requested) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: container_name was stored RAW as '${stored}'.`n   composer sanitises before labelling and prune matches raw, so a live`n   project would be offered as an orphan (LDM-#1836)." }
+        }
+        if ($stored -cne $expected) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: expected container_name '${expected}', got '${stored}'." }
+        }
+
+        # LDM-#1836 second half: a bulk project_meta.update() reset
+        # container_name to the project id AFTER the flag was honoured, while
+        # db_container_name -- derived earlier and absent from that dict --
+        # kept the flag's value. Assert they agree, or a split-brain naming
+        # passes unnoticed.
+        if ($meta.db_container_name -cne "${expected}-db") {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: split naming -- container_name '${stored}' but db_container_name '$($meta.db_container_name)' (LDM-#1836)." }
+        }
+
+        return @{ Ok = $true; Message = "[SUCCESS] '--container' is honoured and stored sanitised as '${expected}' (LDM-#1836)." }
+    }
+    finally {
+        Set-Location $prevLoc
+        & $LdmCmd rm $proj --delete -y 2>&1 | Out-Null
+        $env:LDM_HOME = $prevHome
+        Remove-Item -Recurse -Force $isoHome, $runDir -ErrorAction SilentlyContinue
+    }
+}
+
+function Test-GuidePrecedence {
+    # LDM-#1824. 'ldm guide' advertised three precedence levels, one of which
+    # (.ldm/config.json) does not exist, omitted the project meta file, and
+    # recommended 'ldm config set database_mode' -- which LDM refuses, because
+    # 'ldm config set' writes where the defaults resolver never looks. It is
+    # step 1 of docs/tutorials/first_5_minutes.md.
+    param([string]$LdmCmd)
+
+    $out = & $LdmCmd guide 2>&1 | Out-String
+
+    if ($out -match [regex]::Escape('.ldm/config.json')) {
+        return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm guide' still names .ldm/config.json as a precedence level.`n   No such cascade level exists (LDM-#1824)." }
+    }
+    if ($out -match 'ldm config set\s+database_mode') {
+        return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm guide' recommends 'ldm config set database_mode', which LDM refuses for any cascading default (LDM-#1824)." }
+    }
+    if ($out -notmatch 'ldm defaults') {
+        return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm guide' offers no working way to set a default." }
+    }
+
+    return @{ Ok = $true; Message = "[SUCCESS] 'ldm guide' describes the real precedence and a command that works (LDM-#1824)." }
+}
+
 function Test-MacPinRefusal {
     # LDM-#1808: exercise the MAC pin's REFUSAL, which had never executed.
     #
@@ -1440,6 +1562,33 @@ try {
         Write-Verdict $macRefusal.Message
     } else {
         Write-Host $macRefusal.Message -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying --force is not an always-firing positional (LDM-#1835)..."
+    $forcePos = Test-ForceIsNotAPositional -LdmCmd $LDM_CMD
+    if ($forcePos.Ok) {
+        Write-Verdict $forcePos.Message
+    } else {
+        Write-Host $forcePos.Message -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying --container is honoured and sanitised (LDM-#1836)..."
+    $cname = Test-ContainerNameHonoured -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE
+    if ($cname.Ok) {
+        Write-Verdict $cname.Message
+    } else {
+        Write-Host $cname.Message -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying 'ldm guide' precedence output (LDM-#1824)..."
+    $guide = Test-GuidePrecedence -LdmCmd $LDM_CMD
+    if ($guide.Ok) {
+        Write-Verdict $guide.Message
+    } else {
+        Write-Host $guide.Message -ForegroundColor Red
         exit 1
     }
 
