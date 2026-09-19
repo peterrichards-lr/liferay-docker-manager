@@ -11,7 +11,12 @@ from pathlib import Path
 from ldm_core.pipelines.base import Pipeline, PipelineContext, PipelineStage
 from ldm_core.pipelines.validation import ValidationStage as SharedValidationStage
 from ldm_core.ui import UI
-from ldm_core.utils import get_actual_home, get_compose_cmd, shared_database_name
+from ldm_core.utils import (
+    get_actual_home,
+    get_compose_cmd,
+    sanitize_id,
+    shared_database_name,
+)
 
 
 class RunPipelineContext(PipelineContext):
@@ -886,6 +891,51 @@ class ConfigResolutionStage(PipelineStage):
                 "scripts keep working: logs/ is bind-mounted automatically for "
                 "every single-node project (LDM-#1695)."
             )
+
+        # LDM-#1836: `-c/--container` is the fourth flag of this family --
+        # declared on `run` and `up`, accepted silently, and read by nothing.
+        # Anyone passing it got a project named after the directory instead,
+        # with no indication.
+        #
+        # SANITISE HERE, not at the point of use. `composer.py:582` runs the
+        # name through `sanitize_id()` before stamping it on the ownership
+        # labels, while `prune.py:387` reads `meta["container_name"]` raw to
+        # decide which projects are live. Those agreed only because the value
+        # had always come from an already-sanitised project id. A raw
+        # "My Project" would label as one string and match as another, and
+        # prune would offer a live project's containers as orphans. Storing the
+        # sanitised form keeps the two readers looking at the same string.
+        requested_container = getattr(manager.args, "container", None)
+        if requested_container:
+            # `sanitize_id` never returns empty -- it falls back to a
+            # generated `project-<hash>` for input with nothing usable in it
+            # (e.g. "///"). So there is no "reduces to nothing" case to guard;
+            # the notice below is what makes that substitution visible.
+            safe_container = sanitize_id(requested_container)
+
+            existing = project_meta.get("container_name")
+            if existing and existing != safe_container:
+                # `container_name` is frozen into meta and drives the Liferay,
+                # database and tunnel container names. Changing it on a live
+                # project renames every container and leaves the old volumes
+                # behind, owned by a name nothing resolves any more.
+                UI.die(
+                    f"This project's containers are already named "
+                    f"'{existing}'. Changing that would rename every container "
+                    f"and orphan its volumes. Remove the project first "
+                    f"(`ldm down {project_meta.get('project_name') or ''} "
+                    f"--volumes`) and recreate it, or drop --container.".replace(
+                        "  ", " "
+                    ),
+                    exit_code=1,
+                )
+
+            if safe_container != requested_container:
+                UI.detail(
+                    f"Container name '{requested_container}' is not Docker-safe; "
+                    f"using '{safe_container}'."
+                )
+            project_meta["container_name"] = safe_container
 
     def _resolve_database(self, manager, project_meta, is_samples):
         """Resolves the `(engine, mode)` pair this run uses (LDM-#1511).
