@@ -6,13 +6,32 @@ Welcome to the Liferay Docker Manager (LDM) documentation index. Use the categor
 
 ---
 
+## 🧭 I want to…
+
+| | |
+| :--- | :--- |
+| **…get Liferay running for the first time** | [The First 5 Minutes](tutorials/first_5_minutes.md) |
+| **…install LDM, or fix a broken setup** | [Installation & Setup](tutorials/quick_start.md) |
+| **…do a specific task** — import a workspace, move data, expose a demo | [How-To guides](how-to/index.md) |
+| **…look something up** — a flag, a setting, a port | [Reference](reference/index.md) |
+| **…understand why LDM behaves as it does** | [Explanation](explanation/index.md) |
+| **…fix something that is broken** | [Troubleshooting](TROUBLESHOOTING.md) |
+| **…contribute to LDM itself** | [Playbook](PLAYBOOK.md) · [Testing](TESTING.md) |
+
+Each section above opens on a page that groups its own contents and says when to
+pick each one. The categorised index further down lists every page in one place,
+organised by subject rather than by what you are trying to do — use whichever
+suits how you are looking.
+
+---
+
 ## 🎥 Seeing is Believing (Showcase)
 
 Check out our **[Video Showcase](showcase/README.md)** to see short demonstrations of LDM in action, including Fast Provisioning, Cloud Hydration, and instant Snapshots & Restoration!
 
 ---
 
-## 📚 Categorized Guides
+## 📚 Full Index, by Subject
 
 ### 1. Getting Started & Core Reference
 
