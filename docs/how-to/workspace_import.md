@@ -58,7 +58,7 @@ A site initializer present at the first boot of a fresh database dies inside
 `PortalImpl.getCanonicalURL`, logs `STARTED` regardless, and silently creates
 no site. Detection is by the `Liferay-Client-Extension-Site-Initializer` header
 in the artifact's `WEB-INF/liferay-plugin-package.properties`. See
-[Client Extensions](client_extensions.md#-4-site-initializers-are-deployed-after-the-first-boot)
+[Client Extensions](client_extensions.md#4-site-initializers-are-deployed-after-the-first-boot)
 for the full mechanism and the manual deployment command.
 
 ### Manifest Verification

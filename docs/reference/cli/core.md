@@ -529,7 +529,9 @@ ldm logs demo liferay -i 3 -n 50
 
 > [!NOTE]
 > `--instance` routes to `docker logs` directly (bypassing Compose) so it targets the exact container. The container name is resolved from project metadata using the standard naming convention `{project}-{service}-{index}` (e.g. `demo-liferay-2`). This pattern is stored automatically when you run `ldm scale`, making subsequent lookups instant.
->
+
+<!-- -->
+
 > [!TIP]
 > If you request an out-of-range instance (e.g. `--instance 5` when only 3 replicas are running), LDM will report the valid range and exit cleanly.
 
