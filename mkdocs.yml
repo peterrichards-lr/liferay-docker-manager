@@ -138,16 +138,23 @@ nav:
     - Conventions & Configuration: explanation/conventions_and_config.md
     - Internationalization & Transcoding: explanation/i18n.md
     - FAQ: explanation/faq.md
-  - Project Info:
+  # LDM-#1817: Troubleshooting and Showcase are user-facing and were filed in
+  # a drawer named after project governance, where users do not look.
+  # Troubleshooting sits next to How-To because it is reached at a reader's
+  # least patient moment.
+  - Troubleshooting: TROUBLESHOOTING.md
+  - Showcase:
+    - Intro: showcase/README.md
+    - OSGi State Persistence: showcase/OSGI_STATE_PERSISTENCE.md
+  # Renamed from "Project Info": these address maintainers and contributors,
+  # and the old name did not say so, which told readers that some unknown
+  # fraction of the section was irrelevant to them.
+  - Project & Contributing:
     - Playbook: PLAYBOOK.md
     - Roadmap: ROADMAP.md
     - Testing: TESTING.md
-    - Troubleshooting: TROUBLESHOOTING.md
     - Roadmap Plans:
       - Clustered HA: roadmap/plans/clustered_ha_profile.md
       - External DB: roadmap/plans/external_database_integration.md
       - Keycloak SSO: roadmap/plans/keycloak_sso_profile.md
       - Profile Loader: roadmap/plans/profile_loader_logic.md
-    - Showcase:
-      - Intro: showcase/README.md
-      - OSGi State Persistence: showcase/OSGI_STATE_PERSISTENCE.md
