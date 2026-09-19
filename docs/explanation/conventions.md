@@ -1,23 +1,9 @@
-# LDM Conventions & Key Features
+# LDM Key Features
 
 > [!NOTE]
-> This guide details Liferay Docker Manager (LDM) conventions, default profiles, and core architectural features that optimize local Liferay Portal/DXP development stacks.
-
----
-
-## 📋 Default Stack & Conventions (Quick Reference)
-
-When running `ldm run <project-name>` (or creating a fresh stack targeting the latest LTS) with default options, LDM sets up the environment using the following out-of-the-box profile:
-
-| Component | Default Configuration / Convention |
-| :--- | :--- |
-| **Liferay Version** | Automatically fetches and runs the latest **LTS** version if no specific tag is specified. |
-| **Database** | **PostgreSQL** running as a shared Global Infrastructure container (`liferay-db-global`), minimizing memory consumption across multiple projects (configured with DB/user/password: `lportal`). MySQL/MariaDB can also be shared, on its own global container (`liferay-db-mysql-global`); PostgreSQL remains the default engine. Prior to `v2.14.0`, LDM defaulted to an isolated sidecar container for every project, prioritizing isolation over resource consumption. <!-- pragma: allowlist secret --> |
-| **Search Engine** | **Shared Global Search** (Elasticsearch 8.x) running as a shared background service (minimizes CPU/RAM overhead). Prior to `v2.14.0`, this also defaulted to an isolated sidecar container per project. Custom remote search clusters and sidecar instances are dynamically supported via interactive prompt conflict resolution. |
-| **Routing & Proxy** | **Traefik** routing HTTP traffic (port `8080`) and HTTPS traffic (port `443` via auto-generated `mkcert` local trust certificates). |
-| **JVM Settings** | Self-Tuning JVM with optimal dev-mode settings (e.g., bytecode verification disabled via `-Xverify:none` to speed up start times). |
-| **Volumes & Mounts** | **Hybrid Volume Strategy**: POSIX-lock sensitive directories (`osgi/state`, `data`) use Named Docker Volumes to prevent locking deadlocks; hot-reloading directories (`deploy`, `modules`, `client-extensions`) are bind-mounted to the host. |
-| **Default Hostname** | Resolves to `localhost` (or `<project-name>.local`). |
+> This guide catalogues the core features Liferay Docker Manager (LDM) provides out of the box.
+> For the default stack itself -- which database, which search mode, which ports -- and for how a
+> setting is resolved, see [Conventions & Configuration](conventions_and_config.md).
 
 ---
 

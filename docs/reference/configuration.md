@@ -8,11 +8,13 @@ LDM uses a robust cascading configuration system to ensure consistent, reproduci
 
 When LDM needs a default value (e.g., for the Liferay tag, database type, or port), it resolves it in the following order (highest to lowest priority):
 
-1. **Project Metadata (`.liferay-docker.meta`)**: Once a project is created (via `init`, `run`, or `hydrate`), the resolved settings are permanently "frozen" into the project's metadata. This ensures stability.
-2. **Workspace Defaults (`.ldmrc`)**: A committed config file at the root of the Liferay Workspace. During project initialization (e.g., via `ldm link` or `ldm import`), LDM automatically reads these settings to seed the default metadata.
-3. **User Defaults (`~/.ldmrc`)**: Custom defaults specific to the current developer's machine.
-4. **Global Defaults (`/etc/ldmrc`)**: System-wide defaults, typically managed by system administrators or CI/CD provisioning scripts.
-5. **Convention Defaults**: Hardcoded fallback values within the LDM source code (e.g., Port `8080`, DB `postgresql`, Search `sidecar`).
+1. **CLI Flags**: A flag passed to the command wins over everything stored. `ldm run` then persists what it resolved into the project's `meta`, so the value survives into later `ldm up` calls that omit the flag.
+2. **Project Metadata (`meta`)**: Once a project is created (via `init`, `run`, or `hydrate`), the resolved settings are "frozen" into the project's metadata. This ensures stability. The older `.liferay-docker.meta` and `.ldm.meta` filenames are still read.
+3. **User Defaults (`~/.ldmrc`)**: The `defaults` block. Custom defaults specific to the current developer's machine.
+4. **Global Defaults (`/etc/ldmrc`)**: The `defaults` block. System-wide defaults, typically managed by system administrators or CI/CD provisioning scripts.
+5. **Convention Defaults**: Hardcoded fallback values within the LDM source code (e.g., Port `8080`, DB `postgresql`, Search `shared`).
+
+For why the cascade is shaped this way, and the difference between `ldm defaults` and `ldm config set`, see [Conventions & Configuration](../explanation/conventions_and_config.md).
 
 ### Managing Defaults
 

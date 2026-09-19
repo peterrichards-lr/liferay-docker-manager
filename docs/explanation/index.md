@@ -12,24 +12,25 @@ that, see the [How-To guides](../how-to/index.md) or
 - **[Remote Node Architecture](remote-node-architecture.md)** — how a command
   finds the right machine, and how target resolution works.
 
-## Why the defaults are what they are
+## What LDM gives you out of the box
 
-- **[Conventions & Key Features](conventions.md)** — the default stack, and the
-  reasoning behind each choice.
+- **[Key Features](conventions.md)** — the capabilities LDM provides without
+  being asked: session isolation, zero-config SSL, snapshots, fail-fast checks.
 
 ## The two cascades — which one do you want?
 
 LDM layers two different things, and both are commonly called a "hierarchy".
-They are unrelated:
+They are unrelated, and picking the wrong one wastes a reader's time:
 
+- **[Conventions & Configuration](conventions_and_config.md)** — the default
+  stack (which database, which search mode, which ports) and how an LDM
+  *setting* is resolved, from a command-line flag down to the built-in
+  convention. Pick this if your question is about an **LDM flag or default**,
+  such as `--db` or `database_mode`.
 - **[Properties Cascade & Override Hierarchy](properties.md)** — how
   `portal-ext.properties` files are merged, from the pre-warmed seed up to your
   project's own customisations. Pick this if your question is about a
   **Liferay property**.
-- **[Conventions & Configuration Architecture](conventions_and_config.md)** —
-  how an LDM *setting* is resolved, from a command-line flag down to the
-  built-in convention. Pick this if your question is about an **LDM flag or
-  default**, such as `--db` or `database_mode`.
 
 ## Everything else
 
