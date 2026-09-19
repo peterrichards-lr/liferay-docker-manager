@@ -340,6 +340,147 @@ class LDMHelpFormatter(argparse.RawDescriptionHelpFormatter):
         return "\n".join(lines)
 
 
+def _new_base_sub_parent():
+    """Builds a FRESH parent parser each call (LDM-#1835).
+
+    `parents=` copies action *references*, not the actions themselves, so
+    every subparser built from one shared instance holds the same objects.
+    A `conflict_handler="resolve"` child that redeclares `-f` or `--force`
+    therefore empties `option_strings` on the object all 103 subparsers
+    share.
+
+    argparse treats an action with no option strings as a POSITIONAL, and a
+    positional with `nargs=0` always matches -- so `force` was set True on
+    every invocation of all 54 affected commands, with no flag passed. That
+    silently disabled the `--force` guards in upgrade.py, infra.py, base.py
+    and snapshot/archive.py.
+
+    Only the `conflict_handler="resolve"` parsers can mutate a shared
+    parent -- the default handler raises instead -- so only those call this.
+    The rest keep sharing one instance, which costs ~17ms less at startup.
+    `test_no_flag_degrades_to_a_positional` guards the whole class.
+    """
+    _p = argparse.ArgumentParser(add_help=False, argument_default=argparse.SUPPRESS)
+    _p.add_argument(
+        "--target",
+        "--node",
+        dest="target",
+        help="Specify compute target node identifier (e.g. local, aws-1)",
+    )
+    _p.add_argument(
+        "-n",
+        "--nightly",
+        action="store_true",
+        help="Target latest Liferay DXP nightly build (7.4.13.nightly)",
+    )
+    _p.add_argument(
+        "--master",
+        action="store_true",
+        help="Target latest Liferay DXP master/nightly build (alias for --nightly)",
+    )
+    _p.add_argument(
+        "--pull",
+        action="store_true",
+        help="Force pull latest Docker image layers before running or starting",
+    )
+    # LDM-#1791: a declared ceiling is a tested negative result, so LDM refuses
+    # above it. Packages do get fixed, and a consumer may know more than the
+    # publisher did -- hence an explicit override, recorded rather than silent.
+    #
+    # Declared here rather than on `run` alone because the ceiling is enforced
+    # in the run *pipeline*, which `init`, `import`, `link`, `clone`,
+    # `init-from`, `restore` and `quickstart` all reach. Nine copies of the
+    # flag would drift; one shared declaration cannot. Same reasoning that put
+    # `--pull` and `--nightly` here.
+    _p.add_argument(
+        "--ignore-verified-ceiling",
+        action="store_true",
+        help="Boot a Liferay tag above the package's declared verified ceiling; the override is recorded in the project metadata",
+    )
+    _p.add_argument("--info", action="store_true", help="Show informational logging")
+    _p.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose debug logging"
+    )
+    _p.add_argument(
+        "-y",
+        "--non-interactive",
+        action="store_true",
+        help="Accept all defaults and skip confirmation prompts",
+    )
+    _p.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Suppress progress, info and next-step messages (warnings, successes and errors still print)",
+    )
+    _p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show commands that would run without executing them",
+    )
+    _p.add_argument(
+        "--benchmark",
+        action="store_true",
+        help="Run execution time benchmarks on operations",
+    )
+    _p.add_argument(
+        "--overwrite-registry",
+        action="store_true",
+        help="Automatically overwrite project registry collisions",
+    )
+    _p.add_argument(
+        "--force-downgrade",
+        action="store_true",
+        help="Bypass version checks to force a downgrade",
+    )
+    _p.add_argument(
+        "--upgrade-db",
+        action="store_true",
+        help="Force-enable database auto-upgrade tool on startup",
+    )
+    _p.add_argument(
+        "--no-upgrade-db",
+        action="store_true",
+        help="Force-disable database auto-upgrade tool",
+    )
+    _p.add_argument(
+        "--backup-on-upgrade",
+        action="store_true",
+        help="Force database backup snapshot before upgrading version",
+    )
+    _p.add_argument(
+        "--no-backup-on-upgrade",
+        action="store_true",
+        help="Force-disable database backup snapshot before upgrading version",
+    )
+    _p.add_argument(
+        "--no-home-warn",
+        action="store_true",
+        help="Disable warning when running in user's home directory",
+    )
+    _p.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="Force execution, bypassing general safety validations",
+    )
+    _p.add_argument(
+        "--no-color", action="store_true", help="Disable color codes in output"
+    )
+    _p.add_argument(
+        "--tunnel-managed-cors",
+        action="store_true",
+        help="Skip local CORS patching and defer to tunnel gateway's dynamic header injection",
+    )
+    _p.add_argument(
+        "--no-unicode",
+        "--ascii",
+        action="store_true",
+        help="Disable Unicode characters in output and force ASCII safe-replacements",
+    )
+    return _p
+
+
 def get_parser():  # noqa: PLR0915
     # Define a parent parser for common arguments shared by all subparsers
     # This allows flags like -v and -y to be placed both before AND after subcommands
@@ -425,129 +566,7 @@ def get_parser():  # noqa: PLR0915
 
     # For subparsers, we want the global flags but we SUPPRESS the default (False)
     # so they don't overwrite the value set by the main parser if provided before the command.
-    base_sub_parent = argparse.ArgumentParser(
-        add_help=False, argument_default=argparse.SUPPRESS
-    )
-    base_sub_parent.add_argument(
-        "--target",
-        "--node",
-        dest="target",
-        help="Specify compute target node identifier (e.g. local, aws-1)",
-    )
-    base_sub_parent.add_argument(
-        "-n",
-        "--nightly",
-        action="store_true",
-        help="Target latest Liferay DXP nightly build (7.4.13.nightly)",
-    )
-    base_sub_parent.add_argument(
-        "--master",
-        action="store_true",
-        help="Target latest Liferay DXP master/nightly build (alias for --nightly)",
-    )
-    base_sub_parent.add_argument(
-        "--pull",
-        action="store_true",
-        help="Force pull latest Docker image layers before running or starting",
-    )
-    # LDM-#1791: a declared ceiling is a tested negative result, so LDM refuses
-    # above it. Packages do get fixed, and a consumer may know more than the
-    # publisher did -- hence an explicit override, recorded rather than silent.
-    #
-    # Declared here rather than on `run` alone because the ceiling is enforced
-    # in the run *pipeline*, which `init`, `import`, `link`, `clone`,
-    # `init-from`, `restore` and `quickstart` all reach. Nine copies of the
-    # flag would drift; one shared declaration cannot. Same reasoning that put
-    # `--pull` and `--nightly` here.
-    base_sub_parent.add_argument(
-        "--ignore-verified-ceiling",
-        action="store_true",
-        help="Boot a Liferay tag above the package's declared verified ceiling; the override is recorded in the project metadata",
-    )
-    base_sub_parent.add_argument(
-        "--info", action="store_true", help="Show informational logging"
-    )
-    base_sub_parent.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose debug logging"
-    )
-    base_sub_parent.add_argument(
-        "-y",
-        "--non-interactive",
-        action="store_true",
-        help="Accept all defaults and skip confirmation prompts",
-    )
-    base_sub_parent.add_argument(
-        "-q",
-        "--quiet",
-        action="store_true",
-        help="Suppress progress, info and next-step messages (warnings, successes and errors still print)",
-    )
-    base_sub_parent.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Show commands that would run without executing them",
-    )
-    base_sub_parent.add_argument(
-        "--benchmark",
-        action="store_true",
-        help="Run execution time benchmarks on operations",
-    )
-    base_sub_parent.add_argument(
-        "--overwrite-registry",
-        action="store_true",
-        help="Automatically overwrite project registry collisions",
-    )
-    base_sub_parent.add_argument(
-        "--force-downgrade",
-        action="store_true",
-        help="Bypass version checks to force a downgrade",
-    )
-    base_sub_parent.add_argument(
-        "--upgrade-db",
-        action="store_true",
-        help="Force-enable database auto-upgrade tool on startup",
-    )
-    base_sub_parent.add_argument(
-        "--no-upgrade-db",
-        action="store_true",
-        help="Force-disable database auto-upgrade tool",
-    )
-    base_sub_parent.add_argument(
-        "--backup-on-upgrade",
-        action="store_true",
-        help="Force database backup snapshot before upgrading version",
-    )
-    base_sub_parent.add_argument(
-        "--no-backup-on-upgrade",
-        action="store_true",
-        help="Force-disable database backup snapshot before upgrading version",
-    )
-    base_sub_parent.add_argument(
-        "--no-home-warn",
-        action="store_true",
-        help="Disable warning when running in user's home directory",
-    )
-    base_sub_parent.add_argument(
-        "-f",
-        "--force",
-        action="store_true",
-        help="Force execution, bypassing general safety validations",
-    )
-    base_sub_parent.add_argument(
-        "--no-color", action="store_true", help="Disable color codes in output"
-    )
-    base_sub_parent.add_argument(
-        "--tunnel-managed-cors",
-        action="store_true",
-        help="Skip local CORS patching and defer to tunnel gateway's dynamic header injection",
-    )
-    base_sub_parent.add_argument(
-        "--no-unicode",
-        "--ascii",
-        action="store_true",
-        help="Disable Unicode characters in output and force ASCII safe-replacements",
-    )
-
+    base_sub_parent = _new_base_sub_parent()
     parser = argparse.ArgumentParser(
         prog="ldm",
         description=f"Liferay Docker Manager (ldm) v{VERSION}",
@@ -561,7 +580,7 @@ def get_parser():  # noqa: PLR0915
     run = subparsers.add_parser(
         "run",
         aliases=["up"],
-        parents=[base_sub_parent],
+        parents=[_new_base_sub_parent()],
         conflict_handler="resolve",
     )
     run.add_argument("project", nargs="?")
@@ -1292,7 +1311,10 @@ def get_parser():  # noqa: PLR0915
         if cmd == "down":
             aliases = ["rm"]
         p = subparsers.add_parser(
-            cmd, aliases=aliases, parents=[base_sub_parent], conflict_handler="resolve"
+            cmd,
+            aliases=aliases,
+            parents=[_new_base_sub_parent()],
+            conflict_handler="resolve",
         )
         p.add_argument("project", nargs="?")
 
@@ -1505,7 +1527,9 @@ def get_parser():  # noqa: PLR0915
     )
 
     # Command: snapshot, restore
-    snap = subparsers.add_parser("snapshot", parents=[base_sub_parent])
+    snap = subparsers.add_parser(
+        "snapshot", parents=[_new_base_sub_parent()], conflict_handler="resolve"
+    )
     snap.add_argument("project", nargs="?")
     snap.add_argument("-p", "--project", dest="project_flag")
     snap.add_argument("-n", "--name")
@@ -1541,7 +1565,9 @@ def get_parser():  # noqa: PLR0915
         help="Skip integrity checksum generation",
     )
 
-    rest = subparsers.add_parser("restore", parents=[base_sub_parent])
+    rest = subparsers.add_parser(
+        "restore", parents=[_new_base_sub_parent()], conflict_handler="resolve"
+    )
     rest.add_argument("project", nargs="?")
     rest.add_argument("-p", "--project", dest="project_flag")
     rest.add_argument("-i", "--index", type=int)
@@ -1793,7 +1819,8 @@ def get_parser():  # noqa: PLR0915
     # Command: quickstart
     quickstart_cmd = subparsers.add_parser(
         "quickstart",
-        parents=[base_sub_parent],
+        parents=[_new_base_sub_parent()],
+        conflict_handler="resolve",
         help="Bootstrap and start a predefined accelerator demo stack",
     )
     quickstart_cmd.add_argument(
@@ -2090,7 +2117,7 @@ def get_parser():  # noqa: PLR0915
 
     cloud_fetch = cloud_subparsers.add_parser(
         "fetch",
-        parents=[base_sub_parent],
+        parents=[_new_base_sub_parent()],
         conflict_handler="resolve",
         help="Sync a local project with a live Liferay Cloud environment",
     )
@@ -2113,7 +2140,7 @@ def get_parser():  # noqa: PLR0915
 
     cloud_deploy = cloud_subparsers.add_parser(
         "deploy",
-        parents=[base_sub_parent],
+        parents=[_new_base_sub_parent()],
         conflict_handler="resolve",
         help="Deploy a workspace project to a Liferay Cloud environment",
     )
@@ -2145,7 +2172,7 @@ def get_parser():  # noqa: PLR0915
 
     cloud_tags = cloud_subparsers.add_parser(
         "update-tags",
-        parents=[base_sub_parent],
+        parents=[_new_base_sub_parent()],
         conflict_handler="resolve",
         help="Update service image tag references in LCP.json",
     )
@@ -2156,7 +2183,7 @@ def get_parser():  # noqa: PLR0915
 
     cloud_sql = cloud_subparsers.add_parser(
         "sql",
-        parents=[base_sub_parent],
+        parents=[_new_base_sub_parent()],
         conflict_handler="resolve",
         help="Execute a SQL script against a Liferay Cloud database",
     )
@@ -2168,7 +2195,7 @@ def get_parser():  # noqa: PLR0915
 
     cloud_db_reset = cloud_subparsers.add_parser(
         "db-reset",
-        parents=[base_sub_parent],
+        parents=[_new_base_sub_parent()],
         conflict_handler="resolve",
         help="Reset the public schema on a Liferay Cloud database",
     )
@@ -2181,7 +2208,7 @@ def get_parser():  # noqa: PLR0915
 
     cloud_status = cloud_subparsers.add_parser(
         "status",
-        parents=[base_sub_parent],
+        parents=[_new_base_sub_parent()],
         conflict_handler="resolve",
         help="Show the status of a Liferay Cloud project environment",
     )
@@ -2191,7 +2218,7 @@ def get_parser():  # noqa: PLR0915
 
     cloud_logs = cloud_subparsers.add_parser(
         "logs",
-        parents=[base_sub_parent],
+        parents=[_new_base_sub_parent()],
         conflict_handler="resolve",
         help="Stream logs for a Liferay Cloud service",
     )
@@ -2303,7 +2330,7 @@ def get_parser():  # noqa: PLR0915
 
     edit_cmd = config_subparsers.add_parser(
         "edit",
-        parents=[base_sub_parent],
+        parents=[_new_base_sub_parent()],
         conflict_handler="resolve",
         help="Open project config files in $EDITOR",
     )
@@ -2542,7 +2569,8 @@ def get_parser():  # noqa: PLR0915
 
     db_query = db_subparsers.add_parser(
         "query",
-        parents=[base_sub_parent],
+        parents=[_new_base_sub_parent()],
+        conflict_handler="resolve",
         help="Safe, SELECT-only SQL execution against project databases",
     )
     db_query.add_argument("project", nargs="?")
@@ -2715,7 +2743,7 @@ def get_parser():  # noqa: PLR0915
 
     upgrade = system_subparsers.add_parser(
         "upgrade",
-        parents=[base_sub_parent],
+        parents=[_new_base_sub_parent()],
         conflict_handler="resolve",
         help="Update ldm to the latest stable or pre-release version",
     )
