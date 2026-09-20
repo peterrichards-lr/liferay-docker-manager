@@ -2451,7 +2451,9 @@ mkdir -p "$LDM_WORKSPACE/common"
 echo "test.override.prop=456" > "$LDM_WORKSPACE/common/portal-ext.properties"
 echo "test.override.prop=123 # !important" >> files/portal-ext.properties
 log_and_run "Rebuilding properties" "$LDM_CMD" config rebuild-properties .
-if grep -q "test.override.prop=123" files/portal-ext.properties; then
+# LDM-#1860: fixed-string, like the reset assertion below. The dots in a
+# properties key are regex wildcards to plain grep.
+if grep -qF "test.override.prop=123" files/portal-ext.properties; then
     report_ok "✅ Properties Override Cascade verified (rebuild)."
 else
     echo "❌ ERROR: Properties Override Cascade rebuild failed." && exit 1

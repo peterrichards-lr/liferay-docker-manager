@@ -2389,7 +2389,9 @@ zf.close()
         throw "Failed to read portal-ext.properties: $_"
     }
 
-    if ($peContent -match "test.override.prop=123") {
+    # LDM-#1860: literal Contains, like the reset assertion below. -match is
+    # a regex (dots are wildcards) and is case-insensitive by default.
+    if ($peContent.Contains("test.override.prop=123")) {
         Write-Verdict "[SUCCESS] Properties Override Cascade verified (rebuild)."
     } else {
         throw "Properties Override Cascade rebuild failed."
