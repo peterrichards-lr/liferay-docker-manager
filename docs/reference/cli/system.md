@@ -398,6 +398,11 @@ this order:
 5. `~/.ldm/bin/lfr-tunnel` -- where LDM used to install its own copy. Still
    resolved so existing setups keep working, but never written to again.
 
+Every candidate is resolved to its real path (symlinks included) before it is
+probed or executed, so a legacy `~/.ldm/bin/lfr-tunnel` that is itself a
+symlink to the whitelisted location is invoked by that resolved, whitelisted
+path -- not by the unresolved, non-whitelisted symlink.
+
 If no client is found, LDM explains how to install one and points at the
 containerised `lfr-tunnel-docker` provider, which needs no host binary.
 
@@ -639,4 +644,4 @@ ldm target migrate win-wsl aws-1
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-18* | *Last Reviewed: 2026-09-18*
+*Last Updated: 2026-09-20* | *Last Reviewed: 2026-09-20*
