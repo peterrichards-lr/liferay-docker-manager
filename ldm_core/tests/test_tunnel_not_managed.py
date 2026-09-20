@@ -10,7 +10,9 @@ prohibits it: a real invocation risks SentinelOne quarantining the binary and
 the surrounding toolchain. Every probe is mocked at the seam.
 """
 
+import os
 import platform
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -214,6 +216,83 @@ class TestCustomInstallerSurvives(_Base):
 
         self.assertEqual(got, installed)
         self.assertEqual(run.call_args[0][0], ["brew", "install", "lfr-tunnel"])
+
+
+class TestLegacySymlinkIsResolvedBeforeExecution(_Base):
+    """LDM-#1871: candidate 5 (~/.ldm/bin/lfr-tunnel) is outside the EDR
+    whitelist. `_get_installed_version` executes whatever path it is given
+    (`subprocess.run([str(bin_path), "-version"], ...)`), so if the legacy
+    location is a symlink to the whitelisted binary, the *invoked* path must
+    still be the resolved, whitelisted one -- not the symlink -- or EDR keying
+    on the invoked path sees an execution from a non-whitelisted location
+    regardless of which bytes actually run.
+
+    Uses real files/symlinks on disk (not a mocked `Path.exists`/`.resolve()`)
+    so the resolution is genuinely observed, not merely asserted from reading
+    the implementation.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.home = Path(self._tmpdir.name)
+
+    def _resolve_with_only_legacy_symlink(self, real_bin, legacy_bin):
+        """Runs `_resolve_existing_binary` with everything but the legacy
+        (symlinked) candidate absent, recording every path actually probed.
+        """
+        probed = []
+
+        def fake_version(path):
+            probed.append(path)
+            return "1.48.12" if path == real_bin.resolve() else None
+
+        env = {"LDM_LFR_TUNNEL_BIN": "", "LFR_TUNNEL_BIN": ""}
+        with patch.object(self.service, "_get_installed_version", fake_version):
+            with patch(
+                "ldm_core.handlers.share.get_actual_home", return_value=self.home
+            ):
+                with patch("shutil.which", return_value=None):
+                    with patch.dict(os.environ, env, clear=True):
+                        result = self.service._resolve_existing_binary()
+        return result, probed
+
+    def test_legacy_symlink_resolves_to_the_real_whitelisted_path(self):
+        # The real binary lives outside both known candidate locations --
+        # standing in for "somewhere InfoSec approved that isn't the notional
+        # ~/liferay/lfr-tunnel/lfr-tunnel default".
+        real_dir = self.home / "elsewhere"
+        real_dir.mkdir(parents=True)
+        real_bin = real_dir / BIN
+        real_bin.write_text("stand-in binary, never executed by this test\n")
+
+        # Legacy location (candidate 5) is a symlink to it. Candidate 4 (the
+        # notional whitelisted default under ~/liferay/lfr-tunnel) is left
+        # absent so resolution falls through to the legacy candidate.
+        legacy_dir = self.home / ".ldm" / "bin"
+        legacy_dir.mkdir(parents=True)
+        legacy_bin = legacy_dir / BIN
+        legacy_bin.symlink_to(real_bin)
+
+        result, probed = self._resolve_with_only_legacy_symlink(real_bin, legacy_bin)
+
+        self.assertEqual(
+            result,
+            real_bin.resolve(),
+            "resolution must return the symlink's real target, not the symlink itself",
+        )
+        self.assertIn(
+            real_bin.resolve(),
+            probed,
+            "the resolved real path must be what gets probed/executed",
+        )
+        self.assertNotIn(
+            legacy_bin,
+            probed,
+            "the unresolved symlink path must never be handed to "
+            "_get_installed_version (which executes it)",
+        )
 
 
 if __name__ == "__main__":

@@ -215,7 +215,7 @@ class ShareService:
             "LFR_TUNNEL_BIN"
         )
         if env_bin:
-            path = Path(env_bin)
+            path = Path(env_bin).resolve()
             if self._get_installed_version(path):
                 return path
 
@@ -223,14 +223,14 @@ class ShareService:
         config = self.manager.config.get_global_config()
         config_bin = config.get("lfr_tunnel_bin")
         if config_bin:
-            path = Path(config_bin)
+            path = Path(config_bin).resolve()
             if self._get_installed_version(path):
                 return path
 
         # 3. System PATH check
         sys_path = shutil.which(bin_name)
         if sys_path:
-            path = Path(sys_path)
+            path = Path(sys_path).resolve()
             if self._get_installed_version(path):
                 return path
 
@@ -246,11 +246,21 @@ class ShareService:
         # resolved so existing setups keep working, but never written to again:
         # it sits outside the whitelist, so a binary there is one endpoint
         # protection may quarantine.
-        for candidate in (
+        #
+        # LDM-#1871: every candidate here is resolved (symlinks and all)
+        # *before* `_get_installed_version` executes it. Without that, a
+        # legacy `~/.ldm/bin/lfr-tunnel` that is itself a symlink to the
+        # whitelisted binary still gets invoked by its unresolved, non-
+        # whitelisted path -- which is exactly what EDR keys on, regardless
+        # of which real file the symlink points at.
+        for raw_candidate in (
             get_actual_home() / "liferay" / "lfr-tunnel" / bin_name,
             get_actual_home() / ".ldm" / "bin" / bin_name,
         ):
-            if candidate.exists() and self._get_installed_version(candidate):
+            if not raw_candidate.exists():
+                continue
+            candidate = raw_candidate.resolve()
+            if self._get_installed_version(candidate):
                 return candidate
 
         return None
