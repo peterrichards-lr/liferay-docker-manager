@@ -2401,7 +2401,13 @@ zf.close()
     } catch {
         throw "Failed to read portal-ext.properties after reset: $_"
     }
-    if ($resetPE -match "test.override.prop=456" -and $resetPE -notmatch "123") {
+    # LDM-#1858: .Contains() is a LITERAL comparison, and both operands carry the
+    # full key. `-notmatch "123"` matched anywhere in the file, and the generated
+    # properties carry jdbc.default.url=...//<project>-db:5432/lportal where the
+    # project is ldm-smoke-test-<TEST_PORT>, so any port containing 123 failed a
+    # passing reset. `-match` would also have read the dots as regex wildcards.
+    if ($resetPE.Contains("test.override.prop=456") -and
+        -not $resetPE.Contains("test.override.prop=123")) {
         Write-Verdict "[SUCCESS] Properties Override Reset verified."
     } else {
         throw "Properties Override Reset failed."
