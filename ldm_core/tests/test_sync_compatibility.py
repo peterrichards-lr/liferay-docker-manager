@@ -1180,9 +1180,21 @@ class TestHomePathRedaction:
 
     def test_the_ci_runner_home_is_kept_deliberately(self):
         """`runner` is GitHub Actions' generic home, not a person, and it
-        records that a report came from CI."""
+        records that a report came from CI.
+
+        `Path.home()` is patched because on a GitHub runner it *is*
+        `/home/runner`, and the older replace above collapses the running
+        machine's own home to `[HOME]` before the pattern is reached. That is
+        harmless -- `[HOME]` names nobody -- but it made this assertion depend
+        on which machine ran the suite: green on a developer's mac, red on all
+        four CI matrix jobs. The allowlist exists for a *foreign* CI report
+        synced from elsewhere, and that is what this now tests.
+        """
         text = "Workspace: /home/runner/work/ldm/ldm"
-        assert sync_compatibility.anonymize_content(text) == text
+        with patch.object(
+            sync_compatibility.Path, "home", return_value=Path("/Users/someone-else")
+        ):
+            assert sync_compatibility.anonymize_content(text) == text
 
     def test_the_existing_header_redaction_still_applies(self):
         out = sync_compatibility.anonymize_content("Binary:    /opt/homebrew/bin/ldm")
