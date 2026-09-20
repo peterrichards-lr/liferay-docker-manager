@@ -77,9 +77,11 @@ Two of the gaps above have been closed:
 
   ```text
   ❌  Cannot reach compute node 'aws-1' over SSH (ec2-user@51.20.52.201:22 timed out).
-  💡 Tip:  The node may be stopped, or its public IP may have changed since it
-           was registered. Check with 'ldm target status aws-1', then re-register
-           with 'ldm target add aws-1 --host <ip> --user ec2-user --key <key>'.
+  💡 Tip:  Nothing answered within the connect timeout. That is usually a firewall
+           or security group dropping the packets, or a node that is stopped and
+           whose public IP has changed since it was registered. Check with
+           'ldm target status aws-1', then re-register with 'ldm target add aws-1
+           --host <ip> --user ec2-user --key <key>'.
   ```
 
   The raw stderr is retained behind `--verbose`/`--info`. **Unrecognised
@@ -87,8 +89,23 @@ Two of the gaps above have been closed:
   Compose config error, a failed build -- the stderr *is* the useful output.
   This narrows the cases LDM can name; it does not suppress detail generally.
 
-  The tip points at a stale stored host because that is the usual cause
-  (LDM-#1346).
+  **Each reason carries its own tip (LDM-#1863).** Originally every reason
+  shared one, pointing at a stale stored host because that is the usual cause
+  (LDM-#1346). It is not the usual cause on a node that has just been powered
+  on, and that is precisely when the message is read: an EC2 instance ~15
+  seconds into a cold boot accepts a TCP connection on 22 well before `sshd`
+  will authenticate, so a correct setup was reported as *"the node may be
+  stopped, or its public IP may have changed"*. The message already named the
+  cause correctly -- only the advice was generic, and the advice is the half a
+  caller acts on.
+
+  A refused *connection* now says `sshd` may not be up yet; refused
+  *credentials* says the node is reachable and this is authentication rather
+  than connectivity, and deliberately does **not** suggest re-registering,
+  because connectivity is already proven. Host-key failures name the
+  `ssh-keygen -R` entry to purge. `_SSH_FAILURE_TIPS` in `ldm_core/utils.py`
+  holds the table, and a test asserts every reason LDM can name has advice of
+  its own -- a reason without one is a half-finished diagnosis.
 
 ## 4. Resolution precedence
 
@@ -407,4 +424,4 @@ remote add, and in the drift repair above `~/.ldmrc` was right all along:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-18* | *Last Reviewed: 2026-09-18*
+*Last Updated: 2026-09-20* | *Last Reviewed: 2026-09-20*
