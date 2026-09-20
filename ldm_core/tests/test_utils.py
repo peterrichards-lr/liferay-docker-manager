@@ -2244,6 +2244,54 @@ class TestRemoteContextFailureDiagnosis(unittest.TestCase):
         )
         self.assertIn("aws-1", message)
 
+    # LDM-#1863: the tip is the half a caller acts on, and every reason used to
+    # share one. Reported from liferay-ai-commerce-accelerator, where an EC2
+    # node ~15s into a cold boot was diagnosed as stopped or re-addressed.
+
+    def test_a_refused_connection_points_at_a_node_that_may_still_be_booting(self):
+        _, tip = self._diagnose(
+            ["docker", "--context", "aws-2", "ps"],
+            "error during connect: ... stderr=ssh: connect to host "
+            "16.192.101.229 port 22: Connection refused",
+        )
+        self.assertIn("sshd may not be up yet", tip)
+        self.assertIn("port 22", tip)
+
+    def test_refused_credentials_are_not_blamed_on_a_changed_ip(self):
+        """sshd answered, so connectivity is proven -- do not send them to re-register."""
+        _, tip = self._diagnose(
+            ["docker", "--context", "aws-2", "ps"],
+            "error during connect: ... stderr=ssh: connect to host "
+            "16.192.101.229 port 22: ssh -l ec2-user\nPermission denied (publickey).",
+        )
+        self.assertIn("authentication rather than connectivity", tip)
+        self.assertNotIn("public IP may have changed", tip)
+        self.assertNotIn("ldm target add", tip)
+
+    def test_a_host_key_failure_names_the_entry_to_purge(self):
+        _, tip = self._diagnose(
+            ["docker", "--context", "aws-2", "ps"],
+            "error during connect: ... stderr=ssh: connect to host 10.0.0.5 "
+            "port 22: Host key verification failed.",
+        )
+        self.assertIn("ssh-keygen -R 10.0.0.5", tip)
+
+    def test_every_named_reason_has_a_tip_of_its_own(self):
+        """A reason LDM can name but cannot advise on is a half-finished diagnosis."""
+        from ldm_core.utils import _SSH_FAILURE_REASONS, _SSH_FAILURE_TIPS
+
+        missing = sorted(set(_SSH_FAILURE_REASONS.values()) - set(_SSH_FAILURE_TIPS))
+        self.assertEqual([], missing, f"reasons with no tip of their own: {missing}")
+
+    def test_an_unrecognised_cause_still_gets_the_general_advice(self):
+        """The fallback must survive: an unknown stderr is the commonest case."""
+        _, tip = self._diagnose(
+            ["docker", "--context", "aws-2", "ps"],
+            "error during connect: ... stderr=ssh: something entirely new",
+        )
+        self.assertIn("public IP may have changed", tip)
+        self.assertIn("ldm target status aws-2", tip)
+
 
 class TestAnnounceRemoteTargets(unittest.TestCase):
     """LDM-#1341: say a remote node is involved *before* blocking on it."""

@@ -947,6 +947,57 @@ _SSH_FAILURE_REASONS = {
     "name or service not known": "could not be resolved by DNS",
 }
 
+# LDM-#1863: one tip for every reason above sent a node that was merely still
+# booting to "its public IP may have changed". The *message* already named the
+# cause correctly; only the remediation advice was generic, and the advice is
+# the half a caller acts on. Keyed on the phrase, not the stderr fragment, so
+# the two DNS spellings share a tip without repeating it.
+_SSH_FAILURE_TIPS = {
+    "refused the connection": (
+        "Nothing is listening on port {port}. If the node was started moments "
+        "ago, sshd may not be up yet -- wait a few seconds and retry. "
+        "Otherwise it may be stopped or re-addressed: check with "
+        "'ldm target status {node}', then re-register with '{rebuild}'."
+    ),
+    "refused the SSH credentials": (
+        "The node is reachable and sshd answered, so this is authentication "
+        "rather than connectivity. A node seconds into a cold boot will accept "
+        "a connection before it will authenticate -- retry shortly. If it "
+        "persists, check the stored key and user with "
+        "'ldm target status {node}'."
+    ),
+    "timed out": (
+        "Nothing answered within the connect timeout. That is usually a "
+        "firewall or security group dropping the packets, or a node that is "
+        "stopped and whose public IP has changed since it was registered. "
+        "Check with 'ldm target status {node}', then re-register with "
+        "'{rebuild}'."
+    ),
+    "has no network route": (
+        "The host is not routable from here. Check any VPN or bastion the node "
+        "sits behind, then confirm its address with 'ldm target status {node}'."
+    ),
+    "is on an unreachable network": (
+        "The host is not routable from here. Check any VPN or bastion the node "
+        "sits behind, then confirm its address with 'ldm target status {node}'."
+    ),
+    "failed SSH host key verification": (
+        "The node's host key has changed. That is expected after a rebuild and "
+        "a warning sign otherwise. Once you are satisfied it is the same "
+        "machine, drop the stale entry with 'ssh-keygen -R {host}'."
+    ),
+    "could not be resolved by DNS": (
+        "The stored hostname does not resolve. Re-register the node with an "
+        "address that does: '{rebuild}'."
+    ),
+}
+
+_SSH_FAILURE_TIP_DEFAULT = (
+    "The node may be stopped, or its public IP may have changed since it was "
+    "registered. Check with 'ldm target status {node}', then re-register with "
+    "'{rebuild}'."
+)
+
 
 def diagnose_remote_context_failure(cmd, stderr: str) -> tuple[str, str] | None:
     """Turns a remote Docker context connection failure into a diagnosis (#1345).
@@ -1008,11 +1059,8 @@ def diagnose_remote_context_failure(cmd, stderr: str) -> tuple[str, str] | None:
         rebuild += f" --user {user}"
     rebuild += " --key <key>"
 
-    tip = (
-        "The node may be stopped, or its public IP may have changed since it "
-        f"was registered. Check with 'ldm target status {node}', then "
-        f"re-register with '{rebuild}'."
-    )
+    template = _SSH_FAILURE_TIPS.get(reason, _SSH_FAILURE_TIP_DEFAULT)
+    tip = template.format(node=node, rebuild=rebuild, port=port, host=host or "<host>")
     return message, tip
 
 
