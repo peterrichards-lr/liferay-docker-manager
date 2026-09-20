@@ -1336,12 +1336,18 @@ verify_force_is_not_a_positional() {
 
     out=$("$ldm_cmd" run --help 2>&1) || true
 
-    if printf '%s\n' "$out" | grep -qE '^[[:space:]]+force[[:space:]]'; then
+    # Argparse indents an option entry by exactly two spaces; a WRAPPED
+    # description line is indented far deeper (24). `--jvm-tiered-stop-at-level`
+    # has a description beginning "Force -XX:TieredStopAtLevel=1 ...", so a
+    # loose `^[[:space:]]+force` matched that continuation line and reported a
+    # defect that was not there. Anchor on the exact indent, and keep the match
+    # case-sensitive -- the dest is lowercase `force`, the prose is `Force`.
+    if printf '%s\n' "$out" | grep -q '^  force[[:space:]]'; then
         echo "❌ ERROR: 'ldm run --help' renders --force as a bare positional."
         echo "   That is LDM-#1835: the flag is not merely mis-rendered, it is"
         echo "   permanently ON for every command that shares the parent parser."
         echo "   --- the offending line ---"
-        printf '%s\n' "$out" | grep -E '^[[:space:]]+force[[:space:]]' | while IFS= read -r l; do
+        printf '%s\n' "$out" | grep '^  force[[:space:]]' | while IFS= read -r l; do
             echo "   | ${l}"
         done
         return 1
@@ -1459,7 +1465,12 @@ verify_guide_precedence() {
     local ldm_cmd="$1"
     local out
 
-    out=$("$ldm_cmd" guide 2>&1) || true
+    # `-y` is required, not cosmetic. guide.py resolves
+    # `non_interactive = args.non_interactive or not sys.stdin.isatty()`, so on
+    # a real terminal `ldm guide` enters an input() menu loop and blocks
+    # forever. It only appeared to work when first written because the test
+    # harness had no tty.
+    out=$("$ldm_cmd" -y guide 2>&1) || true
 
     if printf '%s\n' "$out" | grep -q '\.ldm/config\.json'; then
         echo "❌ ERROR: 'ldm guide' still names .ldm/config.json as a precedence level."

@@ -1226,6 +1226,20 @@ class TestShareService(unittest.TestCase):
             res = ShareService._resolve_existing_binary(self.service)
             self.assertEqual(res, Path("/env/bin/lfr-tunnel"))
 
+    # LDM-#1856: `_resolve_existing_binary` checks LDM_LFR_TUNNEL_BIN and
+    # LFR_TUNNEL_BIN FIRST, before the global config and before `shutil.which`.
+    # The three tests below exercise those later steps, so they only hold if
+    # neither variable is set -- and a developer who has run the verification
+    # suite has LDM_LFR_TUNNEL_BIN exported, which made all three fail with the
+    # real path on their machine.
+    #
+    # Empty rather than deleted: the resolver tests `if env_bin:`, so "" is
+    # falsy and skips step 1 without disturbing the rest of os.environ.
+    _no_tunnel_env = patch.dict(
+        os.environ, {"LDM_LFR_TUNNEL_BIN": "", "LFR_TUNNEL_BIN": ""}
+    )
+
+    @_no_tunnel_env
     def test_resolve_existing_binary_config(self):
         self.mock_manager.config.get_global_config = MagicMock(  # type: ignore[method-assign]
             return_value={"lfr_tunnel_bin": "/config/bin/lfr-tunnel"}
@@ -1234,6 +1248,7 @@ class TestShareService(unittest.TestCase):
             res = ShareService._resolve_existing_binary(self.service)
             self.assertEqual(res, Path("/config/bin/lfr-tunnel"))
 
+    @_no_tunnel_env
     @patch("shutil.which")
     def test_resolve_existing_binary_path(self, mock_which):
         mock_which.return_value = "/sys/path/bin/lfr-tunnel"
@@ -1241,6 +1256,7 @@ class TestShareService(unittest.TestCase):
             res = ShareService._resolve_existing_binary(self.service)
             self.assertEqual(res, Path("/sys/path/bin/lfr-tunnel"))
 
+    @_no_tunnel_env
     @patch("shutil.which")
     @patch("ldm_core.handlers.share.get_actual_home")
     def test_resolve_existing_binary_fallback(self, mock_home, mock_which):
