@@ -106,6 +106,41 @@ Notes:
 > [!TIP]
 > This is also the supported way to isolate automated tests and CI jobs from a developer's real state. Any test that runs LDM as a subprocess **must** set it -- see `.agents/skills/testing-and-ci/SKILL.md`.
 
+## Remote Node Readiness (`LDM_SSH_READY_TIMEOUT`)
+
+A command against a remote node that has just been powered on used to fail on
+the first attempt. `sshd` accepts a TCP connection on port 22 seconds before it
+will authenticate, so a node ~15 seconds into a cold boot is reachable and not
+yet usable -- and LDM reported that healthy node as stopped or re-addressed
+(LDM-#1863).
+
+LDM now waits. A **transport** failure -- connection refused, credentials
+refused, or a connect timeout -- is retried for up to 30 seconds by default:
+
+```bash
+export LDM_SSH_READY_TIMEOUT=60   # allow a slower boot
+export LDM_SSH_READY_TIMEOUT=0    # disable; fail on the first attempt as before
+```
+
+It says so once, up front, rather than waiting silently.
+
+Three properties are deliberate:
+
+- **Only transport failures are retried.** This path is reached only for
+  `error during connect`, which means SSH never carried the command and the
+  remote side provably did not run it. Retrying a command that had begun
+  executing could perform it twice; retrying one that never started cannot.
+- **Only causes that waiting can fix.** A wrong hostname, a changed host key
+  and an absent network route do not resolve themselves, so they still fail
+  immediately -- waiting on them would only delay a correct error.
+- **The original failure survives.** When the budget is spent, the exit code,
+  the message and the tip are exactly what they were before.
+
+> [!NOTE]
+> Like every `LDM_`-prefixed variable, this one is also forwarded into project
+> containers as `SSH_READY_TIMEOUT` by the rule below. It has no meaning there
+> and is harmless, but it will appear in the container environment.
+
 ## Environment Variable Forwarding
 
 LDM automatically forwards specific host environment variables into your project containers using a prefix-based logic.
@@ -143,4 +178,4 @@ You can target a specific service (including Client Extensions) by prefixing the
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-26* | *Last Reviewed: 2026-08-26*
+*Last Updated: 2026-09-20* | *Last Reviewed: 2026-09-20*

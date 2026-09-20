@@ -992,6 +992,51 @@ _SSH_FAILURE_TIPS = {
     ),
 }
 
+
+def _ssh_failure_reason(stderr: str) -> str:
+    """The phrase naming why SSH failed, or a catch-all."""
+    lowered = (stderr or "").lower()
+    return next(
+        (phrase for key, phrase in _SSH_FAILURE_REASONS.items() if key in lowered),
+        "could not be reached",
+    )
+
+
+# LDM-#1863: a node that is booting is not a node that is broken. sshd accepts
+# a TCP connection seconds before it will authenticate, so both of these are
+# "not ready yet" during a cold boot -- and a timeout is the shape a security
+# group briefly presents too. The rest are excluded deliberately: a wrong
+# hostname, a changed host key and an absent route do not resolve by waiting,
+# and retrying them only delays a correct error.
+_SSH_TRANSIENT_REASONS = frozenset(
+    {
+        "refused the connection",
+        "refused the SSH credentials",
+        "timed out",
+    }
+)
+
+_SSH_READY_TIMEOUT_ENV = "LDM_SSH_READY_TIMEOUT"
+_SSH_READY_TIMEOUT_DEFAULT = 30.0
+_SSH_RETRY_DELAY = 3.0
+
+
+def ssh_ready_budget() -> float:
+    """Seconds to keep retrying a remote *transport* failure. 0 disables it."""
+    raw = os.environ.get(_SSH_READY_TIMEOUT_ENV)
+    if raw is None or not raw.strip():
+        return _SSH_READY_TIMEOUT_DEFAULT
+    try:
+        value = float(raw)
+    except ValueError:
+        UI.warning(
+            f"{_SSH_READY_TIMEOUT_ENV}={raw!r} is not a number; "
+            f"using {_SSH_READY_TIMEOUT_DEFAULT}s."
+        )
+        return _SSH_READY_TIMEOUT_DEFAULT
+    return max(0.0, value)
+
+
 _SSH_FAILURE_TIP_DEFAULT = (
     "The node may be stopped, or its public IP may have changed since it was "
     "registered. Check with 'ldm target status {node}', then re-register with "
@@ -1030,10 +1075,7 @@ def diagnose_remote_context_failure(cmd, stderr: str) -> tuple[str, str] | None:
     if "error during connect" not in lowered and "ssh:" not in lowered:
         return None
 
-    reason = next(
-        (phrase for key, phrase in _SSH_FAILURE_REASONS.items() if key in lowered),
-        "could not be reached",
-    )
+    reason = _ssh_failure_reason(stderr)
 
     host = None
     port = "22"
@@ -1185,9 +1227,47 @@ def _record_command_failure(
         UI.trace(f"[STDOUT] {result.stdout}")
 
 
+_NO_RETRY = object()
+"""Sentinel: this failure was not retried, so the caller reports it as before.
+
+A plain ``None`` cannot say this -- ``run`` returns ``None`` legitimately (a
+command with no captured output), so ``None`` would be indistinguishable from a
+successful retry of such a command.
+"""
+
+
 class CommandRunner:
     def __init__(self, env: dict[str, str] | None = None):
         self.env = env
+
+    def _retry_while_node_wakes(self, cmd, stderr, message, deadline, **kwargs):
+        """Re-runs a remote command while its node may still be booting.
+
+        Returns ``_NO_RETRY`` when this failure is not one to wait on, or when
+        the budget is spent -- the caller then reports it exactly as before.
+        """
+        if _ssh_failure_reason(stderr) not in _SSH_TRANSIENT_REASONS:
+            return _NO_RETRY
+
+        now = time.monotonic()
+        if deadline is None:
+            budget = ssh_ready_budget()
+            if budget <= 0:
+                return _NO_RETRY
+            deadline = now + budget
+            # Said once, up front, and never silently: waiting without saying so
+            # is the failure LDM-#1341 already had to fix on this same path.
+            UI.info(
+                f"{message} It may still be starting -- retrying for up to "
+                f"{budget:.0f}s. Set {_SSH_READY_TIMEOUT_ENV}=0 to disable."
+            )
+        if now >= deadline:
+            return _NO_RETRY
+
+        time.sleep(min(_SSH_RETRY_DELAY, max(0.0, deadline - now)))
+        if time.monotonic() >= deadline:
+            return _NO_RETRY
+        return self.run(cmd, _ssh_deadline=deadline, **kwargs)
 
     def run(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self,
@@ -1200,6 +1280,8 @@ class CommandRunner:
         verbose: bool = False,
         stdout_file: Any = None,
         timeout: float | None = None,
+        *,
+        _ssh_deadline: float | None = None,
     ) -> str | None:
         resolved_env = dict(
             env
@@ -1342,6 +1424,33 @@ class CommandRunner:
                 diagnosis = diagnose_remote_context_failure(cmd, err_details)
                 if diagnosis:
                     message, tip = diagnosis
+
+                    # LDM-#1863: retry a *transport* failure while the node may
+                    # still be coming up. Safe precisely here and nowhere else:
+                    # this branch is only reached for "error during connect",
+                    # which means SSH never carried the command, so the remote
+                    # side provably did not run it. Retrying a command that had
+                    # begun executing would risk doing it twice.
+                    retried = self._retry_while_node_wakes(
+                        cmd,
+                        err_details,
+                        message,
+                        _ssh_deadline,
+                        # Forwarded unchanged from this same call; the value is
+                        # the caller's, not a literal True. Same annotation as
+                        # run_command's own forward below.
+                        shell=shell,  # nosec B604
+                        capture_output=capture_output,
+                        check=check,
+                        env=env,
+                        cwd=cwd,
+                        verbose=verbose,
+                        stdout_file=stdout_file,
+                        timeout=timeout,
+                    )
+                    if retried is not _NO_RETRY:
+                        return retried
+
                     UI.error(message, tip=tip)
                     UI.trace(f"[ERROR] Exit {e.returncode}")
                     UI.trace(f"[STDERR] {err_details.strip()}")
@@ -1395,7 +1504,14 @@ class DryRunCommandRunner(CommandRunner):
         verbose: bool = False,
         stdout_file: Any = None,
         timeout: float | None = None,
+        *,
+        _ssh_deadline: float | None = None,
     ) -> str | None:
+        # Accepted and ignored: a dry run never executes, so it never reaches
+        # the transport-retry path. It is in the signature because the
+        # supertype has it -- a caller holding a CommandRunner must be able to
+        # pass it whichever runner is behind the reference.
+        del _ssh_deadline
         display_cmd = UI.redact(" ".join(cmd) if isinstance(cmd, list) else cmd)
         cmd_str = " ".join(cmd) if isinstance(cmd, list) else cmd
         UI.detail(f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {display_cmd}")

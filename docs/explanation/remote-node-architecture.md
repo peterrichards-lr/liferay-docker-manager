@@ -107,6 +107,27 @@ Two of the gaps above have been closed:
   holds the table, and a test asserts every reason LDM can name has advice of
   its own -- a reason without one is a half-finished diagnosis.
 
+- **Waiting for a node that is waking (LDM-#1863).** A transport failure is
+  retried for up to `LDM_SSH_READY_TIMEOUT` seconds (default 30, `0` disables)
+  before it is reported. See
+  [Remote Node Readiness](../reference/configuration.md#remote-node-readiness-ldm_ssh_ready_timeout)
+  for the knob; the reasoning belongs here.
+
+  Retrying an arbitrary failed command would be wrong -- it might have already
+  done half its work. This is safe because of *where* it sits: the branch is
+  reached only for `error during connect`, which means SSH never carried the
+  command at all, so the remote side provably did not run it. The safety comes
+  from the failure being a **transport** failure, not from the command being
+  idempotent, and it does not generalise to the ordinary failure path below it.
+
+  Only causes that waiting can fix are retried -- refused connection, refused
+  credentials, connect timeout. A changed host key, an unresolvable hostname
+  and an absent route are excluded deliberately: they do not heal, so waiting
+  on them converts a correct immediate error into a slow one.
+
+  When the budget is spent the original exit code, message and tip are emitted
+  unchanged, so nothing downstream sees a different failure than before.
+
 ## 4. Resolution precedence
 
 Three overlapping signals decide "what target should this operation use," ranked most to least specific:
