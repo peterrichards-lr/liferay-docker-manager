@@ -2277,6 +2277,12 @@ def get_parser():  # noqa: PLR0915
     defaults.add_argument(
         "--remove", action="store_true", help="Remove the custom default"
     )
+    defaults.add_argument(
+        "--reset-all",
+        dest="reset_all",
+        action="store_true",
+        help="Remove every customised default, returning to convention",
+    )
 
     db_mode = config_subparsers.add_parser(
         "database-mode",

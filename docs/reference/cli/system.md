@@ -339,9 +339,41 @@ ldm config defaults --remove db_type
 # Set a system-wide global default (requires permissions, writes to /etc/ldmrc)
 sudo ldm config defaults port 9090 --global
 
+# Return every customised default to convention ("get me back to stock")
+ldm config defaults --reset-all
+
+# ...without the confirmation prompt, for automation
+ldm -y config defaults --reset-all
+
+# ...at the global level instead (/etc/ldmrc)
+sudo ldm config defaults --reset-all --global
+
 # Legacy flat form (still works):
 ldm defaults db_type mysql
 ```
+
+### Resetting everything (`--reset-all`)
+
+`--remove` clears one key. `--reset-all` clears them all, which previously
+meant 23 separate invocations or hand-editing `~/.ldmrc`.
+
+It lists what will change before it changes anything, showing each current
+value and the convention it returns to, and asks for confirmation (declined by
+default). `-y` skips the prompt.
+
+Two boundaries are worth knowing:
+
+- **Only the keys the defaults system owns are touched.** `ldm config set`
+  writes other keys into the same file; those are left alone.
+- **It affects NEW projects only.** A project that has already run froze its
+  settings into its own `meta`, and clearing a default here does not reach it.
+  Reverting an existing project is a separate concern -- not every key can be
+  safely reverted once a project exists, because some have external
+  consequences (a `host_name` written into Liferay's virtualhost table, data
+  living in a particular engine's volume).
+
+Exit code `5` when nothing was customised: nothing failed, and nothing needed
+to change.
 
 ---
 
@@ -639,4 +671,4 @@ ldm target migrate win-wsl aws-1
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-18* | *Last Reviewed: 2026-09-18*
+*Last Updated: 2026-09-20* | *Last Reviewed: 2026-09-20*

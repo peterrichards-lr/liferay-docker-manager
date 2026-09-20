@@ -4,6 +4,7 @@ import os
 import platform
 import re
 import shutil
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -1363,11 +1364,65 @@ class ConfigService:
 
             safe_write_text(config_path, json.dumps(config, indent=4))
 
+    def _reset_all_defaults(self, global_level, defaults_mgr):
+        """Clears every customised cascading default (LDM-#1853).
+
+        Scope is deliberately the keys ``CONVENTION_DEFAULTS`` owns, not the
+        whole file: ``ldm config set`` writes other keys into the root of the
+        same ``~/.ldmrc``, and those are not this command's to remove.
+
+        This returns *future* projects to convention. A project that has
+        already run froze its settings into its own ``meta``, and clearing a
+        default here does not reach it -- LDM-#1854 covers that, and the
+        message says so rather than leaving the user to discover it.
+        """
+        store = (
+            defaults_mgr.global_defaults if global_level else defaults_mgr.user_defaults
+        )
+        scope = "/etc/ldmrc" if global_level else "~/.ldmrc"
+
+        customised = sorted(k for k in store if k in CONVENTION_DEFAULTS)
+        if not customised:
+            UI.info(f"No LDM defaults are customised in {scope}; nothing to reset.")
+            sys.exit(5)
+
+        UI.raw(f"\nThe following will be removed from {scope}:")
+        for k in customised:
+            UI.raw(
+                f"  {k.ljust(24)} {str(store[k]).ljust(20)} "
+                f"-> {UI.DIM}{CONVENTION_DEFAULTS[k]!s}{UI.COLOR_OFF}"
+            )
+        UI.raw("")
+
+        if not self.manager.non_interactive and not UI.confirm(
+            f"Reset {len(customised)} default(s) to convention?", default="N"
+        ):
+            UI.info("Nothing was changed.")
+            return
+
+        remover = (
+            defaults_mgr.remove_global_default
+            if global_level
+            else defaults_mgr.remove_user_default
+        )
+        for k in customised:
+            remover(k)
+
+        UI.success(f"Reset {len(customised)} default(s) to convention in {scope}.")
+        UI.info(
+            "This applies to NEW projects only. A project that has already run "
+            "keeps the settings frozen into its own meta -- see LDM-#1854."
+        )
+
     def cmd_defaults(self, key=None, value=None):
         """View or manage cascading configuration defaults."""
         global_level = getattr(self.manager.args, "global_level", False)
         remove = getattr(self.manager.args, "remove", False)
         defaults_mgr = self.manager.defaults
+
+        if getattr(self.manager.args, "reset_all", False):
+            self._reset_all_defaults(global_level, defaults_mgr)
+            return
 
         if remove:
             if not key:
