@@ -15,6 +15,8 @@ ldm list --json
 
 The `Status` column reflects more than just whether the container process is alive: a project whose container is running but has failed its own Docker `HEALTHCHECK` (e.g. Postgres crash-looping after an out-of-disk `PANIC`) is reported as `Unhealthy` rather than `Running`, and a project whose app container is healthy but whose DB container has failed its healthcheck is reported as `Running (DB unhealthy)`. This does not perform a live HTTP probe -- for that, use `ldm wait` after starting a project.
 
+`Not Created` (LDM-#1870) is distinct from `Stopped`: it means the project's `meta` and volumes exist, but no container matching it exists at all -- typically because the containers were removed directly (e.g. `docker rm`) rather than through LDM. `Stopped` still has a container to start; `Not Created` does not, so `ldm start` refuses it (see below) and `ldm run` must be used to recreate the stack. Both `--json` and the formatted table use the same `Not Created` string in the `status` field/column; `running_containers`/`total_containers` are `0`/`0` in this state, same as for a project with zero matched containers under the older binary behavior -- a consumer that already branches on those counts rather than the status string is unaffected by this new value.
+
 ## `run` (alias: `up`)
 
 Initialize and start a project stack. If the project is already initialized, it will print an informational message and provide a 5-second window to safely abort (CTRL+C) before reconfiguring.
@@ -540,7 +542,7 @@ ldm logs demo liferay -i 3 -n 50
 Manage the lifecycle of a project or a specific service.
 
 > [!NOTE]
-> The `start` command simply boots existing containers without running configuration or network scaffolding. If a project does not exist, `start` will immediately fail and recommend `ldm run`.
+> The `start` command simply boots existing containers without running configuration or network scaffolding -- it never creates a container. If a project does not exist, `start` will immediately fail and recommend `ldm run`. The same applies if the project exists (its `meta` and volumes are intact) but its containers were removed directly, e.g. via `docker rm` (LDM-#1870, reported as `Not Created` by `ldm list`): rather than letting the underlying `docker compose start` fail with its own internal wording about a service it never named, `ldm start` refuses up front and names `ldm run`, which recreates the containers from the existing volumes without losing data.
 
 ```bash
 ldm start [project] [service]     # Start existing containers
@@ -734,4 +736,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-18* | *Last Reviewed: 2026-09-18*
+*Last Updated: 2026-09-20* | *Last Reviewed: 2026-09-20*
