@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.24.0-pre.3] - 2026-09-20
 
-### Added
+### Fixed
 
--
+- **A passing configuration reset was reported as broken, whenever the run's random port happened to contain the digits `123`** (LDM-#1858). The Properties Override Reset assertion paired an anchored positive with an *unanchored* negative -- a bare `grep -q "123"` across the whole of `portal-ext.properties`. The generated file carries `jdbc.default.url=jdbc:postgresql://<project>-db:5432/lportal`, and the project is named `ldm-smoke-test-<TEST_PORT>`, so the JDBC line matched on port 61233 and stopped a macOS verification run on `-pre.2` one check from the end. Three things made it look like a product defect and all three were misleading: `ldm config reset-properties` printed its own success immediately above the failure, Windows passed because its ports did not contain those digits, and the same platform had passed this check in the recorded v2.23.0 run. Confirmed not a regression -- `handlers/config.py` and `handlers/base.py` are untouched since v2.23.0 and the assertion was byte-identical. The properties cascade works; the check could not see it. Both greps are now fixed-string (`grep -qF`, `.Contains()`) and carry the full key, which also tightens the positive: the unescaped dots in `test.override.prop=456` were regex wildcards in both `grep` and PowerShell's `-match`. Verified in both directions in both halves -- a correct reset at port 61233 now passes, a reset that genuinely did not happen still fails.
+
+### Changed
+
+- Nothing that ships in the binary. `-pre.3` carries the same `ldm_core` code as `-pre.2` and `-pre.1` apart from the version stamp; only the two verification scripts changed. This is the third pre-release in the cycle burnt by a defect in the verification suite rather than in the product, and all three share one shape: an assertion that had never been exercised against the conditions it would actually meet.
 
 ## [v2.24.0-pre.2] - 2026-09-20
 
