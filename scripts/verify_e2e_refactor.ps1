@@ -806,8 +806,16 @@ function Test-ForceIsNotAPositional {
 
     $out = & $LdmCmd run --help 2>&1 | Out-String
 
-    if ($out -match '(?m)^\s+force\s') {
-        $line = ($out -split "`n" | Where-Object { $_ -match '^\s+force\s' } | Select-Object -First 1)
+    # -cmatch, not -match: PowerShell's -match is CASE-INSENSITIVE by default,
+    # so it matched the wrapped description line of --jvm-tiered-stop-at-level,
+    # which begins "Force -XX:TieredStopAtLevel=1 ...". The bash half used a
+    # case-sensitive grep and passed, so the two halves disagreed on identical
+    # output -- a parity defect, not a Windows-only bug.
+    #
+    # Also anchor on argparse's exact two-space option indent: a wrapped
+    # description line is indented 24, so the indent alone distinguishes them.
+    if ($out -cmatch '(?m)^  force\s') {
+        $line = ($out -split "`n" | Where-Object { $_ -cmatch '^  force\s' } | Select-Object -First 1)
         return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm run --help' renders --force as a bare positional.`n   That is LDM-#1835: the flag is not merely mis-rendered, it is permanently ON`n   for every command sharing the parent parser.`n   | ${line}" }
     }
 
@@ -896,7 +904,12 @@ function Test-GuidePrecedence {
     # step 1 of docs/tutorials/first_5_minutes.md.
     param([string]$LdmCmd)
 
-    $out = & $LdmCmd guide 2>&1 | Out-String
+    # -y is required, not cosmetic. guide.py resolves
+    # `non_interactive = args.non_interactive or not sys.stdin.isatty()`, so on
+    # a real terminal `ldm guide` enters an input() menu loop and blocks
+    # forever. It only appeared to work when first written because the test
+    # harness had no tty.
+    $out = & $LdmCmd -y guide 2>&1 | Out-String
 
     if ($out -match [regex]::Escape('.ldm/config.json')) {
         return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm guide' still names .ldm/config.json as a precedence level.`n   No such cascade level exists (LDM-#1824)." }
