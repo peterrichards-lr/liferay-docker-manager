@@ -2458,7 +2458,16 @@ else
 fi
 
 log_and_run "Resetting properties" "$LDM_CMD" config reset-properties .
-if grep -q "test.override.prop=456" files/portal-ext.properties && ! grep -q "123" files/portal-ext.properties; then
+# LDM-#1858: both greps are FIXED-STRING and carry the full key. The negative
+# used to be a bare `grep -q "123"`, which matches anywhere in the file -- and
+# the generated properties carry
+#   jdbc.default.url=jdbc:postgresql://<project>-db:5432/lportal
+# where the project is `ldm-smoke-test-<TEST_PORT>`. Any port containing the
+# digits 123 (61233, 12345, 41230 ...) therefore failed a passing reset. It cost
+# a macOS verification run on v2.24.0-pre.2 at port 61233, and was invisible
+# whenever the random port happened not to contain them.
+if grep -qF "test.override.prop=456" files/portal-ext.properties \
+    && ! grep -qF "test.override.prop=123" files/portal-ext.properties; then
     report_ok "✅ Properties Override Reset verified."
 else
     echo "❌ ERROR: Properties Override Reset failed." && exit 1
