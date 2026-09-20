@@ -7,9 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.24.0-pre.2] - 2026-09-20
 
-### Added
+### Fixed
 
--
+- **The verification suite could not complete against `-pre.1`** (LDM-#1855). Two assertions added in the previous pre-release were defective, and both were found by running the real published artefact rather than by CI -- one needs Windows, the other needs a terminal.
+  - The `--force` check reported a defect that was not there. It matched the *wrapped continuation* of `--jvm-tiered-stop-at-level`'s description -- indented 24 spaces and beginning with a capital `Force` -- rather than an actual positional entry. This was a **parity defect, not a Windows bug**: the bash half matched case-sensitively and passed, while PowerShell's `-match` is case-insensitive by default and failed, so the two halves returned opposite verdicts on identical, correct output. Both now anchor on argparse's exact two-space option indent, and the PowerShell half uses `-cmatch` so they cannot silently diverge again.
+  - The `ldm guide` check hung on macOS. `ldm guide` resolves `non_interactive` as `args.non_interactive or not sys.stdin.isatty()`, so on a real terminal it enters an interactive menu loop and blocks. Measured under a pseudo-terminal the problem is worse than a hang: without `-y` the precedence block is not printed at all, so even where it does not block the assertion fails for the wrong reason. Both halves now pass `-y`.
+- **Three tests failed for any developer who had run the verification suite** (LDM-#1856). Running it installs `lfr-tunnel` and exports `LDM_LFR_TUNNEL_BIN`; `_resolve_existing_binary` checks environment variables before the global config and before `shutil.which`, and three tests exercising those later steps never cleared the first one. The result was that `scripts/agent_push.sh` refused every push on that machine, failing on tests unrelated to the change being pushed. The rule this breaks was already written down -- a test must not depend on the developer's real state -- but the environment was not on the list of hazards beside `~/.ldm`, `~/.ldmrc` and Docker contexts, and it is invisible in CI where the variable is never set.
+
+### Changed
+
+- Nothing that ships in the binary. `-pre.2` carries the same `ldm_core` code as `-pre.1` apart from the version stamp; only the verification scripts and one test file changed, so a `-pre.1` verification result remains meaningful for everything the suite reached before it stopped.
 
 ## [v2.24.0-pre.1] - 2026-09-19
 
