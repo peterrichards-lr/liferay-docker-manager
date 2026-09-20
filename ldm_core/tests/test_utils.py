@@ -2293,6 +2293,105 @@ class TestRemoteContextFailureDiagnosis(unittest.TestCase):
         self.assertIn("ldm target status aws-2", tip)
 
 
+class TestSshTransportRetry(unittest.TestCase):
+    """LDM-#1863: a node that is booting is not a node that is broken.
+
+    Reported from liferay-ai-commerce-accelerator: an EC2 instance ~15s into a
+    cold boot accepts TCP on 22 before sshd will authenticate, and the first
+    LDM command failed terminally.
+
+    Timings here are real and deliberately tiny. `time.sleep` is NOT patched --
+    patching it would make the attempt count meaningless, which is how an
+    earlier retry test in this repo measured nothing.
+    """
+
+    CMD: typing.ClassVar[list[str]] = ["docker", "--context", "aws-2", "compose", "ps"]
+    REFUSED = (
+        "error during connect: ... stderr=ssh: connect to host 10.0.0.5 "
+        "port 22: Connection refused"
+    )
+    AUTH = (
+        "error during connect: ... stderr=ssh: connect to host 10.0.0.5 "
+        "port 22: Permission denied (publickey)."
+    )
+    DNS = "error during connect: ... stderr=ssh: Could not resolve hostname nope"
+
+    def _attempt(self, stderr, fail_times, budget, delay=0.01):
+        """Runs a command that fails `fail_times` then succeeds.
+
+        Returns (attempts, outcome) where outcome is the return value or the
+        SystemExit code.
+        """
+        import subprocess as sp
+
+        from ldm_core import utils as u
+
+        state = {"n": 0}
+
+        def side_effect(*_a, **_k):
+            state["n"] += 1
+            if state["n"] <= fail_times:
+                raise sp.CalledProcessError(125, self.CMD, output="", stderr=stderr)
+            done: sp.CompletedProcess = sp.CompletedProcess(self.CMD, 0)
+            done.stdout = "OK"
+            done.stderr = ""
+            return done
+
+        with (
+            patch.object(u, "_SSH_RETRY_DELAY", delay),
+            patch.dict(os.environ, {"LDM_SSH_READY_TIMEOUT": str(budget)}),
+            patch("subprocess.run", side_effect=side_effect),
+        ):
+            try:
+                # Bind the result BEFORE reading the counter: a tuple evaluates
+                # left to right, so `return state["n"], run(...)` reports the
+                # count from before the call -- always 0.
+                outcome = u.CommandRunner().run(self.CMD)
+            except SystemExit as exc:
+                return state["n"], exc.code
+            return state["n"], outcome
+
+    def test_a_node_that_wakes_up_is_waited_for(self):
+        """The reported scenario: it recovers instead of failing terminally."""
+        attempts, outcome = self._attempt(self.REFUSED, fail_times=2, budget=1.0)
+        self.assertEqual("OK", outcome)
+        self.assertEqual(3, attempts, "should have retried until it succeeded")
+
+    def test_refused_credentials_are_waited_for_too(self):
+        """sshd answers before it authenticates -- both are 'not ready yet'."""
+        attempts, outcome = self._attempt(self.AUTH, fail_times=1, budget=1.0)
+        self.assertEqual("OK", outcome)
+        self.assertEqual(2, attempts)
+
+    def test_a_node_that_never_wakes_still_fails_as_before(self):
+        attempts, outcome = self._attempt(self.REFUSED, fail_times=99, budget=0.05)
+        self.assertEqual(125, outcome, "the original exit code must survive")
+        self.assertGreater(attempts, 1)
+
+    def test_a_cause_that_waiting_cannot_fix_is_not_retried(self):
+        """DNS does not resolve itself; retrying only delays a correct error."""
+        attempts, outcome = self._attempt(self.DNS, fail_times=99, budget=1.0)
+        self.assertEqual(125, outcome)
+        self.assertEqual(1, attempts, "must not wait on a non-transient cause")
+
+    def test_the_budget_can_be_switched_off_entirely(self):
+        attempts, outcome = self._attempt(self.REFUSED, fail_times=99, budget=0)
+        self.assertEqual(125, outcome)
+        self.assertEqual(1, attempts, "0 must restore the pre-#1863 behaviour")
+
+    def test_an_unparseable_budget_falls_back_rather_than_crashing(self):
+        from ldm_core.utils import _SSH_READY_TIMEOUT_DEFAULT, ssh_ready_budget
+
+        with patch.dict(os.environ, {"LDM_SSH_READY_TIMEOUT": "soon"}):
+            self.assertEqual(_SSH_READY_TIMEOUT_DEFAULT, ssh_ready_budget())
+
+    def test_a_negative_budget_is_treated_as_off(self):
+        from ldm_core.utils import ssh_ready_budget
+
+        with patch.dict(os.environ, {"LDM_SSH_READY_TIMEOUT": "-5"}):
+            self.assertEqual(0.0, ssh_ready_budget())
+
+
 class TestAnnounceRemoteTargets(unittest.TestCase):
     """LDM-#1341: say a remote node is involved *before* blocking on it."""
 

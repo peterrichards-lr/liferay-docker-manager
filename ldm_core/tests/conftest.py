@@ -122,6 +122,23 @@ def reset_singletons():
 
 
 @pytest.fixture(autouse=True)
+def no_ssh_ready_wait(monkeypatch):
+    """Disables the LDM-#1863 transport retry for every test by default.
+
+    The retry waits up to 30 real seconds for a remote node to finish booting.
+    That is right in production and wrong in a suite: any test that reaches a
+    remote-context failure would pay it silently. One already did --
+    ``test_the_user_sees_a_diagnosis_and_not_the_blob`` went from instant to
+    30s the moment the retry landed, and a future test hitting that path would
+    have inherited the same cost with nothing pointing at the cause.
+
+    Tests that mean to exercise the retry set the variable themselves; an
+    explicit ``patch.dict`` overrides this fixture for the duration.
+    """
+    monkeypatch.setenv("LDM_SSH_READY_TIMEOUT", "0")
+
+
+@pytest.fixture(autouse=True)
 def isolate_ldm_home(tmp_path_factory, monkeypatch):
     """Points LDM_HOME at a temp directory for every test (#1342).
 
