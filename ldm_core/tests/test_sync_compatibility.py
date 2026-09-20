@@ -1148,3 +1148,90 @@ class TestRedactionCannotDeleteTheFollowingLine:
         assert "my-laptop" not in out
         assert "/home/me/bin/ldm" not in out
         assert out.count("[ANONYMIZED]") == 2
+
+
+class TestHomePathRedaction:
+    """LDM-#1861: a report is generated on one machine and synced from another.
+
+    `anonymize_content` used to redact only `Path.home()` -- the home of the
+    machine running the sync -- so local reports were clean and every foreign
+    one kept its username. Measured at v2.24.0: 90 of 159 archived reports
+    carried one, in a public repository.
+    """
+
+    def test_a_windows_home_is_redacted_on_a_unix_host(self):
+        out = sync_compatibility.anonymize_content(
+            r"Snapshot saved: C:\Users\someone\ldm-verify\x"
+        )
+        assert "someone" not in out
+        assert r"C:\Users\[USER]\ldm-verify\x" in out
+
+    def test_a_linux_home_is_redacted_on_a_mac_host(self):
+        out = sync_compatibility.anonymize_content(
+            "Snapshot saved: /home/someone/ldm-verify/x"
+        )
+        assert "someone" not in out
+        assert "/home/[USER]/ldm-verify/x" in out
+
+    def test_a_foreign_mac_home_is_redacted(self):
+        """Not just *this* mac's home -- any of them."""
+        out = sync_compatibility.anonymize_content("at /Users/someoneelse/work")
+        assert "someoneelse" not in out
+
+    def test_the_ci_runner_home_is_kept_deliberately(self):
+        """`runner` is GitHub Actions' generic home, not a person, and it
+        records that a report came from CI.
+
+        `Path.home()` is patched because on a GitHub runner it *is*
+        `/home/runner`, and the older replace above collapses the running
+        machine's own home to `[HOME]` before the pattern is reached. That is
+        harmless -- `[HOME]` names nobody -- but it made this assertion depend
+        on which machine ran the suite: green on a developer's mac, red on all
+        four CI matrix jobs. The allowlist exists for a *foreign* CI report
+        synced from elsewhere, and that is what this now tests.
+        """
+        text = "Workspace: /home/runner/work/ldm/ldm"
+        with patch.object(
+            sync_compatibility.Path, "home", return_value=Path("/Users/someone-else")
+        ):
+            assert sync_compatibility.anonymize_content(text) == text
+
+    def test_the_existing_header_redaction_still_applies(self):
+        out = sync_compatibility.anonymize_content("Binary:    /opt/homebrew/bin/ldm")
+        assert "[ANONYMIZED]" in out
+
+    def test_the_guard_reports_only_paths_naming_a_person(self):
+        found = sync_compatibility.find_unredacted_home_paths(
+            r"a C:\Users\bob\x and /home/runner/y and /Users/carol/z"
+        )
+        assert found == ["/Users/carol", r"C:\Users\bob"]
+
+    def test_the_guard_is_quiet_on_already_redacted_content(self):
+        assert (
+            sync_compatibility.find_unredacted_home_paths(
+                r"C:\Users\[USER]\x and /home/[USER]/y"
+            )
+            == []
+        )
+
+    # The guard must be BROADER than the substitution or it can never fire:
+    # after `_HOME_PATH_RE.sub` every segment it recognised reads `[USER]`,
+    # which that pattern cannot match. A guard sharing it would be decorative
+    # -- the exact shape LDM-#1855/#1858 cost three release tags to learn.
+
+    def test_the_guard_catches_a_shape_the_substitution_misses(self):
+        """A digit-leading account is not redacted; it must still be refused."""
+        redacted = sync_compatibility.anonymize_content("at /Users/123abc/work")
+        assert "123abc" in redacted, "precondition: substitution does not cover it"
+        assert sync_compatibility.find_unredacted_home_paths(redacted) == [
+            "/Users/123abc"
+        ]
+
+    def test_the_guard_catches_a_partially_redacted_account(self):
+        """A non-ASCII account half-matches; half-redacted must not ship."""
+        redacted = sync_compatibility.anonymize_content("at /home/andré/work")
+        assert sync_compatibility.find_unredacted_home_paths(redacted) != []
+
+    def test_the_guard_passes_content_the_substitution_did_cover(self):
+        redacted = sync_compatibility.anonymize_content("at /home/someone/work")
+        assert sync_compatibility.find_unredacted_home_paths(redacted) == []

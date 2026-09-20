@@ -487,11 +487,59 @@ def strip_ansi(text):
     return re.sub(r"\x1b\[[0-9;]*[mK]", "", text)
 
 
+# LDM-#1861: a home path is redacted by pattern, not only by string-matching
+# this machine's own home. `Path.home()` is the home of the machine running the
+# sync, and a report is almost never generated there -- Windows and Linux
+# reports are collected from other machines and synced from one. So the local
+# reports were redacted to `[HOME]` and every foreign one kept its username.
+# Measured at v2.24.0: 90 of 159 archived reports carried one, in a PUBLIC repo.
+#
+# `runner` is kept deliberately. It is GitHub Actions' generic home, not a
+# person, and it records that a report came from CI -- provenance worth having.
+_NON_PERSONAL_HOME_USERS = frozenset({"runner"})
+_HOME_PATH_RE = re.compile(r"(C:\\Users\\|/home/|/Users/)([A-Za-z][A-Za-z0-9_.-]*)")
+
+
+def _redact_home_path(match):
+    prefix, user = match.group(1), match.group(2)
+    if user.lower() in _NON_PERSONAL_HOME_USERS:
+        return match.group(0)
+    return f"{prefix}[USER]"
+
+
+# The guard below MUST be broader than the substitution above, or it can never
+# fire: after `_HOME_PATH_RE.sub`, every segment it recognised has become
+# `[USER]`, which `[A-Za-z][A-Za-z0-9_.-]*` cannot match, so a guard sharing
+# that pattern would be decorative. This one accepts ANY path segment, so a
+# home shape the conservative substitution misses -- `/Users/123abc`, or a
+# non-ASCII account -- is still caught before it is written.
+_ANY_HOME_SEGMENT_RE = re.compile(r"(C:\\Users\\|/home/|/Users/)([^/\\\s:;,\"']+)")
+_REDACTED_SEGMENT = "[USER]"
+
+
+def find_unredacted_home_paths(content):
+    """Returns the home paths still naming a person, for the guard below.
+
+    A report that reaches the repository with one of these in it is published
+    to everyone; this exists so that fails the sync rather than shipping.
+    """
+    return sorted(
+        {
+            m.group(0)
+            for m in _ANY_HOME_SEGMENT_RE.finditer(content)
+            if m.group(2) != _REDACTED_SEGMENT
+            and m.group(2).lower() not in _NON_PERSONAL_HOME_USERS
+        }
+    )
+
+
 def anonymize_content(content):
     """Redacts sensitive host-specific paths."""
     # Redact HOME paths
     home = str(Path.home())
     content = content.replace(home, "[HOME]")
+    # ...and any other machine's, which the line above cannot see (LDM-#1861).
+    content = _HOME_PATH_RE.sub(_redact_home_path, content)
     # Redact hostname if detected in report headers
     # LDM-#1633: `[ \t]`, not `\s`. `\s` crosses the newline, so a blank
     # `Hostname:`/`Binary:` would match through the line break and REPLACE the
@@ -1105,6 +1153,22 @@ def sync_reports(results_dir=None, table_file=None):  # noqa: C901, PLR0912, PLR
             f"Standardizing & Anonymizing: {meta['report_path'].name} -> {new_name}"
         )
         clean_content = anonymize_content(meta["content"])
+
+        # LDM-#1861: this repository is public, so a report that still names a
+        # person must not be written. Refuse rather than publish -- the previous
+        # behaviour gave no signal at all, and 90 archived reports carry a
+        # username because of it.
+        leaked = find_unredacted_home_paths(clean_content)
+        if leaked:
+            UI.error(
+                f"{meta['report_path'].name} still contains home paths naming a "
+                f"person after redaction: {', '.join(leaked)}"
+            )
+            UI.error(
+                "Refusing to write it. Extend _HOME_PATH_RE in "
+                "scripts/sync_compatibility.py to cover this shape."
+            )
+            sys.exit(1)
 
         # Remove the old file if it has a different name
         if meta["report_path"].exists() and meta["report_path"] != target_path:
