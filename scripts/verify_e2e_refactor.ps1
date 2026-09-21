@@ -3387,6 +3387,46 @@ assert expected in liferay[0], (
             $naOk = $false
         }
 
+        # 3a. LDM-#1893: `ldm wait` had NO end-to-end coverage at all, despite
+        #     owning the only HTTP probe in the codebase and having had its URL
+        #     resolution changed twice (LDM-#1223 to follow the target node,
+        #     LDM-#1891 to allow an override). Both landed on unit tests alone.
+        #
+        #     Hung off this project rather than booting another: `ldm wait`
+        #     needs a genuinely ready Liferay, because it polls container and
+        #     log readiness before it ever reaches the HTTP probe. Must run
+        #     BEFORE the `ldm stop` below.
+        if ($naOk) {
+            $waitLog = Join-Path $naDir "wait.log"
+            & $LDM_CMD -y wait "$naRaw" --timeout 120 *> $waitLog
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "[ERROR] 'ldm wait' failed against a ready project (LDM-#1223)." -ForegroundColor Red
+                Get-Content $waitLog -Tail 20 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+                $naOk = $false
+            }
+        }
+
+        # 3b. LDM-#1891: --probe-url must REPLACE the derived URL, not be
+        #     ignored. Pointed somewhere nothing listens, so it fails closed:
+        #     without the override the probe would reach the real project and
+        #     succeed, and the assertion would pass while proving nothing.
+        #
+        #     Literal .Contains, not -match: the URL has dots, which -match
+        #     treats as wildcards, and -match is case-insensitive by default
+        #     (LDM-#1855, LDM-#1860).
+        if ($naOk) {
+            $probeOut = (& $LDM_CMD -y wait "$naRaw" --probe-url "http://127.0.0.1:1" --timeout 30 2>&1 | Out-String)
+            $probeRc = $LASTEXITCODE
+            if ($probeRc -eq 0) {
+                Write-Host "[ERROR] 'ldm wait --probe-url http://127.0.0.1:1' succeeded -- the override was ignored (LDM-#1891)." -ForegroundColor Red
+                $naOk = $false
+            } elseif (-not $probeOut.Contains("http://127.0.0.1:1")) {
+                Write-Host "[ERROR] the failure did not name the supplied --probe-url (LDM-#1891)." -ForegroundColor Red
+                Write-Host $probeOut
+                $naOk = $false
+            }
+        }
+
         # 4. `ldm stop` must resolve the container. workspace/utils.py had the
         #    same bug: it looked up the verbatim name the daemon does not hold.
         if ($naOk) {
