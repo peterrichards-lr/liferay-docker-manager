@@ -963,6 +963,54 @@ class OrchestrationService(BaseHandler):
 
         self._report_batch_failures(failures, "tear down")
 
+    def _ship_to_node(self, placed, active_target, node_target, root, meta):
+        """Puts artifacts just placed locally onto the node too (LDM-#1894).
+
+        The local placement is the same work whatever the target -- the
+        command must not behave differently because a project happens to run
+        elsewhere, and the node comes from the project's own `meta`, so a
+        caller never names it.
+
+        What a remote project needs on top is the artifact present on the
+        NODE. `osgi/modules` and `osgi/client-extensions` are bind-mounts from
+        the project directory (`handlers/composer.py`), so the running
+        container reads it straight from there: no container operation, no
+        restart. That matters because the previous guidance -- a full
+        `ldm run` resync -- restarts the stack, which is no use to a caller
+        mid-run that has already waited out a boot.
+
+        Doing the local work regardless also keeps the two ends consistent: a
+        later `ldm run` rsyncs the whole project, and would otherwise push a
+        directory missing the expanded client-extension the local path creates
+        for image builds.
+        """
+        if not placed:
+            return
+        from ldm_core.config import (
+            fix_remote_artifact_ownership,
+            push_artifact_to_target,
+        )
+        from ldm_core.utils import liferay_container_of
+
+        failed = []
+        for dest, subdir in placed:
+            UI.detail(f"Shipping {dest.name} to '{active_target.name}'...")
+            if not push_artifact_to_target(active_target, root.name, dest, subdir):
+                failed.append(dest.name)
+        if failed:
+            UI.die(
+                f"Could not place {', '.join(failed)} on '{active_target.name}'. "
+                "The local copy was updated; the running container was not."
+            )
+        # A file written over SSH is owned by the SSH user, and Liferay runs as
+        # `liferay` -- it ignores what it cannot read, silently.
+        fix_remote_artifact_ownership(
+            node_target,
+            liferay_container_of(meta),
+            "/opt/liferay/osgi/modules",
+            "/opt/liferay/osgi/client-extensions",
+        )
+
     def cmd_deploy(self, project_id=None, targets=None, service=None):
         """Deploys a project, specific services, or individual artifacts."""
         root = self.manager.detect_project_path(project_id)
@@ -1008,46 +1056,23 @@ class OrchestrationService(BaseHandler):
         from ldm_core.utils import atomic_copy
 
         services_to_up = set()
+        placed: list[tuple[Path, str]] = []
         for t in targets:
             t_path = Path(t)
             if t_path.exists() and t_path.is_file():
                 ext = t_path.suffix.lower()
                 if ext in [".jar", ".war"]:
-                    if is_remote_target:
-                        # Open design question (docs/explanation/
-                        # remote-node-architecture.md §4): whether/how a
-                        # single-artifact deploy should incrementally sync
-                        # to a remote target isn't resolved yet -- rather
-                        # than silently copy the artifact only into the
-                        # LOCAL project directory (where the remote
-                        # container would never see it), fail loudly with
-                        # guidance instead.
-                        UI.die(
-                            f"Single-artifact deploy ('{t_path.name}') to a remote "
-                            f"target ('{node_target}') isn't supported yet -- it "
-                            "would only update the local copy, not the running "
-                            f"remote container. Use 'ldm run {project_id or root.name}' "
-                            "for a full resync instead."
-                        )
-                        return
                     dest = paths["modules"] / t_path.name
                     UI.detail(f"Syncing Module: {t_path.name}")
                     atomic_copy(t_path, dest)
+                    placed.append((dest, "osgi/modules"))
                 elif ext == ".zip":
-                    if is_remote_target:
-                        UI.die(
-                            f"Single-artifact deploy ('{t_path.name}') to a remote "
-                            f"target ('{node_target}') isn't supported yet -- it "
-                            "would only update the local copy, not the running "
-                            f"remote container. Use 'ldm run {project_id or root.name}' "
-                            "for a full resync instead."
-                        )
-                        return
                     # Potentially a CX or Fragment
                     from ldm_core.handlers.workspace import WorkspaceService
 
                     handler = WorkspaceService(self.manager)
                     handler._sync_cx_artifact(t_path, paths)
+                    placed.append((paths["cx"] / t_path.name, "osgi/client-extensions"))
                 else:
                     UI.warning(f"Unsupported file type for deployment: {t}")
             else:
@@ -1055,6 +1080,22 @@ class OrchestrationService(BaseHandler):
                 # exists wherever this project runs (from a prior `ldm
                 # run`), so starting it there is safely redirectable.
                 services_to_up.add(t)
+
+        # LDM-#1894: the local placement above is the same work whatever the
+        # target -- the command must not behave differently because a project
+        # happens to run elsewhere, and the node is read from the project's own
+        # meta, so a caller never names it. What a remote project needs on top
+        # is the artifact present on the NODE, because `osgi/modules` and
+        # `osgi/client-extensions` are bind-mounts from the project directory
+        # (handlers/composer.py): the running container reads it straight from
+        # there, with no container operation and no restart.
+        #
+        # Doing the local work regardless also keeps the two ends consistent --
+        # a later `ldm run` rsyncs the whole project, and it would otherwise
+        # push a directory missing the expanded client-extension the local path
+        # creates for image builds.
+        if is_remote_target:
+            self._ship_to_node(placed, active_target, node_target, root, meta)
 
         if services_to_up:
             compose_base = DockerService.get_compose_cmd_prefix(node_target)

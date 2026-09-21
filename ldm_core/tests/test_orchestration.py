@@ -412,17 +412,31 @@ class TestOrchestration(unittest.TestCase):
 
     @patch("ldm_core.ui.UI.die")
     @patch("ldm_core.config.get_active_target")
-    def test_cmd_deploy_single_artifact_rejects_remote_target(
+    def test_cmd_deploy_single_artifact_ships_to_a_remote_target(
         self, mock_target, mock_die
     ):
-        """LDM-#1090/#1133: a single-artifact deploy (jar/war/zip) only
-        copies into the LOCAL project directory -- silently doing that for
-        a project on a remote target would update a copy the running
-        remote container never sees. Must fail loudly instead."""
+        """LDM-#1894 replaces the LDM-#1090/#1133 refusal with the capability.
+
+        The old contract was "fail loudly rather than update a local copy the
+        remote container never sees". That reasoning still holds -- a silent
+        local-only copy remains the worst outcome -- but the answer is now to
+        put the artifact on the node rather than to refuse.
+
+        `osgi/modules` is a bind-mount from the project directory, so the
+        local copy is still made (the end state must not depend on the
+        target) AND the file is shipped to the node, where the running
+        container reads it straight from the mount.
+        """
         from ldm_core.config import TargetNode
 
         mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
         mock_die.side_effect = SystemExit
+
+        pushed = []
+
+        def _record_push(_t, _n, f, d):
+            pushed.append((f.name, d))
+            return True
 
         with tempfile.TemporaryDirectory() as tmpdir:
             jar_path = Path(tmpdir) / "custom.jar"
@@ -435,15 +449,19 @@ class TestOrchestration(unittest.TestCase):
                     return_value={"target": "aws-1"},
                 ),
                 patch("ldm_core.utils.atomic_copy") as mock_copy,
+                patch(
+                    "ldm_core.config.push_artifact_to_target",
+                    side_effect=_record_push,
+                ),
+                patch("ldm_core.config.fix_remote_artifact_ownership"),
             ):
-                with self.assertRaises(SystemExit):
-                    self.handler.handler.orchestration.cmd_deploy(
-                        "test", targets=[str(jar_path)]
-                    )
+                self.handler.handler.orchestration.cmd_deploy(
+                    "test", targets=[str(jar_path)]
+                )
 
-        mock_die.assert_called_once()
-        self.assertIn("aws-1", mock_die.call_args[0][0])
-        mock_copy.assert_not_called()
+        mock_die.assert_not_called()
+        mock_copy.assert_called_once()
+        self.assertEqual([("custom.jar", "osgi/modules")], pushed)
 
     @patch("ldm_core.config.get_active_target")
     def test_cmd_deploy_service_uses_remote_context(self, mock_target):
