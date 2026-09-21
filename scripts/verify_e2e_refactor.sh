@@ -3668,6 +3668,41 @@ else
         NA_OK=false
     fi
 
+    # 3a. LDM-#1893: `ldm wait` had NO end-to-end coverage at all, despite
+    #     owning the only HTTP probe in the codebase and having had its URL
+    #     resolution changed twice (LDM-#1223 to follow the target node,
+    #     LDM-#1891 to allow an override). Both landed on unit tests alone.
+    #
+    #     Hung off this project rather than booting another: `ldm wait` needs a
+    #     genuinely ready Liferay, because it polls container and log readiness
+    #     before it ever reaches the HTTP probe. This is the one place a fully
+    #     booted project already exists, so the cost is ~30s rather than a
+    #     second boot. It must run BEFORE the `ldm stop` below.
+    if [ "$NA_OK" = true ]; then
+        if ! "$LDM_CMD" -y wait "$NA_RAW" --timeout 120 > "${NA_DIR}/wait.log" 2>&1; then
+            echo "❌ ERROR: 'ldm wait' failed against a ready project (LDM-#1223)." | tee -a "$RESULTS_FILE_TMP"
+            tail -20 "${NA_DIR}/wait.log" | tee -a "$RESULTS_FILE_TMP"
+            NA_OK=false
+        fi
+    fi
+
+    # 3b. LDM-#1891: --probe-url must REPLACE the derived URL, not be ignored.
+    #     Pointed somewhere nothing listens, so it fails closed: without the
+    #     override the probe would reach the real project and succeed, and the
+    #     assertion would pass while proving nothing.
+    if [ "$NA_OK" = true ]; then
+        probe_out=$("$LDM_CMD" -y wait "$NA_RAW" --probe-url http://127.0.0.1:1 \
+            --timeout 30 2>&1) && probe_rc=0 || probe_rc=$?
+        if [ "$probe_rc" -eq 0 ]; then
+            echo "❌ ERROR: 'ldm wait --probe-url http://127.0.0.1:1' succeeded -- the override was ignored (LDM-#1891)." | tee -a "$RESULTS_FILE_TMP"
+            NA_OK=false
+        elif ! printf '%s' "$probe_out" | grep -qF "http://127.0.0.1:1"; then
+            echo "❌ ERROR: the failure did not name the supplied --probe-url (LDM-#1891)." | tee -a "$RESULTS_FILE_TMP"
+            echo "     ${probe_out//$'\n'/$'\n'     }" | tee -a "$RESULTS_FILE_TMP"
+            NA_OK=false
+        fi
+    fi
+
     # 4. `ldm stop` must find the container. workspace/utils.py had the same
     #    bug: it looked up the verbatim name the daemon does not hold.
     if [ "$NA_OK" = true ]; then

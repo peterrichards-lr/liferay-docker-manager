@@ -128,6 +128,47 @@ Two of the gaps above have been closed:
   When the budget is spent the original exit code, message and tip are emitted
   unchanged, so nothing downstream sees a different failure than before.
 
+## 3a. Deploying a single artifact to a node
+
+`ldm deploy <project> <file...>` used to refuse outright when the project ran
+on a node, because copying the artifact into the **local** project directory
+would have updated something the remote container never reads — silently. The
+guard was right; the capability behind it was missing, and the only guidance
+was `ldm run` for a full resync, which restarts the stack. That is a fair
+escape hatch for a developer and useless to a CI run that has already waited
+out a boot (LDM-#1894).
+
+**The command is the same whatever the target.** The node comes from the
+project's own `meta`, so a caller never names it, and the local end state does
+not depend on where the project happens to run: the artifact is placed
+locally exactly as before — including expanding a client-extension zip into
+`client-extensions/` for image builds — and a project on a node additionally
+has it shipped there.
+
+**It needs no container operation and no restart.** `osgi/modules` and
+`osgi/client-extensions` are bind-mounts from the project directory, so a file
+landing in the node's copy is immediately visible to the running container.
+That is the property that makes this useful mid-run, and it is the reason the
+fix is a file placement rather than a `docker cp`.
+
+Two details that are easy to get wrong, and are handled:
+
+- **The upload is staged, then moved.** Liferay *watches* these directories, so
+  a partially transferred artifact is not untidy — it is a deploy of a
+  truncated file. The helper copies to `<name>.ldm-partial` and `mv`s it into
+  place, which is atomic within one filesystem, and removes the staged file if
+  the move fails.
+- **Ownership is settled afterwards.** A file arriving over SSH belongs to the
+  SSH user while Liferay runs as `liferay`, and Liferay ignores what it cannot
+  read without saying so. LDM resets it through
+  `docker --context <node> exec`, so callers do not need their own
+  `docker exec -u 0 … chown` afterwards — which, done with bare `docker`,
+  would hit the caller's own daemon where the container does not exist.
+
+Doing the local placement regardless also keeps the two ends consistent: a
+later `ldm run` rsyncs the whole project, and would otherwise push a directory
+missing the expanded client-extension.
+
 ## 4. Resolution precedence
 
 Three overlapping signals decide "what target should this operation use," ranked most to least specific:
@@ -445,4 +486,4 @@ remote add, and in the drift repair above `~/.ldmrc` was right all along:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-20* | *Last Reviewed: 2026-09-20*
+*Last Updated: 2026-09-21* | *Last Reviewed: 2026-09-21*

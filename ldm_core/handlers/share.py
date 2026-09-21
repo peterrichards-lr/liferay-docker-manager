@@ -253,13 +253,38 @@ class ShareService:
         # whitelisted binary still gets invoked by its unresolved, non-
         # whitelisted path -- which is exactly what EDR keys on, regardless
         # of which real file the symlink points at.
-        for raw_candidate in (
-            get_actual_home() / "liferay" / "lfr-tunnel" / bin_name,
-            get_actual_home() / ".ldm" / "bin" / bin_name,
-        ):
+        #
+        # LDM-#1883: #1871 made sure an approved binary is *invoked* by its
+        # approved path. It left the prior question open -- LDM was still
+        # executing a candidate in order to decide whether it should be
+        # executing it, and `_get_installed_version` runs the file. For the
+        # legacy location that means launching a binary LDM did not install
+        # and cannot vouch for, which is the costliest possible way to
+        # discover a version number: the observed EDR response removes the
+        # binary *and* surrounding tooling, `brew` included.
+        #
+        # So the legacy candidate is probed only when it resolves INTO the
+        # whitelisted path -- i.e. it is a symlink to the approved binary, and
+        # running it is running that. A real, different binary sitting in
+        # ~/.ldm/bin is reported instead, never run.
+        whitelisted = get_actual_home() / "liferay" / "lfr-tunnel" / bin_name
+        legacy = get_actual_home() / ".ldm" / "bin" / bin_name
+
+        for raw_candidate in (whitelisted, legacy):
             if not raw_candidate.exists():
                 continue
             candidate = raw_candidate.resolve()
+            if raw_candidate == legacy and candidate != whitelisted.resolve():
+                UI.warning(
+                    f"Ignoring '{raw_candidate}': it is not the binary LDM "
+                    "installs, and running an unapproved one is what endpoint "
+                    "protection quarantines."
+                )
+                UI.info(
+                    "If it is the tunnel you want, move it to "
+                    f"'{whitelisted}' or point LDM_LFR_TUNNEL_BIN at it."
+                )
+                continue
             if self._get_installed_version(candidate):
                 return candidate
 

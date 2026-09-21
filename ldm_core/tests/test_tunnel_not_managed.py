@@ -12,6 +12,7 @@ the surrounding toolchain. Every probe is mocked at the seam.
 
 import os
 import platform
+import stat
 import tempfile
 import unittest
 from pathlib import Path
@@ -85,11 +86,26 @@ class TestResolutionOrder(_Base):
         with patch.object(Path, "exists", lambda _self: True):
             self.assertEqual(self._resolve([want]), want)
 
-    def test_a_legacy_install_still_resolves(self):
-        """Existing ~/.ldm/bin setups must not break."""
+    def test_a_legacy_install_is_no_longer_resolved(self):
+        """LDM-#1883 deliberately ends the "~/.ldm/bin setups must not break"
+        guarantee this test used to assert.
+
+        Resolving that path meant EXECUTING it -- `_get_installed_version`
+        runs each candidate to read its version -- so LDM was launching a
+        binary it did not install and cannot vouch for, from a location its
+        own comments call outside the EDR whitelist. The observed response
+        removes the binary and the surrounding toolchain with it, `brew`
+        included.
+
+        Breaking this is the cost of the fix, and it is a real cost. It is
+        accepted because the recovery is one line, and the refusal names it:
+        set `LDM_LFR_TUNNEL_BIN`, or move the binary to the whitelisted
+        location. A symlink from the legacy path to the approved binary still
+        works -- see TestAnUnapprovedBinaryIsNeverExecuted.
+        """
         want = self.home / ".ldm" / "bin" / BIN
         with patch.object(Path, "exists", lambda _self: True):
-            self.assertEqual(self._resolve([want]), want)
+            self.assertIsNone(self._resolve([want]))
 
     def test_the_whitelisted_location_wins_over_the_legacy_one(self):
         white = self.home / "liferay" / "lfr-tunnel" / BIN
@@ -259,10 +275,16 @@ class TestLegacySymlinkIsResolvedBeforeExecution(_Base):
         return result, probed
 
     def test_legacy_symlink_resolves_to_the_real_whitelisted_path(self):
-        # The real binary lives outside both known candidate locations --
-        # standing in for "somewhere InfoSec approved that isn't the notional
-        # ~/liferay/lfr-tunnel/lfr-tunnel default".
-        real_dir = self.home / "elsewhere"
+        # LDM-#1883 changed what this may point AT. It used to stand in for
+        # "somewhere InfoSec approved that isn't the notional default", but
+        # resolving a legacy symlink to an arbitrary location still ends in
+        # LDM executing a binary from outside the whitelist -- the hole #1871
+        # left open. A legacy symlink is now honoured only when it resolves to
+        # the whitelisted binary, which is what this sets up.
+        #
+        # What #1871 asserted, and what still matters here, is unchanged: the
+        # RESOLVED path is what gets invoked, never the symlink.
+        real_dir = self.home / "liferay" / "lfr-tunnel"
         real_dir.mkdir(parents=True)
         real_bin = real_dir / BIN
         real_bin.write_text("stand-in binary, never executed by this test\n")
@@ -297,3 +319,92 @@ class TestLegacySymlinkIsResolvedBeforeExecution(_Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAnUnapprovedBinaryIsNeverExecuted(_Base):
+    """LDM-#1883: LDM must not run a binary in order to decide whether it
+    should be running it.
+
+    LDM-#1871 made sure an approved binary is *invoked* by its approved path.
+    It left the prior question open: `_get_installed_version` executes each
+    candidate to read its version, so for the legacy `~/.ldm/bin` location
+    that meant launching a binary LDM did not install and cannot vouch for.
+    The observed endpoint-protection response removes the binary and the
+    surrounding toolchain with it.
+
+    These use a real executable that RECORDS ITS OWN INVOCATION, so
+    non-execution is observed directly rather than inferred from a mock that
+    was never asserted on.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.home = Path(self._tmp.name)
+        self.recorder = self.home / "invoked.log"
+        self.recorder.write_text("")
+        self.whitelisted = self.home / "liferay" / "lfr-tunnel" / BIN
+        self.legacy = self.home / ".ldm" / "bin" / BIN
+
+    def _make_recording_binary(self, path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            f'#!/bin/bash\necho "$0" >> "{self.recorder}"\necho "lfr-tunnel v1.48.12"\n'
+        )
+        path.chmod(path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+    def _resolve(self):
+        env = {"LDM_LFR_TUNNEL_BIN": "", "LFR_TUNNEL_BIN": ""}
+        with (
+            patch("ldm_core.handlers.share.get_actual_home", return_value=self.home),
+            patch("shutil.which", return_value=None),
+            patch.dict(os.environ, env, clear=True),
+        ):
+            return self.service._resolve_existing_binary()
+
+    def _invocations(self):
+        return [ln for ln in self.recorder.read_text().splitlines() if ln.strip()]
+
+    def test_a_different_binary_in_the_legacy_location_is_never_run(self):
+        """The whole point: discovery must not launch what it cannot vouch for."""
+        self._make_recording_binary(self.legacy)
+
+        result = self._resolve()
+
+        self.assertEqual(
+            [],
+            self._invocations(),
+            "LDM executed an unapproved binary to read its version",
+        )
+        self.assertIsNone(result, "an unapproved binary must not be resolved")
+
+    def test_the_refusal_says_what_to_do_about_it(self):
+        self._make_recording_binary(self.legacy)
+        with patch("ldm_core.handlers.share.UI.info") as info:
+            self._resolve()
+        said = " ".join(str(c) for c in info.call_args_list)
+        self.assertIn("LDM_LFR_TUNNEL_BIN", said)
+
+    def test_a_legacy_symlink_to_the_approved_binary_still_works(self):
+        """LDM-#1871's guarantee must survive: existing setups keep working."""
+        self._make_recording_binary(self.whitelisted)
+        self.legacy.parent.mkdir(parents=True, exist_ok=True)
+        self.legacy.symlink_to(self.whitelisted)
+
+        result = self._resolve()
+
+        self.assertIsNotNone(result, "a symlink to the approved binary must resolve")
+        ran = self._invocations()
+        self.assertEqual(1, len(ran), "it should be probed exactly once")
+        self.assertEqual(
+            str(self.whitelisted.resolve()),
+            str(Path(ran[0]).resolve()),
+            "must be invoked by the APPROVED path, not the symlink (LDM-#1871)",
+        )
+
+    def test_the_approved_location_is_unaffected(self):
+        self._make_recording_binary(self.whitelisted)
+        result = self._resolve()
+        self.assertIsNotNone(result)
+        self.assertEqual(1, len(self._invocations()))

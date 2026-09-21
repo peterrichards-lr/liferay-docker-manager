@@ -354,6 +354,110 @@ def sync_project_to_target(
     return res is not None
 
 
+def push_artifact_to_target(
+    target: TargetNode, project_name: str, local_file: Path, subdir: str
+) -> bool:
+    """Places one built artifact into a project's directory ON THE NODE.
+
+    LDM-#1894. `ldm deploy <project> <file>` refused outright against a remote
+    target, because copying the file into the LOCAL project directory would
+    have updated something the remote container never reads -- silently. That
+    guard was right; this is the capability behind it.
+
+    It needs no container operation and no restart. `osgi/client-extensions`
+    and `osgi/modules` are **bind-mounts** from the project directory
+    (`handlers/composer.py`), so a file landing in the node's copy of that
+    directory is immediately visible to the running container -- which is the
+    whole reason a full `ldm run` resync is the wrong answer for a caller
+    mid-run.
+
+    Uploaded to a temporary name and then moved into place. Liferay *watches*
+    these directories, so a partially written artifact is not merely untidy:
+    it is a deploy of a truncated file. `mv` within one filesystem is atomic;
+    a direct `scp` to the final name is not.
+
+    Returns False rather than raising so the caller can report per-artifact.
+    """
+    from ldm_core.ui import UI
+
+    remote_root = get_remote_project_root(target, project_name)
+    if not remote_root:
+        UI.error(f"Could not resolve the project directory on '{target.name}'.")
+        return False
+
+    target_spec = f"{target.user}@{target.host}" if target.user else target.host
+    ssh_opts = ["-i", target.key_path] if target.key_path else []
+    dest_dir = f"{remote_root}/{subdir}"
+    final = f"{dest_dir}/{local_file.name}"
+    staged = f"{final}.ldm-partial"
+
+    mk = run_command(
+        ["ssh", *ssh_opts, target_spec, f"mkdir -p {dest_dir}"], check=False
+    )
+    if mk is None:
+        UI.error(f"Could not create {dest_dir} on '{target.name}'.")
+        return False
+
+    scp_opts = ["-i", target.key_path] if target.key_path else []
+    sent = run_command(
+        ["scp", *scp_opts, str(local_file), f"{target_spec}:{staged}"], check=False
+    )
+    if sent is None:
+        UI.error(f"Could not copy {local_file.name} to '{target.name}'.")
+        return False
+
+    moved = run_command(
+        ["ssh", *ssh_opts, target_spec, f"mv {staged} {final}"], check=False
+    )
+    if moved is None:
+        # Leave no half-written artifact behind for Liferay to find.
+        run_command(["ssh", *ssh_opts, target_spec, f"rm -f {staged}"], check=False)
+        UI.error(f"Could not place {local_file.name} on '{target.name}'.")
+        return False
+
+    return True
+
+
+def fix_remote_artifact_ownership(
+    target_name: str | None, container: str, *paths: str
+) -> None:
+    """Gives the container back ownership of what SSH just wrote (LDM-#1894).
+
+    A file arriving over SSH is owned by the SSH user; Liferay runs as
+    `liferay` and silently ignores what it cannot read. Callers were doing
+    this themselves with bare `docker exec`, which on a remote target hits
+    the CALLER's daemon where the container does not exist -- and mostly with
+    `|| true`, so it no-opped quietly and the deploy appeared to work.
+
+    Routed through `get_docker_cmd_prefix`, which is the only thing that knows
+    to add `--context <node>`. Best-effort: a failure here is worth a warning,
+    not a failed deploy, because the common case (matching uid) needs nothing.
+    """
+    from ldm_core.docker_service import DockerService
+    from ldm_core.ui import UI
+
+    prefix = DockerService.get_docker_cmd_prefix(target_name)
+    res = run_command(
+        [
+            *prefix,
+            "exec",
+            "-u",
+            "0",
+            container,
+            "chown",
+            "-R",
+            "liferay:liferay",
+            *paths,
+        ],
+        check=False,
+    )
+    if res is None:
+        UI.warning(
+            f"Could not reset ownership inside '{container}'. If Liferay does "
+            "not pick the artifact up, check it is readable by the liferay user."
+        )
+
+
 @dataclass
 class TargetContext:
     """The single resolved answer to "what compute target does this command
