@@ -338,6 +338,79 @@ class TestOrchestration(unittest.TestCase):
             self.assertIn("aws-1", called_cmd)
 
     @patch("ldm_core.ui.UI.die")
+    def test_cmd_start_refuses_when_containers_absent(self, mock_die) -> None:
+        """LDM-#1870: `docker compose start` only starts EXISTING containers
+        -- it never creates them. A project whose containers were removed
+        (e.g. `docker rm`, volumes intact) must be refused with a message
+        naming `ldm run`, rather than letting a real `start` reach compose
+        and surface compose's own internal "service ... has no container to
+        start" wording."""
+        mock_die.side_effect = SystemExit(1)
+        with (
+            patch.object(self.handler.manager, "read_meta", return_value={}),
+            patch.object(BaseHandler, "run_command", return_value="") as mock_run,
+        ):
+            with self.assertRaises(SystemExit):
+                self.handler.handler.orchestration.cmd_start("test")
+
+        mock_die.assert_called_once()
+        message = mock_die.call_args[0][0]
+        self.assertIn("ldm run", message)
+
+        # The only run_command call must be the read-only pre-flight probe --
+        # a real `compose start` must never be issued once the pre-flight
+        # check refuses.
+        self.assertEqual(len(mock_run.call_args_list), 1)
+        probed_cmd = mock_run.call_args_list[0][0][0]
+        self.assertIn("ps", probed_cmd)
+        self.assertIn("-a", probed_cmd)
+        self.assertIn("-q", probed_cmd)
+        self.assertNotIn("start", probed_cmd)
+
+    def test_cmd_start_all_projects_skips_absent_and_continues(self) -> None:
+        """Batch `ldm start --all` must not abandon the remaining projects
+        when one of them has no containers (LDM-#1343's resilience contract
+        extends to this new refusal)."""
+        proj_ok = self.tmp_dir / "ok"
+        proj_absent = self.tmp_dir / "absent"
+        proj_ok.mkdir()
+        proj_absent.mkdir()
+
+        def run_command_side_effect(cmd, **kwargs):
+            if "ps" in cmd and "-a" in cmd and "-q" in cmd:
+                cwd = kwargs.get("cwd", "")
+                return "" if "absent" in str(cwd) else "fake-container-id"
+            return ""
+
+        with (
+            patch.object(
+                self.handler.manager,
+                "find_dxp_roots",
+                return_value=[{"path": proj_ok}, {"path": proj_absent}],
+            ),
+            patch.object(self.handler.manager, "read_meta", return_value={}),
+            patch.object(
+                BaseHandler, "run_command", side_effect=run_command_side_effect
+            ) as mock_run,
+        ):
+            # LDM-#1343: a batch failure still processes every remaining
+            # project, but the batch as a whole exits non-zero afterwards
+            # (_report_batch_failures) -- that is the pre-existing batch
+            # contract, not something LDM-#1870 changes. What this test
+            # verifies is that the *good* project was still started.
+            with self.assertRaises(SystemExit) as ctx:
+                self.handler.handler.orchestration.cmd_start(all_projects=True)
+            self.assertEqual(ctx.exception.code, 1)
+
+        start_call_cwds = [
+            call.kwargs.get("cwd")
+            for call in mock_run.call_args_list
+            if "start" in call.args[0]
+        ]
+        self.assertIn(str(proj_ok), start_call_cwds)
+        self.assertNotIn(str(proj_absent), start_call_cwds)
+
+    @patch("ldm_core.ui.UI.die")
     @patch("ldm_core.config.get_active_target")
     def test_cmd_deploy_single_artifact_rejects_remote_target(
         self, mock_target, mock_die

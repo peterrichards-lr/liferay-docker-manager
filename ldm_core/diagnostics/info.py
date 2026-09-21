@@ -1147,10 +1147,17 @@ def run_list(handler, as_json=False):  # noqa: C901, PLR0912, PLR0915
                 status = states[0].capitalize()
                 status_color = UI.GREEN if status == "Running" else UI.WHITE
         else:
+            # LDM-#1870: no container at all matched the project's app
+            # container name -- distinct from a project that is merely
+            # stopped. `docker rm`-ing the containers (volumes survive)
+            # left this indistinguishable from "Stopped", which sent users
+            # into `ldm start`; that command only starts EXISTING
+            # containers and cannot recreate them (see the pre-flight
+            # check in orchestration.py's cmd_start).
             running_count = 0
             total_count = 0
-            status = "Stopped"
-            status_color = UI.WHITE
+            status = "Not Created"
+            status_color = UI.YELLOW
 
         # LDM-#1091: a container reporting "running" can still have failed
         # its own HEALTHCHECK (e.g. Postgres crash-looping after ENOSPC).

@@ -32,7 +32,7 @@ Display an overview of all initialized LDM sandbox environments.
 Initialize and start a project stack. Automatically detects context if run inside a project folder. Use \fB--open\fR to launch the browser automatically after startup. Use \fB--scale SERVICE=N\fR to boot a scaled stack in one command. Use \fB--clean-state\fR to wipe the OSGi state volume contents before starting. Use \fB--fix-permissions\fR to reclaim root ownership on bind-mounted directories for macOS/Windows external drives. Use \fB--ignore-verified-ceiling\fR to boot a Liferay tag above the ceiling a package declares verified; the override is recorded in the project metadata.
 .TP
 \fBstart\fR [\fIPROJECT\fR]
-Start project containers gracefully. Use \fB--clean-state\fR to wipe the OSGi state volume contents before starting. Use \fB--fix-permissions\fR to reclaim root ownership on bind-mounted directories for macOS/Windows external drives.
+Start project containers gracefully. Use \fB--clean-state\fR to wipe the OSGi state volume contents before starting. Use \fB--fix-permissions\fR to reclaim root ownership on bind-mounted directories for macOS/Windows external drives. Refuses with a pointer to \fBldm run\fR if the project's containers were removed (e.g. via \fBdocker rm\fR) rather than merely stopped, since \fBstart\fR can only boot existing containers, not recreate them.
 .TP
 \fBstop\fR [\fIPROJECT\fR] [\fISERVICE\fR]
 Stop project containers gracefully. Use \fB--all\fR to stop all projects.
@@ -360,4 +360,4 @@ Peter Richards <peter.richards@liferay.com>
 
 .SH SEE ALSO
 .B docker(1), docker-compose(1)
-.\" Last Updated: 2026-09-19 | Last Reviewed: 2026-09-19
+.\" Last Updated: 2026-09-20 | Last Reviewed: 2026-09-20

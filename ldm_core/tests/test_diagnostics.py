@@ -711,6 +711,65 @@ class TestDiagnostics(unittest.TestCase):
 
             self.assertEqual(json.loads(f.getvalue()), [])
 
+    @patch("ldm_core.config.get_active_target")
+    @patch("ldm_core.diagnostics.info.run_command")
+    def test_cmd_list_reports_not_created_when_containers_absent(
+        self, mock_run, mock_get_active_target
+    ):
+        """LDM-#1870: a project whose containers were `docker rm`-ed (but
+        whose meta/volumes survive) must be reported as a distinct state
+        from "Stopped" -- `docker ps -a --filter name=^<name>$` matches
+        nothing at all in that case, which is empirically what an absent
+        container looks like (as opposed to an exited one, which still
+        matches and reports its own state)."""
+        from ldm_core.config import TargetNode
+
+        mock_get_active_target.return_value = TargetNode(name="local", host="localhost")
+        # Empty string: exactly what `docker ps -a --filter name=... --format
+        # {{.State}}` returns on stdout when no container matches at all.
+        mock_run.return_value = ""
+
+        with (
+            patch.object(
+                self.manager,
+                "find_dxp_roots",
+                return_value=[
+                    {
+                        "path": Path(f"{TEST_TMP_ROOT}/modtest"),
+                        "version": "2026.q3.0",
+                        "last_seen": None,
+                    }
+                ],
+            ),
+            patch.object(
+                self.manager,
+                "read_meta",
+                return_value={
+                    "container_name": "modtest",
+                    "port": 8080,
+                    "host_name": "localhost",
+                },
+            ),
+        ):
+            import io
+            from contextlib import redirect_stdout
+
+            f = io.StringIO()
+            with redirect_stdout(f):
+                self.manager.diagnostics.cmd_list(as_json=True)
+
+            entry = json.loads(f.getvalue())[0]
+            self.assertEqual(entry["status"], "Not Created")
+            self.assertEqual(entry["running_containers"], 0)
+            self.assertEqual(entry["total_containers"], 0)
+
+            f2 = io.StringIO()
+            with redirect_stdout(f2):
+                self.manager.diagnostics.cmd_list(as_json=False)
+            table_output = f2.getvalue()
+            self.assertIn("Not Created", table_output)
+            self.assertNotIn("Stopped", table_output)
+
     @patch("ldm_core.diagnostics.prune.run_command")
     @patch.object(
         MockDiagManager, "find_dxp_roots", return_value=[{"path": Path("/tmp/p1")}]

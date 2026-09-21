@@ -199,7 +199,7 @@ class OrchestrationService(BaseHandler):
         )
         return pipeline.run(context)
 
-    def cmd_start(  # noqa: PLR0912, PLR0915
+    def cmd_start(  # noqa: C901, PLR0912, PLR0915
         self,
         project_id=None,
         service=None,
@@ -252,6 +252,36 @@ class OrchestrationService(BaseHandler):
             from ldm_core.docker_service import DockerService
 
             compose_base = DockerService.get_compose_cmd_prefix(target_name)
+
+            # LDM-#1870: `docker compose start` only starts EXISTING
+            # containers -- it never creates them. A project whose
+            # containers were removed (e.g. `docker rm`, volumes intact)
+            # but whose meta/root survive would otherwise reach compose
+            # and surface compose's own internal wording about a service
+            # the user never named (e.g. `service "x-db" has no container
+            # to start`). `--force-recreate` takes the `up -d` path below,
+            # which does create containers, so this check does not apply
+            # there.
+            if not force_recreate:
+                existing = self.manager.run_command(
+                    [*compose_base, "ps", "-a", "-q"],
+                    check=False,
+                    capture_output=True,
+                    cwd=str(root),
+                    timeout=_DOCKER_PROBE_TIMEOUT,
+                )
+                if not (existing and existing.strip()):
+                    message = (
+                        f"Project '{root.name}' has no containers to start "
+                        "(they may have been removed, e.g. via `docker rm`). "
+                        "Please use 'ldm run' to recreate it."
+                    )
+                    if all_projects:
+                        UI.warning(f"{message} Continuing.")
+                        failures.append(root.name)
+                        continue
+                    UI.die(message)
+
             with ProjectLock(root):
                 if clean_state:
                     UI.detail(
