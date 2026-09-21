@@ -1,6 +1,14 @@
 repos:
+  # LDM-#1886: this rev MUST track `ruff==` in requirements-dev.txt, which is
+  # what CI installs, for the same reason the mypy rev below does (LDM-#1407).
+  # It had drifted to v0.15.6 while requirements-dev.txt said 0.16.8 -- two
+  # minor versions apart on a FORMATTER, where disagreement means a file that
+  # flips back and forth between what the hook writes and what a developer's
+  # own `ruff format` writes, hidden inside pre-commit's "failed, auto-fixed,
+  # passed" cycle. They happened to agree when this was found; nothing kept
+  # them agreeing.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.6
+    rev: v0.16.8
     hooks:
       - id: ruff
         args: [ --fix ]
