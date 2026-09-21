@@ -1665,6 +1665,176 @@ verify_mac_pin_refusal() {
     return 0
 }
 
+verify_containers_removed_volumes_intact() {
+    # LDM-#1873: end-to-end coverage for LDM-#1870's fix. `ldm list` used to
+    # report a project whose containers were removed entirely (e.g. `docker
+    # rm`, volumes intact) as merely "Stopped" -- indistinguishable from a
+    # project that just needs `ldm start`. `ldm start` then reached `docker
+    # compose start`, which only starts EXISTING containers and never creates
+    # them, surfacing compose's own raw "service ... has no container to
+    # start" error instead of refusing up front.
+    #
+    # This drives the real repro against real Docker: boot a project, `docker
+    # rm -f` its containers directly, and assert `ldm list` now reports "Not
+    # Created" (not "Stopped"), `ldm start` refuses with exit 1 naming `ldm
+    # run`, and `ldm run` recreates the stack from the surviving named volume
+    # with no data loss -- proven by a marker file written into the data
+    # volume before removal and read back after recreation, not merely by the
+    # absence of a crash.
+    #
+    # `--no-wait` is what keeps this to about a minute rather than a full
+    # Liferay boot: the container only has to exist (and its data volume be
+    # mountable) for the repro to be exercised -- same reasoning as
+    # verify_mac_pin_refusal above.
+    local ldm_cmd="$1"
+    local work_dir="$2"
+
+    local iso_home="${work_dir}/notcreated-home"
+    local run_dir="${work_dir}/notcreated-work"
+    local proj="ldmcontainersgone"
+    local marker_path="/opt/liferay/data/.ldm-e2e-marker"
+    local marker_val="e2e-${TEST_PORT:-notcreated}"
+
+    rm -rf "$iso_home" "$run_dir"
+    mkdir -p "$iso_home" "$run_dir" || return 1
+
+    _notcreated_teardown() {
+        (cd "$run_dir" 2>/dev/null && LDM_HOME="$iso_home" "$ldm_cmd" rm "$proj" --delete -y >/dev/null 2>&1)
+        docker rm -f "$proj" "${proj}-db" >/dev/null 2>&1
+        rm -rf "$iso_home" "$run_dir"
+    }
+
+    local out code
+    out=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" run "$proj" \
+        -y -t 2026.q1.7-lts --no-wait 2>&1) && code=0 || code=$?
+    if [ "$code" -ne 0 ]; then
+        _notcreated_teardown
+        echo "❌ ERROR: could not start the project (exit ${code})."
+        echo "   Output was: $(echo "$out" | tail -5)"
+        return 1
+    fi
+
+    local waited=0
+    while [ "$waited" -lt 30 ]; do
+        if docker ps --filter "name=^${proj}$" --format '{{.Names}}' 2>/dev/null | grep -qF "$proj"; then
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    if ! docker ps --filter "name=^${proj}$" --format '{{.Names}}' 2>/dev/null | grep -qF "$proj"; then
+        _notcreated_teardown
+        echo "❌ ERROR: the app container never came up after 'ldm run' -- cannot exercise the removal repro."
+        return 1
+    fi
+
+    local wrote=false
+    for _ in $(seq 1 15); do
+        if docker exec "$proj" sh -c "echo '${marker_val}' > '${marker_path}'" >/dev/null 2>&1; then
+            wrote=true
+            break
+        fi
+        sleep 1
+    done
+    if [ "$wrote" != true ]; then
+        _notcreated_teardown
+        echo "❌ ERROR: could not write the data-volume marker before removal; cannot prove data survival."
+        return 1
+    fi
+
+    # The repro itself: remove the containers directly, exactly as a manual
+    # `docker rm` cleanup (or a daemon losing its state) would. The named
+    # volumes are untouched -- only `docker volume rm` removes those.
+    docker rm -f "$proj" "${proj}-db" >/dev/null 2>&1
+
+    if docker ps -a --filter "name=^${proj}$" --format '{{.Names}}' 2>/dev/null | grep -qF "$proj"; then
+        _notcreated_teardown
+        echo "❌ ERROR: 'docker rm -f' did not actually remove the container; the repro state was never reached."
+        return 1
+    fi
+
+    # 1. LDM-#1870: `ldm list` must report "Not Created", not "Stopped".
+    local list_out
+    list_out=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" list 2>&1)
+    if ! echo "$list_out" | grep -qF "Not Created"; then
+        _notcreated_teardown
+        echo "❌ ERROR: 'ldm list' did not report 'Not Created' for a project whose containers were removed (LDM-#1870)."
+        echo "   Output was:"
+        # Parameter expansion, not `| sed` (SC2001). Bash-only, which this
+        # script already is.
+        echo "     ${list_out//$'\n'/$'\n'     }"
+        return 1
+    fi
+    if echo "$list_out" | grep -qF "Stopped"; then
+        _notcreated_teardown
+        echo "❌ ERROR: 'ldm list' still reports 'Stopped' for a project with no containers at all --"
+        echo "   indistinguishable from one that merely needs 'ldm start' (LDM-#1870)."
+        echo "   Output was:"
+        # Parameter expansion, not `| sed` (SC2001). Bash-only, which this
+        # script already is.
+        echo "     ${list_out//$'\n'/$'\n'     }"
+        return 1
+    fi
+
+    # 2. LDM-#1870: `ldm start` must refuse up front (exit 1) naming `ldm
+    #    run`, rather than letting `docker compose start` surface its own raw
+    #    error.
+    local start_out start_code
+    start_out=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" start "$proj" 2>&1) \
+        && start_code=0 || start_code=$?
+    if [ "$start_code" -ne 1 ]; then
+        _notcreated_teardown
+        echo "❌ ERROR: 'ldm start' exited ${start_code} for a project with no containers; expected 1 (LDM-#1870)."
+        echo "   Output was: $(echo "$start_out" | tail -5)"
+        return 1
+    fi
+    if ! echo "$start_out" | grep -qF "ldm run"; then
+        _notcreated_teardown
+        echo "❌ ERROR: 'ldm start' refused but did not name 'ldm run' (LDM-#1870)."
+        echo "   Output was: $(echo "$start_out" | tail -5)"
+        return 1
+    fi
+
+    # 3. `ldm run` must recreate the stack from the surviving named volume --
+    #    no data loss.
+    out=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" run "$proj" \
+        -y -t 2026.q1.7-lts --no-wait 2>&1) && code=0 || code=$?
+    if [ "$code" -ne 0 ]; then
+        _notcreated_teardown
+        echo "❌ ERROR: 'ldm run' could not recreate '${proj}' after its containers were removed (exit ${code})."
+        echo "   Output was: $(echo "$out" | tail -5)"
+        return 1
+    fi
+
+    waited=0
+    while [ "$waited" -lt 30 ]; do
+        if docker ps --filter "name=^${proj}$" --format '{{.Names}}' 2>/dev/null | grep -qF "$proj"; then
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    local marker_read=""
+    for _ in $(seq 1 15); do
+        marker_read=$(docker exec "$proj" cat "$marker_path" 2>/dev/null || true)
+        [ -n "$marker_read" ] && break
+        sleep 1
+    done
+    marker_read=$(echo "$marker_read" | tr -d '[:space:]')
+
+    if [ "$marker_read" != "$marker_val" ]; then
+        _notcreated_teardown
+        echo "❌ ERROR: the data-volume marker did not survive recreation (got '${marker_read}', wanted '${marker_val}')."
+        echo "   'ldm run' recreated the container against a FRESH volume instead of the surviving one -- data loss."
+        return 1
+    fi
+
+    _notcreated_teardown
+    echo "✅ Removed containers report 'Not Created' (not 'Stopped'), 'ldm start' refuses naming 'ldm run' (exit 1), and 'ldm run' recreates from the surviving volume with no data loss (LDM-#1870/#1873)."
+    return 0
+}
+
 echo ">> Verifying --mac-address is persisted (LDM-#1759/#1771)..."
 if MAC_PIN_OUT=$(verify_mac_address_persisted "$LDM_CMD" "$LDM_WORKSPACE"); then
     report_ok "$MAC_PIN_OUT"
@@ -1678,6 +1848,14 @@ if MAC_REFUSAL_OUT=$(verify_mac_pin_refusal "$LDM_CMD" "$LDM_WORKSPACE"); then
     report_ok "$MAC_REFUSAL_OUT"
 else
     echo "$MAC_REFUSAL_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying containers-removed-volumes-intact end-to-end (LDM-#1870/#1873)..."
+if NOTCREATED_OUT=$(verify_containers_removed_volumes_intact "$LDM_CMD" "$LDM_WORKSPACE"); then
+    report_ok "$NOTCREATED_OUT"
+else
+    echo "$NOTCREATED_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
 
