@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
-from ldm_core.defaults import CONVENTION_DEFAULTS
+from ldm_core.defaults import CONVENTION_DEFAULTS, STATE_BEARING_DEFAULTS
 from ldm_core.ui import UI
 from ldm_core.utils import (
     atomic_copy,
@@ -19,6 +19,21 @@ from ldm_core.utils import (
     run_command,
     safe_write_text,
 )
+
+
+def _match_meta_type(current, target):
+    """Writes the reverted value in the type the project already used.
+
+    LDM-#1854. `CONVENTION_DEFAULTS` stores scalars as strings, but the run
+    pipeline writes some of them into `meta` as their natural type -- a real
+    project's meta carries `"port": 8080`, an int. Reverting with the raw
+    convention value would quietly change the type as well as the value, which
+    is a difference no caller asked for and none would expect to find.
+    """
+    if isinstance(current, bool) or not isinstance(current, int):
+        return target
+    text = str(target)
+    return int(text) if text.lstrip("-").isdigit() else target
 
 
 class ConfigService:
@@ -1363,6 +1378,119 @@ class ConfigService:
             from ldm_core.utils import safe_write_text
 
             safe_write_text(config_path, json.dumps(config, indent=4))
+
+    def cmd_revert(self, project_id=None):
+        """Reverts a project's LDM configuration to the resolved defaults.
+
+        LDM-#1854. `ldm run` freezes settings into a project's `meta`, which
+        then overrides the cascade for that project forever. This clears those
+        overrides so the project follows the defaults again.
+
+        Two boundaries define it:
+
+        - **LDM-controlled configuration only.** Only keys
+          `CONVENTION_DEFAULTS` owns are touched. A project's `meta` also holds
+          container names, UUIDs, credentials and run history, none of which is
+          configuration and none of which is this command's business.
+        - **State-bearing keys are refused.** Some values have already had an
+          effect outside LDM -- a name in Liferay's virtualhost table, data in
+          a particular engine's volume. Reverting the value does not reverse
+          the effect, so reverting it silently would leave a project whose
+          configuration and whose actual state disagree. See
+          `STATE_BEARING_DEFAULTS` for the reason attached to each.
+
+        The target is the *resolved* default (convention < global < user), not
+        raw convention: a user who set a deliberate global default meant it to
+        apply to projects that have no opinion of their own.
+
+        Values are rewritten rather than removed. `port`, `host_name` and
+        `db_type` are read from `meta` by direct indexing in a dozen places, so
+        deleting the key would raise `KeyError` rather than fall back.
+        """
+        root = self.manager.detect_project_path(project_id, fatal=False)
+        if not root:
+            UI.die(
+                "Project not found or not initialized. Name it explicitly, or "
+                "run this from inside the project folder."
+            )
+
+        meta = self.manager.read_meta(root)
+        defaults_mgr = self.manager.defaults
+        force_all = getattr(self.manager.args, "force", False)
+        force_keys = set(getattr(self.manager.args, "force_keys", None) or [])
+
+        unknown = sorted(force_keys - set(STATE_BEARING_DEFAULTS))
+        if unknown:
+            UI.die(
+                f"--force-key only applies to state-bearing keys; "
+                f"{', '.join(unknown)} is not one. "
+                f"Valid: {', '.join(sorted(STATE_BEARING_DEFAULTS))}."
+            )
+
+        revertible, refused = [], []
+        for key in sorted(CONVENTION_DEFAULTS):
+            if key not in meta:
+                continue
+            target = defaults_mgr.get(key)
+            current = meta[key]
+            if str(current) == str(target):
+                continue
+            if key in STATE_BEARING_DEFAULTS and not (force_all or key in force_keys):
+                refused.append(key)
+                continue
+            revertible.append((key, current, target))
+
+        if refused:
+            UI.raw("")
+            UI.warning(
+                f"{len(refused)} setting(s) will NOT be reverted, because the "
+                "value is not the whole of the decision:"
+            )
+            for key in refused:
+                UI.raw(f"  {key.ljust(16)} {STATE_BEARING_DEFAULTS[key]}")
+            UI.raw(
+                "\n  Revert one anyway with '--force-key <key>'. LDM changes "
+                "the setting only -- it does not migrate the data, move the "
+                "container, or rewrite the virtualhost."
+            )
+
+        if not revertible:
+            UI.raw("")
+            UI.info(
+                f"No LDM-controlled configuration on '{root.name}' differs "
+                "from the defaults; nothing to revert."
+            )
+            sys.exit(5)
+
+        UI.raw("")
+        UI.warning(
+            "This reverts LDM-controlled configuration only -- the settings "
+            "LDM resolves for a project. It does not touch anything you have "
+            "changed inside Liferay itself."
+        )
+        UI.raw(f"\nThe following will be reverted on '{root.name}':")
+        for key, current, target in revertible:
+            UI.raw(
+                f"  {key.ljust(24)} {str(current).ljust(20)} "
+                f"-> {UI.DIM}{target!s}{UI.COLOR_OFF}"
+            )
+        UI.raw("")
+
+        if not self.manager.non_interactive and not UI.confirm(
+            f"Revert {len(revertible)} setting(s)?", default="N"
+        ):
+            UI.info("Nothing was changed.")
+            return
+
+        for key, current, target in revertible:
+            meta[key] = _match_meta_type(current, target)
+        self.manager.write_meta(root, meta)
+
+        UI.success(f"Reverted {len(revertible)} setting(s) on '{root.name}'.")
+        UI.info(
+            "The project must be recreated for these to take effect: "
+            f"run 'ldm run {root.name}'."
+        )
 
     def _reset_all_defaults(self, global_level, defaults_mgr):
         """Clears every customised cascading default (LDM-#1853).

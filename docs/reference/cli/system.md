@@ -352,6 +352,65 @@ sudo ldm config defaults --reset-all --global
 ldm defaults db_type mysql
 ```
 
+## `config revert`
+
+Returns a **named or current project** to the configuration defaults. Where
+`ldm config defaults --reset-all` affects projects you have not created yet,
+this one affects a project that already exists.
+
+```bash
+# Revert the project in the current folder
+ldm config revert
+
+# ...or a named one
+ldm config revert my-project
+
+# Without the confirmation prompt, for automation
+ldm -y config revert my-project
+
+# Revert a state-bearing key as well (see below)
+ldm config revert my-project --force-key host_name
+
+# Revert everything, including every state-bearing key
+ldm config revert my-project --force
+```
+
+### What it touches
+
+**LDM-controlled configuration only** — the settings LDM resolves for a
+project. A project's metadata also holds container names, its UUID,
+credentials and run history; none of that is configuration and none of it is
+touched. Nothing you have changed inside Liferay itself is touched either.
+
+Values return to the **resolved** default (convention, then any global default,
+then any user default) — not raw convention. A deliberate global default is
+what a project with no opinion of its own is supposed to get.
+
+### What it refuses, and why
+
+Five settings are not reverted by default, because the value is not the whole
+of the decision — each has already had an effect outside LDM, and changing the
+value back does not reverse it:
+
+| Setting | Why |
+| :--- | :--- |
+| `host_name` | written into Liferay's virtualhost table; the running site would still answer on the old name |
+| `db_type` | the data lives in that engine's volume, and another engine cannot read it |
+| `database_mode` | the data lives in the container and volume that mode created |
+| `search_mode` | the indices live where that mode put them, and reindexing is costly |
+| `tag` | the database has been upgraded to that version, and Liferay does not support downgrades |
+
+`--force-key <key>` reverts one of them; `--force` reverts all of them. Either
+way **LDM changes the setting only** — it does not migrate data, move
+containers, or rewrite virtualhosts. Untangling those consequences is yours.
+
+Exit code `5` when nothing differs from the defaults: nothing failed, and
+nothing needed to change.
+
+> [!NOTE]
+> Changing a project's configuration does not change a running container.
+> Run `ldm run <project>` afterwards for the new values to take effect.
+
 ### Resetting everything (`--reset-all`)
 
 `--remove` clears one key. `--reset-all` clears them all, which previously

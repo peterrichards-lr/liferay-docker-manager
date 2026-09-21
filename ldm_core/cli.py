@@ -88,6 +88,7 @@ def _resolve_legacy_config_commands(cmd_idx, processed_list):
         "rebuild-properties",
         "revert-properties",
         "reset-properties",
+        "revert",
         "ssl-mode",
         "database-mode",
     ]
@@ -158,6 +159,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "rebuild-properties",
         "revert-properties",
         "reset-properties",
+        "revert",
         "prune",
         "doctor",
         "upgrade",
@@ -2284,6 +2286,28 @@ def get_parser():  # noqa: PLR0915
         help="Remove every customised default, returning to convention",
     )
 
+    revert = config_subparsers.add_parser(
+        "revert",
+        parents=[_new_base_sub_parent()],
+        conflict_handler="resolve",
+        help="Revert a project's LDM configuration to the resolved defaults",
+    )
+    revert.add_argument(
+        "project_id", nargs="?", help="Project to revert (detected if omitted)"
+    )
+    # NOT `--force`: that is already on the shared base parent, and redeclaring
+    # it on a resolving child is precisely LDM-#1835 -- argparse empties the
+    # shared action's option_strings, turning it into an always-firing
+    # positional for all 54 commands. The inherited `--force` reverts every
+    # key; this reverts named ones.
+    revert.add_argument(
+        "--force-key",
+        dest="force_keys",
+        action="append",
+        metavar="KEY",
+        help="Revert this state-bearing key too (repeatable)",
+    )
+
     db_mode = config_subparsers.add_parser(
         "database-mode",
         parents=[base_sub_parent],
@@ -3391,6 +3415,9 @@ def _build_command_map(args, manager):
         ("config", "remove"): lambda: (
             setattr(args, "remove", True)  # type: ignore[func-returns-value]
             or manager.config.cmd_config(args.key, "unset")
+        ),
+        ("config", "revert"): lambda: manager.config.cmd_revert(
+            getattr(args, "project_id", None)
         ),
         ("config", "defaults"): lambda: manager.config.cmd_defaults(
             getattr(args, "key", None), getattr(args, "value", None)

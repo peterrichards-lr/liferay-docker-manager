@@ -45,6 +45,40 @@ CONVENTION_DEFAULTS = {
     "auto_pull_nightly": "prompt",
 }
 
+# LDM-#1854: which of the defaults above a project may safely be reverted to.
+#
+# "Safe" here means the value is the whole of the decision: change it back and
+# the next `ldm run` simply builds the project that way. The keys below are
+# NOT that -- each one has already had an effect outside LDM's own
+# configuration, and reverting the value does not reverse the effect. Reverting
+# them is therefore refused by default rather than silently leaving a project
+# whose config and whose actual state disagree.
+#
+# Untangling those effects -- migrating engines, relocating volumes, rewriting
+# virtualhosts, downgrading a database -- is explicitly out of scope. The
+# command reverts configuration, not its consequences.
+STATE_BEARING_DEFAULTS = {
+    "host_name": (
+        "it is written into Liferay's virtualhost table, so the running site "
+        "would still answer on the old name"
+    ),
+    "db_type": (
+        "the data lives in that engine's volume; another engine cannot read it"
+    ),
+    "database_mode": ("the data lives in the container and volume that mode created"),
+    "search_mode": (
+        "the indices live where that mode put them, and reindexing is costly"
+    ),
+    "tag": (
+        "the database has been upgraded to that version, and Liferay does not "
+        "support downgrades"
+    ),
+}
+
+assert set(STATE_BEARING_DEFAULTS) <= set(CONVENTION_DEFAULTS), (
+    "STATE_BEARING_DEFAULTS names a key CONVENTION_DEFAULTS does not own"
+)
+
 
 class DefaultsManager:
     def __init__(self):
