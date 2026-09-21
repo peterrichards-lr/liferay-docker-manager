@@ -44,7 +44,7 @@ Restart containers. Supports \fB--all\fR.
 Remove project containers. Use \fB--volumes\fR to also remove data. Use \fB--delete\fR to wipe the project folder; interactively this lists the size and whether a snapshot exists, then asks before removing anything (defaults to no). With \fB-y\fR there is no prompt.
 .TP
 \fBstatus\fR (alias: \fBps\fR)
-Show status of global infrastructure and projects. Use \fB--all\fR to see stopped projects.
+Show status of global infrastructure and projects. Use \fB--all\fR to see stopped projects. Reports \fBNot Created\fR, distinct from \fBStopped\fR, when a project's containers were removed (e.g. via \fBdocker rm\fR) rather than merely stopped -- matching \fBldm list\fR.
 .TP
 \fBlogs\fR [\fIPROJECT\fR] [\fISERVICE...\fR]
 View real-time logs. Use \fB-f\fR to follow. Use \fB--infra\fR for global service logs. Use \fB--instance N\fR (or \fB-i N\fR) to target a specific replica of a scaled service.
@@ -360,4 +360,4 @@ Peter Richards <peter.richards@liferay.com>
 
 .SH SEE ALSO
 .B docker(1), docker-compose(1)
-.\" Last Updated: 2026-09-20 | Last Reviewed: 2026-09-20
+.\" Last Updated: 2026-09-21 | Last Reviewed: 2026-09-21

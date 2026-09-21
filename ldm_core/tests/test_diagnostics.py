@@ -1498,7 +1498,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
             "",  # liferay-proxy-global
             "",  # liferay-search-global
             "",  # liferay-docker-proxy
-            "some-running-container-id\n",  # project running check
+            "running\n",  # project running check (docker ps -a --format {{.State}})
         ]
         with patch.object(
             self.manager, "detect_project_path", return_value=Path("/tmp/myproj")
@@ -1578,7 +1578,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
             "",  # liferay-proxy-global
             "",  # liferay-search-global
             "",  # liferay-docker-proxy
-            "some-running-container-id\n",  # project running check
+            "running\n",  # project running check (docker ps -a --format {{.State}})
         ]
         with (
             patch.object(
@@ -1642,6 +1642,150 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
         self.assertEqual(entry["containers"][0]["service"], "liferay")
         self.assertNotIn("\x1b[", f.getvalue())
 
+    @patch("ldm_core.diagnostics.info.run_command")
+    def test_cmd_status_reports_not_created_when_containers_absent(self, mock_run):
+        """LDM-#1872: `ldm status` had the identical defect fixed in `ldm
+        list` (LDM-#1870, #1876) -- a project whose containers were removed
+        entirely (e.g. `docker rm`) queried `docker ps -q --filter
+        status=running`, which returns empty output both when nothing
+        matches at all AND when a matched container simply isn't running,
+        so both cases fell through to the same bare "Stopped" label. The
+        fixed query is `docker ps -a --filter label=... --format
+        {{.State}}`, which returns truly empty stdout only when nothing
+        matches -- that must now report "Not Created" instead."""
+        mock_run.side_effect = [
+            "",  # liferay-proxy-global
+            "",  # liferay-search-global
+            "",  # liferay-docker-proxy
+            "",  # project container state check -- nothing matches at all
+        ]
+        with (
+            patch.object(
+                self.manager, "detect_project_path", return_value=Path("/tmp/myproj")
+            ),
+            patch.object(
+                self.manager,
+                "read_meta",
+                return_value={"tag": "2024.q1.3", "container_name": "myproj"},
+            ),
+        ):
+            import io
+            from contextlib import redirect_stdout
+
+            f = io.StringIO()
+            with self.assertRaises(SystemExit) as cm, redirect_stdout(f):
+                self.manager.diagnostics.cmd_status(project_id="myproj", as_json=True)
+            self.assertEqual(cm.exception.code, 1)
+
+        entry = json.loads(f.getvalue())["projects"][0]
+        self.assertEqual(entry["status"], "Not Created")
+        self.assertFalse(entry["running"])
+
+        mock_run.side_effect = [
+            "",
+            "",
+            "",
+            "",
+        ]
+        f2 = io.StringIO()
+        with (
+            patch.object(
+                self.manager, "detect_project_path", return_value=Path("/tmp/myproj")
+            ),
+            patch.object(
+                self.manager,
+                "read_meta",
+                return_value={"tag": "2024.q1.3", "container_name": "myproj"},
+            ),
+            self.assertRaises(SystemExit),
+            redirect_stdout(f2),
+        ):
+            self.manager.diagnostics.cmd_status(project_id="myproj")
+        table_output = f2.getvalue()
+        self.assertIn("Not Created", table_output)
+        self.assertNotIn("Stopped", table_output)
+
+    @patch("ldm_core.diagnostics.info.run_command")
+    def test_cmd_status_still_reports_stopped_when_container_present(self, mock_run):
+        """A project whose container genuinely exists but is exited (as
+        opposed to entirely absent) must still be reported "Stopped", not
+        "Not Created" -- the fix must not conflate the two."""
+        mock_run.side_effect = [
+            "",  # liferay-proxy-global
+            "",  # liferay-search-global
+            "",  # liferay-docker-proxy
+            "exited\n",  # project container state check -- one exited container
+        ]
+        with (
+            patch.object(
+                self.manager, "detect_project_path", return_value=Path("/tmp/myproj")
+            ),
+            patch.object(
+                self.manager,
+                "read_meta",
+                return_value={"tag": "2024.q1.3", "container_name": "myproj"},
+            ),
+        ):
+            import io
+            from contextlib import redirect_stdout
+
+            f = io.StringIO()
+            with self.assertRaises(SystemExit) as cm, redirect_stdout(f):
+                self.manager.diagnostics.cmd_status(project_id="myproj", as_json=True)
+            self.assertEqual(cm.exception.code, 1)
+
+        entry = json.loads(f.getvalue())["projects"][0]
+        self.assertEqual(entry["status"], "Stopped")
+        self.assertFalse(entry["running"])
+
+    @patch("ldm_core.diagnostics.info.run_command")
+    def test_cmd_status_detailed_reports_not_created_when_containers_absent(
+        self, mock_run
+    ):
+        """LDM-#1872: same distinction as above, applied to the --detailed
+        branch and its --json shape."""
+        mock_run.return_value = ""
+        with (
+            patch.object(
+                self.manager, "detect_project_path", return_value=Path("/tmp/myproj")
+            ),
+            patch.object(
+                self.manager,
+                "read_meta",
+                return_value={"tag": "2024.q1.3", "container_name": "myproj"},
+            ),
+        ):
+            import io
+            from contextlib import redirect_stdout
+
+            f = io.StringIO()
+            with self.assertRaises(SystemExit) as cm, redirect_stdout(f):
+                self.manager.diagnostics.cmd_status(
+                    project_id="myproj", detailed=True, as_json=True
+                )
+            self.assertEqual(cm.exception.code, 1)
+
+        entry = json.loads(f.getvalue())["projects"][0]
+        self.assertEqual(entry["status"], "Not Created")
+        self.assertFalse(entry["running"])
+        self.assertEqual(entry["containers"], [])
+
+        f2 = io.StringIO()
+        with (
+            patch.object(
+                self.manager, "detect_project_path", return_value=Path("/tmp/myproj")
+            ),
+            patch.object(
+                self.manager,
+                "read_meta",
+                return_value={"tag": "2024.q1.3", "container_name": "myproj"},
+            ),
+            self.assertRaises(SystemExit),
+            redirect_stdout(f2),
+        ):
+            self.manager.diagnostics.cmd_status(project_id="myproj", detailed=True)
+        self.assertIn("Not Created", f2.getvalue())
+
     @patch("ldm_core.docker_service.get_active_target")
     @patch("ldm_core.diagnostics.info.run_command")
     def test_cmd_status_standard_uses_remote_context(self, mock_run, mock_target):
@@ -1655,7 +1799,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
             "",  # liferay-proxy-global
             "",  # liferay-search-global
             "",  # liferay-docker-proxy
-            "some-running-container-id\n",  # project running check
+            "running\n",  # project running check (docker ps -a --format {{.State}})
         ]
         with (
             patch.object(
