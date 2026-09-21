@@ -64,6 +64,60 @@ class TheCheckerDeclaresWhatMatters(unittest.TestCase):
         self.assertIn("return 0 if findings.ok else 1", self.src)
 
 
+class AMissingGhIsAFindingNotACrash(unittest.TestCase):
+    """LDM-#1869: a missing `gh` must not be an uncaught `FileNotFoundError`.
+
+    Runs the real checker as a subprocess against a PATH that cannot resolve
+    `gh`, rather than relying on the host machine happening to lack it (or
+    happening to have it, which is what CI does) -- so this is deterministic
+    on both a developer's machine and GitHub Actions, per the same PATH
+    argument that makes environment-dependent probes untrustworthy elsewhere
+    in this repo.
+    """
+
+    def test_a_missing_gh_is_reported_as_a_finding_and_exits_non_zero(self):
+        import json
+        import os
+        import sys
+
+        env = dict(os.environ)
+        # Only the directory holding the interpreter we are about to invoke.
+        # `gh` cannot live there, so subprocess.run(["gh", ...]) inside the
+        # checker is guaranteed to raise FileNotFoundError regardless of
+        # whether this host actually has `gh` installed.
+        env["PATH"] = str(Path(sys.executable).resolve().parent)
+
+        result = subprocess.run(  # nosec B603 - fixed argv, no shell
+            [sys.executable, str(CHECKER), "--tag", "v0.0.0-unreachable", "--json"],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+            timeout=60,
+        )
+
+        self.assertNotEqual(
+            result.returncode,
+            0,
+            f"checker exited 0 with gh unresolvable: stdout={result.stdout!r}",
+        )
+        try:
+            payload = json.loads(result.stdout)
+        except ValueError:
+            self.fail(
+                f"checker did not emit JSON when gh was unresolvable: "
+                f"stderr={result.stderr!r} stdout={result.stdout!r}"
+            )
+        self.assertFalse(payload["ok"])
+        self.assertTrue(
+            any(
+                "required tool not found" in f and "gh" in f
+                for f in payload["failures"]
+            ),
+            f"missing gh was not reported as a finding: {payload['failures']}",
+        )
+
+
 class ItCatchesTheRealDefects(unittest.TestCase):
     """Against published history. Needs network, so it is skipped when the
     release cannot be reached rather than failing for the wrong reason."""
@@ -84,9 +138,23 @@ class ItCatchesTheRealDefects(unittest.TestCase):
         try:
             payload = json.loads(result.stdout)
         except ValueError:
-            self.skipTest(f"could not reach release {tag}")
-        if payload["failures"] and "could not download" in payload["failures"][0]:
-            self.skipTest(f"could not download release {tag}")
+            # The checker crashed before it could emit JSON at all -- a bug in
+            # the checker, not an unreachable network. This must FAIL and name
+            # the cause, never disappear as a skip (LDM-#1869).
+            self.fail(
+                f"the checker produced no JSON for {tag} (exit "
+                f"{result.returncode}): stderr={result.stderr.strip()!r} "
+                f"stdout={result.stdout.strip()!r}"
+            )
+        first_failure = payload["failures"][0] if payload["failures"] else ""
+        if first_failure.startswith("required tool not found"):
+            # A missing `gh` means this environment cannot run the checker at
+            # all. That is a real failure of this test's ability to verify
+            # anything -- not "the network is unreachable" -- so it must FAIL,
+            # not skip (LDM-#1869).
+            self.fail(f"the checker could not run against {tag}: {first_failure}")
+        if "could not download" in first_failure:
+            self.skipTest(f"could not download release {tag}: {first_failure}")
         return payload
 
     def test_the_installerless_release_is_caught(self):

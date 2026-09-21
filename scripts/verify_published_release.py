@@ -110,12 +110,23 @@ class Findings:
 
 def download_release(tag: str, dest: Path) -> Findings:
     findings = Findings()
-    result = subprocess.run(  # nosec B603 B607 - fixed argv, no shell
-        ["gh", "release", "download", tag, "--repo", REPO, "--dir", str(dest)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        result = subprocess.run(  # nosec B603 B607 - fixed argv, no shell
+            ["gh", "release", "download", tag, "--repo", REPO, "--dir", str(dest)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        # A missing `gh` is a failure of this checker, not the release under
+        # test -- but it must still be reported as a finding (valid JSON,
+        # non-zero exit) rather than an uncaught traceback on stdout, which is
+        # what silently turned into three skipped assertions (LDM-#1869).
+        findings.fail(
+            f"required tool not found: {exc.filename or 'gh'} -- install the "
+            f"GitHub CLI (https://cli.github.com/) so this checker can run"
+        )
+        return findings
     if result.returncode != 0:
         findings.fail(
             f"could not download release {tag}: "
