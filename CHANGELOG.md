@@ -9,7 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
--
+- **`ldm wait --probe-url <url>`** (LDM-#1891) names the readiness URL instead of deriving it from the target. LDM cannot infer the right target in every topology: with SSL on a remote node the certificate is issued for the project's host name while the derived URL dials the node's address, so the probe and the certificate disagree by construction -- for any SSL-enabled remote project, not only the one that reported it. Reaching the stack through an SSH tunnel makes it worse, because the address LDM can see is not the one the client uses. The supplied URL is used verbatim: no rewriting of scheme, host or port, on remote and local targets alike.
+
+  **The default is unchanged**, and was deliberately not edited. LDM-#1223 made the probe follow the target node rather than dialling `127.0.0.1` on the client, and that remains correct; the existing derivation moved into a helper untouched, with the override as a branch around it. Verified by diffing the moved block against its predecessor -- 30 lines, byte-identical apart from the assignment becoming a return -- and pinned by tests asserting a remote node still probes its own address, a local target still probes by host name, and the scheme still follows the SSL decision.
+
+  One part of the request was not implemented, and deliberately so: it asked that the switch apply equally to `ldm run`'s implicit wait. There is nothing there to override. The codebase contains exactly one HTTP probe, in `ldm wait`; `ldm run` watches container health and Liferay's own logs and issues no HTTP at all. Honouring the switch there would mean giving `ldm run` an HTTP probe it has never had, which changes its behaviour for everyone rather than adding an opt-in.
+
+### Changed
+
+- Nothing else. `-pre.2` carries `-pre.1`'s change set plus LDM-#1891, so a `-pre.1` verification result remains meaningful for everything except the readiness probe.
 
 ## [v2.25.0-pre.1] - 2026-09-21
 
