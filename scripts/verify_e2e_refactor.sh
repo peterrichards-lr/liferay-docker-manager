@@ -1182,6 +1182,86 @@ verify_ldmp_manifest_refusal() {
 # a SUCCESSFUL write, so against a binary without the guard this would otherwise
 # modify the operator's real ~/.ldmrc -- and this suite runs against the real
 # home everywhere else.
+verify_config_reset_and_revert() {
+    # LDM-#1853 / LDM-#1854: the two ways back to the defaults. Both are pure
+    # configuration operations -- no Docker, no remote node, no boot -- so they
+    # are fully within this script's control.
+    local ldm_cmd="$1"
+    local work_dir="$2"
+
+    local iso_home="${work_dir}/revert-home"
+    rm -rf "$iso_home"
+    mkdir -p "$iso_home" || return 1
+
+    # --- LDM-#1853: --reset-all clears every customised default ------------
+    LDM_HOME="$iso_home" "$ldm_cmd" config defaults port 9099 >/dev/null 2>&1
+    LDM_HOME="$iso_home" "$ldm_cmd" config defaults release_type quarterly >/dev/null 2>&1
+
+    local reset_code
+    LDM_HOME="$iso_home" "$ldm_cmd" -y config defaults --reset-all >/dev/null 2>&1 \
+        && reset_code=0 || reset_code=$?
+    if [ "$reset_code" -ne 0 ]; then
+        echo "❌ ERROR: 'config defaults --reset-all' exited ${reset_code}, expected 0."
+        return 1
+    fi
+    if LDM_HOME="$iso_home" "$ldm_cmd" config defaults 2>&1 | grep -qE '9099|quarterly'; then
+        echo "❌ ERROR: --reset-all left a customised default behind."
+        return 1
+    fi
+
+    # Running it again is an idempotent no-op: exit 5, not 0 and not 1.
+    local noop_code
+    LDM_HOME="$iso_home" "$ldm_cmd" -y config defaults --reset-all >/dev/null 2>&1 \
+        && noop_code=0 || noop_code=$?
+    if [ "$noop_code" -ne 5 ]; then
+        echo "❌ ERROR: a second --reset-all exited ${noop_code}, expected 5 (no-op)."
+        return 1
+    fi
+
+    # --- LDM-#1854: revert refuses state-bearing keys ----------------------
+    local proj="${work_dir}/revert-proj"
+    rm -rf "$proj"
+    mkdir -p "$proj" || return 1
+    cat > "${proj}/meta" <<'META'
+{"project_name":"revert-proj","container_name":"revert-proj","port":9099,
+ "host_name":"custom.example.com","release_type":"quarterly"}
+META
+
+    local rev_out rev_code
+    rev_out=$(LDM_HOME="$iso_home" "$ldm_cmd" -y config revert "$proj" 2>&1) && rev_code=0 || rev_code=$?
+    if [ "$rev_code" -ne 0 ]; then
+        echo "❌ ERROR: 'config revert' exited ${rev_code}, expected 0."
+        echo "   Output was: $rev_out"
+        return 1
+    fi
+    # A safe key went back; a state-bearing one did not, and said why.
+    if ! grep -qF '"release_type": "lts"' "${proj}/meta"; then
+        echo "❌ ERROR: revert did not return release_type to the default."
+        return 1
+    fi
+    if ! grep -qF '"host_name": "custom.example.com"' "${proj}/meta"; then
+        echo "❌ ERROR: revert changed host_name, which is state-bearing and must be refused."
+        return 1
+    fi
+    case "$rev_out" in
+        *virtualhost*) : ;;
+        *) echo "❌ ERROR: the refusal did not say WHY host_name was kept."
+           echo "   Output was: $rev_out"
+           return 1 ;;
+    esac
+
+    # --force-key reverts the named one.
+    LDM_HOME="$iso_home" "$ldm_cmd" -y config revert "$proj" --force-key host_name >/dev/null 2>&1
+    if grep -qF '"host_name": "custom.example.com"' "${proj}/meta"; then
+        echo "❌ ERROR: '--force-key host_name' did not revert it."
+        return 1
+    fi
+
+    rm -rf "$iso_home" "$proj"
+    echo "✅ Config reset-all and revert verified, including the state-bearing refusal (LDM-#1853/#1854)."
+    return 0
+}
+
 verify_cascading_default_guard() {
     local ldm_cmd="$1"
     local work_dir="$2"
@@ -1296,6 +1376,14 @@ if CASCADING_GUARD_OUT=$(verify_cascading_default_guard "$LDM_CMD" "$LDM_WORKSPA
     report_ok "$CASCADING_GUARD_OUT"
 else
     echo "$CASCADING_GUARD_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying config reset-all and revert (LDM-#1853/#1854)..."
+if CONFIG_REVERT_OUT=$(verify_config_reset_and_revert "$LDM_CMD" "$LDM_WORKSPACE"); then
+    report_ok "$CONFIG_REVERT_OUT"
+else
+    echo "$CONFIG_REVERT_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
 
