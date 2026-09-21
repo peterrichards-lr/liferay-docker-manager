@@ -479,7 +479,32 @@ ldm wait [project]
 
 # Example:
 ldm wait demo
+
+# Probe a URL of your choosing instead of the derived one
+ldm wait demo --node aws-2 --probe-url https://my-project.demo
 ```
+
+### Choosing the URL to probe (`--probe-url`)
+
+By default the probe follows the target: against a remote node it dials that
+node's address, which is what stops it checking `127.0.0.1` on your own
+machine while the containers run elsewhere.
+
+That default is right and is unchanged. But LDM cannot infer the correct
+target in every topology. With SSL on a remote node the certificate is issued
+for the **project's host name** while the derived URL dials the node's
+**address**, so the probe and the certificate disagree by construction — and
+if you reach the stack through an SSH tunnel, the address LDM can see is not
+the one your client uses at all.
+
+`--probe-url` replaces the derived URL verbatim. Nothing is rewritten: not the
+scheme, not the host, not the port. Omit it and resolution behaves exactly as
+before, on local and remote targets alike.
+
+> [!NOTE]
+> This affects `ldm wait` only. `ldm run`'s built-in wait does not make an HTTP
+> probe — it watches container health and Liferay's own logs — so there is
+> nothing there for this switch to override.
 
 The wait sequence uses a progressively aggressive validation strategy with visual milestone tracking:
 
