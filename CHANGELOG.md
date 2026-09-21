@@ -9,7 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
--
+- **`ldm deploy <project> <file...>` works against a remote node** (LDM-#1894). It used to refuse outright: copying the artifact into the local project directory would have updated something the remote container never reads, silently, so failing loudly was the right guard -- but the capability behind it was missing, and the only guidance was `ldm run` for a full resync, which restarts the stack. That is a fair escape hatch for a developer and useless to a CI run that has already waited out a boot. **The command is the same whatever the target**: the node comes from the project's own `meta`, so a caller never names it, and the local end state does not depend on where the project runs -- the artifact is placed locally exactly as before, including expanding a client-extension zip for image builds, and a project on a node additionally has it shipped there. No container operation and no restart are involved, because `osgi/modules` and `osgi/client-extensions` are bind-mounts from the project directory: a file landing in the node's copy is immediately visible to the running container. The upload is staged and then moved, since Liferay *watches* those directories and a partially transferred artifact is a deploy of a truncated file. Ownership is settled through `docker --context <node> exec`, which removes the `chown` follow-ups callers were doing with bare `docker` -- and which, on a remote target, hit the caller's own daemon where the container does not exist.
+- **`ldm wait` has end-to-end coverage for the first time** (LDM-#1893), in both script halves. It had none at all, despite owning the only HTTP probe in the codebase and having had its URL resolution changed twice (LDM-#1223, LDM-#1891) on the strength of unit tests alone. Two assertions: `ldm wait` succeeds against a ready project, and `--probe-url` pointed where nothing listens fails **naming that URL**. The second is deliberately arranged to fail closed -- had the override been ignored, the probe would have reached the real project and succeeded, and the assertion would have passed while proving nothing. Verified against a real booted Liferay in both directions, including with the override neutered.
+
+### Fixed
+
+- **LDM no longer executes an unapproved binary in order to read its version** (LDM-#1883). `_resolve_existing_binary` decided whether a candidate `lfr-tunnel` was usable by running it, so the first thing LDM did with a binary it had not installed and could not vouch for was launch it -- from a location its own comments call outside the EDR whitelist. The observed response removes the binary and the surrounding toolchain with it, the package manager included. LDM-#1871 made sure an approved binary is invoked by its approved path; this closes the prior question, and the hole it left, where a legacy symlink pointing somewhere arbitrary still ended in executing a non-whitelisted path.
+
+### Changed
+
+- **Breaking, deliberately: a plain binary in `~/.ldm/bin` no longer resolves** (LDM-#1883). That location is outside the whitelist and LDM cannot vouch for what is in it. A symlink from there to the approved binary keeps working, and recovery for anything else is one line, which the refusal names: set `LDM_LFR_TUNNEL_BIN`, or move the binary. The test asserting *"existing `~/.ldm/bin` setups must not break"* was rewritten rather than deleted -- that guarantee was real and is being withdrawn on purpose.
+- Verification runs are roughly 30 seconds longer on every platform, the cost of LDM-#1893's coverage. `ldm wait` is what CI pipelines block on and it was completely unguarded, so the trade was taken deliberately.
 
 ## [v2.25.0-pre.2] - 2026-09-21
 
