@@ -603,6 +603,14 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
             ]
             res = run_command(cmd, check=False)
 
+            # LDM-#1872: distinguish "no container matched at all" from
+            # "a container matched but isn't running" -- see the identical
+            # fix applied to run_list (LDM-#1870, #1876). `docker ps -a`
+            # here already returns every matching container regardless of
+            # state, so `res` being empty is the genuine "absent" case, not
+            # merely "stopped".
+            containers_absent = not (res and res.strip())
+
             # Check if this project is running
             project_running = False
             detailed_rows = []
@@ -666,11 +674,22 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
             if project_id:
                 is_requested_project_running = project_running
 
+            # LDM-#1872: same "Not Created" wording/value as run_list
+            # (LDM-#1870, #1876) for a project with no matching container
+            # at all, distinct from "Stopped" (matched but not running).
+            if project_running:
+                status_label = "Running"
+            elif containers_absent:
+                status_label = "Not Created"
+            else:
+                status_label = "Stopped"
+
             if as_json:
                 json_projects.append(
                     {
                         "project": p_id,
                         "version": r["version"],
+                        "status": status_label,
                         "running": project_running,
                         "http_ready": http_ready,
                         "http_status": http_status,
@@ -685,6 +704,11 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
                 UI.raw(f"{UI.WHITE}Project: {UI.CYAN}{p_id}{UI.COLOR_OFF}")
                 if detailed_rows:
                     UI.table(detailed_rows)
+                elif containers_absent:
+                    UI.raw(
+                        f"  {UI.YELLOW}Not Created{UI.COLOR_OFF} "
+                        f"{UI.DIM}(no containers found for this project){UI.COLOR_OFF}"
+                    )
                 else:
                     UI.raw(
                         f"  {UI.DIM}No containers found for this project.{UI.COLOR_OFF}"
@@ -734,19 +758,40 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
             target_node = get_active_target(meta.get("target")).name
             docker_prefix = DockerService.get_docker_cmd_prefix(target_node)
 
-            # Query all containers matching label com.liferay.ldm.project={safe_name}
-            # A project is running if any of its containers are active/running
+            # Query all containers matching label com.liferay.ldm.project={safe_name},
+            # including stopped ones (-a). A project is running if any of its
+            # containers are active/running.
+            #
+            # LDM-#1872: the prior query filtered on `status=running` alone,
+            # so it could not tell "no container matches this project at
+            # all" apart from "a container matches but isn't running" --
+            # both returned empty output and both fell through to the same
+            # bare "Stopped" label. `ldm list` had the identical defect
+            # (LDM-#1870, fixed in #1876) by switching to `docker ps -a` and
+            # reporting a distinct "Not Created" status when nothing matches
+            # at all; do the same here.
             cmd = [
                 *docker_prefix,
                 "ps",
-                "-q",
+                "-a",
                 "--filter",
                 f"label=com.liferay.ldm.project={safe_name}",
-                "--filter",
-                "status=running",
+                "--format",
+                "{{.State}}",
             ]
-            running_containers = run_command(cmd, check=False)
-            project_running = bool(running_containers and running_containers.strip())
+            container_states_raw = run_command(cmd, check=False)
+            if container_states_raw and container_states_raw.strip():
+                container_states = container_states_raw.strip().splitlines()
+                containers_absent = False
+            else:
+                container_states = []
+                containers_absent = True
+            project_running = any(state == "running" for state in container_states)
+            status_label = (
+                "Running"
+                if project_running
+                else ("Not Created" if containers_absent else "Stopped")
+            )
 
             host = meta.get("host_name", "localhost")
             ssl = str(meta.get("ssl")).lower() == "true"
@@ -773,6 +818,7 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
                         "project": p_id,
                         "version": r["version"],
                         "target": target_node,
+                        "status": status_label,
                         "running": project_running,
                         "http_ready": http_ready,
                         "http_status": http_status,
@@ -793,13 +839,14 @@ def run_status(  # noqa: C901, PLR0912, PLR0915
                         f"{UI.BCYAN}{target_node}{UI.COLOR_OFF}",
                     ]
                 )
-            # If this is the specific project requested, or we requested all projects, show it stopped
+            # If this is the specific project requested, or we requested all projects, show it stopped/not created
             elif project_id or all_projects:
+                status_color = UI.YELLOW if containers_absent else UI.DIM
                 project_rows.append(
                     [
                         f"{UI.WHITE}○{UI.COLOR_OFF} {p_id}",
                         r["version"],
-                        f"{UI.DIM}Stopped{UI.COLOR_OFF}",
+                        f"{status_color}{status_label}{UI.COLOR_OFF}",
                         f"{UI.DIM}{target_node}{UI.COLOR_OFF}",
                     ]
                 )

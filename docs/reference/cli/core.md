@@ -594,10 +594,17 @@ View the status of all projects in the current workspace.
 
 ```bash
 ldm status
+
+# Machine-readable output for scripts/automation -- a stable JSON object
+# with "infrastructure" and "projects" arrays; each project entry gains a
+# "status" field alongside the existing "running" boolean.
+ldm status --json
 ```
 
 > [!TIP]
 > Projects marked with a 🌱 (seedling) emoji were initialized from a **Seeded State**, meaning they started with a pre-calculated database and OSGi cache for near-instant boot times.
+
+Like `ldm list` (see above), `ldm status`/`ldm status --detailed` distinguishes `Not Created` (LDM-#1872) from `Stopped`: `Not Created` means no container matching the project exists at all (typically `docker rm`-ed directly, meta/volumes intact), while `Stopped` means a container was found but isn't running. Previously both cases fell through to the same bare `Stopped` label here, unlike `ldm list`, which already made this distinction (LDM-#1870, #1876) -- this closes that inconsistency. `ldm run` recreates a `Not Created` project's containers from the existing volumes; `ldm start` cannot, for the same reason described under `start` below.
 
 ---
 
@@ -736,4 +743,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-20* | *Last Reviewed: 2026-09-20*
+*Last Updated: 2026-09-21* | *Last Reviewed: 2026-09-21*
