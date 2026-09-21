@@ -100,6 +100,47 @@ PIP_INSTALL_TIMEOUT = 600  # 10 min -- plugin/completion dependency installs
 # --- Release Announcements Mapping ---
 # Maps major.minor or exact version keys to lists of (cmd, description) tuples.
 RELEASE_ANNOUNCEMENTS = {
+    "2.25": [
+        (
+            "ldm config revert [project]",
+            "Returns an existing project's LDM configuration to the resolved "
+            "defaults. Five settings are refused by default, because the value "
+            "is not the whole of the decision -- host_name is written into "
+            "Liferay's virtualhost table, and db_type, database_mode and "
+            "search_mode each point at data or indices that live where that "
+            "choice put them. Reverting the value does not move them, so LDM "
+            "names the reason and asks for '--force-key <key>' rather than "
+            "leaving a project whose config and whose actual state disagree",
+        ),
+        (
+            "ldm config defaults --reset-all",
+            "Returns every customised cascading default to convention in one "
+            "command, instead of removing 23 keys one at a time. Applies to "
+            "NEW projects only -- a project that has already run froze its "
+            "settings into its own meta, which is what 'ldm config revert' is "
+            "for",
+        ),
+        (
+            "A remote node that is still booting is waited for",
+            "sshd accepts a TCP connection on port 22 seconds before it will "
+            "authenticate, so a node ~15s into a cold boot was reported as "
+            "stopped or re-addressed. A transport failure is now retried for "
+            "up to 30s (LDM_SSH_READY_TIMEOUT=0 disables it). BEHAVIOUR "
+            "CHANGE: a genuinely stopped node now takes up to 30s to report "
+            "instead of failing instantly. Each failure reason also carries "
+            "its own advice now -- refused credentials no longer suggests your "
+            "IP has changed",
+        ),
+        (
+            "ldm list distinguishes 'Not Created' from 'Stopped'",
+            "A project whose containers were removed but whose volumes survive "
+            "reported 'Stopped', which sent users to 'ldm start' -- a command "
+            "that can only start containers that already exist. It now reports "
+            "'Not Created' and 'ldm start' names 'ldm run' instead of "
+            "surfacing Docker's own wording. NOTE: 'ldm list --json' can now "
+            'return "Not Created" in the status field',
+        ),
+    ],
     "2.24": [
         (
             "ldm run --container <name>",

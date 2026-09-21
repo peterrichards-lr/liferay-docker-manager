@@ -731,6 +731,92 @@ function Get-PortHolderDiagnostic {
 # Kept as a named function for the same reason as Get-VersionBannerLines above,
 # so it can be executed without a full Docker/ldm E2E run
 # (ldm_core/tests/test_verify_scripts.py).
+function Test-ConfigResetAndRevert {
+    # LDM-#1853 / LDM-#1854: the two ways back to the defaults. Both are pure
+    # configuration operations -- no Docker, no remote node, no boot -- so they
+    # are fully within this script's control.
+    #
+    # Runs against an isolated LDM_HOME: the failures being checked for include
+    # a SUCCESSFUL write, which against a binary without the guard would
+    # otherwise modify the operator's real ~/.ldmrc.
+    param([string]$LdmCmd, [string]$WorkDir)
+
+    $isoHome = Join-Path $WorkDir "revert-home"
+    if (Test-Path $isoHome) { Remove-Item -Recurse -Force $isoHome }
+    New-Item -ItemType Directory -Path $isoHome -Force | Out-Null
+    $prevHome = $env:LDM_HOME
+    $env:LDM_HOME = $isoHome
+
+    try {
+        # --- LDM-#1853: --reset-all clears every customised default --------
+        & $LdmCmd config defaults port 9099 2>&1 | Out-Null
+        & $LdmCmd config defaults release_type quarterly 2>&1 | Out-Null
+
+        & $LdmCmd -y config defaults --reset-all 2>&1 | Out-Null
+        $resetCode = $LASTEXITCODE
+        if ($resetCode -ne 0) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'config defaults --reset-all' exited ${resetCode}, expected 0." }
+        }
+        $listed = (& $LdmCmd config defaults 2>&1 | Out-String)
+        if ($listed.Contains("9099") -or $listed.Contains("quarterly")) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: --reset-all left a customised default behind." }
+        }
+
+        # Running it again is an idempotent no-op: exit 5, not 0 and not 1.
+        & $LdmCmd -y config defaults --reset-all 2>&1 | Out-Null
+        $noopCode = $LASTEXITCODE
+        if ($noopCode -ne 5) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: a second --reset-all exited ${noopCode}, expected 5 (no-op)." }
+        }
+
+        # --- LDM-#1854: revert refuses state-bearing keys ------------------
+        $proj = Join-Path $WorkDir "revert-proj"
+        if (Test-Path $proj) { Remove-Item -Recurse -Force $proj }
+        New-Item -ItemType Directory -Path $proj -Force | Out-Null
+        $metaPath = Join-Path $proj "meta"
+        $metaJson = '{"project_name":"revert-proj","container_name":"revert-proj","port":9099,"host_name":"custom.example.com","release_type":"quarterly"}'
+        # UTF8Encoding($false), NOT [System.Text.Encoding]::UTF8 -- the latter
+        # writes a BOM, which makes the file unparseable as JSON and had this
+        # half reporting "nothing to revert" while bash passed. Caught by
+        # running both, which is the only thing that catches LDM-#1855's shape.
+        $noBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($metaPath, $metaJson, $noBom)
+
+        $revOut = (& $LdmCmd -y config revert $proj 2>&1 | Out-String)
+        $revCode = $LASTEXITCODE
+        if ($revCode -ne 0) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'config revert' exited ${revCode}, expected 0.`n   Output was: ${revOut}" }
+        }
+
+        # Literal Contains, not -match: a properties/JSON key's dots are regex
+        # wildcards and -match is case-insensitive by default (LDM-#1855/#1860).
+        $metaAfter = [System.IO.File]::ReadAllText($metaPath)
+        if (-not $metaAfter.Contains('"release_type": "lts"')) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: revert did not return release_type to the default." }
+        }
+        if (-not $metaAfter.Contains('"host_name": "custom.example.com"')) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: revert changed host_name, which is state-bearing and must be refused." }
+        }
+        if (-not $revOut.Contains("virtualhost")) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: the refusal did not say WHY host_name was kept.`n   Output was: ${revOut}" }
+        }
+
+        # --force-key reverts the named one.
+        & $LdmCmd -y config revert $proj --force-key host_name 2>&1 | Out-Null
+        $metaForced = [System.IO.File]::ReadAllText($metaPath)
+        if ($metaForced.Contains('"host_name": "custom.example.com"')) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: '--force-key host_name' did not revert it." }
+        }
+
+        Remove-Item -Recurse -Force $proj -ErrorAction SilentlyContinue
+    } finally {
+        $env:LDM_HOME = $prevHome
+        Remove-Item -Recurse -Force $isoHome -ErrorAction SilentlyContinue
+    }
+
+    return @{ Ok = $true; Message = "[SUCCESS] Config reset-all and revert verified, including the state-bearing refusal (LDM-#1853/#1854)." }
+}
+
 function Test-CascadingDefaultGuard {
     # LDM-#1651: 'ldm config set' writes the ROOT of ~/.ldmrc, while every
     # cascading default is read from its 'defaults' block whenever that block
@@ -1557,6 +1643,15 @@ try {
         Write-Verdict $cascadingGuard.Message
     } else {
         Write-Host $cascadingGuard.Message -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying config reset-all and revert (LDM-#1853/#1854)..."
+    $configRevert = Test-ConfigResetAndRevert -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE
+    if ($configRevert.Ok) {
+        Write-Verdict $configRevert.Message
+    } else {
+        Write-Host $configRevert.Message -ForegroundColor Red
         exit 1
     }
 
