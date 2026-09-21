@@ -1703,6 +1703,12 @@ def get_parser():  # noqa: PLR0915
         help="Comma-separated list of expected OSGi bundle symbolic names to wait for",
     )
     wait_cmd.add_argument(
+        "--probe-url",
+        dest="probe_url",
+        metavar="URL",
+        help="Probe this URL instead of the one derived from the target (LDM-#1891)",
+    )
+    wait_cmd.add_argument(
         "--stream-status",
         action="store_true",
         help="Stream Liferay startup milestones to stdout in real-time without using an interactive spinner",
@@ -3294,6 +3300,7 @@ def _build_command_map(args, manager):
             cpu_idle_threshold=getattr(args, "cpu_idle_threshold", None),
             cpu_idle_checks=getattr(args, "cpu_idle_checks", None),
             fragment_patch_timeout=getattr(args, "fragment_patch_timeout", None),
+            probe_url=getattr(args, "probe_url", None),
         ),
         ("status", None): lambda: manager.diagnostics.cmd_status(
             getattr(args, "project", None),

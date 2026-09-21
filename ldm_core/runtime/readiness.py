@@ -21,6 +21,50 @@ class ReadinessService(BaseHandler):
         super().__init__(manager)
         self.manager = manager
 
+    def _derive_probe_url(self, meta, host_name, ssl_enabled, target_name, root):
+        """The readiness URL when --probe-url is not given (LDM-#1223/#1568).
+
+        Extracted unchanged in LDM-#1891 so the override is a branch rather
+        than an edit to this logic -- the default path is what must not
+        change, and keeping it whole is how that stays reviewable.
+        """
+        proxy_ports = None
+        try:
+            proxy_ports = self.manager.infra.get_proxy_ports()
+        except Exception:
+            pass
+
+        # LDM-388 / Issue #1223: Resolve active compute target context to use target_node host for remote nodes
+        target_ctx = resolve_target_context(
+            explicit_target=target_name,
+            meta=meta,
+            project_root=root,
+            pin=False,
+        )
+        effective_host = (
+            target_ctx.target.host
+            if (
+                target_ctx
+                and target_ctx.is_remote
+                and target_ctx.target
+                and target_ctx.target.host
+            )
+            else host_name
+        )
+        target_host = "127.0.0.1" if effective_host == "localhost" else effective_host
+        # LDM-#1568: the probe dials whatever the shared resolver says serves,
+        # so a green readiness check and the banner printed after it can never
+        # name different URLs. `host_override` swaps the address dialled without
+        # disturbing the SSL decision, which stays keyed on the project's own
+        # host name.
+        return resolve_access_url(
+            host_name,
+            meta,
+            ssl_enabled,
+            proxy_ports=proxy_ports,
+            host_override=target_host,
+        )
+
     def cmd_wait(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self,
         project_id=None,
@@ -32,6 +76,7 @@ class ReadinessService(BaseHandler):
         cpu_idle_threshold=None,
         cpu_idle_checks=None,
         fragment_patch_timeout=None,
+        probe_url=None,
     ):
         """Block execution until project is fully ready (HTTP 200/302)."""
         if timeout is None:
@@ -124,42 +169,26 @@ class ReadinessService(BaseHandler):
         ssl_enabled = self.manager.composer._is_ssl_active(host_name, meta)
 
         # Retrieve ports dynamically from the running proxy container if available
-        proxy_ports = None
-        try:
-            proxy_ports = self.manager.infra.get_proxy_ports()
-        except Exception:
-            pass
-
-        # LDM-388 / Issue #1223: Resolve active compute target context to use target_node host for remote nodes
-        target_ctx = resolve_target_context(
-            explicit_target=target_name,
-            meta=meta,
-            project_root=root,
-            pin=False,
-        )
-        effective_host = (
-            target_ctx.target.host
-            if (
-                target_ctx
-                and target_ctx.is_remote
-                and target_ctx.target
-                and target_ctx.target.host
+        # LDM-#1891: an explicit --probe-url replaces the derived one verbatim,
+        # and nothing below runs. LDM cannot infer the right target in every
+        # topology: with SSL on a remote node the certificate is issued for the
+        # project's host name while the derived URL dials the node's address, so
+        # the probe and the certificate disagree by construction. Rather than
+        # teach `wait` about tunnels and hostnames it cannot see, let the caller
+        # name the URL it knows is correct.
+        #
+        # Deliberately no rewriting of scheme, host or port: a caller that has
+        # gone to the trouble of naming a URL means that URL. Everything below
+        # -- the target context, the remote-host override from LDM-#1223 -- is
+        # skipped rather than computed and discarded, because it feeds nothing
+        # else in this method.
+        if probe_url:
+            url = probe_url
+            UI.detail(f"Probing the URL supplied with --probe-url: {url}")
+        else:
+            url = self._derive_probe_url(
+                meta, host_name, ssl_enabled, target_name, root
             )
-            else host_name
-        )
-        target_host = "127.0.0.1" if effective_host == "localhost" else effective_host
-        # LDM-#1568: the probe dials whatever the shared resolver says serves,
-        # so a green readiness check and the banner printed after it can never
-        # name different URLs. `host_override` swaps the address dialled without
-        # disturbing the SSL decision, which stays keyed on the project's own
-        # host name.
-        url = resolve_access_url(
-            host_name,
-            meta,
-            ssl_enabled,
-            proxy_ports=proxy_ports,
-            host_override=target_host,
-        )
 
         import requests
 
