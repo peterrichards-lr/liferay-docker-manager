@@ -1098,6 +1098,143 @@ function Test-MacPinRefusal {
     return @{ Ok = $true; Message = "[SUCCESS] A stale container's MAC is refused with exit 3, naming both values (LDM-#1798)." }
 }
 
+function Test-ContainersRemovedVolumesIntact {
+    # LDM-#1873: end-to-end coverage for LDM-#1870's fix. 'ldm list' used to
+    # report a project whose containers were removed entirely (e.g. 'docker
+    # rm', volumes intact) as merely "Stopped" -- indistinguishable from a
+    # project that just needs 'ldm start'. 'ldm start' then reached 'docker
+    # compose start', which only starts EXISTING containers and never
+    # creates them, surfacing compose's own raw "service ... has no
+    # container to start" error instead of refusing up front.
+    #
+    # This drives the real repro against real Docker: boot a project,
+    # 'docker rm -f' its containers directly, and assert 'ldm list' now
+    # reports "Not Created" (not "Stopped"), 'ldm start' refuses with exit 1
+    # naming 'ldm run', and 'ldm run' recreates the stack from the
+    # surviving named volume with no data loss -- proven by a marker file
+    # written into the data volume before removal and read back after
+    # recreation, not merely by the absence of a crash.
+    #
+    # '--no-wait' is what keeps this to about a minute rather than a full
+    # Liferay boot: the container only has to exist (and its data volume be
+    # mountable) for the repro to be exercised -- same reasoning as
+    # Test-MacPinRefusal above.
+    #
+    # Parity with verify_containers_removed_volumes_intact in
+    # verify_e2e_refactor.sh.
+    param([string]$LdmCmd, [string]$WorkDir)
+
+    $isoHome = Join-Path $WorkDir 'notcreated-home'
+    $runDir  = Join-Path $WorkDir 'notcreated-work'
+    $proj    = 'ldmcontainersgone'
+    $markerPath = '/opt/liferay/data/.ldm-e2e-marker'
+    $markerVal  = "e2e-$TEST_PORT"
+
+    Remove-Item -Recurse -Force $isoHome, $runDir -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $isoHome, $runDir | Out-Null
+
+    $prevHome = $env:LDM_HOME
+    $prevLoc  = Get-Location
+    $env:LDM_HOME = $isoHome
+    Set-Location $runDir
+
+    try {
+        $out = & $LdmCmd run $proj -y -t 2026.q1.7-lts --no-wait 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: could not start the project (exit ${LASTEXITCODE}).`n   Output was: ${out}" }
+        }
+
+        $exists = $false
+        for ($i = 0; $i -lt 30; $i++) {
+            $running = (& docker ps --filter "name=^$proj$" --format '{{.Names}}' 2>$null) -join "`n"
+            if ($running.Contains($proj)) { $exists = $true; break }
+            Start-Sleep -Seconds 1
+        }
+        if (-not $exists) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: the app container never came up after 'ldm run' -- cannot exercise the removal repro." }
+        }
+
+        $wrote = $false
+        for ($i = 0; $i -lt 15; $i++) {
+            & docker exec $proj sh -c "echo '$markerVal' > '$markerPath'" *> $null
+            if ($LASTEXITCODE -eq 0) { $wrote = $true; break }
+            Start-Sleep -Seconds 1
+        }
+        if (-not $wrote) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: could not write the data-volume marker before removal; cannot prove data survival." }
+        }
+
+        # The repro itself: remove the containers directly, exactly as a
+        # manual 'docker rm' cleanup (or a daemon losing its state) would.
+        # The named volumes are untouched -- only 'docker volume rm' removes
+        # those.
+        & docker rm -f $proj "$proj-db" *> $null
+
+        $stillThere = (& docker ps -a --filter "name=^$proj$" --format '{{.Names}}' 2>$null) -join "`n"
+        if ($stillThere.Contains($proj)) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'docker rm -f' did not actually remove the container; the repro state was never reached." }
+        }
+
+        # 1. LDM-#1870: 'ldm list' must report "Not Created", not "Stopped".
+        $listOut = & $LdmCmd list 2>&1 | Out-String
+        if (-not $listOut.Contains('Not Created')) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm list' did not report 'Not Created' for a project whose containers were removed (LDM-#1870).`n   Output was: ${listOut}" }
+        }
+        if ($listOut.Contains('Stopped')) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm list' still reports 'Stopped' for a project with no containers at all --`n   indistinguishable from one that merely needs 'ldm start' (LDM-#1870).`n   Output was: ${listOut}" }
+        }
+
+        # 2. LDM-#1870: 'ldm start' must refuse up front (exit 1) naming
+        #    'ldm run', rather than letting 'docker compose start' surface
+        #    its own raw error.
+        $startOut = & $LdmCmd start $proj 2>&1 | Out-String
+        $startCode = $LASTEXITCODE
+        if ($startCode -ne 1) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm start' exited ${startCode} for a project with no containers; expected 1 (LDM-#1870).`n   Output was: ${startOut}" }
+        }
+        if (-not $startOut.Contains('ldm run')) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm start' refused but did not name 'ldm run' (LDM-#1870).`n   Output was: ${startOut}" }
+        }
+
+        # 3. 'ldm run' must recreate the stack from the surviving named
+        #    volume -- no data loss.
+        $out = & $LdmCmd run $proj -y -t 2026.q1.7-lts --no-wait 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm run' could not recreate '${proj}' after its containers were removed (exit ${LASTEXITCODE}).`n   Output was: ${out}" }
+        }
+
+        for ($i = 0; $i -lt 30; $i++) {
+            $running = (& docker ps --filter "name=^$proj$" --format '{{.Names}}' 2>$null) -join "`n"
+            if ($running.Contains($proj)) { break }
+            Start-Sleep -Seconds 1
+        }
+
+        $markerRead = ''
+        for ($i = 0; $i -lt 15; $i++) {
+            $markerRead = ((& docker exec $proj cat $markerPath 2>$null) -join '').Trim()
+            if ($markerRead) { break }
+            Start-Sleep -Seconds 1
+        }
+
+        if ($markerRead -cne $markerVal) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: the data-volume marker did not survive recreation (got '${markerRead}', wanted '${markerVal}').`n   'ldm run' recreated the container against a FRESH volume instead of the surviving one -- data loss." }
+        }
+
+        return @{ Ok = $true; Message = "[SUCCESS] Removed containers report 'Not Created' (not 'Stopped'), 'ldm start' refuses naming 'ldm run' (exit 1), and 'ldm run' recreates from the surviving volume with no data loss (LDM-#1870/#1873)." }
+    }
+    finally {
+        Set-Location $prevLoc
+        & $LdmCmd rm $proj --delete -y 2>&1 | Out-Null
+        & docker rm -f $proj "$proj-db" 2>&1 | Out-Null
+        if ($null -eq $prevHome) {
+            Remove-Item Env:LDM_HOME -ErrorAction SilentlyContinue
+        } else {
+            $env:LDM_HOME = $prevHome
+        }
+        Remove-Item -Recurse -Force $isoHome, $runDir -ErrorAction SilentlyContinue
+    }
+}
+
 function Test-MacAddressPersisted {
     # LDM-#1771: '--mac-address' (LDM-#1752) is the v2.23.0 cycle's headline
     # feature, and it shipped in v2.23.0-pre.2 parsed and then discarded --
@@ -1670,6 +1807,15 @@ try {
         Write-Verdict $macRefusal.Message
     } else {
         Write-Host $macRefusal.Message -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying containers-removed-volumes-intact end-to-end (LDM-#1870/#1873)..."
+    $notCreated = Test-ContainersRemovedVolumesIntact -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE
+    if ($notCreated.Ok) {
+        Write-Verdict $notCreated.Message
+    } else {
+        Write-Host $notCreated.Message -ForegroundColor Red
         exit 1
     }
 
