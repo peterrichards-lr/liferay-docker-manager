@@ -882,21 +882,40 @@ def sanitize_id(identifier):
     return sanitized
 
 
+def _blacklist_pattern_matches(key, pattern):
+    """One blacklist glob: `exact`, `prefix*`, `*suffix`, or `*substring*`."""
+    if pattern.endswith("*") and pattern.startswith("*"):
+        return pattern[1:-1] in key
+    if pattern.endswith("*"):
+        return key.startswith(pattern[:-1])
+    if pattern.startswith("*"):
+        return key.endswith(pattern[1:])
+    return key == pattern
+
+
 def is_env_var_blacklisted(key, blacklist):
-    """Checks if an environment variable key matches any pattern in the blacklist."""
-    for pattern in blacklist:
-        if pattern.endswith("*") and pattern.startswith("*"):
-            if pattern[1:-1] in key:
-                return True
-        elif pattern.endswith("*"):
-            if key.startswith(pattern[:-1]):
-                return True
-        elif pattern.startswith("*"):
-            if key.endswith(pattern[1:]):
-                return True
-        elif key == pattern:
-            return True
-    return False
+    """Checks if an environment variable key matches any pattern in the blacklist.
+
+    A pattern beginning with `!` is a **negation**: it un-blacklists a key that
+    another pattern would otherwise block, and negations win (LDM-#1910).
+
+    Negation exists because the blacklist is inherited. `_get_effective_blacklist`
+    concatenates the shipped `common/env-blacklist.txt` with the project's own,
+    so before this a project could only ever *add* patterns -- there was no way
+    to opt back in to something the default list blocked. Adding credential-shaped
+    patterns without that would have turned a silent leak into a silent breakage,
+    with no recourse short of editing the installed LDM.
+
+    It is immediately load-bearing rather than speculative: the default list
+    blocks `*_API_KEY`, and the documented AI-provider passthrough
+    (`OPENAI_`, `ANTHROPIC_`, ...) depends on negations to keep working.
+    """
+    negations = [p[1:] for p in blacklist if p.startswith("!") and len(p) > 1]
+    if any(_blacklist_pattern_matches(key, p) for p in negations):
+        return False
+    return any(
+        _blacklist_pattern_matches(key, p) for p in blacklist if not p.startswith("!")
+    )
 
 
 def _sanitize_shell_command(cmd):

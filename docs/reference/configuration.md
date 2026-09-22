@@ -143,7 +143,9 @@ Three properties are deliberate:
 
 ## Environment Variable Forwarding
 
-LDM automatically forwards specific host environment variables into your project containers using a prefix-based logic.
+LDM forwards specific host environment variables into your project containers
+using a prefix-based logic. Some variables are withheld regardless of prefix --
+see *What is never forwarded* below.
 
 ### 1. Global Prefix Stripping (`LDM_`)
 
@@ -166,6 +168,54 @@ You can extend the automatic passthrough list by setting `LDM_FORWARD_PREFIXES` 
 - **Host**: `export LDM_FORWARD_PREFIXES="AWS_,STRIPE_"`
 - **Result**: Any variable starting with `AWS_` or `STRIPE_` will be forwarded to all containers.
 
+### 3a. What is never forwarded
+
+Some variables are withheld regardless of prefix, from every route above. The
+patterns live in `common/env-blacklist.txt`.
+
+| withheld | why |
+|---|---|
+| `COM_LIFERAY_LXC_DXP_*`, `LIFERAY_ROUTES_*` | LDM sets these itself for local development |
+| `*_OAUTH2_HEADLESS_SERVER_CLIENT_ID` / `_SECRET` | belong to the project's routes, not the environment |
+| `LIFERAY_JVM_OPTS` | a hazardous whole-JVM override |
+| `*_SECRET`, `*_SECRET_KEY`, `*_PASSWORD`, `*_PASSWD`, `*_TOKEN`, `*_PAT`, `*_PRIVATE_KEY`, `*_CREDENTIALS`, `*_API_KEY`, `*_ACCESS_KEY` | credential-shaped (LDM-#1910) |
+
+**The credential patterns apply even to a prefix you named yourself** in
+`LDM_FORWARD_PREFIXES`. Naming a prefix says which *family* of variables you
+want forwarded; it is not evidence you meant to ship a credential into a
+container image you may not have built. The AI-provider keys are the deliberate
+exception -- `OPENAI_*`, `ANTHROPIC_*`, `GEMINI_*` and `MISTRAL_*` are negated
+in the shipped list, because the passthrough prefixes above exist to carry
+exactly those.
+
+Note the interaction with section 2: `COM_LIFERAY_LXC_` is listed there as
+automatic passthrough, but the `COM_LIFERAY_LXC_DXP_*` subset is withheld. So
+`COM_LIFERAY_LXC_FOO` forwards and `COM_LIFERAY_LXC_DXP_FOO` does not. That
+asymmetry was undocumented and cost an external team days of debugging
+(LDM-#1903).
+
+**LDM says what it withheld.** Names only, never values:
+
+```text
+Withheld from container environment (blacklisted): LDM_BOT_PAT
+  To forward one deliberately, add a negation to the project's env-blacklist.txt, e.g. '!MY_VAR'.
+```
+
+### 3b. Forwarding something withheld anyway
+
+A `!` prefix in a project's own `env-blacklist.txt` un-blacklists a name, and
+negations win:
+
+```text
+!LIFERAY_OAUTH_CLIENT_SECRET
+!ACME_*
+```
+
+This exists because the list is inherited -- a project's file is concatenated
+with the shipped one, so without negation a project could only ever *add*
+patterns and had no way to opt back in. Putting the exception in the project,
+in a tracked file, makes it deliberate and reviewable.
+
 ### 4. Service-Specific Targeting
 
 You can target a specific service (including Client Extensions) by prefixing the variable with the **Service ID** (uppercased, with dashes replaced by underscores):
@@ -178,4 +228,4 @@ You can target a specific service (including Client Extensions) by prefixing the
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-20* | *Last Reviewed: 2026-09-20*
+*Last Updated: 2026-09-22* | *Last Reviewed: 2026-09-22*

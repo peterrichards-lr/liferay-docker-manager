@@ -14,3 +14,40 @@ LIFERAY_ROUTES_*
 
 # Potentially Hazardous Cloud Overrides
 LIFERAY_JVM_OPTS
+
+# Credential-shaped names (LDM-#1910)
+#
+# `LDM_`-prefix stripping forwards every LDM_-prefixed host variable into every
+# container with the prefix removed, and the documentation calls that "the
+# recommended way to inject global configurations" -- so users are actively
+# encouraged to put things there. Nothing then distinguishes a config value
+# from a credential. A developer's GitHub PAT, exported as LDM_BOT_PAT for an
+# unrelated tool, was observed being forwarded as BOT_PAT.
+#
+# These apply on EVERY route, including prefixes named in LDM_FORWARD_PREFIXES
+# and the built-in provider prefixes below. A credential is a credential
+# however it was asked for; "the user configured the prefix" is not evidence
+# they meant to ship a secret into a third-party container image.
+#
+# Opt back in explicitly, per project, with a `!` negation in the project's own
+# env-blacklist.txt -- e.g. `!LIFERAY_OAUTH_CLIENT_SECRET`. That is deliberate,
+# auditable and visible in the project, which a silent default is not.
+*_SECRET
+*_SECRET_KEY
+*_PASSWORD
+*_PASSWD
+*_TOKEN
+*_PAT
+*_PRIVATE_KEY
+*_CREDENTIALS
+*_API_KEY
+*_ACCESS_KEY
+
+# ...except the AI provider keys, which the passthrough prefixes above exist
+# specifically to carry (see "Automatic Passthrough" in
+# docs/reference/configuration.md). Blocking *_API_KEY without these would
+# silently remove a documented feature.
+!OPENAI_*
+!ANTHROPIC_*
+!GEMINI_*
+!MISTRAL_*
