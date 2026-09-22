@@ -713,13 +713,26 @@ def _stub_ldm(directory, exit_code, message, *, windows=False):
 
     The `rm` the function issues during cleanup lands on this stub too, which
     is harmless: it prints and exits, exactly as it does for the import.
+
+    The stub is deliberately NOT named ``ldm`` (LDM-#1899). The verification
+    scripts take the binary as a path argument -- ``local ldm_cmd="$1"`` -- and
+    never look it up on ``PATH``, so the basename is free. A file named ``ldm``
+    presents to an endpoint-protection agent as that binary launching from a
+    temp directory, which is the signature it acts on; LDM-#1898 cost two
+    developer sessions to the same shape with ``lfr-tunnel``.
+
+    ``conftest``'s guard cannot cover this one. It intercepts spawns issued
+    from Python, and these tests run ``subprocess.run(["bash", "-c", script])``
+    -- the argv crossing that seam is ``bash``, and the shell execs the stub
+    out of the guard's sight. The name is the only control that reaches here.
     """
     if windows:
-        path = directory / "ldm.cmd"
+        path = directory / "ldm-stub.cmd"
         path.write_text(f"@echo off\r\necho {message}\r\nexit /b {exit_code}\r\n")
         return path
-    path = directory / "ldm"
+    path = directory / "ldm-stub"
     path.write_text(f'#!/bin/sh\necho "{message}"\nexit {exit_code}\n')
+    # lint: executable-stub -- bash must exec it to drive the verify function; named ldm-stub, which no agent watches (LDM-#1899)
     path.chmod(0o755)
     return path
 
@@ -740,7 +753,7 @@ def _capturing_stub_ldm(directory, exit_code, message, capture_to):
     built is from inside the fake `ldm`: the function tears its fixture down
     before it returns, deliberately, so nothing is inspectable afterwards.
     """
-    path = directory / "ldm"
+    path = directory / "ldm-stub"
     path.write_text(
         "#!/bin/sh\n"
         'if [ "$2" = "import" ]; then\n'
@@ -749,6 +762,7 @@ def _capturing_stub_ldm(directory, exit_code, message, capture_to):
         f'echo "{message}"\n'
         f"exit {exit_code}\n"
     )
+    # lint: executable-stub -- bash must exec it to drive the verify function; named ldm-stub, which no agent watches (LDM-#1899)
     path.chmod(0o755)
     return path
 
