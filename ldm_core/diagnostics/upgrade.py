@@ -99,7 +99,14 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
         if not target_version_str and version_to_tuple(latest) <= version_to_tuple(
             VERSION
         ):
-            tier = " (stable)" if not pre_release else " (pre-release)"
+            # LDM-#1912: the label describes the INSTALLED version, not the
+            # channel that was searched. `pre_release` is the --beta flag, so
+            # using it told a user on stable v2.25.0 they were on a
+            # pre-release purely because they passed --beta -- and told a user
+            # genuinely on 2.26.0-pre.1 they were "(stable)" when they did
+            # not. `is_beta` was already in scope, correctly derived from
+            # VERSION, and used two branches below.
+            tier = " (pre-release)" if is_beta else " (stable)"
             UI.success(f"LDM is already up to date v{VERSION}{tier}.")
             return
 
