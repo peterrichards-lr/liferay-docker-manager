@@ -147,6 +147,55 @@ A release tag fires three to four workflows. Reporting "the" failure after readi
 
 - **Mocking System Calls in Tests**: Never execute actual compiled binaries (like `lfr-tunnel`, `ldm`) during unit/integration tests using `subprocess` or `os.system`. All system and binary execution calls MUST be correctly mocked (`@patch("ldm_core.utils.run_command")` or `@patch("subprocess.Popen")`) to prevent triggering corporate endpoint protection tools (e.g., SentinelOne), which may detect these test invocations as malicious activity and aggressively quarantine/delete the binaries and surrounding development tools (like `brew`, `jenv`, etc.).
 
+  **A stub you wrote counts as a binary.** The rule is about what the operating
+  system is asked to execute, not about provenance. A `chmod +x` shell script
+  named `lfr-tunnel` in a `TemporaryDirectory` presents to an EDR agent as a
+  process named `lfr-tunnel` launching from a non-whitelisted path -- which is
+  the exact signature it is watching for. Nothing about it being three lines of
+  `bash` that you generated seconds earlier is visible to the agent.
+
+  Hit on 2026-09-21 by LDM-#1898. `TestAnUnapprovedBinaryIsNeverExecuted` --
+  added to *prove LDM never executes an unapproved binary* -- built such a stub
+  so that non-execution could be observed directly rather than inferred from an
+  unasserted mock. Three of its four tests then let the real
+  `_get_installed_version` run it. Every `pytest` run, and so every
+  `scripts/agent_push.sh`, spawned it; SentinelOne killed the developer's
+  terminal twice before the contradiction was spotted. The module's own
+  docstring said "The binary is never executed by these tests" and cited this
+  rule; the offending class was appended below it.
+
+  **Wanting a real observation is the right instinct -- move the seam, not the
+  rule.** Recording at the call that *would* cross the process boundary gives a
+  strictly better observation than executing does:
+
+  ```python
+  def _record(self, argv, **_kwargs):
+      self.invoked.append(str(argv[0]))
+      return subprocess.CompletedProcess(argv, 0, "lfr-tunnel v1.48.12\n", "")
+
+
+  with patch("ldm_core.handlers.share.subprocess.run", self._record):
+      ...
+  ```
+
+  The production resolution path stays real, and the assertion gets the exact
+  argv rather than whatever the stub chose to echo. Stub files should still be
+  *real files on disk* -- `.exists()` and `.resolve()` must be genuinely
+  observed -- just never marked executable. A non-executable stub is also a
+  second line of defence: if the seam is ever removed, the spawn raises
+  `PermissionError` instead of running.
+
+  **Two tells when reviewing a test:**
+
+  - it calls `chmod`, `S_IEXEC`, or writes a `#!` line
+  - it patches *around* an executing helper (`get_actual_home`, `shutil.which`)
+    without patching the helper that executes
+
+  `ldm_core/tests/test_verify_scripts.py` still creates a `chmod 0o755` stub
+  named `ldm` for the verification scripts to invoke -- the shell resolves and
+  executes it, so there is no Python seam to move. Tracked as LDM-#1899; do
+  not treat it as precedent.
+
 ## Python Virtual Environment (venv)
 
 - **Mandatory Alignment**: All development, testing, linting, and Git operations MUST be conducted within the project's Python virtual environment (`.venv`).
@@ -161,4 +210,4 @@ A release tag fires three to four workflows. Reporting "the" failure after readi
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-14* | *Last Reviewed: 2026-09-14*
+*Last Updated: 2026-09-22* | *Last Reviewed: 2026-09-22*
