@@ -471,15 +471,50 @@ def scan_standalone_services(self, root_path):
     return services
 
 
+def _announce_withheld(withheld):
+    """Names variables that matched a forwarding rule but were withheld.
+
+    A dropped variable used to be indistinguishable from one that was never
+    set, which is how LDM-#1903 cost an external team days: they exported
+    `COM_LIFERAY_LXC_DXP_*` because the documentation listed the prefix as
+    automatic passthrough, and nothing said the `_DXP_` subset was excluded.
+
+    Names only, never values -- the point of withholding a credential is not
+    served by printing it.
+    """
+    if not withheld:
+        return
+    from ldm_core.ui import UI
+
+    names = sorted(withheld)
+    UI.detail(f"Withheld from container environment (blacklisted): {', '.join(names)}")
+    UI.detail(
+        "  If one of these is needed, add its negation to the project's "
+        "env-blacklist.txt:"
+    )
+    # The exact line, not a placeholder. LDM-#1910 blocks credential shapes on
+    # every route, so the users most likely to see this are the ones whose
+    # working setup just stopped -- notably anyone supplying an OAuth2 client
+    # extension's secret by environment because LDM never populates the routes
+    # that should carry it (LDM-#1911). Making them derive the syntax from an
+    # example is friction at exactly the wrong moment.
+    for name in names:
+        UI.detail(f"    !{name}")
+
+
 def get_host_passthrough_env(self, paths=None, target_id=None):
     blacklist = _get_effective_blacklist(self, paths)
+    withheld: set[str] = set()
 
     # 1. Global Strip-Forwarding (LDM_VAR=xxx -> VAR=xxx in ALL containers)
-    global_pool = {
-        k[4:]: v
-        for k, v in os.environ.items()
-        if k.upper().startswith("LDM_") and not is_env_var_blacklisted(k, blacklist)
-    }
+    global_pool = {}
+    for k, v in os.environ.items():
+        if not k.upper().startswith("LDM_"):
+            continue
+        if is_env_var_blacklisted(k, blacklist):
+            withheld.add(k)
+            continue
+        global_pool[k[4:]] = v
 
     # 2. Passthrough Prefixes (Preserve prefix, forward to ALL containers)
     # Default set covers Liferay Cloud and common AI providers
@@ -498,14 +533,15 @@ def get_host_passthrough_env(self, paths=None, target_id=None):
             [p.strip() for p in extra_prefixes.split(",") if p.strip()]
         )
 
-    global_pool.update(
-        {
-            k: v
-            for k, v in os.environ.items()
-            if any(k.upper().startswith(p.upper()) for p in passthrough_prefixes)
-            and not is_env_var_blacklisted(k, blacklist)
-        }
-    )
+    for k, v in os.environ.items():
+        if not any(k.upper().startswith(p.upper()) for p in passthrough_prefixes):
+            continue
+        if is_env_var_blacklisted(k, blacklist):
+            withheld.add(k)
+            continue
+        global_pool[k] = v
+
+    _announce_withheld(withheld)
 
     if not target_id:
         # Multi-service request (used for initialcompose generation)
