@@ -2978,6 +2978,26 @@ if not [e for e in env if e.startswith("LIFERAY_LXC_DXP_MAIN_DOMAIN=")]:
 if not svc.get("extra_hosts"):
     fails.append("extra_hosts absent -- the extension cannot resolve the project host")
 
+if not [e for e in env if e.startswith("LIFERAY_LXC_DXP_DOMAINS=")]:
+    fails.append("LIFERAY_LXC_DXP_DOMAINS absent: %s" % env)
+
+# The Liferay side of the shared volume, and the marketplace mount, are the
+# other two LDM-#1918 losses. Read from the same compose file.
+liferay = next(
+    (v for k, v in services.items() if k == "liferay" or k.endswith("-liferay")),
+    None,
+) or services.get("liferay")
+if liferay is None:
+    fails.append("no liferay service in the compose file to check mounts against")
+else:
+    lv = liferay.get("volumes") or []
+    if not [v for v in lv if ":/opt/liferay/routes" in v]:
+        fails.append("Liferay does not mount routes at /opt/liferay/routes, so "
+                     "nothing it writes reaches the extension: %s" % lv)
+    if not [v for v in lv if ":/opt/liferay/osgi/marketplace" in v]:
+        fails.append("osgi/marketplace is not mounted -- an .lpkg dropped there "
+                     "is silently ignored: %s" % lv)
+
 for f in fails:
     print(f"ERROR: {f}")
 sys.exit(1 if fails else 0)
