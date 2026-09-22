@@ -91,6 +91,31 @@ def isolate_ci_environment(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_real_tunnel_client(monkeypatch):
+    """Hides the developer's own lfr-tunnel client from every test (LDM-#1899).
+
+    ``ShareService._resolve_existing_binary`` consults ``LDM_LFR_TUNNEL_BIN``
+    and ``LFR_TUNNEL_BIN`` before anything derived from the home directory, and
+    it *executes* whatever it resolves in order to read a version. A developer
+    with the variable exported -- which is the documented way to point LDM at a
+    client -- therefore had `ldm doctor`'s tests launch their real binary on
+    every suite run.
+
+    Two ``test_diagnostics`` tests did exactly that. They patched
+    ``ldm_core.utils.get_actual_home`` and were still defeated twice over:
+    ``share.py`` imports that function **by value** so the patch never reached
+    it, and the environment variable outranks the home path regardless.
+
+    Tests that want a value set it themselves with ``patch.dict``; this only
+    removes the ambient one. ``PATH`` is deliberately left alone -- it is load
+    bearing for finding ``bash``, ``tar`` and ``pwsh`` -- so a test reaching
+    the resolver must still neutralise ``shutil.which``.
+    """
+    monkeypatch.delenv("LDM_LFR_TUNNEL_BIN", raising=False)
+    monkeypatch.delenv("LFR_TUNNEL_BIN", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def suppress_browser():
     """Globally suppresses browser launching during tests."""
     os.environ["LDM_TEST_MODE"] = "true"
@@ -169,9 +194,50 @@ _DOCKER_BINARIES = frozenset(
     {"docker", "docker.exe", "docker-compose", "docker-compose.exe"}
 )
 
+#: Binaries an endpoint-protection agent watches for by name. Spawning one from
+#: a test -- even a stub the test wrote seconds earlier -- presents to the agent
+#: as that binary launching from a non-whitelisted path, which is the signature
+#: it acts on.
+#:
+#: LDM-#1898: a test added to prove *LDM never executes an unapproved binary*
+#: wrote a ``chmod +x`` script named ``lfr-tunnel`` into a ``TemporaryDirectory``
+#: and let the real ``_get_installed_version`` run it. Every ``pytest`` run, and
+#: so every ``scripts/agent_push.sh``, spawned it; SentinelOne killed the
+#: developer's terminal twice. The prohibition was already written down in
+#: ``.agents/skills/testing-and-ci``, and in the offending module's own
+#: docstring. Nothing enforced it.
+#:
+#: The interception point below already ran on every test. It was only ever
+#: asked about Docker.
+_PROTECTED_BINARIES = frozenset(
+    {
+        "lfr-tunnel",
+        "lfr-tunnel.exe",
+        "lfr-tunneld",
+        "ldm",
+        "ldm.exe",
+        "ldm.cmd",
+    }
+)
 
-def _docker_argv(cmd) -> str | None:
-    """Returns the command text if ``cmd`` invokes the Docker CLI, else None.
+
+def _argv_parts(cmd) -> list[str] | None:
+    """Normalises a ``subprocess`` command into argv, or None if it is neither
+    a sequence nor a string."""
+    if isinstance(cmd, (list, tuple)):
+        return [str(c) for c in cmd]
+    if isinstance(cmd, str):
+        import shlex
+
+        try:
+            return shlex.split(cmd)
+        except ValueError:
+            return cmd.split()
+    return None
+
+
+def _basename_in(cmd, names) -> str | None:
+    """Returns the command text if argv[0]'s basename is in ``names``.
 
     Matches on the **basename** of argv[0], not on a substring of the whole
     command. A substring test looks equivalent and is not: this repository's
@@ -180,26 +246,37 @@ def _docker_argv(cmd) -> str | None:
     daemon call. Measured while writing this guard -- 4 of 335 recorded hits
     were that false positive.
     """
-    if isinstance(cmd, (list, tuple)):
-        parts = [str(c) for c in cmd]
-    elif isinstance(cmd, str):
-        import shlex
-
-        try:
-            parts = shlex.split(cmd)
-        except ValueError:
-            parts = cmd.split()
-    else:
-        return None
-
+    parts = _argv_parts(cmd)
     if not parts:
         return None
 
     from pathlib import Path as _Path
 
-    if _Path(parts[0]).name in _DOCKER_BINARIES:
+    if _Path(parts[0]).name in names:
         return " ".join(parts)
     return None
+
+
+def _docker_argv(cmd) -> str | None:
+    """Returns the command text if ``cmd`` invokes the Docker CLI, else None."""
+    return _basename_in(cmd, _DOCKER_BINARIES)
+
+
+def _protected_argv(cmd) -> str | None:
+    """Returns the command text if ``cmd`` spawns a protected binary, else None.
+
+    Shares ``_docker_argv``'s basename matching, and for the same reason: this
+    repository's own checkout path contains ``liferay-docker-manager``, so a
+    substring test over the whole command would match half the suite.
+
+    **This sees only spawns issued from Python.** A binary exec'd by a child
+    shell -- ``subprocess.run(["bash", "-c", script])`` where *script* then runs
+    it -- is invisible here, because the argv crossing this seam is ``bash``.
+    That is a real limit, not an oversight: it is why LDM-#1899 also had to
+    rename the stub in ``test_verify_scripts.py`` rather than rely on this
+    guard. Do not read a passing suite as proof that nothing was spawned.
+    """
+    return _basename_in(cmd, _PROTECTED_BINARIES)
 
 
 def _patch_in_every_importer(monkeypatch, defining_module, attr, replacement):
@@ -333,7 +410,10 @@ def block_real_docker(request, monkeypatch):
 
     and is then allowed through. Run without them via ``-m "not needs_docker"``.
     """
-    if request.node.get_closest_marker("needs_docker"):
+    needs_docker = bool(request.node.get_closest_marker("needs_docker"))
+    allow_protected = bool(request.node.get_closest_marker("spawns_protected_binary"))
+    if needs_docker and allow_protected:
+        # Nothing left to police for this test.
         return
 
     import subprocess
@@ -356,15 +436,48 @@ def block_real_docker(request, monkeypatch):
             pytrace=False,
         )
 
+    def _fail_protected(cmd):
+        pytest.fail(
+            "This test spawned a protected binary (LDM-#1898/#1899).\n"
+            f"    test:    {request.node.nodeid}\n"
+            f"    command: {_protected_argv(cmd)}\n"
+            "\n"
+            "Endpoint protection watches these names and acts on a launch "
+            "from a non-whitelisted path -- it does not care that the file is "
+            "a stub this test wrote seconds ago. It has killed the "
+            "developer's terminal mid-session.\n"
+            "\n"
+            "Record at the call that WOULD spawn instead; the observation is "
+            "strictly better, because you capture the exact argv:\n"
+            "\n"
+            "    def _record(self, argv, **_kw):\n"
+            "        self.invoked.append(str(argv[0]))\n"
+            "        return subprocess.CompletedProcess(argv, 0, out, '')\n"
+            "\n"
+            "    with patch('ldm_core.handlers.share.subprocess.run', "
+            "self._record):\n"
+            "        ...\n"
+            "\n"
+            "Keep stub files real -- .exists() and .resolve() must be genuinely "
+            "observed -- but do not chmod them executable, and name them "
+            "something no agent watches for. If a test genuinely must spawn "
+            "one, mark it @pytest.mark.spawns_protected_binary and say why.",
+            pytrace=False,
+        )
+
     def guarded_run(cmd, *args, **kwargs):
-        if _docker_argv(cmd):
+        if not needs_docker and _docker_argv(cmd):
             _fail(cmd)
+        if not allow_protected and _protected_argv(cmd):
+            _fail_protected(cmd)
         return real_run(cmd, *args, **kwargs)
 
     class GuardedPopen(real_popen):  # type: ignore[misc,valid-type]
         def __init__(self, cmd, *args, **kwargs):
-            if _docker_argv(cmd):
+            if not needs_docker and _docker_argv(cmd):
                 _fail(cmd)
+            if not allow_protected and _protected_argv(cmd):
+                _fail_protected(cmd)
             super().__init__(cmd, *args, **kwargs)
 
     monkeypatch.setattr(subprocess, "run", guarded_run)

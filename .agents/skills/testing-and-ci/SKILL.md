@@ -191,10 +191,33 @@ A release tag fires three to four workflows. Reporting "the" failure after readi
   - it patches *around* an executing helper (`get_actual_home`, `shutil.which`)
     without patching the helper that executes
 
-  `ldm_core/tests/test_verify_scripts.py` still creates a `chmod 0o755` stub
-  named `ldm` for the verification scripts to invoke -- the shell resolves and
-  executes it, so there is no Python seam to move. Tracked as LDM-#1899; do
-  not treat it as precedent.
+  **Two mechanisms now enforce this, and neither covers the other's ground.**
+
+  - *Runtime* (`ldm_core/tests/conftest.py`): the autouse guard that has
+    intercepted `subprocess.run`/`Popen` on every test since LDM-#1409 now
+    refuses `_PROTECTED_BINARIES` as well as Docker. Escape hatch:
+    `@pytest.mark.spawns_protected_binary`, with a stated reason. It sees only
+    spawns issued **from Python** -- a binary exec'd by a child shell
+    (`subprocess.run(["bash", "-c", script])`) is invisible, because the argv
+    crossing the seam is `bash`. Do not read a green suite as proof that
+    nothing was spawned.
+  - *Static* (`scripts/check_test_binary_stubs.py`, pre-commit hook
+    `check-test-binary-stubs`): refuses a test that makes a file executable
+    without saying why, and refuses an explained stub whose name is still a
+    watched one. It catches both shapes, because making the file executable is
+    the precondition for spawning it by any route. Verified against the
+    original LDM-#1898 code: it fails on the offending line.
+
+  Annotate a genuine need on the line itself:
+
+  ```python
+  path.chmod(0o755)  # lint: executable-stub -- bash execs it; name is not watched
+  ```
+
+  `test_verify_scripts.py`'s stub is named `ldm-stub`, not `ldm`, for exactly
+  this reason (LDM-#1899): the verification scripts take the binary as a path
+  argument (`local ldm_cmd="$1"`) and never look it up on `PATH`, so the
+  basename was free the whole time.
 
 ## Python Virtual Environment (venv)
 
