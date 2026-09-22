@@ -224,6 +224,23 @@ You can target a specific service (including Client Extensions) by prefixing the
 - **Host Variable**: `export MY_CUSTOM_EXTENSION_DEBUG=true`
 - **Container** (`my-custom-extension` only): `DEBUG=true`
 
+> [!IMPORTANT]
+> **For a client-extension container this is the only route in.** Sections 1-3
+> reach the Liferay container; a client extension receives what its own
+> `LCP.json` declares plus variables targeted at it by name.
+>
+> That is deliberate. A targeted variable names one service explicitly, so
+> delivering it surprises nobody. The global pool is implicit and carries
+> whatever `LDM_`-prefixed values happen to be exported on the host, which is
+> not something to inject into a container image you may not have built.
+>
+> Until LDM-#1903 this section was documented but unreachable: nothing ever
+> called the resolver with a service id, so the branch could not execute.
+
+Credential-shaped names are withheld from targeted variables too -- see
+*What is never forwarded* above. `MY_EXTENSION_API_SECRET` is blocked exactly
+as `API_SECRET` would be.
+
 ---
 
 <!-- markdownlint-disable MD049 -->

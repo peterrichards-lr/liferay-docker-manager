@@ -2122,6 +2122,32 @@ class ComposerService:
 
                 env_vars = ext.get("env", {})
                 env_list = [f"{k}={v}" for k, v in env_vars.items()]
+
+                # LDM-#1903: section 4 of docs/reference/configuration.md
+                # documents service-specific targeting "including Client
+                # Extensions" -- `SERVICEID_FOO=bar` on the host arriving as
+                # `FOO=bar` in that service's container. The code implementing
+                # it worked, but nothing ever called it with a `target_id`, so
+                # the branch was unreachable and a client-extension container
+                # received only what its own LCP.json declared.
+                #
+                # Targeted variables ONLY, deliberately -- not the global
+                # passthrough pool that `get_host_passthrough_env` also
+                # returns. A targeted variable names one service explicitly, so
+                # delivering it surprises nobody. The global pool is implicit,
+                # and injecting it into every client-extension container of
+                # every existing project would be a behaviour change nobody
+                # asked for -- and it carries whatever `LDM_*` values the
+                # developer happens to have exported (LDM-#1910).
+                #
+                # Appended after the extension's own env so an explicitly
+                # targeted value wins, matching how `_build_liferay_service`
+                # appends `custom_env` last.
+                if self.manager and hasattr(self.manager, "workspace"):
+                    targeted = self.manager.workspace.get_service_targeted_env(
+                        ext_id, paths
+                    )
+                    env_list.extend(f"{k}={v}" for k, v in targeted.items())
                 # Fix Node.js microservice SSL issues against local mkcert Traefik proxy
                 if not any(
                     e.startswith("NODE_TLS_REJECT_UNAUTHORIZED=") for e in env_list

@@ -56,6 +56,17 @@ class WorkspaceService(BaseHandler):
 
         return get_host_passthrough_env(self, paths, target_id)
 
+    def get_service_targeted_env(self, target_id, paths=None):
+        """Host variables explicitly addressed to one service (LDM-#1903).
+
+        Deliberately separate from `get_host_passthrough_env`: that returns the
+        global passthrough pool as well, which the composer must not inject
+        into a client-extension container.
+        """
+        from ldm_core.workspace.metadata import get_service_targeted_env
+
+        return get_service_targeted_env(self, target_id, paths)
+
     def _hydrate_from_workspace(self, workspace_root, paths, overwrite=True):
         from ldm_core.workspace.hydration import _hydrate_from_workspace
 
