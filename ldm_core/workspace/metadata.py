@@ -525,10 +525,35 @@ def get_host_passthrough_env(self, paths=None, target_id=None):
         return sorted(set(res))
 
     # Targeted service request: [SERVICE_ID]_VAR=xxx -> VAR=xxx
+    targeted = get_service_targeted_env(self, target_id, blacklist=blacklist)
+    return [f"{k}={v}" for k, v in {**global_pool, **targeted}.items()]
+
+
+def get_service_targeted_env(self, target_id, paths=None, blacklist=None):
+    """Host variables explicitly addressed to one service (LDM-#1903).
+
+    ``SERVICEID_FOO=bar`` in the host environment becomes ``FOO=bar`` inside
+    that service's container -- section 4 of ``docs/reference/configuration.md``.
+    The Liferay container is the exception and keeps the full name, because its
+    own settings are already ``LIFERAY_``-prefixed.
+
+    Split out of ``get_host_passthrough_env`` so the composer can inject
+    **only** these, without the global passthrough pool that function also
+    returns. That distinction is the whole point: a targeted variable is an
+    explicit act naming one service, so delivering it surprises nobody. The
+    global pool is implicit, and quietly starting to inject it into every
+    client-extension container of every existing project would be a behaviour
+    change nobody asked for -- see the PR for why that half was left alone.
+
+    The blacklist still applies. Note it excludes ``COM_LIFERAY_LXC_DXP_*``
+    and ``LIFERAY_ROUTES_*`` as LDM-managed, so those cannot be forwarded by
+    any route, targeted or not.
+    """
+    if blacklist is None:
+        blacklist = _get_effective_blacklist(self, paths)
     prefix = target_id.upper().replace("-", "_") + "_"
-    targeted = {
+    return {
         k[len(prefix) :] if target_id.lower() != "liferay" else k: v
         for k, v in os.environ.items()
         if k.upper().startswith(prefix) and not is_env_var_blacklisted(k, blacklist)
     }
-    return [f"{k}={v}" for k, v in {**global_pool, **targeted}.items()]
