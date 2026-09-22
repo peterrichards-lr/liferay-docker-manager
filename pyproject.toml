@@ -126,6 +126,7 @@ markers = [
     # live daemon, and expect them to create and remove real resources on the
     # machine that runs them. Skip them with: pytest -m "not needs_docker"
     "needs_docker: test requires a real Docker daemon and may touch real containers",
+    "spawns_protected_binary: test deliberately spawns a binary an EDR agent watches by name (LDM-#1898); state why in the test",
     # For tests whose subject IS a Docker helper that conftest stubs. They mock
     # `run_command` themselves, so they never reach a daemon -- they just need
     # the real function back to assert on the argv it builds.

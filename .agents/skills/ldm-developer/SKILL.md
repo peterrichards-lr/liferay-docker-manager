@@ -60,6 +60,57 @@ for rec in sp.glob("*.dist-info/RECORD"):
 EOF
 ```
 
+#### EDR removes `git-submodule`, and it stops pre-commit provisioning hooks
+
+The same endpoint-protection behaviour reaches outside `.venv`. `git submodule`
+is the one git subcommand still shipped as a POSIX shell script rather than a
+compiled builtin, and it gets deleted by name:
+
+```text
+git-sh-setup           present      git-submodule    GONE
+git-mergetool          present      git-bisect       present
+git-filter-branch      present      git-web--browse  present
+git-request-pull       present      git-quiltimport  present
+```
+
+Measured 2026-09-22 on both installations present on the machine -- Homebrew
+2.55.0 and Xcode's Apple Git-157 -- independently packaged, six months apart.
+Every other shell subcommand survived in both; exactly one was missing from
+each. That is selective removal by name, not a packaging variation.
+
+**It is not a Homebrew-vs-Xcode question.** `brew reinstall git` fixes it
+because reinstalling restores the deleted file, not because Homebrew's build
+differs -- Xcode's git is missing the same file and fails the same way. Either
+git works once the file is back, and either will lose it again.
+
+**Why it matters here.** `pre_commit/store.py:182` runs
+`git submodule update --init --recursive` whenever it clones a hook repository:
+
+```python
+git_cmd("submodule", "update", "--init", "--recursive")
+```
+
+So a missing `git-submodule` breaks hook provisioning -- but only for a repo
+pre-commit has to fetch. Already-cached hook environments are untouched, which
+is why the failure looks intermittent and arrives at unrelated moments. It
+surfaced during LDM-#1886, which changed the `ruff` rev and so forced a fresh
+clone.
+
+**Check it before you need it**, at the start of any session that may touch
+hooks, `scripts/agent_push.sh`, or a `.pre-commit-config.yaml` rev:
+
+```bash
+git submodule --help >/dev/null 2>&1 || echo "git-submodule is missing -- run: brew reinstall git"
+```
+
+Use the subcommand, not the file. `ls "$(git --exec-path)/git-submodule"`
+answers for whichever git is first on `PATH`, and `git-submodule--helper` (the
+compiled helper, a symlink to the `git` binary) is still present when the
+script is gone -- so a `grep submodule` over that directory returns a match and
+reads as healthy.
+
+Recovery is `brew reinstall git`. Expect to repeat it.
+
 ---
 
 ## 2. Standard Developer Commands
@@ -194,4 +245,4 @@ up:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-19* | *Last Reviewed: 2026-09-19*
+*Last Updated: 2026-09-22* | *Last Reviewed: 2026-09-22*

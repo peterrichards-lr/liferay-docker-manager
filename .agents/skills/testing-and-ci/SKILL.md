@@ -147,6 +147,78 @@ A release tag fires three to four workflows. Reporting "the" failure after readi
 
 - **Mocking System Calls in Tests**: Never execute actual compiled binaries (like `lfr-tunnel`, `ldm`) during unit/integration tests using `subprocess` or `os.system`. All system and binary execution calls MUST be correctly mocked (`@patch("ldm_core.utils.run_command")` or `@patch("subprocess.Popen")`) to prevent triggering corporate endpoint protection tools (e.g., SentinelOne), which may detect these test invocations as malicious activity and aggressively quarantine/delete the binaries and surrounding development tools (like `brew`, `jenv`, etc.).
 
+  **A stub you wrote counts as a binary.** The rule is about what the operating
+  system is asked to execute, not about provenance. A `chmod +x` shell script
+  named `lfr-tunnel` in a `TemporaryDirectory` presents to an EDR agent as a
+  process named `lfr-tunnel` launching from a non-whitelisted path -- which is
+  the exact signature it is watching for. Nothing about it being three lines of
+  `bash` that you generated seconds earlier is visible to the agent.
+
+  Hit on 2026-09-21 by LDM-#1898. `TestAnUnapprovedBinaryIsNeverExecuted` --
+  added to *prove LDM never executes an unapproved binary* -- built such a stub
+  so that non-execution could be observed directly rather than inferred from an
+  unasserted mock. Three of its four tests then let the real
+  `_get_installed_version` run it. Every `pytest` run, and so every
+  `scripts/agent_push.sh`, spawned it; SentinelOne killed the developer's
+  terminal twice before the contradiction was spotted. The module's own
+  docstring said "The binary is never executed by these tests" and cited this
+  rule; the offending class was appended below it.
+
+  **Wanting a real observation is the right instinct -- move the seam, not the
+  rule.** Recording at the call that *would* cross the process boundary gives a
+  strictly better observation than executing does:
+
+  ```python
+  def _record(self, argv, **_kwargs):
+      self.invoked.append(str(argv[0]))
+      return subprocess.CompletedProcess(argv, 0, "lfr-tunnel v1.48.12\n", "")
+
+
+  with patch("ldm_core.handlers.share.subprocess.run", self._record):
+      ...
+  ```
+
+  The production resolution path stays real, and the assertion gets the exact
+  argv rather than whatever the stub chose to echo. Stub files should still be
+  *real files on disk* -- `.exists()` and `.resolve()` must be genuinely
+  observed -- just never marked executable. A non-executable stub is also a
+  second line of defence: if the seam is ever removed, the spawn raises
+  `PermissionError` instead of running.
+
+  **Two tells when reviewing a test:**
+
+  - it calls `chmod`, `S_IEXEC`, or writes a `#!` line
+  - it patches *around* an executing helper (`get_actual_home`, `shutil.which`)
+    without patching the helper that executes
+
+  **Two mechanisms now enforce this, and neither covers the other's ground.**
+
+  - *Runtime* (`ldm_core/tests/conftest.py`): the autouse guard that has
+    intercepted `subprocess.run`/`Popen` on every test since LDM-#1409 now
+    refuses `_PROTECTED_BINARIES` as well as Docker. Escape hatch:
+    `@pytest.mark.spawns_protected_binary`, with a stated reason. It sees only
+    spawns issued **from Python** -- a binary exec'd by a child shell
+    (`subprocess.run(["bash", "-c", script])`) is invisible, because the argv
+    crossing the seam is `bash`. Do not read a green suite as proof that
+    nothing was spawned.
+  - *Static* (`scripts/check_test_binary_stubs.py`, pre-commit hook
+    `check-test-binary-stubs`): refuses a test that makes a file executable
+    without saying why, and refuses an explained stub whose name is still a
+    watched one. It catches both shapes, because making the file executable is
+    the precondition for spawning it by any route. Verified against the
+    original LDM-#1898 code: it fails on the offending line.
+
+  Annotate a genuine need on the line itself:
+
+  ```python
+  path.chmod(0o755)  # lint: executable-stub -- bash execs it; name is not watched
+  ```
+
+  `test_verify_scripts.py`'s stub is named `ldm-stub`, not `ldm`, for exactly
+  this reason (LDM-#1899): the verification scripts take the binary as a path
+  argument (`local ldm_cmd="$1"`) and never look it up on `PATH`, so the
+  basename was free the whole time.
+
 ## Python Virtual Environment (venv)
 
 - **Mandatory Alignment**: All development, testing, linting, and Git operations MUST be conducted within the project's Python virtual environment (`.venv`).
@@ -161,4 +233,4 @@ A release tag fires three to four workflows. Reporting "the" failure after readi
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-14* | *Last Reviewed: 2026-09-14*
+*Last Updated: 2026-09-22* | *Last Reviewed: 2026-09-22*

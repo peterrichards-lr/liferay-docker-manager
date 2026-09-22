@@ -12,7 +12,7 @@ the surrounding toolchain. Every probe is mocked at the seam.
 
 import os
 import platform
-import stat
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -317,10 +317,6 @@ class TestLegacySymlinkIsResolvedBeforeExecution(_Base):
         )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestAnUnapprovedBinaryIsNeverExecuted(_Base):
     """LDM-#1883: LDM must not run a binary in order to decide whether it
     should be running it.
@@ -332,9 +328,20 @@ class TestAnUnapprovedBinaryIsNeverExecuted(_Base):
     The observed endpoint-protection response removes the binary and the
     surrounding toolchain with it.
 
-    These use a real executable that RECORDS ITS OWN INVOCATION, so
-    non-execution is observed directly rather than inferred from a mock that
-    was never asserted on.
+    Non-execution is observed at the seam that would spawn the process:
+    `share.subprocess.run` is replaced by a recorder, so the argv LDM *would*
+    have launched is captured exactly. `_get_installed_version` itself stays
+    real, so the resolution path under test is the production one -- only the
+    call that crosses the process boundary is stubbed.
+
+    That recorder replaced a `chmod +x` stub these tests used to genuinely
+    execute (LDM-#1898). Spawning a process named `lfr-tunnel` from a temp
+    directory is exactly what `.agents/skills/testing-and-ci` prohibits and
+    what the module docstring above already promised these tests never do;
+    endpoint protection killed a developer session twice before anyone
+    noticed the contradiction. Recording the argv is also strictly stronger
+    than the stub was -- it captures the full invocation rather than `$0`.
+    Every assertion below is unchanged.
     """
 
     def setUp(self):
@@ -342,21 +349,27 @@ class TestAnUnapprovedBinaryIsNeverExecuted(_Base):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.home = Path(self._tmp.name)
-        self.recorder = self.home / "invoked.log"
-        self.recorder.write_text("")
+        self.invoked: list[str] = []
         self.whitelisted = self.home / "liferay" / "lfr-tunnel" / BIN
         self.legacy = self.home / ".ldm" / "bin" / BIN
 
-    def _make_recording_binary(self, path):
+    def _make_binary(self, path):
+        """A real file on disk, so `.exists()` and `.resolve()` are genuinely
+        observed rather than mocked -- but never marked executable, and never
+        spawned.
+        """
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            f'#!/bin/bash\necho "$0" >> "{self.recorder}"\necho "lfr-tunnel v1.48.12"\n'
-        )
-        path.chmod(path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+        path.write_text("stand-in binary; never executed (LDM-#1898)\n")
+
+    def _record(self, argv, **_kwargs):
+        """Stands in for `subprocess.run`, recording what would have run."""
+        self.invoked.append(str(argv[0]))
+        return subprocess.CompletedProcess(argv, 0, "lfr-tunnel v1.48.12\n", "")
 
     def _resolve(self):
         env = {"LDM_LFR_TUNNEL_BIN": "", "LFR_TUNNEL_BIN": ""}
         with (
+            patch("ldm_core.handlers.share.subprocess.run", self._record),
             patch("ldm_core.handlers.share.get_actual_home", return_value=self.home),
             patch("shutil.which", return_value=None),
             patch.dict(os.environ, env, clear=True),
@@ -364,11 +377,11 @@ class TestAnUnapprovedBinaryIsNeverExecuted(_Base):
             return self.service._resolve_existing_binary()
 
     def _invocations(self):
-        return [ln for ln in self.recorder.read_text().splitlines() if ln.strip()]
+        return self.invoked
 
     def test_a_different_binary_in_the_legacy_location_is_never_run(self):
         """The whole point: discovery must not launch what it cannot vouch for."""
-        self._make_recording_binary(self.legacy)
+        self._make_binary(self.legacy)
 
         result = self._resolve()
 
@@ -380,7 +393,7 @@ class TestAnUnapprovedBinaryIsNeverExecuted(_Base):
         self.assertIsNone(result, "an unapproved binary must not be resolved")
 
     def test_the_refusal_says_what_to_do_about_it(self):
-        self._make_recording_binary(self.legacy)
+        self._make_binary(self.legacy)
         with patch("ldm_core.handlers.share.UI.info") as info:
             self._resolve()
         said = " ".join(str(c) for c in info.call_args_list)
@@ -388,7 +401,7 @@ class TestAnUnapprovedBinaryIsNeverExecuted(_Base):
 
     def test_a_legacy_symlink_to_the_approved_binary_still_works(self):
         """LDM-#1871's guarantee must survive: existing setups keep working."""
-        self._make_recording_binary(self.whitelisted)
+        self._make_binary(self.whitelisted)
         self.legacy.parent.mkdir(parents=True, exist_ok=True)
         self.legacy.symlink_to(self.whitelisted)
 
@@ -404,7 +417,11 @@ class TestAnUnapprovedBinaryIsNeverExecuted(_Base):
         )
 
     def test_the_approved_location_is_unaffected(self):
-        self._make_recording_binary(self.whitelisted)
+        self._make_binary(self.whitelisted)
         result = self._resolve()
         self.assertIsNotNone(result)
         self.assertEqual(1, len(self._invocations()))
+
+
+if __name__ == "__main__":
+    unittest.main()

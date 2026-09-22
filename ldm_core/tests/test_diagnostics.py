@@ -286,13 +286,28 @@ class TestDiagnostics(unittest.TestCase):
     # check when the project is not under the home. Pinning the home to /tmp
     # while the project moved to the per-process root silently removed the
     # "Volume Permissions" result this test asserts on.
+    # LDM-#1899: `share.py` does `from ldm_core.utils import
+    # get_actual_home`, binding the function BY VALUE into its own
+    # namespace, so patching `ldm_core.utils.get_actual_home` above does
+    # not reach it. `_check_lfr_tunnel` resolves through
+    # ShareService._resolve_existing_binary(), which then found the
+    # developer's real ~/liferay/lfr-tunnel/lfr-tunnel and EXECUTED it to
+    # read its version -- on every suite run. Same trap as the two notes
+    # above, one import deeper.
+    @patch("ldm_core.handlers.share.shutil.which", return_value=None)
+    @patch(
+        "ldm_core.handlers.share.get_actual_home",
+        return_value=Path(TEST_TMP_ROOT),
+    )
     @patch("ldm_core.utils.get_actual_home", return_value=Path(TEST_TMP_ROOT))
     @patch(
         "ldm_core.diagnostics.doctor.check_mkcert",
         return_value=("OK", True, "/root"),
     )
     @patch.object(MockDiagManager, "run_command", return_value="OK")
-    def test_check_global_config_and_network(self, mock_run, mock_mkcert, mock_home):
+    def test_check_global_config_and_network(
+        self, mock_run, mock_mkcert, mock_home, mock_share_home, mock_which
+    ):
         runner = DoctorRunner(self.manager.diagnostics)
         runner.docker_version = "24.0.0"
         runner.project_paths = [Path(f"{TEST_TMP_ROOT}/proj1")]
@@ -1002,6 +1017,14 @@ class TestDiagnostics(unittest.TestCase):
             # LDM-#1402: as above -- must be the parent of runner.project_paths
             # or the volume check is skipped entirely.
             patch("ldm_core.utils.get_actual_home", return_value=Path(TEST_TMP_ROOT)),
+            # LDM-#1899: share.py imported get_actual_home by value, so the
+            # patch above never reached it and _check_lfr_tunnel executed
+            # the developer's real binary. See the note on the test above.
+            patch(
+                "ldm_core.handlers.share.get_actual_home",
+                return_value=Path(TEST_TMP_ROOT),
+            ),
+            patch("ldm_core.handlers.share.shutil.which", return_value=None),
             patch.object(self.manager, "run_command", return_value="Permission denied"),
             # LDM-#1409: as above -- the manager's run_command is a different
             # function from the module-scope one the network check uses.

@@ -139,6 +139,14 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: check-test-binary-stubs
+        name: Check tests do not create unexplained executable stubs
+        entry: scripts/run_python.sh scripts/check_test_binary_stubs.py
+        language: system
+        files: ^ldm_core/tests/.*\.py$
+        pass_filenames: false
+        always_run: true
+
       - id: check-powershell-ascii
         name: Check PowerShell ASCII Encoding
         entry: scripts/run_python.sh scripts/check_powershell_ascii.py
