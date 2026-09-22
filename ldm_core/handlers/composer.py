@@ -1062,9 +1062,25 @@ class ComposerService:
                 f"{mount_paths['deploy'].as_posix()}:/mnt/liferay/deploy{z_label}",
                 f"{mount_paths['files'].as_posix()}:/mnt/liferay/files{z_label}",
                 f"{mount_paths['scripts'].as_posix()}:/mnt/liferay/scripts{z_label}",
-                f"{mount_paths.get('routes', mount_paths['root'] / 'routes').as_posix()}:/workspace/routes{z_label}",
+                # LDM-#1918: Liferay reads and WRITES its config trees under
+                # /opt/liferay/routes. Measured with a deployed
+                # oAuthApplicationHeadlessServer extension, Liferay produced
+                # /opt/liferay/routes/default/dxp/com.liferay.lxc.dxp.main.domain
+                # and three siblings -- inside the container, because this
+                # mounted /workspace/routes, which Liferay never touches.
+                #
+                # It was /opt/liferay/routes until fe166799 (2026-05-18) removed
+                # the mount; 5857d14f (2026-07-01) reinstated it at the wrong
+                # path and added the test that pinned it there.
+                f"{mount_paths.get('routes', mount_paths['root'] / 'routes').as_posix()}:/opt/liferay/routes{z_label}",
                 f"{project_name}-data:/opt/liferay/data",
                 f"{mount_paths['modules'].as_posix()}:/opt/liferay/osgi/modules{z_label}",
+                # LDM-#1918: `osgi/marketplace` is created in every project
+                # (handlers/base.py) and was mounted until the stack.py ->
+                # composer.py refactor. Without this an .lpkg dropped there is
+                # silently ignored -- the directory exists, so nothing suggests
+                # it goes nowhere.
+                f"{mount_paths.get('marketplace', mount_paths['root'] / 'osgi' / 'marketplace').as_posix()}:/opt/liferay/osgi/marketplace{z_label}",
                 # LDM-#1364: restored. `df59dea6` ("isolate configuration
                 # volumes", v2.7.2) removed BOTH this and the osgi/modules
                 # mount above; `57fd4b9f` brought modules back and this was
@@ -2060,6 +2076,72 @@ class ComposerService:
             return service
         return None
 
+    def _map_probe_to_healthcheck(self, probe, target_port):
+        """Converts an LCP JSON probe definition to a Docker healthcheck.
+
+        Recovered from `7711cff0` (LDM-#1918). `workspace/metadata.py` has never
+        stopped parsing `readinessProbe`/`livenessProbe` into the extension's
+        info; the consumer was lost in the stack.py -> composer.py refactor, so
+        a declared probe has been silently discarded since.
+
+        Note this is the SECOND time this function has gone missing --
+        `7711cff0` is itself titled "restore missing healthcheck mapper". A
+        parsed-but-unread field is the tell; see LDM-#1918.
+        """
+        interval = probe.get("interval", 30)
+        timeout = probe.get("timeout", 10)
+        retries = probe.get("retries", 3)
+        start_period = probe.get("initialDelay", 60)
+
+        test_cmd = ["CMD", "curl", "-f", f"http://localhost:{target_port}/"]
+
+        if probe.get("httpGet"):
+            path = probe["httpGet"].get("path", "/")
+            port = probe["httpGet"].get("port", target_port)
+            test_cmd = ["CMD", "curl", "-f", f"http://localhost:{port}{path}"]
+        elif probe.get("tcpSocket"):
+            port = probe["tcpSocket"].get("port", target_port)
+            test_cmd = ["CMD-SHELL", f"nc -z localhost {port}"]
+        elif probe.get("exec"):
+            test_cmd = ["CMD", *probe["exec"].get("command", [])]
+
+        return {
+            "test": test_cmd,
+            "interval": f"{interval}s",
+            "timeout": f"{timeout}s",
+            "retries": retries,
+            "start_period": f"{start_period}s",
+        }
+
+    def _apply_ext_runtime_options(self, service, ext, svc_id, ms_port, scale):
+        """Healthcheck, replicas and memory limit for one extension service.
+
+        LDM-#1918: the probe and the memory limit were dropped in the
+        stack.py -> composer.py refactor while `workspace/metadata.py` carried
+        on parsing `readinessProbe`, `livenessProbe` and `memory` into the
+        extension's info. A parsed-but-unread field is the tell.
+
+        Kept out of `_build_extensions_services` so restoring them does not
+        push that function past its statement ceiling -- the alternative was
+        another `noqa`, and silencing complexity warnings on a builder is how
+        the refactor that lost these became hard to review in the first place.
+        """
+        probe = ext.get("readinessProbe") or ext.get("livenessProbe")
+        if probe:
+            service["healthcheck"] = self._map_probe_to_healthcheck(probe, ms_port)
+
+        deploy: dict = {}
+        if scale == 1:
+            service["container_name"] = svc_id
+        else:
+            deploy["replicas"] = scale
+
+        if ext.get("memory"):
+            deploy["resources"] = {"limits": {"memory": f"{ext['memory']}m"}}
+
+        if deploy:
+            service["deploy"] = deploy
+
     def _build_extensions_services(  # noqa: C901, PLR0912
         self, paths, meta, host_name, project_name, ssl_enabled, mount_paths=None
     ):
@@ -2115,13 +2197,34 @@ class ComposerService:
                     "pull_policy": "build",
                     "networks": ["liferay-net"],
                     "labels": labels,
+                    # LDM-#1918: lets the extension resolve the project's host
+                    # name back to the Docker host, which is how it reaches
+                    # Liferay when the project is served under a custom name.
+                    "extra_hosts": [f"{host_name}:host-gateway"],
                     "volumes": [
-                        f"{mount_paths.get('routes', mount_paths['root'] / 'routes').as_posix()}:/workspace/routes",
+                        # LDM-#1918: the SAME host directory as the Liferay
+                        # container, at the same path -- that sharing is how
+                        # Liferay's published config trees reach a client
+                        # extension. Mounting it at /workspace/routes advertised
+                        # a channel that was never written to.
+                        f"{mount_paths.get('routes', mount_paths['root'] / 'routes').as_posix()}:/opt/liferay/routes",
                     ],
                 }
 
+                # LDM-#1918: every client-extension container used to be told
+                # the project's DXP domain directly. `lxcConfig.dxpMainDomain()`
+                # in @liferay/client-extension SDKs resolves
+                # `com.liferay.lxc.dxp.main.domain` from this, so losing it left
+                # extensions unable to find Liferay at all -- which is what an
+                # external team eventually reported (LDM-#1903).
+                #
+                # First, so anything the extension declares itself wins.
+                env_list = [
+                    f"LIFERAY_LXC_DXP_MAIN_DOMAIN={host_name}",
+                    f"LIFERAY_LXC_DXP_DOMAINS={host_name}",
+                ]
                 env_vars = ext.get("env", {})
-                env_list = [f"{k}={v}" for k, v in env_vars.items()]
+                env_list += [f"{k}={v}" for k, v in env_vars.items()]
 
                 # LDM-#1903: section 4 of docs/reference/configuration.md
                 # documents service-specific targeting "including Client
@@ -2156,10 +2259,9 @@ class ComposerService:
 
                 services[svc_id]["environment"] = env_list
 
-                if scale == 1:
-                    services[svc_id]["container_name"] = svc_id
-                else:
-                    services[svc_id]["deploy"] = {"replicas": scale}
+                self._apply_ext_runtime_options(
+                    services[svc_id], ext, svc_id, ms_port, scale
+                )
 
                 traefik_svc_id = f"{svc_id}-svc"
                 labels.extend(

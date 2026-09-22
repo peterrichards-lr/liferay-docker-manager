@@ -2918,6 +2918,80 @@ fi
 
 rm -rf "cx-build"
 
+# LDM-#1918: a client-extension SERVICE, and what the generated compose says
+# about it.
+#
+# The suite has always deployed a `customElement` extension, which is NOT a
+# service -- `is_service` requires a Dockerfile in the zip -- so no compose
+# service was ever produced and nothing ever asserted on one. Seven working
+# behaviours were dropped in the stack.py -> composer.py refactor and shipped
+# broken for roughly 25 releases, until an external team reported that their
+# extension could not find Liferay.
+#
+# Every assertion below reads the generated docker-compose.yml. None needs a
+# boot: they are all compose-generation facts, which is exactly what was lost.
+echo ">> Verifying a client-extension SERVICE is generated correctly (LDM-#1918)..."
+CXSVC_NAME="synthetic-svc"
+CXSVC_OK=true
+rm -rf "cxsvc-build" "${CXSVC_NAME}.zip"
+mkdir -p "cxsvc-build/${CXSVC_NAME}"
+cat > "cxsvc-build/${CXSVC_NAME}/client-extension.yaml" <<CXSVCEOF
+${CXSVC_NAME}:
+    .serviceAddress: ${CXSVC_NAME}:8080
+    name: Synthetic CX Service
+    type: microservice
+CXSVCEOF
+# The Dockerfile is what makes it a service rather than a static extension.
+printf 'FROM alpine\nCMD ["sleep", "3600"]\n' > "cxsvc-build/${CXSVC_NAME}/Dockerfile"
+"$VENV_PYTHON" -c "
+import shutil, sys
+shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])
+" "${CXSVC_NAME}" "cxsvc-build/${CXSVC_NAME}"
+
+log_and_run "Deploying CX service" "$LDM_CMD" -y deploy . "${CXSVC_NAME}.zip"
+"$LDM_CMD" -y run . --no-up --no-seed >/dev/null 2>&1 || true
+
+if ! "$VENV_PYTHON" - "$CXSVC_NAME" <<'CXSVC_PY'
+import sys, pathlib, yaml
+name = sys.argv[1]
+compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text())
+services = compose.get("services") or {}
+svc = next((v for k, v in services.items() if k.endswith(name)), None)
+if svc is None:
+    print(f"ERROR: no compose service for the '{name}' client extension.")
+    print("  services present: " + ", ".join(services))
+    sys.exit(1)
+
+fails = []
+vols = svc.get("volumes") or []
+if not [v for v in vols if ":/opt/liferay/routes" in v]:
+    fails.append("routes not mounted at /opt/liferay/routes, where Liferay writes "
+                 f"its config trees: {vols}")
+if [v for v in vols if "/workspace/routes" in v]:
+    fails.append(f"routes mounted at /workspace/routes, which nothing writes to: {vols}")
+
+env = svc.get("environment") or []
+if not [e for e in env if e.startswith("LIFERAY_LXC_DXP_MAIN_DOMAIN=")]:
+    fails.append("LIFERAY_LXC_DXP_MAIN_DOMAIN absent -- lxcConfig.dxpMainDomain() "
+                 f"cannot resolve Liferay: {env}")
+
+if not svc.get("extra_hosts"):
+    fails.append("extra_hosts absent -- the extension cannot resolve the project host")
+
+for f in fails:
+    print(f"ERROR: {f}")
+sys.exit(1 if fails else 0)
+CXSVC_PY
+then
+    echo "❌ ERROR: client-extension service definition is wrong (LDM-#1918)." | tee -a "$RESULTS_FILE_TMP"
+    CXSVC_OK=false
+fi
+
+if [ "$CXSVC_OK" = true ]; then
+    report_ok "✅ Client-extension service: routes shared at /opt/liferay/routes, DXP domain supplied, host resolvable (LDM-#1918)."
+fi
+rm -rf "cxsvc-build" "${CXSVC_NAME}.zip"
+
 echo ">> Verifying snapshot manifest lists the extensions it claims (LDM-#1573)..."
 # LDM-#1573: has_cx and cx_list scanned DIFFERENT directory sets -- has_cx
 # looked in cx/, deploy/ and the build dir, cx_list only in the build dir. A
