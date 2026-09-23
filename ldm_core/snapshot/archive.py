@@ -123,6 +123,18 @@ class ArchiveSnapshotService:
                 "configs",
                 "modules",
                 "client-extensions",
+                # LDM-#1941: `marketplace` joined this list late. It was not a
+                # bind mount until LDM-#1918 restored it (`ac1210db`), so
+                # nothing containerised had ever written there and there was
+                # never anything the host user could not read back. Once
+                # mounted, Liferay creates `osgi/marketplace/override` as uid
+                # 1000 and the archive below -- which adds the whole `osgi`
+                # tree as one entry -- failed that entry outright, so
+                # `ldm snapshot` produced no backup at all on native Linux.
+                # Pre-creating the directory (the LDM-#1134 remedy for `logs`
+                # and `routes`) does not help: `override` is created by the
+                # container at runtime, not by Docker at mount time.
+                "marketplace",
             ]:
                 if paths.get(d) and paths[d].exists():
                     reclaim_volume_permissions(
