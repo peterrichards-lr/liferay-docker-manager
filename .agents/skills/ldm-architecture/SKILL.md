@@ -239,6 +239,39 @@ at an empty path.
 `ext["env"]` (`ldm_core/workspace/metadata.py:135`), so an extension declaring
 a non-standard path is honoured; the constants are only a fallback.
 
+### When the tree is actually populated
+
+The mounts are only half the mechanism. The contents arrive on Liferay's
+schedule, not at container start, and nothing in LDM can hurry them:
+
+1. Liferay boots and becomes healthy. Its image `HEALTHCHECK` curls
+   `/c/portal/layout`, so reaching "healthy" is itself a servlet request.
+2. `default/dxp` is populated with what Liferay publishes about itself.
+3. **A client extension must be deployed before it has an OAuth profile at
+   all.** There is nothing to publish for an extension Liferay has not seen.
+4. The OAuth application — and therefore the credentials written into
+   `default/<ext-id>` — is **not created until the Liferay servlet is first
+   triggered.** On the deployment investigated in LDM-#1911 the files were
+   stamped roughly two minutes after the extension deployed.
+
+So `depends_on: service_healthy` guarantees Liferay is *serving* before an
+extension starts. It does **not** guarantee that extension's credentials
+already exist — they cannot, if the trigger has not happened yet.
+
+**Why the design still works: a bind mount is live.** Files the host gains
+after the container started appear inside it immediately. Measured, because
+the whole approach rests on it. What is therefore NOT guaranteed is that an
+extension which reads its config once at startup will see credentials written
+later; whether the `@liferay/client-extension` SDK re-reads is outside this
+repository, and is the open half of LDM-#1915.
+
+**Docker must actually share the host path.** If the project lives outside the
+paths Docker Desktop shares, Docker silently creates a VM-local directory
+instead of binding the host one — the mount looks correct, the container sees
+an empty directory, and nothing ever appears in it. This was mistaken for
+"bind mounts are not live" while writing LDM-#1928; the first probe simply used
+an unshared path.
+
 ### The rules
 
 - **Never mount over `/opt/liferay/routes` in an extension container.** That
