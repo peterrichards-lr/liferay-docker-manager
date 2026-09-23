@@ -577,6 +577,21 @@ ldm down [project] [service]      # Remove containers (and optionally -v volumes
 ldm rm [project]                  # Alias for 'down'
 ```
 
+`start` confirms what it did and closes with a next-step hint, rather than succeeding silently (LDM-#1937):
+
+```text
+✅  Project 'my-project' started.
+💡  Next step: Run 'ldm status' to view environment status, or 'ldm logs -f' to tail the logs.
+```
+
+`stop` points back at `start`, because `stop` stops containers without removing them -- they still exist, so `ldm start` is a plain `docker compose start` rather than a full pipeline run:
+
+```text
+💡  Next step: Run 'ldm start' to start the container again, or 'ldm status' to view environment status.
+```
+
+That hint previously named `ldm run`. `ldm run` remains the correct command when containers were *removed* rather than stopped (the `Not Created` state described above), but having just stopped them, `ldm stop` knows that is not the state the project is in.
+
 ### Options
 
 - **`--clean-state`** (Only for `start` and `run`): Explicitly wipes the contents of the OSGi state volume before starting the container to remove any stale bundle locks. ![Added in v2.15.22](https://img.shields.io/badge/Added%20in-v2.15.22-blue)
@@ -768,4 +783,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-21* | *Last Reviewed: 2026-09-21*
+*Last Updated: 2026-09-23* | *Last Reviewed: 2026-09-23*

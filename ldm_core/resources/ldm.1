@@ -35,7 +35,7 @@ Initialize and start a project stack. Automatically detects context if run insid
 Start project containers gracefully. Use \fB--clean-state\fR to wipe the OSGi state volume contents before starting. Use \fB--fix-permissions\fR to reclaim root ownership on bind-mounted directories for macOS/Windows external drives. Refuses with a pointer to \fBldm run\fR if the project's containers were removed (e.g. via \fBdocker rm\fR) rather than merely stopped, since \fBstart\fR can only boot existing containers, not recreate them.
 .TP
 \fBstop\fR [\fIPROJECT\fR] [\fISERVICE\fR]
-Stop project containers gracefully. Use \fB--all\fR to stop all projects.
+Stop project containers gracefully. Use \fB--all\fR to stop all projects. The containers are stopped, not removed, so the closing hint names \fBldm start\fR -- the cheapest command that boots them again.
 .TP
 \fBrestart\fR [\fIPROJECT\fR] [\fISERVICE\fR]
 Restart containers. Supports \fB--all\fR.
@@ -360,4 +360,4 @@ Peter Richards <peter.richards@liferay.com>
 
 .SH SEE ALSO
 .B docker(1), docker-compose(1)
-.\" Last Updated: 2026-09-21 | Last Reviewed: 2026-09-21
+.\" Last Updated: 2026-09-23 | Last Reviewed: 2026-09-23
