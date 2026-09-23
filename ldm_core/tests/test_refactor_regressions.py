@@ -53,21 +53,79 @@ def _services(ext_overrides=None, env=None, meta=None):
 
 
 class TestTheRoutesVolumeIsShared(unittest.TestCase):
-    """Liferay WRITES its config trees to /opt/liferay/routes -- measured, with
-    a deployed oAuthApplicationHeadlessServer extension. A client extension
-    reads them from the same host directory. Mount either side anywhere else
-    and the channel silently carries nothing."""
+    """Both containers see the same host directory -- at the path each expects.
 
-    def test_the_extension_mounts_the_path_liferay_writes_to(self):
-        got = _services()["volumes"]
-        self.assertIn("/tmp/p/routes:/opt/liferay/routes", got)
+    Liferay WRITES its config trees to /opt/liferay/routes (measured, with a
+    deployed oAuthApplicationHeadlessServer extension). A client extension
+    reads them from the same host tree, but mounted at
+    /etc/liferay/lxc/dxp-metadata, which is what its own image declares.
+
+    This class originally asserted the extension mounted Liferay's path. That
+    was wrong and it shipped to master -- see
+    TestTheMetadataMountDoesNotShadowTheApplication. What is shared is the host
+    DIRECTORY, not the container path.
+    """
+
+    def test_the_extension_reads_the_tree_liferay_writes(self):
+        """Same host directory, so what Liferay writes is what the extension
+        reads -- which is the whole point of the shared volume."""
+        cx = next(v for v in _services()["volumes"] if "dxp-metadata" in v)
+        liferay = next(
+            v for v in _liferay_service()["volumes"] if ":/opt/liferay/routes" in v
+        )
+        self.assertTrue(
+            cx.split(":")[0].startswith(liferay.split(":")[0]),
+            f"the extension reads a different host tree from the one Liferay "
+            f"writes: {cx} vs {liferay}",
+        )
 
     def test_it_is_not_mounted_at_workspace_routes(self):
-        """The regression: /workspace/routes is a path Liferay never touches,
-        so the tree was always empty (LDM-#1911)."""
+        """The original regression: /workspace/routes is a path nothing writes
+        to, so the tree was always empty (LDM-#1911)."""
         self.assertFalse(
             [v for v in _services()["volumes"] if "/workspace/routes" in v]
         )
+
+
+class TestTheMetadataMountDoesNotShadowTheApplication(unittest.TestCase):
+    """LDM-#1911: the two containers do NOT share a filesystem convention.
+
+    `/opt/liferay/routes` is Liferay's config tree -- it writes there, measured.
+    But a client extension built on `liferay/node-runner` does
+    `COPY . /opt/liferay`, so for IT that path is the application's own route
+    handlers. A live deployment had 16 `.cjs` files there.
+
+    LDM-#1918 restored the pre-refactor mount on both sides without asking
+    whether it had ever been right for this one. Mounting over it shadows the
+    app and the container does not start -- a silent no-op became a broken
+    container. Caught by the consumer, before release.
+    """
+
+    def test_the_extension_does_not_mount_over_opt_liferay_routes(self):
+        for v in _services()["volumes"]:
+            self.assertFalse(
+                v.endswith(":/opt/liferay/routes") or ":/opt/liferay/routes:" in v,
+                f"this shadows the extension's own application code: {v}",
+            )
+
+    def test_the_metadata_lands_where_the_image_declares(self):
+        """The image sets LIFERAY_ROUTES_DXP=/etc/liferay/lxc/dxp-metadata, so
+        the consumer needs no change to find it."""
+        got = _services()["volumes"]
+        self.assertTrue(
+            [v for v in got if ":/etc/liferay/lxc/dxp-metadata" in v],
+            f"the extension cannot resolve its config trees: {got}",
+        )
+
+    def test_it_is_the_dxp_subtree_not_the_whole_routes_directory(self):
+        """Mounting all of `routes/` would expose other environments' trees."""
+        mount = next(v for v in _services()["volumes"] if "dxp-metadata" in v)
+        self.assertIn("routes/default/dxp:", mount)
+
+    def test_liferay_still_mounts_the_tree_it_writes_to(self):
+        """The other half must not regress while fixing this one."""
+        got = _liferay_service()["volumes"]
+        self.assertTrue([v for v in got if ":/opt/liferay/routes" in v], got)
 
 
 class TestTheExtensionIsToldWhereLiferayIs(unittest.TestCase):

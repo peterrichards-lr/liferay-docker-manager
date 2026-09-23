@@ -2964,9 +2964,13 @@ if svc is None:
 
 fails = []
 vols = svc.get("volumes") or []
-if not [v for v in vols if ":/opt/liferay/routes" in v]:
-    fails.append("routes not mounted at /opt/liferay/routes, where Liferay writes "
-                 f"its config trees: {vols}")
+if not [v for v in vols if ":/etc/liferay/lxc/dxp-metadata" in v]:
+    fails.append("DXP metadata not mounted at /etc/liferay/lxc/dxp-metadata, "
+                 "the path the extension's image declares: %s" % vols)
+if [v for v in vols if v.endswith(":/opt/liferay/routes") or ":/opt/liferay/routes:" in v]:
+    fails.append("mounted over /opt/liferay/routes, which for a node-runner "
+                 "extension is the application's own code -- the container "
+                 "will not start (LDM-#1911): %s" % vols)
 if [v for v in vols if "/workspace/routes" in v]:
     fails.append(f"routes mounted at /workspace/routes, which nothing writes to: {vols}")
 
@@ -3008,7 +3012,7 @@ then
 fi
 
 if [ "$CXSVC_OK" = true ]; then
-    report_ok "✅ Client-extension service: routes shared at /opt/liferay/routes, DXP domain supplied, host resolvable (LDM-#1918)."
+    report_ok "✅ Client-extension service: DXP metadata at /etc/liferay/lxc/dxp-metadata (not over the app), domain supplied, host resolvable (LDM-#1911/#1918)."
 fi
 rm -rf "cxsvc-build" "${CXSVC_NAME}.zip"
 
