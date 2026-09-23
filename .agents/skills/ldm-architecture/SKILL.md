@@ -200,6 +200,70 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 - **Data (LCP)**: LDM automates the retrieval and restoration of Cloud backups (`database.gz` and `volume.tgz`).
 - **Orchestration**: LDM must dynamically flatten LCP's nested backup structures into standard LDM snapshots during hydration.
 
+## The Routes Tree (Shared Config Space)
+
+`<project>/routes` is how Liferay publishes configuration to everything else
+in the project. It is a **shared space**, not a Liferay-private directory, and
+it is written at runtime by Liferay itself.
+
+This mechanism was not recorded anywhere before LDM-#1928, which is exactly how
+it came to be broken three separate times. Any change to a routes mount must
+be checked against this section.
+
+| Container | Host source | Container target |
+|---|---|---|
+| Liferay | `routes/` (whole tree) | `/opt/liferay/routes` |
+| Client extension | `routes/default/dxp` | `LIFERAY_ROUTES_DXP` (default `/etc/liferay/lxc/dxp-metadata`) |
+| Client extension | `routes/default/<ext-id>` | `LIFERAY_ROUTES_CLIENT_EXTENSION` (default `/etc/liferay/lxc/ext-init-metadata`) |
+| Custom service | `routes/default/dxp` | `/etc/liferay/lxc/dxp-metadata` |
+
+### Two trees, not one
+
+A real client extension declares **both** and reads **both**:
+
+```json
+"LIFERAY_ROUTES_CLIENT_EXTENSION": "/etc/liferay/lxc/ext-init-metadata",
+"LIFERAY_ROUTES_DXP":              "/etc/liferay/lxc/dxp-metadata"
+"config.node.config.trees": ["${LIFERAY_ROUTES_CLIENT_EXTENSION}",
+                             "${LIFERAY_ROUTES_DXP}"]
+```
+
+`default/dxp` is what Liferay publishes about **itself** -- the main domain,
+which `lxcConfig.dxpMainDomain()` resolves. `default/<ext-id>` is what Liferay
+publishes about **that extension**, including the OAuth2 credentials generated
+when it registers the extension's application. LDM forwarded the second
+variable out of LCP.json and mounted nothing at it, so extensions were pointed
+at an empty path.
+
+**Derive the target, do not assume it.** LCP.json reaches the composer as
+`ext["env"]` (`ldm_core/workspace/metadata.py:135`), so an extension declaring
+a non-standard path is honoured; the constants are only a fallback.
+
+### The rules
+
+- **Never mount over `/opt/liferay/routes` in an extension container.** That
+  path is correct for Liferay, which writes its trees there, but an extension
+  built on `liferay/node-runner` does `COPY . /opt/liferay`, so it is the
+  application's own route handlers. Mounting over it shadows the app and the
+  container will not start (LDM-#1911; 16 `.cjs` handlers sat there on the
+  deployment that reported it). The two containers do not share a filesystem
+  convention -- every regression here came from assuming they did.
+- **Everything that mounts a subtree waits for Liferay.**
+  `depends_on: {liferay: {condition: service_healthy}}`. The tree is written
+  at boot, so a container that starts first reads an empty directory.
+  `service_healthy` resolves against the `liferay/dxp` image's **own**
+  `HEALTHCHECK`, which curls `/c/portal/layout` -- it means "serving pages",
+  not "process started". `_build_liferay_service` declares no compose-level
+  healthcheck, so this depends on the image providing one.
+- **Scaffold the host directory before mounting it.** Docker creates a missing
+  bind-mount source itself, as an empty root-owned directory. Subtrees are
+  created from the generated compose (`_scaffold_routes_tree`) so a mount and
+  its directory cannot drift, using local `paths` and never the remote-mapped
+  `mount_paths`.
+- **A custom service is an arbitrary third-party image.** It gets the same
+  shared space, but everything LDM adds is additive: a volume, variable,
+  `extra_hosts` or `depends_on` the user declared always wins.
+
 ## Liferay Client Extension (CX) Standards
 
 When LDM generates, deploys, or reasons about Client Extensions:
@@ -216,4 +280,4 @@ When LDM generates, deploys, or reasons about Client Extensions:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-08* | *Last Reviewed: 2026-09-08*
+*Last Updated: 2026-09-23* | *Last Reviewed: 2026-09-23*

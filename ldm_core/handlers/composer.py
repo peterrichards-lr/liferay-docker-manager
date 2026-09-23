@@ -661,7 +661,12 @@ class ComposerService:
 
         if custom_containers:
             custom_services = self._build_custom_containers(
-                custom_containers, host_name, project_name, ssl_enabled, meta
+                custom_containers,
+                host_name,
+                project_name,
+                ssl_enabled,
+                meta,
+                mount_paths,
             )
             services.update(custom_services)
 
@@ -710,6 +715,13 @@ class ComposerService:
             "services": services,
             "networks": {"liferay-net": {"external": True}},
         }
+
+        # LDM-#1928 / LDM-#1917: every routes subtree this compose is about to
+        # mount must exist on the host first. Docker creates a missing
+        # bind-mount source itself, as an empty root-owned directory -- the
+        # same hazard the remote mapping above guards against, and precisely
+        # what `migrate_layout` scaffolded before it was accidentally unwired.
+        self._scaffold_routes_tree(services, paths, mount_paths)
 
         project_uuid = meta.get("uuid") if isinstance(meta, dict) else None
         self._inject_ldm_labels(services, project_name, project_uuid)
@@ -2117,6 +2129,20 @@ class ComposerService:
     #: client-extension image looks for it -- the image sets
     #: LIFERAY_ROUTES_DXP to exactly this. LDM-#1911.
     LXC_DXP_METADATA_MOUNT = "/etc/liferay/lxc/dxp-metadata"
+    # LDM-#1928: the extension's OWN init metadata -- where Liferay publishes
+    # per-extension config, including the OAuth2 client credentials it
+    # generates when it registers the extension's application. Real extensions
+    # declare BOTH trees and read BOTH:
+    #
+    #     "LIFERAY_ROUTES_CLIENT_EXTENSION": "/etc/liferay/lxc/ext-init-metadata",
+    #     "LIFERAY_ROUTES_DXP":              "/etc/liferay/lxc/dxp-metadata"
+    #     "config.node.config.trees": ["${LIFERAY_ROUTES_CLIENT_EXTENSION}",
+    #                                  "${LIFERAY_ROUTES_DXP}"]
+    #
+    # LDM forwarded the variable from LCP.json and mounted nothing at it, so
+    # every extension was told to read a path that did not exist. Only the DXP
+    # half was ever mounted.
+    LXC_EXT_INIT_METADATA_MOUNT = "/etc/liferay/lxc/ext-init-metadata"
 
     def _apply_ext_runtime_options(self, service, ext, svc_id, ms_port, scale):
         """Healthcheck, replicas and memory limit for one extension service.
@@ -2146,6 +2172,94 @@ class ComposerService:
 
         if deploy:
             service["deploy"] = deploy
+
+    @staticmethod
+    def _volume_target(spec):
+        """The container-side path of a compose volume entry.
+
+        LDM-#1928: a short-form string is `source:target[:opts]`, and on Linux
+        LDM appends an SELinux `:z`, so the target is the SECOND field and not
+        simply whatever follows the last colon. Long-form entries are dicts.
+        """
+        if isinstance(spec, dict):
+            return spec.get("target")
+        parts = str(spec).split(":")
+        return parts[1] if len(parts) > 1 else None
+
+    @staticmethod
+    def routes_root(mount_paths):
+        """The host-side routes tree -- the shared config space.
+
+        LDM-#1928: one expression, because it was written out byte-identically
+        at each mount site and the two must never drift. Liferay mounts the
+        whole tree; every other container gets a subtree of it.
+        """
+        return mount_paths.get("routes", mount_paths["root"] / "routes")
+
+    def _scaffold_routes_tree(self, services, paths, mount_paths):
+        """Create every routes subtree the generated compose is about to mount.
+
+        Derived from the services that were just built, rather than from a
+        second list of paths kept in step by hand -- a mount and its host
+        directory cannot drift if one is read off the other.
+
+        LDM-#1928 / LDM-#1917. Docker creates a missing bind-mount source
+        itself, as an empty root-owned directory -- the same hazard the remote
+        mapping above already guards against, and the reason `migrate_layout`
+        scaffolded `routes/default/dxp` before it was accidentally unwired.
+
+        Uses `paths` (local), never `mount_paths` (remote-mapped): creating a
+        remote target's directory on this machine would be worse than not
+        creating it. When the two differ the mount is remote and this is
+        skipped -- tracked separately, since fixing it needs to happen over the
+        connection, not here.
+        """
+        if not paths or mount_paths.get("root") != paths.get("root"):
+            return
+        from ldm_core.utils import safe_mkdir
+
+        prefix = f"{self.routes_root(mount_paths).as_posix()}/"
+        for service in services.values():
+            for spec in service.get("volumes") or []:
+                source = (
+                    spec.get("source")
+                    if isinstance(spec, dict)
+                    else str(spec).split(":")[0]
+                )
+                if source and str(source).startswith(prefix):
+                    safe_mkdir(Path(str(source)), parents=True, exist_ok=True)
+
+    def _extension_routes_mounts(self, ext, ext_id, mount_paths):
+        """The config-tree subtrees a client extension can see.
+
+        LDM-#1928. Two trees, not one:
+
+        * `default/dxp` -- what Liferay publishes about ITSELF (the main
+          domain, which `lxcConfig.dxpMainDomain()` resolves).
+        * `default/<ext-id>` -- what Liferay publishes about THIS extension,
+          including the OAuth2 credentials generated when it registers the
+          extension's application. Never mounted before, so an extension was
+          handed `LIFERAY_ROUTES_CLIENT_EXTENSION` out of its own LCP.json and
+          pointed at a path containing nothing.
+
+        The container-side targets are DERIVED from the extension's own
+        declaration rather than assumed. LCP.json reaches us as `ext["env"]`
+        (`ldm_core/workspace/metadata.py:135`), so when an extension declares a
+        non-standard path we honour it; the constants are only the fallback.
+        This is what LDM-#1923 asked for and judged infeasible -- it is
+        infeasible from the built IMAGE, which is not the only source.
+        """
+        ext_env = ext.get("env") or {}
+        routes = self.routes_root(mount_paths)
+        dxp_target = ext_env.get("LIFERAY_ROUTES_DXP") or self.LXC_DXP_METADATA_MOUNT
+        ext_target = (
+            ext_env.get("LIFERAY_ROUTES_CLIENT_EXTENSION")
+            or self.LXC_EXT_INIT_METADATA_MOUNT
+        )
+        mounts = [f"{(routes / 'default' / 'dxp').as_posix()}:{dxp_target}"]
+        if ext_id:
+            mounts.append(f"{(routes / 'default' / ext_id).as_posix()}:{ext_target}")
+        return mounts
 
     def _build_extensions_services(  # noqa: C901, PLR0912
         self, paths, meta, host_name, project_name, ssl_enabled, mount_paths=None
@@ -2206,25 +2320,27 @@ class ComposerService:
                     # name back to the Docker host, which is how it reaches
                     # Liferay when the project is served under a custom name.
                     "extra_hosts": [f"{host_name}:host-gateway"],
-                    "volumes": [
-                        # LDM-#1911: the DXP metadata subtree ONLY, at the path
-                        # the extension's own image declares
-                        # (LIFERAY_ROUTES_DXP=/etc/liferay/lxc/dxp-metadata).
-                        #
-                        # NOT /opt/liferay/routes. That is correct for the
-                        # Liferay container -- it writes its config trees there
-                        # -- but a client extension built on liferay/node-runner
-                        # does `COPY . /opt/liferay`, so /opt/liferay/routes is
-                        # the APPLICATION'S OWN route handlers. Mounting over it
-                        # shadows the app and the container will not start.
-                        # Measured on a live deployment: 16 .cjs handlers sat
-                        # there. The two containers do not share a filesystem
-                        # convention, and LDM-#1918 restored the pre-refactor
-                        # path without asking whether it had ever been right for
-                        # this side.
-                        f"{(mount_paths.get('routes', mount_paths['root'] / 'routes') / 'default' / 'dxp').as_posix()}"
-                        f":{self.LXC_DXP_METADATA_MOUNT}",
-                    ],
+                    # LDM-#1911 / LDM-#1928: the two config-tree subtrees,
+                    # each at the path the extension itself declares.
+                    #
+                    # NOT /opt/liferay/routes. That is correct for the Liferay
+                    # container -- it writes its config trees there -- but a
+                    # client extension built on liferay/node-runner does
+                    # `COPY . /opt/liferay`, so /opt/liferay/routes is the
+                    # APPLICATION'S OWN route handlers. Mounting over it
+                    # shadows the app and the container will not start.
+                    # Measured on a live deployment: 16 .cjs handlers sat there.
+                    "volumes": self._extension_routes_mounts(ext, ext_id, mount_paths),
+                    # LDM-#1928: the tree is written by Liferay at boot, so an
+                    # extension that starts first reads an empty directory.
+                    # Nothing gated these on Liferay -- the only depends_on in
+                    # this file pointed the other way (liferay -> db) or was
+                    # the tunnel's. `service_healthy` resolves against the
+                    # liferay/dxp image's OWN HEALTHCHECK, which curls
+                    # /c/portal/layout, so it means "serving pages", not merely
+                    # "process started". Measured: compose honours an
+                    # image-level healthcheck for this condition.
+                    "depends_on": {"liferay": {"condition": "service_healthy"}},
                 }
 
                 # LDM-#1918: every client-extension container used to be told
@@ -2355,8 +2471,53 @@ class ComposerService:
             ],
         }
 
+    def _apply_shared_project_context(self, service, volumes, host_name, mount_paths):
+        """Give a custom service the same shared space as everything else.
+
+        LDM-#1928: custom services are part of the project, so they get the
+        routes subtree, the LXC domain variables, a route back to the host and
+        the same wait for Liferay that client extensions get.
+
+        The user's own declarations win in every one of the four. A custom
+        container is an arbitrary third-party image: anything LDM adds must be
+        additive and must never replace something configured deliberately.
+        Mounting over an image's own files is LDM-#1911, and doing it to an
+        image LDM knows nothing about would be worse.
+        """
+        if mount_paths:
+            declared = {self._volume_target(v) for v in volumes}
+            if self.LXC_DXP_METADATA_MOUNT not in declared:
+                routes = self.routes_root(mount_paths)
+                volumes.append(
+                    f"{(routes / 'default' / 'dxp').as_posix()}"
+                    f":{self.LXC_DXP_METADATA_MOUNT}"
+                )
+        if volumes:
+            service["volumes"] = volumes
+
+        existing_env = list(service.get("environment") or [])
+        declared_env = {str(entry).split("=", 1)[0] for entry in existing_env}
+        lxc_env = [
+            f"{key}={host_name}"
+            for key in ("LIFERAY_LXC_DXP_MAIN_DOMAIN", "LIFERAY_LXC_DXP_DOMAINS")
+            if key not in declared_env
+        ]
+        if lxc_env:
+            service["environment"] = lxc_env + existing_env
+
+        service.setdefault("extra_hosts", [f"{host_name}:host-gateway"])
+        # Only when the user has not expressed their own ordering -- a custom
+        # service may deliberately not depend on Liferay at all.
+        service.setdefault("depends_on", {"liferay": {"condition": "service_healthy"}})
+
     def _build_custom_containers(
-        self, custom_containers, host_name, project_name, ssl_enabled, meta
+        self,
+        custom_containers,
+        host_name,
+        project_name,
+        ssl_enabled,
+        meta,
+        mount_paths=None,
     ):
         from typing import Any
 
@@ -2404,9 +2565,8 @@ class ComposerService:
             if ports:
                 service["ports"] = ports
 
-            volumes = container.get("volumes", [])
-            if volumes:
-                service["volumes"] = volumes
+            volumes = list(container.get("volumes", []) or [])
+            self._apply_shared_project_context(service, volumes, host_name, mount_paths)
 
             subdomain = container.get("subdomain")
             if subdomain:

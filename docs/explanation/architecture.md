@@ -135,6 +135,7 @@ graph TD
         CX_Build[client-extensions/extension-id/]
         OSGi_CX[osgi/client-extensions/extension-id.zip]
         Metadata[routes/default/extension-id/]
+        DxpMeta[routes/default/dxp/]
     end
 
     subgraph LDM_Logic [ldm scan_client_extensions]
@@ -168,7 +169,23 @@ graph TD
 
     Run -- "Writes Endpoint info" --> Metadata
     Metadata -- "Detects URL" --> Discovery
+    Discovery -- "Publishes OAuth2 credentials" --> Metadata
+    OSGi -- "Publishes DXP main domain" --> DxpMeta
+    Metadata -- "LIFERAY_ROUTES_CLIENT_EXTENSION" --> Run
+    DxpMeta -- "LIFERAY_ROUTES_DXP" --> Run
 ```
+
+The routes tree is **bidirectional and shared**. The extension writes its own
+endpoint information so Liferay can discover its URL; Liferay writes back into
+the same tree -- the DXP main domain into `default/dxp`, and per-extension
+config including generated OAuth2 credentials into `default/<extension-id>`.
+An extension reads both, via `LIFERAY_ROUTES_DXP` and
+`LIFERAY_ROUTES_CLIENT_EXTENSION`, and custom services share the DXP half.
+
+Because Liferay writes these at boot, everything that mounts a subtree waits
+for it (`depends_on: liferay, condition: service_healthy`). See *The Routes
+Tree* in `.agents/skills/ldm-architecture/SKILL.md` for the full contract and
+the rule against mounting over `/opt/liferay/routes` in an extension container.
 
 ---
 
@@ -360,4 +377,4 @@ sequenceDiagram
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-17*
+*Last Updated: 2026-09-23* | *Last Reviewed: 2026-09-23*
