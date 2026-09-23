@@ -100,6 +100,61 @@ PIP_INSTALL_TIMEOUT = 600  # 10 min -- plugin/completion dependency installs
 # --- Release Announcements Mapping ---
 # Maps major.minor or exact version keys to lists of (cmd, description) tuples.
 RELEASE_ANNOUNCEMENTS = {
+    "2.26": [
+        (
+            "Client extensions receive their own config tree",
+            "A client extension declares TWO config trees in its LCP.json and "
+            "reads both -- LIFERAY_ROUTES_DXP and "
+            "LIFERAY_ROUTES_CLIENT_EXTENSION. LDM forwarded the second "
+            "variable straight out of your LCP.json and mounted nothing at "
+            "it, so every extension was pointed at a path containing nothing. "
+            "That tree is where Liferay publishes per-extension config, "
+            "including the OAuth2 credentials it generates when it registers "
+            "your extension's application",
+        ),
+        (
+            "Custom services join the shared config space",
+            "A custom_containers service now receives the routes subtree, the "
+            "LIFERAY_LXC_DXP domain variables and a route back to the Docker "
+            "host, the same as a client extension. It previously received "
+            "none of them, so it could not read anything Liferay published "
+            "and could not resolve the project host. Anything you declared "
+            "yourself always wins -- a volume, variable or depends_on you set "
+            "is never replaced",
+        ),
+        (
+            "Extensions wait for Liferay to be serving",
+            "BEHAVIOUR CHANGE: client-extension and custom-service containers "
+            "now start only once Liferay is healthy, resolved against the "
+            "liferay/dxp image's own healthcheck on /c/portal/layout -- so "
+            "'serving pages', not merely 'process started'. They previously "
+            "started concurrently with a boot that takes minutes and read an "
+            "empty config tree. Your extension container will appear later "
+            "than before; deploying its artifact is unchanged and still "
+            "happens immediately",
+        ),
+        (
+            "A Docker host that runs out of disk says so",
+            "A failure caused by a full Docker host now names the remedy "
+            "('ldm system prune --images') instead of surfacing the raw "
+            "error, which read as a corrupt download or a broken image",
+        ),
+        (
+            "Credential-shaped variables stay out of containers",
+            "Host environment variables whose names look like secrets are "
+            "withheld from containers on every route, not just some. Where a "
+            "variable is genuinely needed, an explicit '!' negation "
+            "re-admits it and the decision is announced rather than silent",
+        ),
+        (
+            "The ROI claim is gone",
+            "'LDM first-boot seeding saved you 14m 0s of manual work' was a "
+            "hardcoded constant, printed identically whether seeding took "
+            "twenty seconds from a warm cache or ten minutes from a fresh "
+            "download. It was never measured, so it has been removed along "
+            "with 'ldm system roi' rather than reworded",
+        ),
+    ],
     "2.25": [
         (
             "ldm config revert [project]",
