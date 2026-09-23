@@ -239,6 +239,43 @@ at an empty path.
 `ext["env"]` (`ldm_core/workspace/metadata.py:135`), so an extension declaring
 a non-standard path is honoured; the constants are only a fallback.
 
+### Deploying an extension is TWO things, with opposite timing
+
+They are routinely conflated, and gating the wrong one breaks the chain:
+
+| | What it is | When |
+|---|---|---|
+| **The zip into Liferay** | the artifact placed in `osgi/client-extensions/` | **immediately** -- before Liferay is running or ready |
+| **The extension's container** | the compose service built from the extension | **only once Liferay is healthy** |
+
+The zip is a file drop into a bind-mounted directory. `cmd_deploy`
+(`ldm_core/runtime/orchestration.py:1014`) resolves the project path and
+places files; it has **no running-Liferay precondition**, and must not gain
+one. Liferay picks the artifact up when it next scans.
+
+That ordering is load-bearing rather than incidental: the zip is what causes
+Liferay to register the extension and create its OAuth profile at all. Delay
+the zip until Liferay is ready and the whole chain starts later; gate it on
+Liferay being ready and a cold start can deadlock, because the thing being
+waited for is downstream of the thing being withheld.
+
+`depends_on: {liferay: {condition: service_healthy}}` therefore belongs on the
+**container only**, which is where LDM-#1928 put it.
+
+The full chain:
+
+```text
+zip deployed (before or during boot)
+  -> Liferay scans and registers the extension
+  -> servlet triggered
+  -> OAuth profile created
+  -> credentials written to routes/default/<ext-id>
+  -> visible inside the running container (the bind mount is live)
+```
+
+The container waiting on `service_healthy` sits at the END of that chain. It
+starts once Liferay is serving and picks up credentials as they appear.
+
 ### When the tree is actually populated
 
 The mounts are only half the mechanism. The contents arrive on Liferay's
