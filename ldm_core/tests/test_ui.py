@@ -1,3 +1,5 @@
+import io
+import sys
 import unittest
 import unittest.mock
 
@@ -96,12 +98,12 @@ class TestUI(unittest.TestCase):
         self.assertIn("Continue?", called_prompt)
 
     def test_ask_non_interactive(self):
-        UI.NON_INTERACTIVE = True
-        try:
-            res = UI.ask("Continue?", default="Y")
-            self.assertEqual(res, "Y")
-        finally:
-            UI.NON_INTERACTIVE = False
+        # LDM-#1905: a hand-written try/finally around a flag is precisely what
+        # `UI.patch` exists to replace. `non_interactive` was as unreachable as
+        # `quiet_mode` -- two of the four parameters, in the function the issue
+        # flagged for one.
+        with UI.patch(non_interactive=True):
+            self.assertEqual("Y", UI.ask("Continue?", default="Y"))
 
     @unittest.mock.patch("ldm_core.ui.sys.platform", "win32")
     @unittest.mock.patch("builtins.input", side_effect=KeyboardInterrupt)
@@ -227,3 +229,52 @@ class TestUI(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestUIPatchScopesEveryFlagItAccepts(unittest.TestCase):
+    """`UI.patch` saves and restores four flags; two of them could not be set.
+
+    LDM-#1905: `quiet_mode` and `non_interactive` were parameters no caller
+    reached. The save/restore for both was already unconditional, so the
+    function was paying the cost of isolating values it could never change.
+
+    Asserted on bytes written, never on source text.
+    """
+
+    def _emit(self, fn, *args):
+        buf = io.StringIO()
+        with unittest.mock.patch.object(sys, "stdout", buf):
+            fn(*args)
+        return buf.getvalue()
+
+    def test_quiet_mode_suppresses_the_gated_tier(self):
+        UI.QUIET_MODE = False
+        with UI.patch(quiet_mode=True):
+            self.assertEqual("", self._emit(UI.hint, "h"))
+            self.assertEqual("", self._emit(UI.info, "i"))
+            # Not gated by QUIET_MODE -- pins that the flag suppressed a tier,
+            # not output in general.
+            self.assertNotEqual("", self._emit(UI.success, "s"))
+
+    def test_the_flag_is_restored_afterwards(self):
+        UI.QUIET_MODE = False
+        with UI.patch(quiet_mode=True):
+            pass
+        self.assertFalse(UI.QUIET_MODE)
+        self.assertNotEqual("", self._emit(UI.hint, "h"))
+
+    def test_it_can_also_un_quiet(self):
+        """The direction `cls.QUIET_MODE = True` unconditionally cannot satisfy."""
+        UI.QUIET_MODE = True
+        try:
+            with UI.patch(quiet_mode=False):
+                self.assertNotEqual("", self._emit(UI.hint, "h"))
+            self.assertTrue(UI.QUIET_MODE)
+        finally:
+            UI.QUIET_MODE = False
+
+    def test_non_interactive_is_scoped_too(self):
+        UI.NON_INTERACTIVE = False
+        with UI.patch(non_interactive=True):
+            self.assertEqual("Y", UI.ask("Continue?", default="Y"))
+        self.assertFalse(UI.NON_INTERACTIVE)

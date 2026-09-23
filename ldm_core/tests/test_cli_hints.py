@@ -20,9 +20,12 @@ class TestCLIHints(unittest.TestCase):
         self.assertIn("Next step: Run 'ldm status' for environment status.", output)
 
     def test_ui_hint_quiet_mode_suppression(self):
-        UI.QUIET_MODE = True
+        # LDM-#1905: `UI.patch(quiet_mode=...)` existed and no caller reached
+        # it, while this test set the global and never restored it -- it
+        # survived only on conftest's autouse reset. The context manager is
+        # what that reset was standing in for.
         captured_output = io.StringIO()
-        with patch.object(sys, "stdout", captured_output):
+        with patch.object(sys, "stdout", captured_output), UI.patch(quiet_mode=True):
             UI.hint("This hint should be suppressed.")
         output = captured_output.getvalue()
         self.assertEqual(output, "")

@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
+import ldm_core.utils
 from ldm_core.utils import (
     dict_to_yaml,
     get_json,
@@ -1473,8 +1474,33 @@ class TestFetchWithRetry(unittest.TestCase):
         result = get_json("https://api.github.com/releases")
 
         self.assertIsNone(result)
-        self.assertEqual(mock_get.call_count, 3)  # max_retries default is 3
+        self.assertEqual(mock_get.call_count, 3)  # _FETCH_MAX_RETRIES is 3
         self.assertEqual(mock_sleep.call_count, 2)
+
+    @patch("ldm_core.utils.requests.get")
+    @patch("ldm_core.utils.time.sleep")
+    def test_the_budget_is_read_consistently_by_the_loop_and_the_last_attempt(
+        self, mock_sleep, mock_get
+    ):
+        """LDM-#1905 promoted `max_retries` from a never-passed parameter to
+        `_FETCH_MAX_RETRIES`. That edit is behaviour-preserving, so this is not
+        a regression test -- nothing was broken and no honest neuter probe of
+        the *original* code exists. It guards the one way the change can rot:
+        the budget diverging between the loop bound and the last-attempt test.
+
+        The sleep count is what catches divergence. It is `budget - 1` only if
+        both sites read the same value; if the last-attempt test is hardcoded,
+        the function still makes N requests but falls out of the loop instead,
+        and the attempt count alone would not notice.
+        """
+        mock_get.side_effect = requests.exceptions.Timeout("Persistent timeout")
+
+        with patch.object(ldm_core.utils, "_FETCH_MAX_RETRIES", 5):
+            result = get_json("https://example.invalid/x")
+
+        self.assertIsNone(result)
+        self.assertEqual(5, mock_get.call_count)
+        self.assertEqual(4, mock_sleep.call_count)
 
     @patch("ldm_core.utils.requests.get")
     @patch("ldm_core.utils.time.sleep")
