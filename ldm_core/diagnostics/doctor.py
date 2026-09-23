@@ -98,6 +98,24 @@ class DoctorRunner:
             clean_arch = self.arch.lower().replace(" ", "-")
             clean_os = self.host_os.lower().replace(" ", "-").replace("+", "")
             clean_provider = self.provider.lower().replace(" ", "-")
+            # LDM-#1907/#1909: identity attributes the CLI cannot see for
+            # itself -- its parent shell's edition, and whether this is CI.
+            # Both land in the OS component so this slug and the canonical name
+            # sync_compatibility.py derives agree. Unset on an ordinary run, so
+            # the slug is byte-identical there and no existing row is renamed.
+            suffix = (
+                os.environ.get("LDM_SLUG_OS_SUFFIX", "")
+                .strip()
+                .lower()
+                .replace(" ", "-")
+            )
+            if suffix:
+                clean_os = f"{clean_os}-{suffix}"
+            if (
+                os.environ.get("LDM_RUN_CONTEXT", "").strip().lower() == "ci"
+                or os.environ.get("GITHUB_ACTIONS") == "true"
+            ):
+                clean_os = f"{clean_os}-ci"
             print(f"{clean_arch}-{clean_os}-{clean_provider}")
             return
 

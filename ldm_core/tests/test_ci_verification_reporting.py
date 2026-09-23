@@ -51,6 +51,8 @@ skip-if-absent machinery already lives.
 
 import fnmatch
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -122,14 +124,20 @@ OBSERVED_NON_LINUX_REPORT_FILENAMES = (
 )
 
 
-def _synthetic_report(directory, platform_line, env_label):
+def _synthetic_report(directory, platform_line, env_label, run_context="ci"):
     """A report shaped like the ones verify_e2e_refactor.sh --ci writes.
 
     Only the header fields sync_compatibility.py reads are reproduced, with the
-    real `Platform:` string and the `Env Label:` line LDM-#1614 added. Written
-    to a temporary directory: the committed reports under
-    references/verification-results/ are immutable evidence, and this must
-    neither read nor rewrite them.
+    real `Platform:` string, the `Env Label:` line LDM-#1614 added and the
+    `Run Context:` line LDM-#1909 added. Written to a temporary directory: the
+    committed reports under references/verification-results/ are immutable
+    evidence, and this must neither read nor rewrite them.
+
+    `run_context` defaults to "ci" because every report this module models is
+    produced by a CI arm, and `print_run_context_line`
+    (scripts/verify_e2e_refactor.sh:144) resolves an unset LDM_RUN_CONTEXT to
+    "ci" whenever GITHUB_ACTIONS is true. Omitting it made the fixture produce
+    a name no CI arm can emit, which is not a shape worth asserting against.
     """
     path = directory / "verify-raw-20260906-000000-pass.txt"
     path.write_text(
@@ -140,6 +148,7 @@ def _synthetic_report(directory, platform_line, env_label):
                 "Hostname:     runner",
                 f"Platform:     {platform_line}",
                 f"Env Label:    {env_label}",
+                f"Run Context:  {run_context}",
                 "Binary:       /usr/local/bin/ldm",
                 f"Version:      ldm {sync_compatibility.VERSION}",
                 f"Script Ver:   {sync_compatibility.VERSION}",
@@ -480,6 +489,135 @@ class TestEveryLinuxArmReachesTheCompatibilityMatrix(unittest.TestCase):
                 f"'{filename}' is a manually curated platform's report and "
                 f"matches {selectors!r}; this job must not publish it.",
             )
+
+        # The tuple above is real data from run 34063433007, which predates
+        # LDM-#1909 -- every one of those names lacks the `-ci-` marker the
+        # arms now emit. Asserting only against them would let the selector be
+        # narrowed past the filenames the workflow actually produces today, so
+        # derive those from the same observed `Platform:` lines and require
+        # them too.
+        with tempfile.TemporaryDirectory() as tmp:
+            for distro, platform_line in sorted(OBSERVED_PLATFORM_LINES.items()):
+                report = _synthetic_report(Path(tmp), platform_line, distro)
+                meta = sync_compatibility.get_report_metadata(report)
+                canonical = f"verify-{meta['internal_slug']}-{meta['status_slug']}.txt"
+                self.assertIn(
+                    "-ci-",
+                    canonical,
+                    f"The '{distro}' arm no longer marks its report as a CI "
+                    "run, so the publish step's cleanup cannot tell it apart "
+                    "from a workstation report (LDM-#1909).",
+                )
+                self.assertTrue(
+                    any(fnmatch.fnmatchcase(canonical, s) for s in selectors),
+                    f"The '{distro}' arm now publishes '{canonical}', which "
+                    f"matches none of {selectors!r}, so its pass would be "
+                    "downloaded and then never copied into the record.",
+                )
+
+
+class TestTheTransitionalCleanupSparesWorkstationReports(unittest.TestCase):
+    """LDM-#1909, the half a narrowed glob cannot cover.
+
+    Reports committed before the CI marker existed carry no provenance in
+    their filename, so the publish step falls back to reading the header. That
+    fallback is what stands between a real workstation result and deletion,
+    and a guard that greps the YAML for the word `workstation` passes whether
+    or not the loop works. This extracts the loop from the workflow and runs
+    it, against files on disk, so the assertion is about behaviour.
+    """
+
+    loop: ClassVar[str]
+
+    @classmethod
+    def setUpClass(cls):
+        workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        steps = [
+            s
+            for s in workflow["jobs"]["sync-compatibility"]["steps"]
+            if "rm -f" in (s.get("run") or "")
+            and "references/verification-results/" in (s.get("run") or "")
+        ]
+        assert len(steps) == 1, "expected exactly one publish step"
+        match = re.search(
+            r"(while IFS= read -r legacy; do.*?done < <\(find [^\n]*\))",
+            steps[0]["run"],
+            re.DOTALL,
+        )
+        assert match, (
+            "The transitional header-reading cleanup loop is gone from the "
+            "publish step. If every committed row now carries a `-ci-` marker "
+            "this guard is dead weight and can be deleted with it; if not, an "
+            "unmarked workstation report is being deleted again (LDM-#1909)."
+        )
+        cls.loop = match.group(1)
+
+    def _run_loop(self, reports):
+        """reports: {filename: file contents}. Returns the surviving names."""
+        bash = shutil.which("bash")
+        if bash is None:  # pragma: no cover - every supported dev box has bash
+            self.skipTest("bash is not available")
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "references" / "verification-results"
+            target.mkdir(parents=True)
+            for name, body in reports.items():
+                (target / name).write_text(body, encoding="utf-8")
+            subprocess.run(
+                [bash, "-c", self.loop],
+                cwd=tmp,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return sorted(path.name for path in target.glob("*.txt"))
+
+    def test_a_declared_workstation_report_survives(self):
+        name = "verify-linux-workstation-fedora-44-native-docker-pass.txt"
+        survivors = self._run_loop(
+            {
+                name: (
+                    "=== LDM BINARY VERIFICATION REPORT ===\n"
+                    "Platform:     Fedora Linux 44\n"
+                    "Run Context:  workstation\n"
+                    "Docker:       29.8.1\n"
+                )
+            }
+        )
+        self.assertEqual(
+            survivors,
+            [name],
+            "A report declaring a workstation run was deleted by the CI "
+            "publish step. That is LDM-#1909 exactly: the row it holds is the "
+            "only evidence of that environment, and this job never replaces "
+            "it.",
+        )
+
+    def test_an_unmarked_report_is_still_superseded(self):
+        """The loop must not become a no-op that leaves two rows per distro."""
+        survivors = self._run_loop(
+            {
+                "verify-linux-workstation-debian-12-native-docker-pass.txt": (
+                    "=== LDM BINARY VERIFICATION REPORT ===\n"
+                    "Platform:     Debian GNU/Linux 12 (bookworm)\n"
+                    "Docker:       28.0.4\n"
+                )
+            }
+        )
+        self.assertEqual(
+            survivors,
+            [],
+            "An unmarked legacy report survived. Only this job has ever "
+            "published a verify-linux-workstation- report, so an unmarked one "
+            "is a superseded CI report and leaving it produces two rows.",
+        )
+
+    def test_a_non_linux_report_is_never_touched(self):
+        """macOS and Windows rows are curated by hand."""
+        name = "verify-apple-silicon-macos-16-tahoe-colima-pass.txt"
+        survivors = self._run_loop(
+            {name: "=== LDM BINARY VERIFICATION REPORT ===\nDocker: 28.0.4\n"}
+        )
+        self.assertEqual(survivors, [name])
 
 
 if __name__ == "__main__":

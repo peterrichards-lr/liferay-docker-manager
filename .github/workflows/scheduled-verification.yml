@@ -326,7 +326,28 @@ jobs:
           # rather than two. Every arm has passed by the time this job runs --
           # it is gated on verify-linux succeeding as a whole -- so each
           # deleted report is replaced by the copy below.
-          rm -f references/verification-results/verify-linux-workstation-*.txt
+          #
+          # LDM-#1909: narrowed to CI-produced reports. This used to be
+          # `verify-linux-workstation-*.txt`, which deleted EVERY Linux report --
+          # including one produced on a real workstation, which this job never
+          # replaces. A Fedora 44 workstation row at Docker 29.8.1 was destroyed
+          # that way and replaced by CI's 28.0.4, removing the only evidence LDM
+          # had been exercised on the newer engine. The comment above was accurate
+          # about intent and wrong about reach.
+          rm -f references/verification-results/verify-linux-workstation-*-ci-*.txt
+          # Transitional: reports committed before the CI marker existed carry no
+          # provenance in their name. Only this job has ever published a
+          # verify-linux-workstation- report, so an unmarked one is a superseded CI
+          # report -- unless it declares itself otherwise, which is the case this
+          # must never delete again. Once every row has been republished with a
+          # marker this loop is dead weight and can go.
+          while IFS= read -r legacy; do
+            if grep -qiE '^Run Context:[ \t]*workstation' "$legacy"; then
+              echo "  keeping $legacy (declares a workstation run)"
+            else
+              rm -f "$legacy"
+            fi
+          done < <(find references/verification-results -maxdepth 1 -name 'verify-linux-workstation-*.txt' -print)
           cp "${fresh[@]}" references/verification-results/
           echo "Reports now in references/verification-results/:"
           ls -1 references/verification-results/verify-*.txt 2>/dev/null || echo "  (none found)"

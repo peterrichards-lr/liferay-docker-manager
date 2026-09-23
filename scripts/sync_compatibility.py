@@ -694,6 +694,21 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
     if label_cand and not label_cand.startswith("$"):
         env_label = label_cand
 
+    # 4.7 LDM-#1909: WHO ran it. A GitHub-hosted container and a developer's
+    # machine have different kernels, storage drivers and Docker versions, and
+    # without this they share one row -- the later sync silently winning. A
+    # Fedora 44 workstation row at Docker 29.8.1 was replaced by CI's 28.0.4,
+    # losing the only evidence LDM had been exercised on the newer engine.
+    #
+    # `Env Label:` cannot carry this: CI sets it to the distro name, and for a
+    # distro sync recognises by name (Fedora, Ubuntu) it is discarded before
+    # naming happens.
+    run_context = (
+        (_header_value(r"^Run Context:[ \t]*([^\n]*)", content, re.M) or "")
+        .strip()
+        .lower()
+    )
+
     # 5. Extract Docker Engine version
     # A blank `Docker:` header used to capture the following line -- one
     # archived report recorded its engine version as 'running' (LDM-#1633).
@@ -941,9 +956,20 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
         # row and one canonical filename. A declared label names them apart.
         host_os = _declared_linux_os(env_label, platform_str) or "Linux"
 
+    # LDM-#1909: the identity, not a decoration -- host_os IS the row. Absent
+    # on every report predating this, so no existing row is renamed.
+    if run_context == "ci":
+        host_os = f"{host_os} (CI)"
+
     # Standardize slugs
     clean_arch = arch.lower().replace(" ", "-")
-    clean_os = host_os.lower().replace(" ", "-").replace("+", "")
+    clean_os = (
+        host_os.lower()
+        .replace(" ", "-")
+        .replace("+", "")
+        .replace("(", "")
+        .replace(")", "")
+    )
     clean_provider = provider.lower().replace(" ", "-")
     internal_slug = f"{clean_arch}-{clean_os}-{clean_provider}"
 
