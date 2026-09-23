@@ -180,7 +180,12 @@ class TestTheLiferayServiceMountsWhatTheProjectOffers(unittest.TestCase):
     def test_marketplace_is_mounted(self):
         got = _liferay_service()["volumes"]
         self.assertTrue(
-            [v for v in got if v.endswith(":/opt/liferay/osgi/marketplace")],
+            # `in`, not `endswith`: Linux appends an SELinux `:z` label, so the
+            # mount reads `...:/opt/liferay/osgi/marketplace:z` there and
+            # `endswith` passes on macOS and fails in CI. test_composer.py
+            # already carries a comment about exactly this and I wrote the
+            # fragile form anyway.
+            [v for v in got if ":/opt/liferay/osgi/marketplace" in v],
             f"osgi/marketplace is not mounted; an .lpkg there goes nowhere. Got: {got}",
         )
 
