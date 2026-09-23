@@ -2859,6 +2859,88 @@ zf.close()
 
     Remove-Item -Recurse -Force "cx-build" -ErrorAction SilentlyContinue
 
+    # LDM-#1918: a client-extension SERVICE, and what the generated compose
+    # says about it. Parity with the bash twin.
+    #
+    # The suite has always deployed a customElement extension, which is NOT a
+    # service -- is_service requires a Dockerfile in the zip -- so no compose
+    # service was ever produced and nothing ever asserted on one. Seven working
+    # behaviours were dropped in the stack.py -> composer.py refactor and
+    # shipped broken for roughly 25 releases.
+    #
+    # Compose-generation facts only; no boot required.
+    Write-Host ">> Verifying a client-extension SERVICE is generated correctly (LDM-#1918)..."
+    $cxSvcName = "synthetic-svc"
+    Remove-Item -Recurse -Force "cxsvc-build", "$cxSvcName.zip" -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path "cxsvc-build/$cxSvcName" -Force | Out-Null
+    @"
+${cxSvcName}:
+    .serviceAddress: ${cxSvcName}:8080
+    name: Synthetic CX Service
+    type: microservice
+"@ | Out-File -FilePath "cxsvc-build/$cxSvcName/client-extension.yaml" -Encoding ascii
+    # The Dockerfile is what makes it a service rather than a static extension.
+    "FROM alpine`nCMD [`"sleep`", `"3600`"]" |
+        Out-File -FilePath "cxsvc-build/$cxSvcName/Dockerfile" -Encoding ascii
+
+    & $VENV_PYTHON -c "import shutil, sys; shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])" $cxSvcName "cxsvc-build/$cxSvcName"
+    Invoke-LoggedCommand "Deploying CX service" $LDM_CMD @("-y", "deploy", ".", "$cxSvcName.zip")
+    & $LDM_CMD -y run . --no-up --no-seed 2>&1 | Out-Null
+
+    $cxSvcCheck = @'
+import sys, pathlib, yaml
+name = sys.argv[1]
+compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text())
+services = compose.get("services") or {}
+svc = next((v for k, v in services.items() if k.endswith(name)), None)
+if svc is None:
+    print("ERROR: no compose service for the '%s' client extension." % name)
+    print("  services present: " + ", ".join(services))
+    sys.exit(1)
+
+fails = []
+vols = svc.get("volumes") or []
+if not [v for v in vols if ":/opt/liferay/routes" in v]:
+    fails.append("routes not mounted at /opt/liferay/routes, where Liferay "
+                 "writes its config trees: %s" % vols)
+if [v for v in vols if "/workspace/routes" in v]:
+    fails.append("routes mounted at /workspace/routes, which nothing writes to: %s" % vols)
+
+env = svc.get("environment") or []
+if not [e for e in env if e.startswith("LIFERAY_LXC_DXP_MAIN_DOMAIN=")]:
+    fails.append("LIFERAY_LXC_DXP_MAIN_DOMAIN absent -- lxcConfig.dxpMainDomain() "
+                 "cannot resolve Liferay: %s" % env)
+
+if not svc.get("extra_hosts"):
+    fails.append("extra_hosts absent -- the extension cannot resolve the project host")
+
+if not [e for e in env if e.startswith("LIFERAY_LXC_DXP_DOMAINS=")]:
+    fails.append("LIFERAY_LXC_DXP_DOMAINS absent: %s" % env)
+
+liferay = services.get("liferay")
+if liferay is None:
+    fails.append("no liferay service in the compose file to check mounts against")
+else:
+    lv = liferay.get("volumes") or []
+    if not [v for v in lv if ":/opt/liferay/routes" in v]:
+        fails.append("Liferay does not mount routes at /opt/liferay/routes, so "
+                     "nothing it writes reaches the extension: %s" % lv)
+    if not [v for v in lv if ":/opt/liferay/osgi/marketplace" in v]:
+        fails.append("osgi/marketplace is not mounted -- an .lpkg dropped there "
+                     "is silently ignored: %s" % lv)
+
+for f in fails:
+    print("ERROR: " + f)
+sys.exit(1 if fails else 0)
+'@
+    $cxSvcCheck | Out-File -FilePath "cxsvc-check.py" -Encoding ascii
+    & $VENV_PYTHON "cxsvc-check.py" $cxSvcName
+    if ($LASTEXITCODE -ne 0) {
+        throw "Client-extension service definition is wrong (LDM-#1918)."
+    }
+    Write-Verdict "[SUCCESS] Client-extension service: routes shared at /opt/liferay/routes, DXP domain supplied, host resolvable (LDM-#1918)."
+    Remove-Item -Recurse -Force "cxsvc-build", "$cxSvcName.zip", "cxsvc-check.py" -ErrorAction SilentlyContinue
+
     Write-Host ">> Verifying snapshot manifest lists the extensions it claims (LDM-#1573)..."
     # LDM-#1573: has_cx and cx_list scanned DIFFERENT directory sets -- has_cx
     # looked in cx/, deploy/ and the build dir, cx_list only in the build dir.
