@@ -2960,7 +2960,19 @@ ${CXSVC_NAME}:
     type: microservice
 CXSVCEOF
 # The Dockerfile is what makes it a service rather than a static extension.
-printf 'FROM alpine\nCMD ["sleep", "3600"]\n' > "cxsvc-build/${CXSVC_NAME}/Dockerfile"
+#
+# LDM-#1911: it also carries application code at /opt/liferay/routes, the way a
+# real extension does -- liferay/node-runner images `COPY . /opt/liferay`, so
+# that path holds the extension's OWN route handlers (16 .cjs files on the
+# deployment that reported this). A fixture without them cannot be shadowed,
+# so the runtime check below would pass against the very mount that broke a
+# live container.
+cat > "cxsvc-build/${CXSVC_NAME}/Dockerfile" <<'CXSVC_DOCKERFILE'
+FROM alpine
+RUN mkdir -p /opt/liferay/routes
+RUN printf 'module.exports = () => "alive";\n' > /opt/liferay/routes/app.cjs
+CMD ["sleep", "3600"]
+CXSVC_DOCKERFILE
 "$VENV_PYTHON" -c "
 import shutil, sys
 shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])
@@ -3029,8 +3041,49 @@ then
     CXSVC_OK=false
 fi
 
+# LDM-#1911: everything above is a compose-generation fact, and that was not
+# enough. PR #1919 shipped a mount that satisfied every compose-level check
+# this suite had and broke the container at runtime; it was found by an
+# external team running it for real, not here. The negative assertion above
+# now pins that ONE path, which protects against the exact repeat and nothing
+# else -- a mount wrong in some way nobody has thought of yet still reaches a
+# user first.
+#
+# So look inside the container. One build, one run, no Liferay boot and no
+# dependencies: if any mount hides the extension's own code, its app.cjs is
+# gone. Measured both ways before being committed -- against the correct
+# dxp-metadata mount the file is visible; against the pre-#1925
+# /opt/liferay/routes mount it is not.
 if [ "$CXSVC_OK" = true ]; then
-    report_ok "✅ Client-extension service: DXP metadata at /etc/liferay/lxc/dxp-metadata (not over the app), domain supplied, host resolvable (LDM-#1911/#1918)."
+    CXSVC_SERVICE=$("$VENV_PYTHON" - "$CXSVC_NAME" <<'CXSVC_SVCNAME_PY'
+import pathlib
+import sys
+
+import yaml
+
+name = sys.argv[1]
+compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text())
+services = compose.get("services") or {}
+print(next((k for k in services if k.endswith(name)), ""))
+CXSVC_SVCNAME_PY
+)
+    if [ -z "$CXSVC_SERVICE" ]; then
+        echo "❌ ERROR: could not resolve the client-extension service name from docker-compose.yml." | tee -a "$RESULTS_FILE_TMP"
+        CXSVC_OK=false
+    elif ! docker compose build "$CXSVC_SERVICE" >/dev/null 2>&1; then
+        echo "❌ ERROR: the client-extension service image would not build, so LDM's mounts cannot be checked against it (LDM-#1911)." | tee -a "$RESULTS_FILE_TMP"
+        CXSVC_OK=false
+    elif ! docker compose run --rm --no-deps --entrypoint sh "$CXSVC_SERVICE" \
+            -c 'test -f /opt/liferay/routes/app.cjs' >/dev/null 2>&1; then
+        echo "❌ ERROR: the extension's own code at /opt/liferay/routes is not visible inside its container -- an LDM mount is shadowing the application (LDM-#1911)." | tee -a "$RESULTS_FILE_TMP"
+        CXSVC_OK=false
+    fi
+    docker compose rm -fsv "$CXSVC_SERVICE" >/dev/null 2>&1 || true
+    docker rmi -f "${CXSVC_SERVICE}:latest" >/dev/null 2>&1 || true
+fi
+
+if [ "$CXSVC_OK" = true ]; then
+    report_ok "✅ Client-extension service: DXP metadata at /etc/liferay/lxc/dxp-metadata (not over the app), domain supplied, host resolvable, and the extension's own /opt/liferay/routes code still visible inside the running container (LDM-#1911/#1918)."
 fi
 rm -rf "cxsvc-build" "${CXSVC_NAME}.zip"
 
