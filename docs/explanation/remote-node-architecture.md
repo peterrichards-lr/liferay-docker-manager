@@ -194,6 +194,26 @@ If a project has **no pinned target yet**, whatever it resolves to — whether f
 
 Commands like `ldm deploy`/`ldm monitor` may need continuous/incremental remote sync (not just the one-time `sync_project_to_target()` used at provisioning) to push files to a remote node before container deployment. This is explicitly **not resolved** by this design — it's deferred to whenever those specific commands are migrated (Phase 5). Existing SSH/rsync infrastructure (`sync_project_to_target()`, `resolve_remote_home()`) may be reusable as-is or may need an incremental mode.
 
+### Open question: scaffolding the routes tree on a remote node
+
+The routes tree (see *The Routes Tree* in
+`.agents/skills/ldm-architecture/SKILL.md`) is a set of host directories that
+Liferay, every client extension and every custom service bind-mount subtrees
+of. Those directories must exist **before** the mount, because Docker creates a
+missing bind-mount source itself, as an empty root-owned directory — which is
+the same failure mode this document's `mount_paths` remapping exists to avoid.
+
+`_scaffold_routes_tree()` (`handlers/composer.py`) creates them from the
+generated compose, but deliberately **skips remote targets**: it compares
+`mount_paths["root"]` against `paths["root"]` and returns when they differ,
+because creating a remote target's directory tree on *this* machine would be
+worse than not creating it at all.
+
+So on a remote node the subtrees are currently left to Docker. Fixing it
+properly means creating them over the connection — the same unresolved
+question as the sync strategy above, and deferred with it. Anyone adding
+remote provisioning should create the routes subtrees as part of it.
+
 ## 5. One resolver function, every command calls it
 
 `resolve_target_context()` (`ldm_core/config.py`) is the single function every command calls to find out what compute target it's running against, implementing the precedence chain, conflict warning, and pinning write described above. It returns a `TargetContext`:
@@ -486,4 +506,4 @@ remote add, and in the drift repair above `~/.ldmrc` was right all along:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-21* | *Last Reviewed: 2026-09-21*
+*Last Updated: 2026-09-23* | *Last Reviewed: 2026-09-23*
