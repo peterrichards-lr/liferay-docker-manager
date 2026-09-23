@@ -1590,11 +1590,18 @@ def run_command(  # noqa: PLR0913
     )
 
 
+#: Retry budget for every outbound HTTP fetch. Deliberately a constant, not a
+#: parameter (LDM-#1905): no caller has ever varied it, and `_fetch_with_retry`
+#: is module-private with two same-file call sites, so none could. Its sibling
+#: `timeout` IS varied by both callers (15 and 30) -- that is the difference
+#: between a knob that earns its keep and a false affordance.
+_FETCH_MAX_RETRIES = 3
+
+
 def _fetch_with_retry(
     url: str,
     headers: dict[str, str] | None = None,
     timeout: int = 15,
-    max_retries: int = 3,
 ) -> requests.Response | None:
     """Fetches a URL with retries, handling rate limits (429) and transient errors."""
     import random
@@ -1606,7 +1613,7 @@ def _fetch_with_retry(
     if "User-Agent" not in headers:
         headers["User-Agent"] = "Mozilla/5.0"
 
-    for attempt in range(max_retries):
+    for attempt in range(_FETCH_MAX_RETRIES):
         try:
             response = requests.get(url, headers=headers, timeout=timeout)
             if response.status_code == 429:
@@ -1618,8 +1625,8 @@ def _fetch_with_retry(
             response.raise_for_status()
             return response
         except requests.RequestException as e:
-            if attempt == max_retries - 1:
-                UI.debug(f"Request failed after {max_retries} attempts: {e}")
+            if attempt == _FETCH_MAX_RETRIES - 1:
+                UI.debug(f"Request failed after {_FETCH_MAX_RETRIES} attempts: {e}")
                 return None
             # Exponential backoff with random jitter
             wait = 0.5 * (2**attempt) + random.uniform(0, 0.1)
