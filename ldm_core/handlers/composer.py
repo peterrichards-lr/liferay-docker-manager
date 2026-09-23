@@ -1087,11 +1087,20 @@ class ComposerService:
                 f"{mount_paths.get('routes', mount_paths['root'] / 'routes').as_posix()}:/opt/liferay/routes{z_label}",
                 f"{project_name}-data:/opt/liferay/data",
                 f"{mount_paths['modules'].as_posix()}:/opt/liferay/osgi/modules{z_label}",
-                # LDM-#1918: `osgi/marketplace` is created in every project
-                # (handlers/base.py) and was mounted until the stack.py ->
-                # composer.py refactor. Without this an .lpkg dropped there is
-                # silently ignored -- the directory exists, so nothing suggests
-                # it goes nowhere.
+                # LDM-#1918: `osgi/marketplace` was mounted until the
+                # stack.py -> composer.py refactor. Without this an .lpkg
+                # dropped there is silently ignored.
+                #
+                # LDM-#1917: this comment used to claim marketplace "is created
+                # in every project (handlers/base.py)". That has been FALSE
+                # since `64c75e9f` unwired `migrate_layout`, which was the only
+                # thing that created it. It is in neither `mount_dirs`
+                # (`handlers/config.py`) nor `verify_runtime_environment`
+                # (`handlers/base.py`); the sole creator left is a `mkdir -p`
+                # run INSIDE a container, which does not run without a docker
+                # binary, under --dry-run, or on Windows. So this mount can
+                # still find no host directory and let Docker create one as
+                # root -- do not rely on the directory existing.
                 f"{mount_paths.get('marketplace', mount_paths['root'] / 'osgi' / 'marketplace').as_posix()}:/opt/liferay/osgi/marketplace{z_label}",
                 # LDM-#1364: restored. `df59dea6` ("isolate configuration
                 # volumes", v2.7.2) removed BOTH this and the osgi/modules
@@ -2246,8 +2255,14 @@ class ComposerService:
         declaration rather than assumed. LCP.json reaches us as `ext["env"]`
         (`ldm_core/workspace/metadata.py:135`), so when an extension declares a
         non-standard path we honour it; the constants are only the fallback.
-        This is what LDM-#1923 asked for and judged infeasible -- it is
-        infeasible from the built IMAGE, which is not the only source.
+        This is LDM-#1923's option 4 ("keep the constant as the default and
+        let LCP.json override it"), which that issue called the pragmatic
+        answer. It is NOT the part #1923 flagged as infeasible -- reading the
+        value from the built IMAGE is still not done, and #1923 stays open for
+        it. The distinction matters: an extension that declares nothing still
+        gets the constant, so the constant can still be wrong a fourth time.
+        Custom services do not get this at all (`_apply_shared_project_context`
+        uses the constants directly).
         """
         ext_env = ext.get("env") or {}
         routes = self.routes_root(mount_paths)
