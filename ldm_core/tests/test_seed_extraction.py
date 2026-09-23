@@ -103,7 +103,7 @@ class TestSeedingReportsFailureHonestly(unittest.TestCase):
         """Returning True marked an unseeded project as seeded.
 
         The caller then wrote `seeded = "true"` into meta and called
-        `track_roi(840, "first-boot seeding")`, so a failure was
+        an unmeasured "saved you 14m 0s" claim (removed in LDM-#1924), so a failure was
         indistinguishable from success in both the metadata and the output.
         """
         result, _ = self._run(extract_side_effect=OSError("corrupt archive"))

@@ -61,7 +61,6 @@ def _resolve_legacy_commands(cmd, cmd_idx, processed_list):
         "fix-hosts": ("system", "fix-hosts"),
         "nuke": ("system", "nuke"),
         "rescue": ("system", "rescue"),
-        "roi": ("system", "roi"),
         "seeds": ("system", "seeds"),
         "relocate": ("system", "relocate"),
         "init-ci": ("system", "init-ci"),
@@ -227,7 +226,6 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "ai",
         "package",
         "relocate",
-        "roi",
         "start",
         "inspector",
         "tray",
@@ -2882,17 +2880,6 @@ def get_parser():  # noqa: PLR0915
         help="Display the LDM manual page",
     )
 
-    roi_cmd = system_subparsers.add_parser(
-        "roi",
-        parents=[base_sub_parent],
-        help="Display cumulative developer time saved by using LDM",
-    )
-    roi_cmd.add_argument(
-        "--reset",
-        action="store_true",
-        help="Reset cumulative ROI metrics back to zero",
-    )
-
     nuke_cmd = system_subparsers.add_parser(
         "nuke",
         parents=[base_sub_parent],
@@ -3505,7 +3492,6 @@ def _build_command_map(args, manager):
         ("system", "fix-hosts"): lambda: manager.cmd_fix_hosts(
             getattr(args, "host_name", None)
         ),
-        ("system", "roi"): manager.config.cmd_roi,
         ("system", "nuke"): lambda: manager.system.cmd_nuke(
             force=getattr(args, "force", False),
             keep_config=getattr(args, "keep_config", False),

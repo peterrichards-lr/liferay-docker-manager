@@ -920,10 +920,6 @@ class ShareService:
                     )
                     if success:
                         UI.success("Tunnel started in the background.")
-                        if hasattr(self.manager, "config") and hasattr(
-                            self.manager.config, "track_roi"
-                        ):
-                            self.manager.config.track_roi(180, "secure sharing tunnel")
                         public_url = self.resolve_public_tunnel_url(
                             subdomain, project_id
                         )
@@ -1122,10 +1118,6 @@ class ShareService:
                 )
                 if success:
                     UI.success("Tunnel container started in the background.")
-                    if hasattr(self.manager, "config") and hasattr(
-                        self.manager.config, "track_roi"
-                    ):
-                        self.manager.config.track_roi(180, "secure sharing tunnel")
                     public_url = self.resolve_public_tunnel_url(subdomain, project_id)
                     UI.success(
                         f"🌍 Public Tunnel Active: {UI.CYAN}{public_url}{UI.COLOR_OFF}"

@@ -162,10 +162,10 @@ class AssetService:
             #
             #     if is_new_project and manager.assets._ensure_seeded(...):
             #         project_meta["seeded"] = "true"
-            #         manager.config.track_roi(840, "first-boot seeding")
             #
             # Returning True from the failure path marked an unseeded project
-            # as seeded and claimed the 14-minute saving anyway. The run still
+            # as seeded. It also printed a "saved you 14m 0s" claim, which
+            # LDM-#1924 has since removed outright as unmeasured. The run still
             # continues -- the caller simply skips the seeded bookkeeping, and
             # the warning above already told the user what happened.
             return False

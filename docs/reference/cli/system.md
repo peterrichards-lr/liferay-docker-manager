@@ -589,7 +589,6 @@ ldm tray --uninstall-autostart  # Remove launch-on-login autostart
 - **`--quiet`**: Quiet mode (suppress info logs).
 - **`--reboot`**: Force container reboot instead of runtime reindexing.
 - **`--reindex`**: Force full search reindex on startup.
-- **`--reset`**: Reset cumulative ROI metrics back to zero.
 - **`--restore`**: Restore project backup/snapshot.
 - **`--service`**: Specify container service.
 - **`--set`**: Directly set version string.
