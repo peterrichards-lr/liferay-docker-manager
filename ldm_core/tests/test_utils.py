@@ -2390,7 +2390,21 @@ class TestSshTransportRetry(unittest.TestCase):
         self.assertEqual(2, attempts)
 
     def test_a_node_that_never_wakes_still_fails_as_before(self):
-        attempts, outcome = self._attempt(self.REFUSED, fail_times=99, budget=0.05)
+        # LDM-#1946: the budget is deliberately generous, and must stay so.
+        #
+        # This is the only test in the class that both exhausts its budget
+        # (`fail_times=99` never succeeds) AND depends on a retry happening
+        # inside it. At the 0.05s it used to carry, the margin was about 40ms:
+        # `_maybe_retry_ssh` sets the deadline, emits a `UI.info` line, sleeps
+        # `_SSH_RETRY_DELAY`, then re-checks the deadline. Under coverage
+        # instrumentation near the end of a full suite run, scheduling jitter
+        # alone exceeded that -- the deadline passed during the first sleep,
+        # no retry was attempted, and `attempts > 1` failed. It passed in
+        # isolation every time, which is what made it read as a real defect.
+        #
+        # Every other test here already uses 1.0 or 0. Runtime is bounded by
+        # the budget, so this costs about a second. Do not trim it back.
+        attempts, outcome = self._attempt(self.REFUSED, fail_times=99, budget=1.0)
         self.assertEqual(125, outcome, "the original exit code must survive")
         self.assertGreater(attempts, 1)
 
