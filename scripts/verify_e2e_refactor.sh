@@ -2952,6 +2952,88 @@ echo ">> Verifying a client-extension SERVICE is generated correctly (LDM-#1918)
 CXSVC_NAME="synthetic-svc"
 CXSVC_OK=true
 rm -rf "cxsvc-build" "${CXSVC_NAME}.zip"
+
+# LDM-#1928: the host side. The mounts above are only half the mechanism --
+# Docker creates a missing bind-mount source itself, as an empty root-owned
+# directory, so a subtree LDM never scaffolds is one the user cannot write to
+# and Liferay may not populate. `migrate_layout` scaffolded routes/default/dxp
+# until it was accidentally unwired (LDM-#1917); the composer now derives the
+# whole set from the compose it just generated.
+echo ">> Verifying the routes tree is scaffolded on the host (LDM-#1928)..."
+ROUTES_OK=true
+for d in "routes/default/dxp" "routes/default/${CXSVC_NAME}"; do
+    if [ ! -d "$d" ]; then
+        echo "❌ ERROR: ${d} was not created, so Docker will auto-create it as an empty root-owned directory (LDM-#1928/#1917)." | tee -a "$RESULTS_FILE_TMP"
+        ROUTES_OK=false
+    fi
+done
+if [ "$ROUTES_OK" = true ]; then
+    report_ok "✅ Routes tree scaffolded on the host: routes/default/dxp and routes/default/${CXSVC_NAME} (LDM-#1928)."
+fi
+
+# LDM-#1928: a CUSTOM service is part of the project too, and had none of the
+# shared space -- no routes, no LXC variables, no route back to the host and
+# no wait for Liferay. Nothing in this suite exercised custom_containers at
+# all, so the whole branch shipped unverified.
+echo ">> Verifying a custom service joins the shared config space (LDM-#1928)..."
+CUSTOMSVC_OK=true
+"$VENV_PYTHON" - <<'CUSTOM_META_PY'
+import json
+import pathlib
+
+meta_path = pathlib.Path("meta")
+meta = json.loads(meta_path.read_text())
+meta["custom_containers"] = [
+    {"service_name": "synthetic-custom", "image": "alpine:latest"}
+]
+meta_path.write_text(json.dumps(meta))
+CUSTOM_META_PY
+"$LDM_CMD" -y run . --no-up --no-seed >/dev/null 2>&1 || true
+
+if ! "$VENV_PYTHON" - <<'CUSTOM_PY'
+import pathlib
+import sys
+
+import yaml
+
+compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text())
+services = compose.get("services") or {}
+svc = next((v for k, v in services.items() if k.endswith("synthetic-custom")), None)
+if svc is None:
+    print("ERROR: no compose service for the custom container.")
+    print("  services present: " + ", ".join(services))
+    sys.exit(1)
+
+fails = []
+vols = svc.get("volumes") or []
+if not [v for v in vols if ":/etc/liferay/lxc/dxp-metadata" in v]:
+    fails.append("a custom service gets no routes mount, so it cannot read "
+                 "anything Liferay publishes: %s" % vols)
+
+env = svc.get("environment") or []
+if not [e for e in env if e.startswith("LIFERAY_LXC_DXP_MAIN_DOMAIN=")]:
+    fails.append("LIFERAY_LXC_DXP_MAIN_DOMAIN absent from a custom service: %s" % env)
+
+if not svc.get("extra_hosts"):
+    fails.append("extra_hosts absent -- a custom service cannot resolve the "
+                 "project host back to the Docker host")
+
+deps = svc.get("depends_on") or {}
+if not [d for d in (deps if isinstance(deps, (list, tuple)) else list(deps))
+        if "liferay" in str(d)]:
+    fails.append("a custom service does not wait for Liferay: %s" % deps)
+
+for f in fails:
+    print("ERROR: %s" % f)
+sys.exit(1 if fails else 0)
+CUSTOM_PY
+then
+    echo "❌ ERROR: a custom service is missing the shared config space (LDM-#1928)." | tee -a "$RESULTS_FILE_TMP"
+    CUSTOMSVC_OK=false
+fi
+if [ "$CUSTOMSVC_OK" = true ]; then
+    report_ok "✅ Custom service joins the shared config space: routes mounted, LXC domain supplied, host resolvable, waits for Liferay (LDM-#1928)."
+fi
 mkdir -p "cxsvc-build/${CXSVC_NAME}"
 cat > "cxsvc-build/${CXSVC_NAME}/client-extension.yaml" <<CXSVCEOF
 ${CXSVC_NAME}:
@@ -3014,6 +3096,43 @@ if not svc.get("extra_hosts"):
 
 if not [e for e in env if e.startswith("LIFERAY_LXC_DXP_DOMAINS=")]:
     fails.append("LIFERAY_LXC_DXP_DOMAINS absent: %s" % env)
+
+# LDM-#1928: the extension's OWN config tree. A real extension declares BOTH
+# in its LCP.json and reads both --
+#   "LIFERAY_ROUTES_CLIENT_EXTENSION": "/etc/liferay/lxc/ext-init-metadata"
+#   "LIFERAY_ROUTES_DXP":              "/etc/liferay/lxc/dxp-metadata"
+# LDM forwarded the first variable out of LCP.json and mounted nothing at it,
+# so every extension was pointed at a path containing nothing. That tree is
+# where Liferay publishes the OAuth2 credentials it generates.
+ext_mounts = [v for v in vols if ":/etc/liferay/lxc/ext-init-metadata" in v]
+if not ext_mounts:
+    fails.append("the extension's own config tree is not mounted at "
+                 "/etc/liferay/lxc/ext-init-metadata, so LIFERAY_ROUTES_"
+                 "CLIENT_EXTENSION points at nothing and generated OAuth2 "
+                 "credentials can never reach it (LDM-#1928): %s" % vols)
+else:
+    # Per-extension, not the shared dxp tree: Liferay publishes each
+    # extension's config under its own id.
+    if not [v for v in ext_mounts if "/routes/default/%s:" % name in v]:
+        fails.append("the ext-init mount is not this extension's own subtree "
+                     "(routes/default/%s), so it would read another "
+                     "extension's config: %s" % (name, ext_mounts))
+
+# LDM-#1928: the tree is written by Liferay at boot, so an extension that
+# starts first reads an empty directory. Nothing gated these before.
+deps = svc.get("depends_on") or {}
+dep_names = deps if isinstance(deps, (list, tuple)) else list(deps)
+if not [d for d in dep_names if "liferay" in str(d)]:
+    fails.append("the extension does not wait for Liferay, so it starts "
+                 "concurrently with a boot that takes minutes and reads an "
+                 "empty config tree (LDM-#1928): %s" % deps)
+elif isinstance(deps, dict):
+    cond = (deps.get("liferay") or {}).get("condition")
+    if cond != "service_healthy":
+        fails.append("the extension waits on liferay with condition %r, not "
+                     "service_healthy -- 'started' is not 'serving', and the "
+                     "liferay image's own healthcheck curls /c/portal/layout "
+                     "(LDM-#1928)" % cond)
 
 # The Liferay side of the shared volume, and the marketplace mount, are the
 # other two LDM-#1918 losses. Read from the same compose file.

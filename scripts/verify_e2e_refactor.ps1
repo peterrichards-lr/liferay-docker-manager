@@ -2962,6 +2962,29 @@ if not svc.get("extra_hosts"):
 if not [e for e in env if e.startswith("LIFERAY_LXC_DXP_DOMAINS=")]:
     fails.append("LIFERAY_LXC_DXP_DOMAINS absent: %s" % env)
 
+# LDM-#1928: the extension's OWN config tree. A real extension declares BOTH
+# in its LCP.json and reads both. LDM forwarded LIFERAY_ROUTES_CLIENT_EXTENSION
+# out of LCP.json and mounted nothing at it, so generated OAuth2 credentials
+# could never reach the extension.
+ext_mounts = [v for v in vols if ":/etc/liferay/lxc/ext-init-metadata" in v]
+if not ext_mounts:
+    fails.append("the extension's own config tree is not mounted at "
+                 "/etc/liferay/lxc/ext-init-metadata (LDM-#1928): %s" % vols)
+elif not [v for v in ext_mounts if "/routes/default/%s:" % name in v]:
+    fails.append("the ext-init mount is not this extension's own subtree "
+                 "(routes/default/%s): %s" % (name, ext_mounts))
+
+deps = svc.get("depends_on") or {}
+dep_names = deps if isinstance(deps, (list, tuple)) else list(deps)
+if not [d for d in dep_names if "liferay" in str(d)]:
+    fails.append("the extension does not wait for Liferay, so it reads an "
+                 "empty config tree at start (LDM-#1928): %s" % deps)
+elif isinstance(deps, dict):
+    cond = (deps.get("liferay") or {}).get("condition")
+    if cond != "service_healthy":
+        fails.append("the extension waits on liferay with condition %r, not "
+                     "service_healthy (LDM-#1928)" % cond)
+
 liferay = services.get("liferay")
 if liferay is None:
     fails.append("no liferay service in the compose file to check mounts against")
@@ -3011,6 +3034,75 @@ sys.exit(1 if fails else 0)
     }
     Write-Verdict "[SUCCESS] Client-extension service: DXP metadata at /etc/liferay/lxc/dxp-metadata (not over the app), domain supplied, host resolvable, and the extension's own /opt/liferay/routes code still visible inside the running container (LDM-#1911/#1918)."
     Remove-Item -Recurse -Force "cxsvc-build", "$cxSvcName.zip", "cxsvc-check.py" -ErrorAction SilentlyContinue
+
+    # LDM-#1928: the host side. Docker creates a missing bind-mount source as
+    # an empty root-owned directory, so a subtree LDM never scaffolds is one
+    # nothing can write to.
+    Write-Host ">> Verifying the routes tree is scaffolded on the host (LDM-#1928)..."
+    foreach ($d in @("routes/default/dxp", "routes/default/$cxSvcName")) {
+        if (-not (Test-Path $d)) {
+            throw "Routes subtree '$d' was not created, so Docker will auto-create it as an empty root-owned directory (LDM-#1928/#1917)."
+        }
+    }
+    Write-Verdict "[SUCCESS] Routes tree scaffolded on the host: routes/default/dxp and routes/default/$cxSvcName (LDM-#1928)."
+
+    # LDM-#1928: a CUSTOM service is part of the project too. Nothing in this
+    # suite exercised custom_containers at all, so the branch shipped unverified.
+    Write-Host ">> Verifying a custom service joins the shared config space (LDM-#1928)..."
+    @'
+import json
+import pathlib
+
+meta_path = pathlib.Path("meta")
+meta = json.loads(meta_path.read_text())
+meta["custom_containers"] = [
+    {"service_name": "synthetic-custom", "image": "alpine:latest"}
+]
+meta_path.write_text(json.dumps(meta))
+'@ | Out-File -FilePath "custom-meta.py" -Encoding ascii
+    & $VENV_PYTHON "custom-meta.py"
+    & $LDM_CMD -y run . --no-up --no-seed 2>&1 | Out-Null
+
+    @'
+import pathlib
+import sys
+
+import yaml
+
+compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text())
+services = compose.get("services") or {}
+svc = next((v for k, v in services.items() if k.endswith("synthetic-custom")), None)
+if svc is None:
+    print("ERROR: no compose service for the custom container.")
+    sys.exit(1)
+
+fails = []
+vols = svc.get("volumes") or []
+if not [v for v in vols if ":/etc/liferay/lxc/dxp-metadata" in v]:
+    fails.append("a custom service gets no routes mount: %s" % vols)
+
+env = svc.get("environment") or []
+if not [e for e in env if e.startswith("LIFERAY_LXC_DXP_MAIN_DOMAIN=")]:
+    fails.append("LIFERAY_LXC_DXP_MAIN_DOMAIN absent from a custom service: %s" % env)
+
+if not svc.get("extra_hosts"):
+    fails.append("extra_hosts absent from a custom service")
+
+deps = svc.get("depends_on") or {}
+if not [d for d in (deps if isinstance(deps, (list, tuple)) else list(deps))
+        if "liferay" in str(d)]:
+    fails.append("a custom service does not wait for Liferay: %s" % deps)
+
+for f in fails:
+    print("ERROR: %s" % f)
+sys.exit(1 if fails else 0)
+'@ | Out-File -FilePath "custom-check.py" -Encoding ascii
+    & $VENV_PYTHON "custom-check.py"
+    if ($LASTEXITCODE -ne 0) {
+        throw "A custom service is missing the shared config space (LDM-#1928)."
+    }
+    Remove-Item -Force "custom-meta.py", "custom-check.py" -ErrorAction SilentlyContinue
+    Write-Verdict "[SUCCESS] Custom service joins the shared config space: routes mounted, LXC domain supplied, host resolvable, waits for Liferay (LDM-#1928)."
 
     Write-Host ">> Verifying snapshot manifest lists the extensions it claims (LDM-#1573)..."
     # LDM-#1573: has_cx and cx_list scanned DIFFERENT directory sets -- has_cx
