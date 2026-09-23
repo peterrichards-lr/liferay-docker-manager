@@ -9,9 +9,11 @@ class TestCLILogic(unittest.TestCase):
 
     def test_system_alias_mappings(self):
         # Test direct top-level system subcommands expand via preprocess_args/legacy_map
-        args = self.parser.parse_args(["roi"])
+        # LDM-#1924: was `roi`, removed with the unmeasured ROI claim.
+        # Substituted rather than deleted so this still covers four aliases.
+        args = self.parser.parse_args(["nuke"])
         self.assertEqual(args.command, "system")
-        self.assertEqual(args.subcommand, "roi")
+        self.assertEqual(args.subcommand, "nuke")
 
         args = self.parser.parse_args(["seeds"])
         self.assertEqual(args.command, "system")

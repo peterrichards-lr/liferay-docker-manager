@@ -709,42 +709,6 @@ class TestConfigService(unittest.TestCase):
         written_data = mock_save_config.call_args[0][1]
         self.assertEqual(written_data["ngrok_authtoken"], "new-token")
 
-    @patch("ldm_core.ui.UI.success")
-    @patch("ldm_core.ui.UI.detail")
-    @patch("ldm_core.handlers.config.ConfigService.get_global_config")
-    @patch("ldm_core.handlers.config.ConfigService.set_global_config")
-    def test_track_roi(self, mock_set, mock_get, mock_detail, mock_success):
-        mock_get.return_value = {"roi_seconds_saved": 100}
-
-        run_sec, cumulative = self.config.track_roi(200, "test-action")
-        self.assertEqual(run_sec, 200)
-        self.assertEqual(cumulative, 300)
-        mock_set.assert_called_with("roi_seconds_saved", 300)
-        mock_success.assert_called_once()
-        mock_detail.assert_called_once()
-
-    @patch("ldm_core.ui.UI.heading")
-    @patch("ldm_core.ui.UI.raw")
-    @patch("ldm_core.handlers.config.ConfigService.get_global_config")
-    def test_cmd_roi(self, mock_get, mock_raw, mock_heading):
-        mock_get.return_value = {"roi_seconds_saved": 3600}
-        self.manager.args.reset = False
-
-        self.config.cmd_roi()
-        mock_heading.assert_called_once_with("LDM Developer Productivity ROI")
-        mock_raw.assert_any_call(
-            "  ● \x1b[0;37mCumulative Time Saved: \x1b[0;32m\x1b[1m1h 0m 0s\x1b[0m"
-        )
-
-    @patch("ldm_core.ui.UI.success")
-    @patch("ldm_core.handlers.config.ConfigService.set_global_config")
-    def test_cmd_roi_reset(self, mock_set, mock_success):
-        self.manager.args.reset = True
-
-        self.config.cmd_roi()
-        mock_set.assert_called_with("roi_seconds_saved", 0)
-        mock_success.assert_called_with("ROI metrics reset successfully.")
-
     def test_sync_common_assets_cascade_and_important(self):
         """Verify the 5-layer properties merge cascade and !important override precedence."""
         import tempfile

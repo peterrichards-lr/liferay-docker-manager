@@ -1504,9 +1504,6 @@ class EnvironmentSetupStage(PipelineStage):
             # "Vanilla (Not Seeded)" while the same run had printed
             # "Project bootstrapped from seed".
             context.set("project_meta", project_meta)
-            if hasattr(manager, "config") and hasattr(manager.config, "track_roi"):
-                manager.config.track_roi(840, "first-boot seeding")
-
             if project_meta.get("archetype"):
                 from ldm_core.constants import SCRIPT_DIR
 
