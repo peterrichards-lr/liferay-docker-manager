@@ -93,16 +93,18 @@ class TestComposerService(unittest.TestCase):
         self.assertIn("proj-ms1", services)
         self.assertEqual(services["proj-ms1"]["image"], "proj-ms1:latest")
         self.assertIn("com.liferay.ldm.project=proj", services["proj-ms1"]["labels"])
-        # LDM-#1918: /opt/liferay/routes, NOT /workspace/routes. Liferay writes
-        # its config trees to the former; the latter is a path nothing touches.
-        # This assertion previously pinned /workspace/routes -- it was written
-        # by 5857d14f, the same commit that introduced the wrong path, and so
-        # defended the regression for roughly 25 releases. Changing the string
-        # back is not enough: see test_refactor_regressions.py, which asserts
-        # the reason rather than the value.
+        # LDM-#1911: /etc/liferay/lxc/dxp-metadata -- the path the extension's
+        # own image declares. This assertion has now been wrong three times:
+        # /workspace/routes (the original regression, defended for ~25
+        # releases), then /opt/liferay/routes (LDM-#1918, which is right for
+        # the LIFERAY container but shadows a node-runner extension's own
+        # application code), and now this. The two containers do not share a
+        # filesystem convention, and each correction was made by assuming they
+        # did.
         self.assertTrue(
             any(
-                v.startswith(f"{Path('/tmp/routes').as_posix()}:/opt/liferay/routes")
+                v.startswith(f"{Path('/tmp/routes/default/dxp').as_posix()}:")
+                and ":/etc/liferay/lxc/dxp-metadata" in v
                 for v in services["proj-ms1"]["volumes"]
             ),
             services["proj-ms1"]["volumes"],

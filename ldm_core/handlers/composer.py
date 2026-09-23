@@ -2113,6 +2113,11 @@ class ComposerService:
             "start_period": f"{start_period}s",
         }
 
+    #: Where Liferay Cloud publishes DXP metadata, and therefore where a stock
+    #: client-extension image looks for it -- the image sets
+    #: LIFERAY_ROUTES_DXP to exactly this. LDM-#1911.
+    LXC_DXP_METADATA_MOUNT = "/etc/liferay/lxc/dxp-metadata"
+
     def _apply_ext_runtime_options(self, service, ext, svc_id, ms_port, scale):
         """Healthcheck, replicas and memory limit for one extension service.
 
@@ -2202,12 +2207,23 @@ class ComposerService:
                     # Liferay when the project is served under a custom name.
                     "extra_hosts": [f"{host_name}:host-gateway"],
                     "volumes": [
-                        # LDM-#1918: the SAME host directory as the Liferay
-                        # container, at the same path -- that sharing is how
-                        # Liferay's published config trees reach a client
-                        # extension. Mounting it at /workspace/routes advertised
-                        # a channel that was never written to.
-                        f"{mount_paths.get('routes', mount_paths['root'] / 'routes').as_posix()}:/opt/liferay/routes",
+                        # LDM-#1911: the DXP metadata subtree ONLY, at the path
+                        # the extension's own image declares
+                        # (LIFERAY_ROUTES_DXP=/etc/liferay/lxc/dxp-metadata).
+                        #
+                        # NOT /opt/liferay/routes. That is correct for the
+                        # Liferay container -- it writes its config trees there
+                        # -- but a client extension built on liferay/node-runner
+                        # does `COPY . /opt/liferay`, so /opt/liferay/routes is
+                        # the APPLICATION'S OWN route handlers. Mounting over it
+                        # shadows the app and the container will not start.
+                        # Measured on a live deployment: 16 .cjs handlers sat
+                        # there. The two containers do not share a filesystem
+                        # convention, and LDM-#1918 restored the pre-refactor
+                        # path without asking whether it had ever been right for
+                        # this side.
+                        f"{(mount_paths.get('routes', mount_paths['root'] / 'routes') / 'default' / 'dxp').as_posix()}"
+                        f":{self.LXC_DXP_METADATA_MOUNT}",
                     ],
                 }
 

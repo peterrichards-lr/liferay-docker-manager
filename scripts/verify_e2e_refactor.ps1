@@ -2900,9 +2900,13 @@ if svc is None:
 
 fails = []
 vols = svc.get("volumes") or []
-if not [v for v in vols if ":/opt/liferay/routes" in v]:
-    fails.append("routes not mounted at /opt/liferay/routes, where Liferay "
-                 "writes its config trees: %s" % vols)
+if not [v for v in vols if ":/etc/liferay/lxc/dxp-metadata" in v]:
+    fails.append("DXP metadata not mounted at /etc/liferay/lxc/dxp-metadata, "
+                 "the path the extension's image declares: %s" % vols)
+if [v for v in vols if v.endswith(":/opt/liferay/routes") or ":/opt/liferay/routes:" in v]:
+    fails.append("mounted over /opt/liferay/routes, which for a node-runner "
+                 "extension is the application's own code -- the container "
+                 "will not start (LDM-#1911): %s" % vols)
 if [v for v in vols if "/workspace/routes" in v]:
     fails.append("routes mounted at /workspace/routes, which nothing writes to: %s" % vols)
 
@@ -2938,7 +2942,7 @@ sys.exit(1 if fails else 0)
     if ($LASTEXITCODE -ne 0) {
         throw "Client-extension service definition is wrong (LDM-#1918)."
     }
-    Write-Verdict "[SUCCESS] Client-extension service: routes shared at /opt/liferay/routes, DXP domain supplied, host resolvable (LDM-#1918)."
+    Write-Verdict "[SUCCESS] Client-extension service: DXP metadata at /etc/liferay/lxc/dxp-metadata (not over the app), domain supplied, host resolvable (LDM-#1911/#1918)."
     Remove-Item -Recurse -Force "cxsvc-build", "$cxSvcName.zip", "cxsvc-check.py" -ErrorAction SilentlyContinue
 
     Write-Host ">> Verifying snapshot manifest lists the extensions it claims (LDM-#1573)..."
