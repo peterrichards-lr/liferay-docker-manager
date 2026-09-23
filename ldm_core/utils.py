@@ -1063,6 +1063,56 @@ _SSH_FAILURE_TIP_DEFAULT = (
 )
 
 
+def _context_node(parts) -> str | None:
+    """The node named by `--context <node>`, or None for a local command."""
+    for i, token in enumerate(parts):
+        if token == "--context" and i + 1 < len(parts):
+            return parts[i + 1]
+    return None
+
+
+#: LDM-#1906: a full Docker host printed Docker's own "no space left on device"
+#: and nothing else, and an experienced operator concluded in public that LDM
+#: could not reclaim the space. It can: `--images` runs `docker image prune -af`
+#: AND `docker builder prune -af` (LDM-#1086), and build cache was the largest
+#: single item in the reported case.
+#:
+#: Unlike the LDM-#1345 diagnosis this ADDS a tip and suppresses nothing -- the
+#: stderr names the path that filled, which is the half worth keeping.
+_DISK_FULL_MARKERS = ("no space left on device", "enospc")
+
+
+def disk_space_tip(cmd, stderr: str) -> str | None:
+    """Names LDM's own reclamation command when a Docker command hits ENOSPC.
+
+    Returns None for anything else, so every other failure is unchanged.
+
+    Gated on the command being docker: `ldm system prune` reclaims Docker's
+    storage, so pointing a `gzip` or `tar` ENOSPC at it would name a remedy
+    that cannot help.
+    """
+    if not stderr:
+        return None
+    if not any(marker in stderr.lower() for marker in _DISK_FULL_MARKERS):
+        return None
+
+    parts = cmd if isinstance(cmd, list) else str(cmd).split()
+    if not parts or "docker" not in Path(str(parts[0])).name.lower():
+        return None
+
+    node = _context_node(parts)
+    prune = "ldm system prune --images"
+    where = "The Docker host is out of disk."
+    if node:
+        prune += f" --node {node}"
+        where = f"The Docker host for node '{node}' is out of disk."
+    return (
+        f"{where} Reclaim unused images and build cache with '{prune}' "
+        "(or --all). Build cache is usually the largest item and is safe "
+        "to rebuild."
+    )
+
+
 def diagnose_remote_context_failure(cmd, stderr: str) -> tuple[str, str] | None:
     """Turns a remote Docker context connection failure into a diagnosis (#1345).
 
@@ -1082,11 +1132,7 @@ def diagnose_remote_context_failure(cmd, stderr: str) -> tuple[str, str] | None:
         return None
 
     parts = cmd if isinstance(cmd, list) else str(cmd).split()
-    node = None
-    for i, token in enumerate(parts):
-        if token == "--context" and i + 1 < len(parts):
-            node = parts[i + 1]
-            break
+    node = _context_node(parts)
     if not node:
         return None
 
@@ -1477,7 +1523,12 @@ class CommandRunner:
                     UI.detail(f"Underlying error: {err_details.strip()}")
                     sys.exit(e.returncode)
 
-                UI.error(f"Command failed (Exit {e.returncode}): {cmd_str}")
+                # LDM-#1906: the stderr below is kept -- it names the path
+                # that filled. Only the remedy was missing.
+                UI.error(
+                    f"Command failed (Exit {e.returncode}): {cmd_str}",
+                    tip=disk_space_tip(cmd, err_details),
+                )
                 UI.trace(f"[ERROR] Exit {e.returncode}")
                 if err_details:
                     UI.trace(f"[STDERR] {err_details.strip()}")
