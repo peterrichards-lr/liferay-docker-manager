@@ -171,6 +171,30 @@ function Get-EnvLabelLine {
     return "Env Label: $EnvLabel"
 }
 
+# LDM-#1909: parity with print_run_context_line in the bash twin. A
+# GitHub-hosted container and a developer's machine are different environments
+# and must not share a matrix row.
+function Get-RunContextLine {
+    param([string]$RunContext)
+    if ([string]::IsNullOrWhiteSpace($RunContext)) {
+        if ($env:GITHUB_ACTIONS -eq "true") {
+            $RunContext = "ci"
+        } else {
+            $RunContext = "workstation"
+        }
+    }
+    return "Run Context: $RunContext"
+}
+
+# LDM-#1907: the edition is knowable only to the shell, so the script supplies
+# it rather than having the CLI guess its parent process. PowerShell 5.1 and 7
+# on one host otherwise produce the same slug.
+function Get-SlugOsSuffix {
+    param([string]$Edition)
+    if ($Edition -eq "Desktop") { return "powershell-5.1" }
+    return "powershell-7"
+}
+
 # Header
 & {
     Write-Output "=== LDM BINARY VERIFICATION REPORT ==="
@@ -201,6 +225,7 @@ function Get-EnvLabelLine {
     Write-Output "PowerShell: $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))"
     $envLabelLine = Get-EnvLabelLine -EnvLabel $env:LDM_ENV_LABEL
     if ($envLabelLine) { Write-Output $envLabelLine }
+    Write-Output (Get-RunContextLine -RunContext $env:LDM_RUN_CONTEXT)
 
     $binaryPath = "Not Found"
     try {
@@ -360,12 +385,17 @@ function Finalize-Verification {
     
     $slug = "unknown"
     try {
+        # LDM-#1907: hand the shell's own edition to the CLI rather than
+        # having the CLI guess its parent process.
+        $env:LDM_SLUG_OS_SUFFIX = Get-SlugOsSuffix -Edition $PSVersionTable.PSEdition
         $slugOut = & $LDM_CMD system doctor --slug 2>$null
         if ($null -ne $slugOut) {
             $slug = ($slugOut -join "-") -replace '[^a-zA-Z0-9-]', '-'
         }
     } catch {
         # ignore exceptions during finalization
+    } finally {
+        Remove-Item Env:\LDM_SLUG_OS_SUFFIX -ErrorAction SilentlyContinue
     }
     
     $FinalName = "verify-$slug-$Timestamp-$status.txt"

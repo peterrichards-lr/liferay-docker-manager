@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import sys
 import typing
@@ -376,7 +377,16 @@ def _no_docs_sync():
     return patch.dict(sys.modules, {"sync_docs": MagicMock()})
 
 
-def _linux_report(directory, name, platform, version, env_label=None, passed=True):
+def _linux_report(
+    directory,
+    name,
+    platform,
+    version,
+    env_label=None,
+    passed=True,
+    run_context=None,
+    docker="28.0.4",
+):
     """Writes a report shaped like a real verify_e2e_refactor.sh one.
 
     The version matters: a report whose version does not match this checkout is
@@ -391,11 +401,13 @@ def _linux_report(directory, name, platform, version, env_label=None, passed=Tru
     ]
     if env_label:
         lines.append(f"Env Label:    {env_label}")
+    if run_context:
+        lines.append(f"Run Context:  {run_context}")
     lines += [
         "Binary:       /usr/local/bin/ldm",
         f"Version:      ldm {version}",
         f"Script Ver:   {version}",
-        "Docker:       28.0.4",
+        f"Docker:       {docker}",
         "",
     ]
     if passed:
@@ -1235,3 +1247,180 @@ class TestHomePathRedaction:
     def test_the_guard_passes_content_the_substitution_did_cover(self):
         redacted = sync_compatibility.anonymize_content("at /home/someone/work")
         assert sync_compatibility.find_unredacted_home_paths(redacted) == []
+
+
+class TestProvenanceKeepsTwoEnvironmentsApart:
+    """LDM-#1909: a CI container and a workstation are different environments.
+
+    They had the same identity, so they shared one matrix row and the later
+    sync silently won. A Fedora 44 workstation row at Docker 29.8.1 was
+    replaced by CI's 28.0.4 -- removing the only evidence LDM had been
+    exercised on the newer engine.
+
+    Asserted as OUTCOMES: how many reports survive, how many rows exist, and
+    whether both Docker versions are still visible. A test that greps the slug
+    for "ci" passes while the rows still collapse.
+    """
+
+    def teardown_method(self):
+        UI.QUIET_MODE = False
+        sync_compatibility.ARCHIVE_STALE = False
+        sync_compatibility.DRY_RUN = False
+
+    @staticmethod
+    def _sandbox(tmp_path):
+        """LDM-#1391: never the real results dir or the real table."""
+        results = tmp_path / "results"
+        results.mkdir()
+        table = tmp_path / "compatibility.md"
+        shutil.copy(sync_compatibility.DEFAULT_TABLE_FILE, table)
+        return results, table
+
+    def test_a_ci_run_and_a_workstation_run_both_survive(self, tmp_path):
+        results, table = self._sandbox(tmp_path)
+        _linux_report(
+            results,
+            "verify-raw-ci-20260922-134620-pass.txt",
+            "Fedora Linux 44 (Container Image)",
+            sync_compatibility.VERSION,
+            env_label="fedora",
+            run_context="ci",
+            docker="28.0.4",
+        )
+        _linux_report(
+            results,
+            "verify-raw-ws-20260921-101500-pass.txt",
+            "Fedora Linux 44",
+            sync_compatibility.VERSION,
+            run_context="workstation",
+            docker="29.8.1",
+        )
+
+        with _no_docs_sync():
+            sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        survivors = sorted(p.name for p in results.glob("*.txt"))
+        assert len(survivors) == 2, survivors
+        archived = list((results / "archived_findings").glob("*.txt"))
+        assert not archived, [p.name for p in archived]
+
+    def test_both_docker_versions_stay_visible_in_the_table(self, tmp_path):
+        """The substance of the loss: the higher engine version disappeared."""
+        results, table = self._sandbox(tmp_path)
+        _linux_report(
+            results,
+            "verify-raw-ci-1-pass.txt",
+            "Fedora Linux 44 (Container Image)",
+            sync_compatibility.VERSION,
+            env_label="fedora",
+            run_context="ci",
+            docker="28.0.4",
+        )
+        _linux_report(
+            results,
+            "verify-raw-ws-1-pass.txt",
+            "Fedora Linux 44",
+            sync_compatibility.VERSION,
+            run_context="workstation",
+            docker="29.8.1",
+        )
+
+        with _no_docs_sync():
+            sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        rows = [ln for ln in table.read_text().splitlines() if "Fedora 44" in ln]
+        assert len(rows) == 2, rows
+        versions = {v for row in rows for v in re.findall(r"`([\d.]+)`", row)}
+        assert {"28.0.4", "29.8.1"} <= versions, versions
+
+    def test_a_later_ci_sync_does_not_displace_an_earlier_workstation_row(
+        self, tmp_path
+    ):
+        """The exact shape of the loss, measured against the unfixed code.
+
+        In one run the reports collide and the LDM-#1614 guard refuses. The
+        real sequence is two runs weeks apart -- CI syncs, then a workstation
+        report arrives -- and that guard sees only what is present in the run
+        it is given. Neutering the provenance suffix and replaying this
+        reproduced #1909 precisely: one row, `29.8.1` overwritten by `28.0.4`,
+        the workstation report moved to archived_findings under a hash suffix.
+        """
+        results, table = self._sandbox(tmp_path)
+
+        def sync():
+            with _no_docs_sync():
+                sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        _linux_report(
+            results,
+            "verify-raw-ws-1-pass.txt",
+            "Fedora Linux 44",
+            sync_compatibility.VERSION,
+            env_label="fedora",
+            run_context="workstation",
+            docker="29.8.1",
+        )
+        sync()
+
+        _linux_report(
+            results,
+            "verify-raw-ci-1-pass.txt",
+            "Fedora Linux 44 (Container Image)",
+            sync_compatibility.VERSION,
+            env_label="fedora",
+            run_context="ci",
+            docker="28.0.4",
+        )
+        sync()
+
+        archived = list((results / "archived_findings").glob("*.txt"))
+        assert not archived, (
+            "the earlier environment's report was displaced by a later sync: "
+            f"{[p.name for p in archived]}"
+        )
+        rows = [ln for ln in table.read_text().splitlines() if "Fedora 44" in ln]
+        versions = {v for row in rows for v in re.findall(r"`([\d.]+)`", row)}
+        assert "29.8.1" in versions, (
+            f"the workstation Docker version was overwritten; rows: {rows}"
+        )
+
+    def test_a_report_without_provenance_keeps_its_existing_identity(self, tmp_path):
+        """The migration guarantee: absent on every report predating this, so
+        no committed row is renamed."""
+        results, table = self._sandbox(tmp_path)
+        _linux_report(
+            results,
+            "verify-raw-legacy-pass.txt",
+            "Fedora Linux 44",
+            sync_compatibility.VERSION,
+        )
+
+        with _no_docs_sync():
+            sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        survivors = [p.name for p in results.glob("*.txt")]
+        assert survivors == [
+            "verify-linux-workstation-fedora-44-native-docker-pass.txt"
+        ], survivors
+
+
+class TestNoCommittedReportIsRenamed:
+    """The migration lock. Every committed report already sits at its canonical
+    name, so if a change to slug derivation renames one, this fails loudly
+    rather than the sync quietly archiving a real result."""
+
+    def test_every_committed_report_is_already_canonical(self):
+        offenders = []
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        results = repo_root / sync_compatibility.DEFAULT_RESULTS_DIR
+        committed = sorted(results.glob("verify-*.txt"))
+        assert committed, f"no committed reports found under {results}"
+        for report in committed:
+            meta = sync_compatibility.get_report_metadata(report)
+            canonical = f"verify-{meta['internal_slug']}-{meta['status_slug']}.txt"
+            if canonical != report.name:
+                offenders.append(f"{report.name} -> {canonical}")
+        assert not offenders, (
+            "slug derivation would rename committed reports, which archives real "
+            f"verification data: {offenders}"
+        )

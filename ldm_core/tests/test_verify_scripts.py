@@ -546,6 +546,157 @@ class TestPowerShellEnvLabelLine(unittest.TestCase):
                 self.assertEqual(_run_powershell_env_label(binary, "   ").strip(), "")
 
 
+def _run_bash_run_context(context, env=None):
+    func_text = _extract_function(
+        BASH_SCRIPT,
+        re.compile(r"^print_run_context_line\s*\(\)\s*\{.*?^\}", re.M | re.S),
+    )
+    script = f'{func_text}\nprint_run_context_line "{context}"\n'
+    res = subprocess.run(
+        ["bash", "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert res.returncode == 0, f"bash exited {res.returncode}: {res.stderr}"
+    return res.stdout
+
+
+def _run_powershell_run_context(binary, context, in_ci=False):
+    func_text = _extract_function(
+        PS1_SCRIPT,
+        re.compile(r"^function Get-RunContextLine\s*\{.*?^\}", re.M | re.S),
+    )
+    script = (
+        f"{func_text}\n"
+        f"$env:GITHUB_ACTIONS = '{'true' if in_ci else ''}'\n"
+        f"Write-Output (Get-RunContextLine -RunContext '{context}')\n"
+    )
+    res = subprocess.run(
+        [binary, "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0, f"{binary} exited {res.returncode}: {res.stderr}"
+    return res.stdout
+
+
+class TestBashRunContextLine(unittest.TestCase):
+    """LDM-#1909: WHO ran the verification has to reach the committed report.
+
+    sync_compatibility.py derives the matrix row from the report's CONTENT, so
+    a CI container and a workstation that report the same distro collapse onto
+    one row unless the report itself says which it was. A Fedora 44 workstation
+    row at Docker 29.8.1 was destroyed that way.
+
+    Executed rather than text-matched: the default is chosen by a branch on
+    GITHUB_ACTIONS, and reading the branch is not evidence it takes.
+    """
+
+    def _env(self, **overrides):
+        env = {k: v for k, v in os.environ.items() if k != "GITHUB_ACTIONS"}
+        env.update(overrides)
+        return env
+
+    def test_an_explicit_context_wins(self):
+        out = _run_bash_run_context("workstation", env=self._env())
+        self.assertIn("Run Context:", out)
+        self.assertIn("workstation", out)
+
+    def test_github_actions_defaults_to_ci(self):
+        out = _run_bash_run_context("", env=self._env(GITHUB_ACTIONS="true"))
+        self.assertRegex(out, r"^Run Context:[ \t]*ci\s*$")
+
+    def test_anywhere_else_defaults_to_workstation(self):
+        """The load-bearing default. An unmarked report is treated as a
+        superseded CI one by the publish step's transitional cleanup, so a
+        local run that failed to declare itself would be deleted."""
+        out = _run_bash_run_context("", env=self._env())
+        self.assertRegex(out, r"^Run Context:[ \t]*workstation\s*$")
+
+    def test_the_line_matches_what_sync_compatibility_parses(self):
+        """The two halves are in different languages and different files; the
+        only thing joining them is this regex."""
+        pattern = re.compile(r"^Run Context:[ \t]*([^\n]*)", re.M)
+        for env, expected in (
+            (self._env(GITHUB_ACTIONS="true"), "ci"),
+            (self._env(), "workstation"),
+        ):
+            out = _run_bash_run_context("", env=env)
+            match = pattern.search(out)
+            self.assertIsNotNone(match, f"sync_compatibility cannot parse {out!r}")
+            assert match is not None  # for mypy
+            self.assertEqual(match.group(1).strip(), expected)
+
+
+@unittest.skipUnless(_powershell_binaries(), "no PowerShell available")
+class TestPowerShellRunContextLine(unittest.TestCase):
+    """LDM-#1909 parity: without this half a Windows verification produces an
+    unmarked report, which the publish step's transitional cleanup deletes."""
+
+    def test_an_explicit_context_wins(self):
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                out = _run_powershell_run_context(binary, "workstation", in_ci=True)
+                self.assertIn("workstation", out)
+
+    def test_github_actions_defaults_to_ci(self):
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                out = _run_powershell_run_context(binary, "", in_ci=True)
+                self.assertRegex(out, r"^Run Context:[ \t]*ci\s*$")
+
+    def test_anywhere_else_defaults_to_workstation(self):
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                out = _run_powershell_run_context(binary, "", in_ci=False)
+                self.assertRegex(out, r"^Run Context:[ \t]*workstation\s*$")
+
+
+@unittest.skipUnless(_powershell_binaries(), "no PowerShell available")
+class TestPowerShellSlugOsSuffix(unittest.TestCase):
+    """LDM-#1907: PowerShell 5.1 and 7 on one host are different environments
+    and produced the same slug, so whichever ran second replaced the other.
+
+    The edition is knowable only to the shell -- the CLI would have to guess at
+    its parent process -- so the script supplies it. Both editions are asserted
+    from ONE shell deliberately: the mapping must be a function of the argument,
+    not of whichever interpreter happens to be running the test.
+    """
+
+    def _suffix(self, binary, edition):
+        func_text = _extract_function(
+            PS1_SCRIPT,
+            re.compile(r"^function Get-SlugOsSuffix\s*\{.*?^\}", re.M | re.S),
+        )
+        script = f"{func_text}\nWrite-Output (Get-SlugOsSuffix -Edition '{edition}')\n"
+        res = subprocess.run(
+            [binary, "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert res.returncode == 0, f"{binary} exited {res.returncode}: {res.stderr}"
+        return res.stdout.strip()
+
+    def test_the_two_editions_do_not_share_a_suffix(self):
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                desktop = self._suffix(binary, "Desktop")
+                core = self._suffix(binary, "Core")
+                self.assertNotEqual(
+                    desktop,
+                    core,
+                    "PowerShell 5.1 and 7 map to the same slug again, so one "
+                    "host's two shells share a matrix row and the second run "
+                    "replaces the first (LDM-#1907).",
+                )
+                self.assertEqual(desktop, "powershell-5.1")
+                self.assertEqual(core, "powershell-7")
+
+
 # LDM-#1611: the suite's own exit status.
 #
 # The .ps1's top-level `catch` wrote the "-fail" report, printed

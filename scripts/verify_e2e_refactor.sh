@@ -136,12 +136,30 @@ print_env_label_line() {
     fi
 }
 
+# LDM-#1909: WHO ran this. A GitHub-hosted container and a developer's machine
+# are different environments -- different kernels, storage drivers and Docker
+# versions -- and sharing one matrix row means the later run silently replaces
+# the earlier. Named for the same reason as print_env_label_line: so it can be
+# tested without a full E2E run (ldm_core/tests/test_verify_scripts.py).
+print_run_context_line() {
+    local context="${1:-}"
+    if [ -z "$context" ]; then
+        if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+            context="ci"
+        else
+            context="workstation"
+        fi
+    fi
+    echo "Run Context:  $context"
+}
+
 {
     echo "=== LDM BINARY VERIFICATION REPORT ==="
     echo "Timestamp:    $(date)"
     echo "Hostname:     $HOSTNAME"
     echo "Platform:     $PLATFORM_INFO"
     print_env_label_line "${LDM_ENV_LABEL:-}"
+    print_run_context_line "${LDM_RUN_CONTEXT:-}"
     echo "Binary:       $(which "$LDM_CMD")"
 } >"$RESULTS_FILE_TMP"
 
