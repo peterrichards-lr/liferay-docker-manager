@@ -350,7 +350,19 @@ class OrchestrationService(BaseHandler):
                     failures.append(root.name)
                 else:
                     self._verify_pinned_mac_after_lifecycle(root, meta, target_name)
+                    # LDM-#1937: the only other line this command emitted was
+                    # `UI.detail`, which prints nothing outside INFO/VERBOSE,
+                    # so a successful `ldm start` said nothing at all. The
+                    # success line goes after the MAC check deliberately --
+                    # that check can `UI.die` with exit 3, and announcing
+                    # success first would be a lie on the way out.
+                    UI.success(f"Project '{root.name}' started.")
+        # Mirrors cmd_stop: `_report_batch_failures` exits non-zero when any
+        # project failed, so reaching here means every target started.
         self._report_batch_failures(failures, "start")
+        UI.hint(
+            "Run 'ldm status' to view environment status, or 'ldm logs -f' to tail the logs."
+        )
 
     @staticmethod
     def _report_batch_failures(failures, action):
@@ -447,8 +459,16 @@ class OrchestrationService(BaseHandler):
                 failures.append(root.name)
         self._report_batch_failures(failures, "stop")
         if emit_hint:
+            # LDM-#1937: `docker compose stop` stops containers, it does not
+            # remove them -- so they still exist and `ldm start` (a plain
+            # `docker compose start`) is the cheapest correct next command.
+            # This used to name `ldm run`, which re-runs validation, compose
+            # regeneration and the whole orchestration pipeline to achieve the
+            # same thing. `ldm run` IS the right advice when containers were
+            # *removed* rather than stopped (LDM-#1870), but having just
+            # stopped them ourselves we know that is not the state we are in.
             UI.hint(
-                "Run 'ldm run' to restart the container, or 'ldm status' to view environment status."
+                "Run 'ldm start' to start the container again, or 'ldm status' to view environment status."
             )
 
     def cmd_restart(

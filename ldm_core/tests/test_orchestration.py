@@ -410,6 +410,53 @@ class TestOrchestration(unittest.TestCase):
         self.assertIn(str(proj_ok), start_call_cwds)
         self.assertNotIn(str(proj_absent), start_call_cwds)
 
+    def _start_stdout(self, project="test") -> str:
+        """Drives a successful `cmd_start` and returns what it really printed.
+
+        Captured from `sys.stdout` rather than from a patched `UI.success`,
+        because the defect was precisely that a message existed in the source
+        and never reached the terminal -- `UI.detail` is gated behind
+        `--info`/`--verbose`. Only real output can tell those two apart.
+        """
+        import contextlib
+        import io
+
+        from ldm_core.ui import UI
+
+        self.assertFalse(
+            UI.INFO_MODE or UI.VERBOSE,
+            "this test must run at the default verbosity, where the old "
+            "UI.detail line printed nothing",
+        )
+        buffer = io.StringIO()
+        with (
+            patch.object(self.handler.manager, "read_meta", return_value={}),
+            patch.object(BaseHandler, "run_command", return_value="fake-container-id"),
+            patch("ldm_core.runtime.mac_pin.configured_mac", return_value=None),
+            contextlib.redirect_stdout(buffer),
+        ):
+            self.handler.handler.orchestration.cmd_start(project)
+        return buffer.getvalue()
+
+    def test_cmd_start_confirms_success_at_default_verbosity(self) -> None:
+        """LDM-#1937: a successful `ldm start` printed nothing whatsoever.
+
+        The only line it emitted was `UI.detail("Starting project: ...")`, and
+        `UI.detail` returns without printing unless `INFO_MODE` or `VERBOSE`
+        is set (`ui.py`). Combined with the stop hint naming `ldm run`, the
+        effect was that `start` gave no evidence it had worked, so `ldm run`
+        became the habit.
+        """
+        output = self._start_stdout()
+        self.assertIn(self.tmp_dir.name, output)
+        self.assertIn("started", output.lower())
+
+    def test_cmd_start_ends_with_a_next_step_hint(self) -> None:
+        """LDM-#1937: `stop` closed with a next-step hint and `start` did not."""
+        output = self._start_stdout()
+        self.assertIn("Next step:", output)
+        self.assertIn("ldm status", output)
+
     @patch("ldm_core.ui.UI.die")
     @patch("ldm_core.config.get_active_target")
     def test_cmd_deploy_single_artifact_ships_to_a_remote_target(
@@ -834,3 +881,56 @@ class TestStopHintIsNotLeakedToInternalCallers(unittest.TestCase):
         self.assertEqual(
             [], self._stop(emit_hint=False), "a mid-operation stop must stay silent"
         )
+
+
+class TestStopHintNamesTheCheapestCorrectCommand(unittest.TestCase):
+    """LDM-#1937: `cmd_stop` runs `docker compose stop`.
+
+    That stops the containers; it does not remove them. They still exist, so
+    `ldm start` -- a plain `docker compose start` -- is what boots them again.
+    The hint named `ldm run` instead, which re-runs validation, compose
+    regeneration and the whole orchestration pipeline for the same result.
+
+    `ldm run` is still the right advice when containers were *removed* rather
+    than stopped (LDM-#1870, `Not Created`), but having just stopped them
+    ourselves we know that is not the state the project is in.
+    """
+
+    def _stop_stdout(self, **kwargs) -> str:
+        """Returns what a real `cmd_stop` printed to stdout.
+
+        Captured from the stream rather than from a patched `UI.hint`, so the
+        assertion is about output the user actually sees.
+        """
+        import contextlib
+        import io
+
+        manager = MagicMock()
+        manager.find_dxp_roots.return_value = []
+        manager.detect_project_path.return_value = Path(f"{TEST_TMP_ROOT}/proj")
+        manager.read_meta.return_value = {"target": None}
+        manager.run_command.return_value = ""
+        from ldm_core.runtime.orchestration import OrchestrationService
+
+        svc = OrchestrationService(manager)
+
+        buffer = io.StringIO()
+        with (
+            patch(
+                "ldm_core.docker_service.DockerService.get_compose_cmd_prefix",
+                return_value=["docker", "compose"],
+            ),
+            contextlib.redirect_stdout(buffer),
+        ):
+            svc.cmd_stop("proj", **kwargs)
+        return buffer.getvalue()
+
+    def test_the_hint_names_ldm_start(self):
+        self.assertIn("ldm start", self._stop_stdout())
+
+    def test_the_hint_does_not_route_the_user_through_the_run_pipeline(self):
+        self.assertNotIn("ldm run", self._stop_stdout())
+
+    def test_the_internal_caller_suppression_still_holds(self):
+        """LDM-#1410 must not regress while the wording changes."""
+        self.assertNotIn("Next step:", self._stop_stdout(emit_hint=False))

@@ -231,9 +231,16 @@ def _liferay_service():
 
 
 class TestTheLiferayServiceMountsWhatTheProjectOffers(unittest.TestCase):
-    """Both directories are created in every project by `setup_paths`. Unmounted,
-    anything dropped in them is silently ignored -- and the directory's very
-    existence is what makes that silence misleading."""
+    """Unmounted, anything dropped in these directories is silently ignored --
+    and the directory's existence, where it exists, is what makes that silence
+    misleading.
+
+    LDM-#1917: this docstring used to say "both directories are created in
+    every project by `setup_paths`". `setup_paths` builds a dict of paths and
+    creates nothing, and `marketplace` in particular has had no Python creator
+    since `64c75e9f` unwired `migrate_layout`. The mount asserted below is
+    therefore not guaranteed a host directory -- which is a second defect, not
+    a reason to drop this assertion."""
 
     def test_marketplace_is_mounted(self):
         got = _liferay_service()["volumes"]

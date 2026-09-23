@@ -58,6 +58,135 @@ To resolve critical filesystem locking deadlocks (e.g., `Unable to create lock m
 
   **Labels are applied only at volume creation.** Declaring labels in compose for a volume that already exists has no effect -- verified: `docker volume inspect` still reports `map[]`. Volumes predating LDM-#1267 therefore never acquire labels and are only reachable via the name-pattern fallback behind `ldm prune --legacy-volumes`. This is why dropping the labels at creation is unrecoverable rather than merely untidy.
 
+## Permissions, Ownership and Timing
+
+Three regressions in the v2.26.0 cycle alone came from this area, and each was
+diagnosed from scratch because none of it was written down. The mechanisms
+below are cheap to state and expensive to rediscover.
+
+### Reconciliation runs BEFORE boot; containers write AFTER it
+
+**This is the rule that keeps being missed.** LDM reconciles permissions in
+`verify_runtime_environment` (`handlers/base.py`) and in `pipelines/run.py`,
+both **before** the stack starts. A container then creates files and
+directories of its own, with its own uid and umask, which no pre-boot pass can
+have touched.
+
+Pre-creating or pre-`chmod`-ing the PARENT does not help. `chmod -R` cannot
+reach a directory that does not exist yet.
+
+Two instances in one cycle, found days apart and initially read as unrelated:
+
+| | what the container created afterwards | symptom |
+|---|---|---|
+| LDM-#1941 | `osgi/marketplace/override` | `ldm snapshot` produced no backup at all on native Linux -- the whole `osgi` tree failed one archive entry |
+| LDM-#1944 | `routes/default/<ext>/` | a client extension cannot read the OAuth2 credentials Liferay publishes for it |
+
+**Before adding a fix here, ask when the content appears.** If a container
+creates it, a pre-boot pass is the wrong tool and the fix belongs after the
+write -- or in what the container is told to do, not what the host did earlier.
+
+### You cannot verify any of this on macOS or Windows
+
+Docker Desktop's virtiofs/gRPC-FUSE bind mounts present files as the host user
+**regardless of mode**. Every permission bug in this section is invisible on a
+developer Mac and on Windows, and reproduces only where a bind mount performs
+no uid translation -- native Linux.
+
+This is not a footnote; it is why these ship:
+
+- LDM-#599 hardened a mode to `750`, broke native Linux, and was only caught a
+  release later by LDM-#645.
+- LDM-#1941 reached a tag with four of five distros green; only Ubuntu failed,
+  and nothing on macOS could have shown it.
+- LDM-#1944 was reported by an external consumer, not found here.
+
+**A permission change is not verified by a green local run or by macOS CI.** It
+needs native Linux -- the Multi-OS workflow, or a Linux host. Note that
+`release-e2e.yml` and `scheduled-verification.yml` trigger on **tag pushes
+only**, so a PR being green says nothing about them; dispatch them against the
+branch (`gh workflow run <file> --ref <branch>`) rather than discovering it on
+the tag.
+
+### The host filesystem must actually honour modes
+
+`reclaim_volume_permissions()` shells out to Alpine to `chown`/`chmod`, and
+returns whether the **command ran** -- not whether the mode changed. On a
+filesystem that ignores permissions it silently does nothing and reports
+success.
+
+Measured on macOS with disposable disk images (LDM-#1946):
+
+| filesystem | mount options | `chmod 750` | resulting mode |
+|---|---|---|---|
+| FAT32 | `msdos, noowners` | exit 0, no error | unchanged, `drwx------` |
+| exFAT | `exfat, noowners` | exit 0, no error | unchanged, `drwx------` |
+| APFS (control) | owners enabled | exit 0 | `drwxr-x---`, as asked |
+
+**The synthesised mode is `0700`, not a permissive one.** The intuitive
+assumption -- that a non-POSIX filesystem is permissive and LDM therefore works
+by accident -- is exactly backwards: a container running as uid 1000 is locked
+out of the entire tree, not merely of credentials.
+
+The same applies to a POSIX volume with macOS's "Ignore ownership on this
+volume" enabled, which is off by default on many external drives. **Detect this
+by measurement, never by filesystem name** -- set a mode, read it back. A name
+check reports "APFS" and misses the ownership-ignored case entirely.
+
+There is no second approach to fall back to: where modes are not enforced,
+`chmod 777` and group membership are equally inert. The correct behaviour is to
+say so plainly, not to branch.
+
+### Who creates what
+
+`marketplace` is the outlier, and its absence went unnoticed for months because
+a comment asserted the opposite (LDM-#1917).
+
+| path key | created by | pre-boot reclaim | snapshot reclaim |
+|---|---|---|---|
+| `data` | `verify_runtime_environment` | yes | host uid, `755` |
+| `state` | `verify_runtime_environment` | yes | host uid, `755` |
+| `deploy` | both | yes | uid 1000, `777` |
+| `files` | both | yes | uid 1000, `777` |
+| `configs` | both | yes | uid 1000, `777` |
+| `modules` | both | no | uid 1000, `777` |
+| `cx` | both | yes | no |
+| `backups` | `verify_runtime_environment` | yes | no |
+| `scripts` | `validate_properties` | no | no |
+| `logs` | `validate_properties` | yes | uid 1000, `777` |
+| `log4j` | `validate_properties` | yes | no |
+| `portal_log4j` | `validate_properties` | yes | no |
+| `routes` | `validate_properties` | yes | no |
+| **`marketplace`** | **nothing** | no | uid 1000, `777` (LDM-#1941) |
+
+"Both" means `verify_runtime_environment` (`handlers/base.py`) and the Missing
+Mount Paths check in `validate_properties` (`handlers/config.py`). The two
+lists are maintained by hand and have drifted from each other and from
+`setup_paths` -- the snapshot list still carries a `client-extensions` entry
+matching **no** path key, so it has never once fired (LDM-#1942).
+
+`marketplace`'s only creator is a `mkdir -p` run INSIDE a container, which is
+skipped with no docker binary, under `--dry-run`, and on Windows -- while the
+mount is declared unconditionally. Docker then creates the source as root.
+
+**Two rules follow.** Do not add a directory to a mount without adding it to a
+creator; `paths.get(key)` treats a missing key and a missing directory
+identically, so a typo degrades to a silent no-op. And do not trust a comment
+here -- three of them were false when checked in a single afternoon.
+
+### Why `routes` is `777`, and why that is now a decision rather than a default
+
+`routes` sits in the pre-boot `777` list. The comment above that list records
+the reasoning as **unverified**, and says `routes` "holds Traefik dynamic
+config that is only read". That is false: it holds the config trees Liferay
+writes, including `oauth2.headless.server.client.secret`.
+
+So the `777` was chosen under a belief about the contents that no longer holds
+-- and LDM-#1928 is what made the tree actually carry credentials. Widening it
+is defensible, but it is now a deliberate decision about exposing secrets on
+the host, not the obvious default it looks like. Decide it on purpose
+(LDM-#1944).
+
 ## Infrastructure Enforcement
 
 - **Database**: Standardize on PostgreSQL with mandatory healthchecks.
