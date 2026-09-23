@@ -1108,3 +1108,61 @@ class TestPowerShellPlatformHeader(unittest.TestCase):
             'echo "Platform:     $PLATFORM_INFO"',
             BASH_SCRIPT.read_text(encoding="utf-8"),
         )
+
+
+class TestTheClientExtensionFixtureCanActuallyBeShadowed(unittest.TestCase):
+    """LDM-#1911: the runtime check is only worth having if it can fail.
+
+    The suite builds a synthetic client-extension SERVICE and, since #1911,
+    runs it to confirm the extension's own code at /opt/liferay/routes is
+    still visible inside the container. That check is vacuous unless the
+    fixture image actually PUTS something there -- with the old `FROM alpine`
+    fixture the directory does not exist, nothing can be shadowed, and the
+    check passes against the very mount that broke a live container.
+
+    Same shape as LDM-#1529, where three tests passed against a deliberately
+    neutered gate. Asserting on script text is normally weak, but here the
+    fixture's content IS the subject rather than a proxy for it.
+    """
+
+    @staticmethod
+    def _text(path):
+        return path.read_text(encoding="utf-8")
+
+    def _fixture_region(self, path):
+        text = self._text(path)
+        marker = "The Dockerfile is what makes it a service"
+        self.assertIn(marker, text, f"CX service fixture is gone from {path.name}")
+        start = text.index(marker)
+        return text[start : start + 900]
+
+    def test_the_bash_fixture_declares_application_code(self):
+        self.assertIn(
+            "/opt/liferay/routes/app.cjs",
+            self._fixture_region(BASH_SCRIPT),
+            "The CX fixture image no longer creates application code at "
+            "/opt/liferay/routes, so the runtime shadowing check cannot fail "
+            "and protects nothing (LDM-#1911).",
+        )
+
+    def test_the_powershell_fixture_declares_application_code(self):
+        self.assertIn(
+            "/opt/liferay/routes/app.cjs",
+            self._fixture_region(PS1_SCRIPT),
+            "Parity: the Windows half's CX fixture has no application code, so "
+            "the runtime shadowing check is vacuous there (LDM-#1911).",
+        )
+
+    def test_both_halves_actually_look_inside_the_container(self):
+        """A compose-level assertion cannot see a runtime shadowing."""
+        for name, path in (("bash", BASH_SCRIPT), ("powershell", PS1_SCRIPT)):
+            with self.subTest(half=name):
+                self.assertIn(
+                    "test -f /opt/liferay/routes/app.cjs",
+                    self._text(path),
+                    f"The {name} half no longer runs the extension container "
+                    "to check its own code survived LDM's mounts. Every "
+                    "remaining CX assertion reads the generated compose file, "
+                    "which is exactly what #1919 satisfied while breaking a "
+                    "real container (LDM-#1911).",
+                )
