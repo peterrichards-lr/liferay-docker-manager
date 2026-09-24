@@ -1426,7 +1426,15 @@ class ComposerService:
                             for p in ext.get("ports", [])
                             if isinstance(p, dict) and p.get("external")
                         ),
-                        ext.get("loadBalancer", {}).get("targetPort", 8080),
+                        # LDM-#1959: `or {}`, not a `.get` default. The key
+                        # EXISTS with value None for any extension that
+                        # declares no loadBalancer (`_scan_extension_metadata`
+                        # initialises it so), and `dict.get`'s default only
+                        # applies when the key is ABSENT. This raised
+                        # `'NoneType' object has no attribute 'get'` and took
+                        # the whole compose generation down. The sibling in
+                        # `_build_extensions_services` already had it right.
+                        (ext.get("loadBalancer") or {}).get("targetPort", 8080),
                     )
                     env_key = f"LIFERAY_ROUTES_CLIENT_EXTENSION_{ext_id.replace('-', '_').upper()}"
                     liferay_env.append(f"{env_key}=http://{svc_id}:{ms_port}")

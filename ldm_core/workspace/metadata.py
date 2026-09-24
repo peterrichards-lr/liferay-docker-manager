@@ -373,12 +373,22 @@ def _process_existing_cx_folders(
                 80,
             )
             entry = {
-                "id": ext_info.get("id") or item.name,
                 "name": item.name.lower().replace("_", "-"),
                 "port": port,
                 "path": item,
                 "is_service": is_service,
                 **ext_info,
+                # LDM-#1959: AFTER the unpack, not before. `_scan_extension_
+                # metadata` initialises `id` to None and only `LCP.json` sets
+                # it, so `**ext_info` was overwriting the fallback with None
+                # for any extension that declares none -- and `is_service`
+                # requires a Dockerfile, not an LCP.json, so that is a valid
+                # shape. The None then reached
+                # `get_service_targeted_env(ext_id, ...)`, which does
+                # `target_id.upper()`, and the AttributeError took the whole
+                # of `write_docker_compose` down. The pipeline rolled back and
+                # `ldm run` exited 0 having written no compose file at all.
+                "id": ext_info.get("id") or item.name,
             }
             ext_id = ext_info.get("id") or item.name
             if is_service:
@@ -460,12 +470,17 @@ def scan_standalone_services(self, root_path):
             )
             services.append(
                 {
-                    "id": ext_info.get("id") or item.name,
                     "name": item.name.lower().replace("_", "-"),
                     "path": item,
                     "port": port,
                     "is_standalone": True,
                     **ext_info,
+                    # LDM-#1959: after the unpack, for the same reason as
+                    # above. This branch requires an LCP.json to exist, so it
+                    # is reachable only when that file declares no `id` -- but
+                    # the clobbering was identical and there is no reason to
+                    # leave one of the two wrong.
+                    "id": ext_info.get("id") or item.name,
                 }
             )
     return services
@@ -597,6 +612,17 @@ def get_service_targeted_env(self, target_id, paths=None, blacklist=None):
     LDM-#1910 held and this went unnoticed. The branch itself was unreachable
     until LDM-#1903 made it callable.
     """
+    # LDM-#1959: a variable cannot be addressed to a service that has no id,
+    # so there is nothing to deliver and nothing to fail on. This used to
+    # raise `AttributeError: 'NoneType' object has no attribute 'upper'` on
+    # the line below and take the whole of `write_docker_compose` with it --
+    # silently, because the pipeline rolls back and the caller exits 0. The
+    # id itself is fixed at source (an extension with no LCP.json now falls
+    # back to its directory name); this guard is so the next caller to pass
+    # something falsy gets an empty result rather than a dead run.
+    if not target_id:
+        return {}
+
     if blacklist is None:
         blacklist = _get_effective_blacklist(self, paths)
     prefix = target_id.upper().replace("-", "_") + "_"
