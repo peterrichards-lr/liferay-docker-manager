@@ -3272,6 +3272,41 @@ ${cxSvcName}:
     name: Synthetic CX Service
     type: microservice
 "@ | Out-File -FilePath "cxsvc-build/$cxSvcName/client-extension.yaml" -Encoding ascii
+    # LDM-#1944: an oAuthApplicationHeadlessServer is what makes Liferay
+    # publish a per-extension routes tree at all. Without one,
+    # BaseConfigurationFactory never runs, no ext.lxc.liferay.com/projectName
+    # label is set, and the directory is never created -- so a fixture
+    # declaring only 'type: microservice' can never observe the pairing
+    # between what Liferay creates and what LDM mounts.
+    @"
+${cxSvcName}-oauth:
+    name: Synthetic CX OAuth
+    type: oAuthApplicationHeadlessServer
+    scopes:
+        - Liferay.Headless.Admin.User.everything
+"@ | Out-File -FilePath "cxsvc-build/$cxSvcName/client-extension.yaml" -Encoding ascii -Append
+    @"
+{
+    "com.liferay.oauth2.provider.configuration.OAuth2ProviderApplicationHeadlessServerConfiguration~${cxSvcName}": {
+        "projectId": "${cxSvcName}",
+        "projectName": "${cxSvcName}",
+        ".serviceAddress": "${cxSvcName}:8080",
+        ".serviceScheme": "http"
+    }
+}
+"@ | Out-File -FilePath "cxsvc-build/$cxSvcName/$cxSvcName.client-extension-config.json" -Encoding ascii
+    # LDM-#1962: every real client extension carries an LCP.json. LDM now
+    # refuses to deploy a service extension without one, so a fixture lacking
+    # it is rejected and quarantined -- which is exactly what happened to this
+    # fixture on the first master run after the fix landed.
+    @"
+{
+    "id": "${cxSvcName}",
+    "memory": 512,
+    "kind": "Deployment"
+}
+"@ | Out-File -FilePath "cxsvc-build/$cxSvcName/LCP.json" -Encoding ascii
+
     # The Dockerfile is what makes it a service rather than a static extension.
     #
     # LDM-#1911: it also carries application code at /opt/liferay/routes, the
@@ -3397,6 +3432,55 @@ sys.exit(1 if fails else 0)
     }
     Write-Verdict "[SUCCESS] Client-extension service: DXP metadata at /etc/liferay/lxc/dxp-metadata (not over the app), domain supplied, host resolvable, and the extension's own /opt/liferay/routes code still visible inside the running container (LDM-#1911/#1918)."
     Remove-Item -Recurse -Force "cxsvc-build", "$cxSvcName.zip", "cxsvc-check.py" -ErrorAction SilentlyContinue
+
+    # LDM-#1944: the pairing -- does the directory Liferay CREATES match the
+    # one LDM MOUNTS? This is the assertion that was missing, and its absence
+    # is why the issue survived four wrong diagnoses: every check looked at
+    # one side of the boundary only.
+    #
+    # Phrased as a SUBSET rule rather than equality: every directory Liferay
+    # publishes must be one LDM mounted. That catches the mismatch whatever
+    # the naming convention turns out to be.
+    #
+    # Parity with the LDM-#1944 pairing block in verify_e2e_refactor.sh.
+    Write-Host ">> Verifying Liferay's routes directories are the ones LDM mounted (LDM-#1944)..."
+    $pairingRoutes = Join-Path (Join-Path $LDM_WORKSPACE $PROJECT_NAME) "routes/default"
+    $pairingWaited = 0
+    while ($pairingWaited -lt 180) {
+        $found = Get-ChildItem -Path $pairingRoutes -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -ne "dxp" }
+        if ($found) { break }
+        Start-Sleep -Seconds 5
+        $pairingWaited += 5
+    }
+    $pairingPublished = @(Get-ChildItem -Path $pairingRoutes -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ne "dxp" } | ForEach-Object { $_.Name } | Sort-Object)
+
+    if ($pairingPublished.Count -eq 0) {
+        Write-Verdict "[WARNING] SKIPPED (not run): Liferay published no per-extension routes directory within ${pairingWaited}s. Nothing to pair against, so LDM-#1944 was NOT verified on this run."
+    } else {
+        $pairingMounted = @(& $VENV_PYTHON -c @"
+import pathlib, yaml
+compose = yaml.safe_load(pathlib.Path('docker-compose.yml').read_text())
+names = set()
+for svc in (compose.get('services') or {}).values():
+    for spec in svc.get('volumes') or []:
+        source = spec.get('source') if isinstance(spec, dict) else str(spec).split(':')[0]
+        parts = str(source or '').rstrip('/').split('/routes/default/')
+        if len(parts) == 2 and parts[1] and parts[1] != 'dxp':
+            names.add(parts[1])
+print('\n'.join(sorted(names)))
+"@)
+        $pairingUnmounted = @($pairingPublished | Where-Object { $pairingMounted -notcontains $_ })
+        if ($pairingUnmounted.Count -gt 0) {
+            throw ("Liferay published routes directories that LDM does not mount (LDM-#1944). Liferay created: " +
+                ($pairingPublished -join ' ') + " | LDM mounted: " + ($pairingMounted -join ' ') +
+                " | Unmounted: " + ($pairingUnmounted -join ' ') +
+                ". The extension reads a real, empty, readable directory while Liferay fills a different one beside it." +
+                " Liferay names it from projectName in the extension's client-extension-config.json, NOT from the LCP.json id.")
+        }
+        Write-Verdict ("[SUCCESS] Every routes directory Liferay published (" + ($pairingPublished -join ' ') + ") is one LDM mounted (LDM-#1944).")
+    }
 
     # LDM-#1928: the host side. Docker creates a missing bind-mount source as
     # an empty root-owned directory, so a subtree LDM never scaffolds is one
