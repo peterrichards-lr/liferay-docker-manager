@@ -37,6 +37,7 @@ moment that works.
 
 from __future__ import annotations
 
+import json
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -91,6 +92,99 @@ def is_site_initializer_zip(zip_path: Path) -> bool:
         if key.strip() == SITE_INITIALIZER_HEADER and value.strip():
             return True
     return False
+
+
+def rejected_dir(root: Path) -> Path:
+    """Where an artifact LDM refuses to deploy is parked (LDM-#1962)."""
+    return Path(root) / ".ldm" / "rejected-client-extensions"
+
+
+def cx_service_missing_lcp_id(zip_path: Path) -> bool:
+    """True when a zip is a SERVICE extension that declares no LCP.json id.
+
+    LDM-#1962. `is_service` keys on a Dockerfile, so a zip carrying one is
+    deployed as a container and needs an identity. That identity comes only
+    from `LCP.json`, and every real client extension has one -- every sample in
+    `ldm-cx-samples` carries both `client-extension.yaml` and `LCP.json`.
+
+    LDM must not invent one from the directory name. Liferay names the routes
+    tree it publishes from the extension's `projectName`, which routinely
+    differs from the folder (`ecopulse-headless-auth` declares
+    `ecopulseheadlessauth`), so a guess would bind a directory Liferay never
+    writes to -- LDM-#1944's failure, arrived at deliberately.
+
+    A zip that cannot be read is reported as fine. Refusing an artifact we
+    failed to identify would block deployments that are perfectly valid, and
+    the existing `is_site_initializer_zip` takes the same view for the same
+    reason.
+    """
+    try:
+        with zipfile.ZipFile(zip_path, "r") as archive:
+            names = archive.namelist()
+            has_dockerfile = any(
+                n == "Dockerfile" or n.endswith("/Dockerfile") for n in names
+            )
+            if not has_dockerfile:
+                # No Dockerfile means no container, so no identity is needed.
+                return False
+            lcp = next(
+                (n for n in names if n == "LCP.json" or n.endswith("/LCP.json")),
+                None,
+            )
+            if lcp is None:
+                # No LCP.json at all: nothing declares `kind`, so
+                # `_scan_extension_metadata` leaves it None and `is_service`
+                # is True. A Dockerfile with no identity beside it.
+                return True
+            data = json.loads(archive.read(lcp).decode("utf-8", errors="replace"))
+            if not isinstance(data, dict):
+                return False
+            # Mirror `is_service` exactly: a Dockerfile alone is not enough.
+            # `kind: Job` is a one-shot task, not a running service -- a real
+            # site initializer ships a Dockerfile AND `"kind": "Job"`, and is
+            # never given a container identity.
+            if data.get("kind") == "Job":
+                return False
+            return not data.get("id")
+    except Exception:
+        return False
+
+
+def reject_cx_artifact(zip_path: Path, root: Path, reason: str) -> Path:
+    """Park an artifact LDM will not deploy, and say where it went.
+
+    LDM-#1962. `osgi/client-extensions` is a bind mount Liferay reads from, so
+    an artifact left there is deployed whatever LDM thinks of it. Moving it is
+    what makes the refusal real.
+
+    Nothing is destroyed -- the zip is moved, not deleted, so it can be
+    inspected and put back once it carries what it needs.
+    """
+    from ldm_core.utils import safe_move
+
+    target_dir = rejected_dir(root)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    parked = target_dir / Path(zip_path).name
+    if parked.exists():
+        parked.unlink()
+    safe_move(str(zip_path), str(parked))
+
+    UI.error(
+        f"Refusing to deploy client extension '{Path(zip_path).stem}': {reason}",
+        details=(
+            "A client extension that ships a Dockerfile is deployed as a "
+            "service, and its identity comes from LCP.json. LDM will not "
+            "derive it from the directory name: Liferay names the config tree "
+            "it publishes from the extension's projectName, which routinely "
+            "differs from the folder, so a guess binds a directory Liferay "
+            "never writes to."
+        ),
+        tip=(
+            f"The artifact was moved to {parked} and NOT deployed. Add an "
+            f"LCP.json declaring its id, then deploy it again."
+        ),
+    )
+    return parked
 
 
 def stage_for_deferred_deploy(zip_path: Path, root: Path) -> Path:
