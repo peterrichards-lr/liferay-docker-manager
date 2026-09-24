@@ -1400,6 +1400,94 @@ function Test-StopHintAndStartConfirmation {
     }
 }
 
+function Test-SslRenewalReissues {
+    # The certificate directory and the renewal command, both asserted because
+    # 'docs/TROUBLESHOOTING.md' told Windows/WSL users to
+    # 'rm -rf ~/.ldm/infra/certs' -- a path that has never existed anywhere in
+    # this repository. The delete silently removed nothing, LDM reused the
+    # certificates already on disk, and a correctly-set CAROOT therefore looked
+    # like it had done nothing at all. Reported from a real WSL setup, where it
+    # cost an afternoon and was diagnosed as "mkcert keeps using the Linux CA"
+    # when the certificates were simply never replaced.
+    #
+    # 'ldm renew-ssl' is the supported path and does the whole job: it unlinks
+    # <host>.pem/<host>-key.pem from <home>/liferay-docker-certs and re-issues
+    # against whatever CA is currently in effect.
+    #
+    # Isolated via LDM_HOME, which get_actual_home() honours (LDM-#1349) -- so
+    # this never touches the developer's real certificate store.
+    #
+    # Parity with verify_ssl_renewal_reissues in verify_e2e_refactor.sh.
+    param([string]$LdmCmd, [string]$WorkDir)
+
+    if (-not (Get-Command mkcert -ErrorAction SilentlyContinue)) {
+        # Announced, not silently passed: without mkcert there is no CA to
+        # issue from and the assertion below would be vacuous.
+        return @{ Ok = $true; Message = "[WARNING] SKIPPED (not run): mkcert is not installed, so SSL renewal cannot be exercised." }
+    }
+    if (-not (Get-Command openssl -ErrorAction SilentlyContinue)) {
+        return @{ Ok = $true; Message = "[WARNING] SKIPPED (not run): openssl is not available, so the certificate serial cannot be read." }
+    }
+
+    $isoHome = Join-Path $WorkDir 'ssl-home'
+    $runDir  = Join-Path (Join-Path $WorkDir 'ssl-work') 'sslproj'
+    $hostName = 'sslprobe.test'
+
+    Remove-Item -Recurse -Force $isoHome, (Join-Path $WorkDir 'ssl-work') -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $isoHome, $runDir | Out-Null
+    ('{"tag":"2026.q1.7-lts","container_name":"sslproj","port":18099,"db_type":"postgresql","host_name":"' + $hostName + '"}') |
+        Out-File -FilePath (Join-Path $runDir 'meta') -Encoding ascii
+
+    $certDir = Join-Path $isoHome 'liferay-docker-certs'
+    $cert    = Join-Path $certDir "$hostName.pem"
+    $key     = Join-Path $certDir "$hostName-key.pem"
+
+    $prevHome = $env:LDM_HOME
+    $prevLoc  = Get-Location
+    $env:LDM_HOME = $isoHome
+    Set-Location $runDir
+
+    try {
+        $out = & $LdmCmd renew-ssl 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm renew-ssl' exited ${LASTEXITCODE}.`n   Output was: ${out}" }
+        }
+
+        # 1. The directory the documentation names must be the one LDM uses.
+        if (-not (Test-Path $cert) -or -not (Test-Path $key)) {
+            $found = (Get-ChildItem $certDir -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }) -join ' '
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm renew-ssl' did not produce $hostName.pem and $hostName-key.pem in <home>/liferay-docker-certs.`n   Found: ${found}`n   docs/TROUBLESHOOTING.md tells WSL users where to find these; if the location moves, that guidance silently stops working." }
+        }
+
+        # 2. The path the documentation USED to name must stay absent.
+        if (Test-Path (Join-Path $isoHome '.ldm/infra/certs')) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: certificates now also live in .ldm/infra/certs -- docs/TROUBLESHOOTING.md and this check both assume they do not." }
+        }
+
+        # 3. Renewal must actually RE-ISSUE. A no-op would leave a WSL user
+        #    with Linux-CA-signed certificates after every documented remedy,
+        #    which is exactly the reported symptom.
+        $serialBefore = (& openssl x509 -in $cert -noout -serial 2>$null) -join ''
+        & $LdmCmd renew-ssl 2>&1 | Out-Null
+        $serialAfter = (& openssl x509 -in $cert -noout -serial 2>$null) -join ''
+
+        if ([string]::IsNullOrWhiteSpace($serialBefore) -or $serialBefore -eq $serialAfter) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm renew-ssl' did not re-issue the certificate (serial unchanged: ${serialBefore}). A renewal that silently no-ops is indistinguishable from the WSL report, where the remedy appeared to run and the old certificate stayed." }
+        }
+
+        return @{ Ok = $true; Message = "[SUCCESS] 'ldm renew-ssl' re-issues into <home>/liferay-docker-certs (serial changes), and .ldm/infra/certs is not used." }
+    }
+    finally {
+        Set-Location $prevLoc
+        if ($null -eq $prevHome) {
+            Remove-Item Env:LDM_HOME -ErrorAction SilentlyContinue
+        } else {
+            $env:LDM_HOME = $prevHome
+        }
+        Remove-Item -Recurse -Force $isoHome, (Join-Path $WorkDir 'ssl-work') -ErrorAction SilentlyContinue
+    }
+}
+
 function Test-MacAddressPersisted {
     # LDM-#1771: '--mac-address' (LDM-#1752) is the v2.23.0 cycle's headline
     # feature, and it shipped in v2.23.0-pre.2 parsed and then discarded --
@@ -1954,6 +2042,15 @@ try {
         Write-Verdict $configRevert.Message
     } else {
         Write-Host $configRevert.Message -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying SSL renewal re-issues into the documented directory (LDM-#1958)..."
+    $sslRenew = Test-SslRenewalReissues -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE
+    if ($sslRenew.Ok) {
+        Write-Verdict $sslRenew.Message
+    } else {
+        Write-Host $sslRenew.Message -ForegroundColor Red
         exit 1
     }
 
