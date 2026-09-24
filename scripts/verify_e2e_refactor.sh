@@ -2710,6 +2710,84 @@ if [ "$((UMASK_FILE_MODE & 0004))" -eq 0 ]; then
 fi
 report_ok "✅ The portal runs with umask ${UMASK_VAL}, so the config trees it publishes are readable by a client extension (LDM-#1944)."
 
+# LDM-#1946 / LDM-#1944: the modes that actually landed on disk.
+#
+# This is the third and last layer of the LDM-#1944 assertion, and the only
+# one that looks at a real file:
+#
+#   1. a unit test asserts LDM emits a umask granting other-read
+#   2. the /proc check above asserts Tomcat HONOURED it
+#   3. this asserts the resulting files are actually readable
+#
+# Layers 1 and 2 can both pass while the filesystem quietly discards the mode,
+# which is the whole of LDM-#1946: `reclaim_volume_permissions` answers "did
+# the docker run execute", not "did the mode change", and returns success on
+# exFAT/FAT32 with `noowners` where the mode is left untouched.
+#
+# So probe the filesystem FIRST. On one that does not honour modes, a `stat`
+# here proves nothing in either direction -- it can report a mode nothing set.
+# Reporting a pass there would relocate LDM-#1946's defect into this script,
+# so the probe failing is announced loudly and the assertion is recorded as
+# NOT RUN rather than as satisfied.
+echo ">> Verifying the published config trees are readable on disk (LDM-#1944/#1946)..."
+FSPERM_PROBE="${LDM_WORKSPACE}/${PROJECT_NAME}/.ldm-mode-probe"
+rm -f "$FSPERM_PROBE"
+: > "$FSPERM_PROBE"
+chmod 640 "$FSPERM_PROBE" 2>/dev/null || true
+FSPERM_READBACK=$(stat -f '%Lp' "$FSPERM_PROBE" 2>/dev/null || stat -c '%a' "$FSPERM_PROBE" 2>/dev/null)
+rm -f "$FSPERM_PROBE"
+
+if [ "$FSPERM_READBACK" != "640" ]; then
+    # Not a failure of LDM. Announce it so a green run is never mistaken for
+    # evidence that the permissions were checked.
+    echo "⚠️  SKIPPED (not run): this filesystem does not honour chmod -- probed 640, read back '${FSPERM_READBACK:-unreadable}'." | tee -a "$RESULTS_FILE_TMP"
+    echo "   Docker Desktop bind mounts, exFAT/FAT32 with 'noowners' and Windows all behave this way." | tee -a "$RESULTS_FILE_TMP"
+    echo "   The LDM-#1944 file-mode assertion was NOT evaluated on this run. Native Linux only." | tee -a "$RESULTS_FILE_TMP"
+else
+    # Liferay writes these, not LDM. The healthcheck curls /c/portal/layout,
+    # which is what triggers `_updateDXPRoutes`, so by the time `ldm wait`
+    # returned the dxp tree has been published.
+    #
+    # The FILES are the target, not the directory: LDM scaffolds
+    # `routes/default/dxp` itself, so its mode is LDM's doing, while the files
+    # inside carry Liferay's umask -- and those are what an extension reads.
+    FSPERM_BAD=""
+    FSPERM_SEEN=0
+    # Process substitution, not a pipe: a pipe puts the loop in a subshell and
+    # the two counters below would be discarded, leaving the assertion unable
+    # to fail. `-print0`/`read -d ""` so a path containing whitespace cannot
+    # split into two filenames. Bash-only, which this script already is.
+    while IFS= read -r -d '' f; do
+        FSPERM_SEEN=$((FSPERM_SEEN + 1))
+        mode=$(stat -f '%Lp' "$f" 2>/dev/null || stat -c '%a' "$f" 2>/dev/null)
+        # Other-read, not group-read. A client extension runs as whatever uid
+        # its own image declares and is not in Liferay's group, so 640 -- which
+        # HAS group read -- is exactly the bug.
+        if [ "$((0$mode & 0004))" -eq 0 ]; then
+            FSPERM_BAD="${FSPERM_BAD}\n     ${mode}  ${f}"
+        fi
+    done < <(find "${LDM_WORKSPACE}/${PROJECT_NAME}/routes" -type f -print0 2>/dev/null)
+
+    if [ -n "$FSPERM_BAD" ]; then
+        echo "❌ ERROR: Liferay published config files that a client extension cannot read (LDM-#1944)." | tee -a "$RESULTS_FILE_TMP"
+        # shellcheck disable=SC2059
+        printf "$FSPERM_BAD\n" | tee -a "$RESULTS_FILE_TMP"
+        echo "   catalina.sh defaults UMASK to 0027 (files 640). LDM sets UMASK=0022 on the" | tee -a "$RESULTS_FILE_TMP"
+        echo "   Liferay service so these land 644; if they are 640 the override did not take." | tee -a "$RESULTS_FILE_TMP"
+        exit 1
+    fi
+
+    if [ "$FSPERM_SEEN" -eq 0 ]; then
+        # Not a pass. Liferay publishes the dxp tree once the portal has served
+        # a request, and the healthcheck does exactly that -- so an empty tree
+        # here means the assertion had nothing to assert on.
+        echo "⚠️  SKIPPED (not run): no files under routes/ after the health wait, so there were none to check." | tee -a "$RESULTS_FILE_TMP"
+        echo "   Expected the dxp tree to be published once the healthcheck curled /c/portal/layout." | tee -a "$RESULTS_FILE_TMP"
+    else
+        report_ok "✅ All ${FSPERM_SEEN} published config file(s) under routes/ are readable by a client extension (LDM-#1944/#1946)."
+    fi
+fi
+
 # LDM-#1509: the project above was seeded -- it is provisioned without
 # --no-seed and the run reports "Project bootstrapped from seed". Assert LDM
 # still SAYS so afterwards.

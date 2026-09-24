@@ -2585,6 +2585,66 @@ exit 1
     }
     Write-Verdict "[SUCCESS] The portal runs with umask ${umaskVal}, so the config trees it publishes are readable by a client extension (LDM-#1944)."
 
+    # LDM-#1946 / LDM-#1944: the modes that actually landed on disk.
+    #
+    # Third and last layer of the LDM-#1944 assertion, and the only one that
+    # looks at a real file:
+    #
+    #   1. a unit test asserts LDM emits a umask granting other-read
+    #   2. the /proc check above asserts Tomcat HONOURED it
+    #   3. this asserts the resulting files are actually readable
+    #
+    # Layers 1 and 2 can both pass while the filesystem quietly discards the
+    # mode, which is the whole of LDM-#1946.
+    #
+    # On Windows this can essentially never run: NTFS ACLs are not POSIX modes
+    # and Docker Desktop presents bind mounts as the host user regardless. That
+    # is stated rather than skipped silently -- reporting a pass here would
+    # relocate LDM-#1946's defect into this script.
+    #
+    # Parity with the LDM-#1944/#1946 block in verify_e2e_refactor.sh.
+    Write-Host ">> Verifying the published config trees are readable on disk (LDM-#1944/#1946)..."
+    $fsPermRoutes = Join-Path (Join-Path $LDM_WORKSPACE $PROJECT_NAME) "routes"
+    $fsPermStat = & docker run --rm -v "${fsPermRoutes}:/w" alpine sh -c '
+probe=/w/.ldm-mode-probe
+: > "$probe" 2>/dev/null || exit 3
+chmod 640 "$probe" 2>/dev/null
+back=$(stat -c "%a" "$probe" 2>/dev/null)
+rm -f "$probe"
+[ "$back" != "640" ] && { echo "NOHONOUR $back"; exit 0; }
+bad=""
+seen=0
+for f in $(find /w -type f 2>/dev/null); do
+    seen=$((seen + 1))
+    m=$(stat -c "%a" "$f" 2>/dev/null)
+    [ "$((0$m & 0004))" -eq 0 ] && bad="$bad $m:$f"
+done
+echo "SEEN $seen BAD$bad"
+' 2>&1 | Out-String
+
+    # The probe runs inside a container so the mode semantics are the mount's
+    # own, not Windows'. It is the same question either way: does a chmod here
+    # survive a read-back.
+    if ($fsPermStat -match 'NOHONOUR\s+(\S*)') {
+        Write-Verdict "[WARNING] SKIPPED (not run): this filesystem does not honour chmod -- probed 640, read back '$($Matches[1])'."
+        Write-Verdict "[WARNING] Docker Desktop bind mounts, exFAT/FAT32 with 'noowners' and Windows all behave this way. The LDM-#1944 file-mode assertion was NOT evaluated on this run."
+    }
+    elseif ($fsPermStat -match 'SEEN\s+(\d+)\s+BAD(.*)') {
+        $fsPermSeen = [int]$Matches[1]
+        $fsPermBad = $Matches[2].Trim()
+        if ($fsPermBad) {
+            throw ("Liferay published config files a client extension cannot read (LDM-#1944): $fsPermBad. catalina.sh defaults UMASK to 0027 (files 640); LDM sets UMASK=0022 so these land 644 -- if they are 640 the override did not take.")
+        }
+        if ($fsPermSeen -eq 0) {
+            Write-Verdict "[WARNING] SKIPPED (not run): no files under routes/ after the health wait, so there were none to check. Expected the dxp tree once the healthcheck curled /c/portal/layout."
+        } else {
+            Write-Verdict "[SUCCESS] All $fsPermSeen published config file(s) under routes/ are readable by a client extension (LDM-#1944/#1946)."
+        }
+    }
+    else {
+        throw "Could not probe the routes filesystem for LDM-#1944/#1946. Output was: $fsPermStat"
+    }
+
     # LDM-#1509: the project above was seeded -- provisioned without --no-seed,
     # and the run reports "Project bootstrapped from seed". Assert LDM still
     # SAYS so afterwards.
