@@ -68,7 +68,11 @@ def _site_initializer_zip(path: Path) -> Path:
         path,
         {
             "Dockerfile": "FROM scratch\n",
-            "LCP.json": "{}\n",
+            # LDM-#1962: a real built site initializer declares an id and
+            # `"kind": "Job"` -- checked against the ecopulse artifact this
+            # fixture is described as being taken from. `{}` made it look like
+            # a service with no identity, which LDM now refuses to deploy.
+            "LCP.json": '{"id": "ldmverifysiteinitializer", "kind": "Job"}\n',
             PLUGIN_PACKAGE_PROPERTIES: (
                 "#Mon Jul 20 08:57:51 BST 2026\n"
                 f"Bundle-SymbolicName={path.stem.replace('-', '')}\n"
