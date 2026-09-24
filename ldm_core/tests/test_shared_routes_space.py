@@ -167,6 +167,61 @@ class TestNothingStartsBeforeLiferayIsServing:
         )
 
 
+class TestTheRoutesTreeIsScaffoldedOnTheHost:
+    """LDM-#1955: `_scaffold_routes_tree` had no pytest coverage at all.
+
+    It was never referenced anywhere in `ldm_core/tests/` -- only by
+    `scripts/verify_e2e_refactor.{sh,ps1}`, which do not run on every PR.
+
+    What it prevents: Docker creates a missing bind-mount source itself, as an
+    empty ROOT-OWNED directory. A subtree LDM never scaffolds is one nothing
+    can write to -- and on a tree whose permissions are already the subject of
+    LDM-#1944, a root-owned directory is the last thing wanted.
+
+    The directories are derived from the compose that was just built, so a
+    mount and its host directory cannot drift apart.
+    """
+
+    def _svc(self, root, *targets):
+        routes = ComposerService.routes_root({"root": root}).as_posix()
+        return {
+            "ext": {
+                "volumes": [
+                    f"{routes}/default/{t}:/etc/liferay/lxc/{t}" for t in targets
+                ]
+            }
+        }
+
+    def test_it_creates_every_subtree_the_compose_mounts(self):
+        root = Path(tempfile.mkdtemp())
+        mp = {"root": root}
+        _composer()._scaffold_routes_tree(self._svc(root, "dxp", "my-ext"), mp, mp)
+        for sub in ("dxp", "my-ext"):
+            assert (root / "routes" / "default" / sub).is_dir(), (
+                f"routes/default/{sub} was not created, so Docker will "
+                f"auto-create it as an empty root-owned directory (LDM-#1928)"
+            )
+
+    def test_a_remote_target_is_skipped_deliberately(self):
+        """Creating a remote node's directories on this machine would be worse
+        than not creating them, so the two paths differing means skip."""
+        root = Path(tempfile.mkdtemp())
+        _composer()._scaffold_routes_tree(
+            self._svc(root, "dxp"), {"root": root}, {"root": Path("/remote/elsewhere")}
+        )
+        assert not (root / "routes").exists()
+
+    def test_it_does_not_create_directories_for_unrelated_mounts(self):
+        """Only sources under the routes root -- it is not a general mkdir."""
+        root = Path(tempfile.mkdtemp())
+        mp = {"root": root}
+        unrelated = (root / "somewhere-else").as_posix()
+        _composer()._scaffold_routes_tree(
+            {"ext": {"volumes": [f"{unrelated}:/opt/x"]}}, mp, mp
+        )
+        assert not (root / "somewhere-else").exists()
+
+
 class TestTheCodeMatchesTheDocumentedContract:
     """The guard that outlives this conversation.
 

@@ -109,5 +109,58 @@ class TestAnotherServicesVariablesAreNotDelivered(unittest.TestCase):
         self.assertNotIn("DEBUG=true", got)
 
 
+class TestTheBlacklistIsTestedAgainstTheDeliveredName(unittest.TestCase):
+    """LDM-#1954: it was tested against the HOST spelling instead.
+
+    `get_service_targeted_env` strips the service prefix before handing the
+    variable to the container, but filtered on the un-stripped name. The two
+    differ by that prefix for every target but Liferay, so any pattern
+    anchored at the START of the name never matched:
+    `SERVICEID_LIFERAY_ROUTES_CLIENT_EXTENSION` sailed past `LIFERAY_ROUTES_*`
+    and arrived as `LIFERAY_ROUTES_CLIENT_EXTENSION`.
+
+    Suffix patterns were never affected -- a prefix does not disturb a suffix
+    match -- which is why the credential half of LDM-#1910 held and this went
+    unnoticed. The negative cases in `TestTheGlobalPoolIsNotInjected` above all
+    happen to use suffix-matched or `LDM_`-stripped names, so none of them
+    could see it. That is the gap this class closes.
+
+    The branch was unreachable until LDM-#1903 made it callable, so the bypass
+    became reachable in v2.26.0.
+    """
+
+    def _delivered(self, name):
+        return [e for e in _cx_env({PREFIX + name: "x"}) if e.startswith(name + "=")]
+
+    def test_a_targeted_routes_variable_never_reaches_the_container(self):
+        """The one with teeth: it repoints a tree LDM itself mounts, which
+        reproduces exactly the symptom LDM-#1928 fixed -- a container pointed
+        at a path nothing is mounted at."""
+        for name in (
+            "LIFERAY_ROUTES_CLIENT_EXTENSION",
+            "LIFERAY_ROUTES_DXP",
+        ):
+            with self.subTest(name=name):
+                self.assertFalse(
+                    self._delivered(name),
+                    f"{name} is LDM-managed and must not be forwarded by any "
+                    f"route, targeted or not (LDM-#1954)",
+                )
+
+    def test_a_targeted_lxc_variable_never_reaches_the_container(self):
+        self.assertFalse(self._delivered("COM_LIFERAY_LXC_DXP_MAIN_DOMAIN"))
+
+    def test_an_exact_match_blacklist_entry_is_honoured_when_targeted(self):
+        """`LIFERAY_JVM_OPTS` is an exact entry, not a pattern -- it was
+        defeated the same way, since the host name carries the prefix."""
+        self.assertFalse(self._delivered("LIFERAY_JVM_OPTS"))
+
+    def test_an_ordinary_targeted_variable_still_arrives(self):
+        """The control. A fix that simply blocked more would pass every
+        assertion above and break the feature LDM-#1903 delivered."""
+        self.assertTrue(self._delivered("NODE_ENV"))
+        self.assertTrue(self._delivered("HARMLESS_FLAG"))
+
+
 if __name__ == "__main__":
     unittest.main()

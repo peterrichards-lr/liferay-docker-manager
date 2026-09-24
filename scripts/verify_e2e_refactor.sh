@@ -1853,6 +1853,180 @@ verify_containers_removed_volumes_intact() {
     return 0
 }
 
+verify_stop_hint_and_start_confirmation() {
+    # LDM-#1937: the complement of verify_containers_removed_volumes_intact
+    # above. That function covers containers that were REMOVED, where `ldm
+    # start` cannot help and must refuse naming `ldm run`. This one covers
+    # containers that were merely STOPPED, which is the state `ldm stop`
+    # itself leaves behind -- `cmd_stop` runs `docker compose stop`, so the
+    # containers still exist and `ldm start` (a plain `docker compose start`)
+    # boots them again.
+    #
+    # Two defects compounded there, and both were invisible to this suite:
+    #
+    #   1. The stop hint named `ldm run`, which re-runs validation, compose
+    #      regeneration and the whole orchestration pipeline for the same
+    #      result. Correct advice for the REMOVED state (LDM-#1870), wrong
+    #      immediately after a stop we performed ourselves.
+    #   2. `ldm start` emitted only `UI.detail`, which prints nothing unless
+    #      `--info`/`--verbose` is set, so a successful start produced no
+    #      output at all -- and `ldm run` became the habit because it was the
+    #      only one of the two that visibly did anything.
+    #
+    # Both are about what reaches a terminal, so both are asserted against
+    # real captured output at DEFAULT verbosity. Neither `--info` nor
+    # `--verbose` may be passed below: under either one the old `UI.detail`
+    # line printed too, and the regression would pass unnoticed.
+    #
+    # `--no-wait` keeps this to about a minute: the containers only have to
+    # exist and be startable, which is the whole of the state under test.
+    local ldm_cmd="$1"
+    local work_dir="$2"
+
+    local iso_home="${work_dir}/stophint-home"
+    local run_dir="${work_dir}/stophint-work"
+    local proj="ldmstophint"
+
+    rm -rf "$iso_home" "$run_dir"
+    mkdir -p "$iso_home" "$run_dir" || return 1
+
+    _stophint_teardown() {
+        (cd "$run_dir" 2>/dev/null && LDM_HOME="$iso_home" "$ldm_cmd" rm "$proj" --delete -y >/dev/null 2>&1)
+        docker rm -f "$proj" "${proj}-db" >/dev/null 2>&1
+        rm -rf "$iso_home" "$run_dir"
+    }
+
+    local out code
+    out=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" run "$proj" \
+        -y -t 2026.q1.7-lts --no-wait 2>&1) && code=0 || code=$?
+    if [ "$code" -ne 0 ]; then
+        _stophint_teardown
+        echo "❌ ERROR: could not start the project (exit ${code})."
+        echo "   Output was: $(echo "$out" | tail -5)"
+        return 1
+    fi
+
+    local waited=0
+    while [ "$waited" -lt 30 ]; do
+        if docker ps --filter "name=^${proj}$" --format '{{.Names}}' 2>/dev/null | grep -qF "$proj"; then
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    if ! docker ps --filter "name=^${proj}$" --format '{{.Names}}' 2>/dev/null | grep -qF "$proj"; then
+        _stophint_teardown
+        echo "❌ ERROR: the app container never came up after 'ldm run' -- cannot exercise the stop/start cycle."
+        return 1
+    fi
+
+    # 1. LDM-#1937: the stop hint must name `ldm start`, not `ldm run`.
+    local stop_out stop_code
+    stop_out=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" -y stop "$proj" 2>&1) \
+        && stop_code=0 || stop_code=$?
+    if [ "$stop_code" -ne 0 ]; then
+        _stophint_teardown
+        echo "❌ ERROR: 'ldm stop' exited ${stop_code} for a running project; expected 0."
+        echo "   Output was: $(echo "$stop_out" | tail -5)"
+        return 1
+    fi
+    if ! echo "$stop_out" | grep -qF "ldm start"; then
+        _stophint_teardown
+        echo "❌ ERROR: 'ldm stop' did not close with a hint naming 'ldm start' (LDM-#1937)."
+        echo "   The containers it just stopped still exist, so 'ldm start' is the cheapest correct next command."
+        echo "   Output was: $(echo "$stop_out" | tail -5)"
+        return 1
+    fi
+    if echo "$stop_out" | grep -qF "ldm run"; then
+        _stophint_teardown
+        echo "❌ ERROR: 'ldm stop' still steers the user at 'ldm run' (LDM-#1937)."
+        echo "   That re-runs validation, compose regeneration and the whole orchestration"
+        echo "   pipeline to achieve what 'docker compose start' already would."
+        echo "   Output was: $(echo "$stop_out" | tail -5)"
+        return 1
+    fi
+
+    # 2. The premise the hint rests on: stopped is not removed. If `ldm stop`
+    #    ever removed containers the hint above would be actively wrong, and
+    #    nothing else in this suite would notice.
+    if ! docker ps -a --filter "name=^${proj}$" --format '{{.Names}}' 2>/dev/null | grep -qF "$proj"; then
+        _stophint_teardown
+        echo "❌ ERROR: 'ldm stop' REMOVED the container rather than stopping it (LDM-#1937)."
+        echo "   The 'ldm start' hint it printed would then be wrong -- that is the LDM-#1870 state."
+        return 1
+    fi
+    if docker ps --filter "name=^${proj}$" --format '{{.Names}}' 2>/dev/null | grep -qF "$proj"; then
+        _stophint_teardown
+        echo "❌ ERROR: 'ldm stop' returned 0 but the container is still running."
+        return 1
+    fi
+
+    # 3. LDM-#1937: `ldm start` must say, at default verbosity, that it
+    #    worked. Asserted on captured stdout rather than on an exit code,
+    #    because the defect was exactly a success that exited 0 in silence.
+    local start_out start_code
+    start_out=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" start "$proj" 2>&1) \
+        && start_code=0 || start_code=$?
+    if [ "$start_code" -ne 0 ]; then
+        _stophint_teardown
+        echo "❌ ERROR: 'ldm start' exited ${start_code} for a stopped-but-present project; expected 0."
+        echo "   Output was: $(echo "$start_out" | tail -5)"
+        return 1
+    fi
+    if [ -z "$(echo "$start_out" | tr -d '[:space:]')" ]; then
+        _stophint_teardown
+        echo "❌ ERROR: a successful 'ldm start' printed NOTHING at default verbosity (LDM-#1937)."
+        echo "   'UI.detail' is gated behind --info/--verbose, so the user got no evidence it had worked."
+        return 1
+    fi
+    if ! echo "$start_out" | grep -qiF "started"; then
+        _stophint_teardown
+        echo "❌ ERROR: 'ldm start' did not confirm the project started (LDM-#1937)."
+        echo "   Output was: $(echo "$start_out" | tail -5)"
+        return 1
+    fi
+    if ! echo "$start_out" | grep -qF "$proj"; then
+        _stophint_teardown
+        echo "❌ ERROR: 'ldm start' confirmed success without naming the project (LDM-#1937)."
+        echo "   With --all that leaves the user unable to tell which projects started."
+        echo "   Output was: $(echo "$start_out" | tail -5)"
+        return 1
+    fi
+    if ! echo "$start_out" | grep -qF "Next step:"; then
+        _stophint_teardown
+        echo "❌ ERROR: 'ldm start' did not close with a next-step hint (LDM-#1937)."
+        echo "   'stop' closed with one and 'start' did not, which is half of why 'ldm run' became the habit."
+        echo "   Output was: $(echo "$start_out" | tail -5)"
+        return 1
+    fi
+    if ! echo "$start_out" | grep -qF "ldm status"; then
+        _stophint_teardown
+        echo "❌ ERROR: 'ldm start' closed with a hint that does not name 'ldm status' (LDM-#1937)."
+        echo "   Output was: $(echo "$start_out" | tail -5)"
+        return 1
+    fi
+
+    # 4. And it must actually have started the container, not merely said so.
+    waited=0
+    while [ "$waited" -lt 30 ]; do
+        if docker ps --filter "name=^${proj}$" --format '{{.Names}}' 2>/dev/null | grep -qF "$proj"; then
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    if ! docker ps --filter "name=^${proj}$" --format '{{.Names}}' 2>/dev/null | grep -qF "$proj"; then
+        _stophint_teardown
+        echo "❌ ERROR: 'ldm start' reported success but the container is not running (LDM-#1937)."
+        echo "   The success line is emitted after the pinned-MAC check precisely so it cannot lie."
+        return 1
+    fi
+
+    _stophint_teardown
+    echo "✅ 'ldm stop' leaves containers present and names 'ldm start' (not 'ldm run'), and 'ldm start' confirms success with a next-step hint at default verbosity (LDM-#1937)."
+    return 0
+}
+
 echo ">> Verifying --mac-address is persisted (LDM-#1759/#1771)..."
 if MAC_PIN_OUT=$(verify_mac_address_persisted "$LDM_CMD" "$LDM_WORKSPACE"); then
     report_ok "$MAC_PIN_OUT"
@@ -1874,6 +2048,14 @@ if NOTCREATED_OUT=$(verify_containers_removed_volumes_intact "$LDM_CMD" "$LDM_WO
     report_ok "$NOTCREATED_OUT"
 else
     echo "$NOTCREATED_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying the stop hint and the start confirmation (LDM-#1937)..."
+if STOPHINT_OUT=$(verify_stop_hint_and_start_confirmation "$LDM_CMD" "$LDM_WORKSPACE"); then
+    report_ok "$STOPHINT_OUT"
+else
+    echo "$STOPHINT_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
 
@@ -3205,6 +3387,123 @@ if [ "$CXSVC_OK" = true ]; then
     report_ok "✅ Client-extension service: DXP metadata at /etc/liferay/lxc/dxp-metadata (not over the app), domain supplied, host resolvable, and the extension's own /opt/liferay/routes code still visible inside the running container (LDM-#1911/#1918)."
 fi
 rm -rf "cxsvc-build" "${CXSVC_NAME}.zip"
+
+# LDM-#1928/#1923: the fixture above declares NO LCP.json, so `ext["env"]` is
+# empty and `_extension_routes_mounts` takes its `or` fallback every time. The
+# constants happen to be right, so every assertion passes -- and the DERIVED
+# branch, which is the one a real extension actually takes, has never once
+# been executed by this suite.
+#
+# That is the shape of failure this file exists to stop. LDM-#1911 shipped
+# because the fixture was `FROM alpine` with nothing at /opt/liferay/routes,
+# so the mount that broke a live container could not be observed here; an
+# external team found it instead. A fixture that declares nothing cannot
+# observe a derivation that only fires when something is declared.
+#
+# So: a second extension that declares both trees at NON-standard paths. If
+# the code silently used the constants, the mounts below would carry
+# /etc/liferay/lxc/... and these assertions fail. The composer's own docstring
+# records why this matters -- "an extension that declares nothing still gets
+# the constant, so the constant can still be wrong a fourth time".
+#
+# Compose generation only: no build and no run. The derivation is a
+# compose-level fact, and the runtime half is already covered above.
+echo ">> Verifying the routes mounts are DERIVED from LCP.json (LDM-#1928/#1923)..."
+CXDERIV_NAME="derived-svc"
+CXDERIV_OK=true
+CXDERIV_DXP="/opt/custom/lxc/dxp-tree"
+CXDERIV_EXT="/opt/custom/lxc/ext-tree"
+rm -rf "cxderiv-build" "${CXDERIV_NAME}.zip"
+mkdir -p "cxderiv-build/${CXDERIV_NAME}"
+cat > "cxderiv-build/${CXDERIV_NAME}/client-extension.yaml" <<CXDERIVEOF
+${CXDERIV_NAME}:
+    .serviceAddress: ${CXDERIV_NAME}:8080
+    name: Derived Routes CX
+    type: microservice
+CXDERIVEOF
+# The declaration under test. A real client extension carries exactly this
+# pair and reads both -- the paths here are deliberately NOT the constants.
+cat > "cxderiv-build/${CXDERIV_NAME}/LCP.json" <<CXDERIVLCP
+{
+    "id": "${CXDERIV_NAME}",
+    "memory": 512,
+    "env": {
+        "LIFERAY_ROUTES_DXP": "${CXDERIV_DXP}",
+        "LIFERAY_ROUTES_CLIENT_EXTENSION": "${CXDERIV_EXT}"
+    }
+}
+CXDERIVLCP
+cat > "cxderiv-build/${CXDERIV_NAME}/Dockerfile" <<'CXDERIV_DOCKERFILE'
+FROM alpine
+CMD ["sleep", "3600"]
+CXDERIV_DOCKERFILE
+"$VENV_PYTHON" -c "
+import shutil, sys
+shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])
+" "${CXDERIV_NAME}" "cxderiv-build/${CXDERIV_NAME}"
+
+log_and_run "Deploying derived-routes CX" "$LDM_CMD" -y deploy . "${CXDERIV_NAME}.zip"
+"$LDM_CMD" -y run . --no-up --no-seed >/dev/null 2>&1 || true
+
+if ! "$VENV_PYTHON" - "$CXDERIV_NAME" "$CXDERIV_DXP" "$CXDERIV_EXT" <<'CXDERIV_PY'
+import sys
+import pathlib
+
+import yaml
+
+name, dxp_target, ext_target = sys.argv[1], sys.argv[2], sys.argv[3]
+compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text())
+services = compose.get("services") or {}
+svc = next((v for k, v in services.items() if k.endswith(name)), None)
+if svc is None:
+    print(f"ERROR: no compose service for the '{name}' client extension.")
+    print("  services present: " + ", ".join(services))
+    sys.exit(1)
+
+fails = []
+vols = svc.get("volumes") or []
+
+# The DXP tree at the declared path, not the constant.
+if not [v for v in vols if v.endswith(":" + dxp_target)]:
+    fails.append("LIFERAY_ROUTES_DXP was declared as %s in LCP.json and the "
+                 "DXP tree is not mounted there: %s" % (dxp_target, vols))
+# The per-extension tree at the declared path, and still this extension's
+# own subtree on the host side.
+ext_mounts = [v for v in vols if v.endswith(":" + ext_target)]
+if not ext_mounts:
+    fails.append("LIFERAY_ROUTES_CLIENT_EXTENSION was declared as %s in "
+                 "LCP.json and nothing is mounted there, so the extension "
+                 "reads an empty path and generated OAuth2 credentials never "
+                 "reach it: %s" % (ext_target, vols))
+elif not [v for v in ext_mounts if "/routes/default/%s:" % name in v]:
+    fails.append("the derived ext mount is not this extension's own subtree "
+                 "(routes/default/%s): %s" % (name, ext_mounts))
+
+# The negative half, and the point of the whole fixture: falling back to the
+# constants while an explicit declaration exists is the bug this catches.
+for constant in ("/etc/liferay/lxc/dxp-metadata", "/etc/liferay/lxc/ext-init-metadata"):
+    if [v for v in vols if v.endswith(":" + constant)]:
+        fails.append("mounted at the CONSTANT %s although LCP.json declares "
+                     "its own path -- the declaration was ignored and the "
+                     "derivation is dead code (LDM-#1928/#1923): %s"
+                     % (constant, vols))
+
+for f in fails:
+    print(f"ERROR: {f}")
+sys.exit(1 if fails else 0)
+CXDERIV_PY
+then
+    echo "❌ ERROR: the routes mounts ignore the extension's own LCP.json declaration (LDM-#1928/#1923)." | tee -a "$RESULTS_FILE_TMP"
+    CXDERIV_OK=false
+fi
+
+if [ "$CXDERIV_OK" = true ]; then
+    report_ok "✅ Routes mounts follow the extension's own LCP.json (${CXDERIV_DXP}, ${CXDERIV_EXT}), not the built-in constants (LDM-#1928/#1923)."
+else
+    exit 1
+fi
+rm -rf "cxderiv-build" "${CXDERIV_NAME}.zip"
+
 
 echo ">> Verifying snapshot manifest lists the extensions it claims (LDM-#1573)..."
 # LDM-#1573: has_cx and cx_list scanned DIFFERENT directory sets -- has_cx
