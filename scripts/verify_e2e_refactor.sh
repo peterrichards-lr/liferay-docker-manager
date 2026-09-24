@@ -3649,6 +3649,13 @@ rm -rf "cxsvc-build" "${CXSVC_NAME}.zip"
 # compose-level fact, and the runtime half is already covered above.
 echo ">> Verifying the routes mounts are DERIVED from LCP.json (LDM-#1928/#1923)..."
 CXDERIV_NAME="derived-svc"
+# LDM-#1944: a real extension carries TWO identifiers and they are not the
+# same string -- the LCP.json id drops the hyphens the directory keeps
+# (`ecopulseheadlessauth` against `ecopulse-headless-auth`). Liferay names the
+# routes tree from `projectName`; LDM used to mount the id, which binds a
+# directory Liferay never writes to. Declaring them differently here is what
+# makes the assertion below able to tell the two apart at all.
+CXDERIV_ID="derivedsvc"
 CXDERIV_OK=true
 CXDERIV_DXP="/opt/custom/lxc/dxp-tree"
 CXDERIV_EXT="/opt/custom/lxc/ext-tree"
@@ -3664,7 +3671,7 @@ CXDERIVEOF
 # pair and reads both -- the paths here are deliberately NOT the constants.
 cat > "cxderiv-build/${CXDERIV_NAME}/LCP.json" <<CXDERIVLCP
 {
-    "id": "${CXDERIV_NAME}",
+    "id": "${CXDERIV_ID}",
     "memory": 512,
     "env": {
         "LIFERAY_ROUTES_DXP": "${CXDERIV_DXP}",
@@ -3672,6 +3679,18 @@ cat > "cxderiv-build/${CXDERIV_NAME}/LCP.json" <<CXDERIVLCP
     }
 }
 CXDERIVLCP
+# LDM-#1944: what the Liferay CX build emits, carrying BOTH identifiers. This
+# is the file Liferay's own chain reads `projectName` from before publishing
+# it as the `ext.lxc.liferay.com/projectName` label, which
+# `RoutesPortalK8sConfigMapModifier` then resolves the directory from.
+cat > "cxderiv-build/${CXDERIV_NAME}/${CXDERIV_NAME}.client-extension-config.json" <<CXDERIVCFG
+{
+    "com.liferay.oauth2.provider.configuration.OAuth2ProviderApplicationHeadlessServerConfiguration~${CXDERIV_NAME}": {
+        "projectId": "${CXDERIV_ID}",
+        "projectName": "${CXDERIV_NAME}"
+    }
+}
+CXDERIVCFG
 cat > "cxderiv-build/${CXDERIV_NAME}/Dockerfile" <<'CXDERIV_DOCKERFILE'
 FROM alpine
 CMD ["sleep", "3600"]
@@ -3684,13 +3703,14 @@ shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])
 log_and_run "Deploying derived-routes CX" "$LDM_CMD" -y deploy . "${CXDERIV_NAME}.zip"
 "$LDM_CMD" -y run . --no-up --no-seed >/dev/null 2>&1 || true
 
-if ! "$VENV_PYTHON" - "$CXDERIV_NAME" "$CXDERIV_DXP" "$CXDERIV_EXT" <<'CXDERIV_PY'
+if ! "$VENV_PYTHON" - "$CXDERIV_ID" "$CXDERIV_DXP" "$CXDERIV_EXT" "$CXDERIV_NAME" <<'CXDERIV_PY'
 import sys
 import pathlib
 
 import yaml
 
 name, dxp_target, ext_target = sys.argv[1], sys.argv[2], sys.argv[3]
+project_name = sys.argv[4]
 compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text())
 services = compose.get("services") or {}
 svc = next((v for k, v in services.items() if k.endswith(name)), None)
@@ -3714,9 +3734,19 @@ if not ext_mounts:
                  "LCP.json and nothing is mounted there, so the extension "
                  "reads an empty path and generated OAuth2 credentials never "
                  "reach it: %s" % (ext_target, vols))
-elif not [v for v in ext_mounts if "/routes/default/%s:" % name in v]:
-    fails.append("the derived ext mount is not this extension's own subtree "
-                 "(routes/default/%s): %s" % (name, ext_mounts))
+elif not [v for v in ext_mounts if "/routes/default/%s:" % project_name in v]:
+    # LDM-#1944: projectName, NOT the LCP.json id. Liferay resolves the
+    # directory from the ext.lxc.liferay.com/projectName label, which comes
+    # from the built client-extension-config.json. Mounting the id binds a
+    # directory Liferay never writes to -- and it does not fail loudly,
+    # because the scaffold creates it and the extension reads it empty.
+    fails.append("the derived ext mount is not routes/default/%s (the "
+                 "projectName Liferay publishes under): %s"
+                 % (project_name, ext_mounts))
+elif [v for v in ext_mounts if "/routes/default/%s:" % name in v]:
+    fails.append("the ext mount used the LCP.json id %r instead of the "
+                 "projectName %r -- that directory is one Liferay never "
+                 "writes to (LDM-#1944): %s" % (name, project_name, ext_mounts))
 
 # The negative half, and the point of the whole fixture: falling back to the
 # constants while an explicit declaration exists is the bug this catches.

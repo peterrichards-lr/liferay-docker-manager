@@ -2297,9 +2297,31 @@ class ComposerService:
             ext_env.get("LIFERAY_ROUTES_CLIENT_EXTENSION")
             or self.LXC_EXT_INIT_METADATA_MOUNT
         )
+        # LDM-#1944: the per-extension subtree is named from the extension's
+        # `projectName`, NOT its `LCP.json` id. Liferay resolves the directory
+        # from the `ext.lxc.liferay.com/projectName` ConfigMap label and calls
+        # `Files.createDirectories` on it (`RoutesPortalK8sConfigMapModifier`),
+        # and that label is fed from `projectName` in the extension's own
+        # `<name>.client-extension-config.json`.
+        #
+        # The two differ for essentially every extension -- the id drops the
+        # hyphens the directory keeps (`ecopulseheadlessauth` against
+        # `ecopulse-headless-auth`), and all 16 samples in `ldm-cx-samples`
+        # differ. Mounting the id binds a directory Liferay never writes to.
+        #
+        # This does not fail loudly. `_scaffold_routes_tree` creates whatever
+        # the compose declares, so the extension reads a real, EMPTY, READABLE
+        # directory while Liferay populates a different one beside it -- which
+        # is why this was diagnosed as a permissions problem four times over.
+        #
+        # `ext_id` remains the fallback: an extension whose config carries no
+        # `projectName` is no worse off than before.
+        routes_name = ext.get("project_name") or ext_id
         mounts = [f"{(routes / 'default' / 'dxp').as_posix()}:{dxp_target}"]
-        if ext_id:
-            mounts.append(f"{(routes / 'default' / ext_id).as_posix()}:{ext_target}")
+        if routes_name:
+            mounts.append(
+                f"{(routes / 'default' / routes_name).as_posix()}:{ext_target}"
+            )
         return mounts
 
     def _build_extensions_services(  # noqa: C901, PLR0912
