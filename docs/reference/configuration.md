@@ -241,8 +241,21 @@ Credential-shaped names are withheld from targeted variables too -- see
 *What is never forwarded* above. `MY_EXTENSION_API_SECRET` is blocked exactly
 as `API_SECRET` would be.
 
+So are the LDM-managed names. `MY_EXTENSION_LIFERAY_ROUTES_DXP` is blocked
+exactly as `LIFERAY_ROUTES_DXP` would be, and cannot be used to repoint a tree
+LDM mounts.
+
+> [!NOTE]
+> Until LDM-#1954 only the first of those two held. The blacklist was tested
+> against the name as written on the host, while the container received the
+> name with the service prefix stripped -- so a pattern anchored at the
+> **start** of the name never matched, and `MY_EXTENSION_LIFERAY_ROUTES_DXP`
+> arrived as `LIFERAY_ROUTES_DXP`. Suffix patterns like `*_API_SECRET` were
+> never affected, because a prefix does not disturb a suffix match, which is
+> why the credential half of this section was always true.
+
 ---
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-22* | *Last Reviewed: 2026-09-22*
+*Last Updated: 2026-09-24* | *Last Reviewed: 2026-09-24*
