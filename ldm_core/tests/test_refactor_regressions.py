@@ -87,6 +87,43 @@ class TestTheRoutesVolumeIsShared(unittest.TestCase):
         )
 
 
+class TestTheExtensionWaitsForLiferayToBeServing(unittest.TestCase):
+    """LDM-#1955: this had no pytest coverage at all, only E2E.
+
+    `depends_on: {liferay: {condition: service_healthy}}` is a literal dict in
+    `_build_extensions_services`. The custom-container counterpart of exactly
+    this behaviour IS unit-tested (`test_shared_routes_space.py`), but the
+    client-extension side was asserted only by
+    `scripts/verify_e2e_refactor.{sh,ps1}` -- which run in `release-e2e.yml`
+    and `scheduled-verification.yml`, NOT on every PR. A refactor dropping the
+    key would pass the whole suite and surface only on the next scheduled run,
+    by which point it can already be inside a pre-release.
+
+    `service_healthy` rather than `service_started` is the substance:
+    the liferay/dxp image's own HEALTHCHECK curls /c/portal/layout, so it means
+    "serving pages", not "process started". The tree the extension mounts is
+    written by Liferay at boot, so starting early means reading an empty
+    directory (LDM-#1928).
+    """
+
+    def test_the_extension_declares_a_dependency_on_liferay(self):
+        self.assertIn(
+            "liferay",
+            _services().get("depends_on") or {},
+            "the extension starts concurrently with a boot that takes minutes "
+            "and reads an empty config tree (LDM-#1928)",
+        )
+
+    def test_it_waits_for_healthy_not_merely_started(self):
+        cond = (_services()["depends_on"]["liferay"] or {}).get("condition")
+        self.assertEqual(
+            "service_healthy",
+            cond,
+            "'started' is not 'serving' -- the config tree is written during "
+            "boot, so service_started still reads an empty directory",
+        )
+
+
 class TestTheMetadataMountDoesNotShadowTheApplication(unittest.TestCase):
     """LDM-#1911: the two containers do NOT share a filesystem convention.
 

@@ -584,12 +584,35 @@ def get_service_targeted_env(self, target_id, paths=None, blacklist=None):
     The blacklist still applies. Note it excludes ``COM_LIFERAY_LXC_DXP_*``
     and ``LIFERAY_ROUTES_*`` as LDM-managed, so those cannot be forwarded by
     any route, targeted or not.
+
+    LDM-#1954: that last sentence was false for four releases. The blacklist
+    was tested against the host spelling while the container received the
+    *stripped* name, and the two differ by the service prefix for every target
+    but Liferay -- so a pattern anchored at the START of the name never
+    matched. ``SERVICEID_LIFERAY_ROUTES_CLIENT_EXTENSION`` sailed past
+    ``LIFERAY_ROUTES_*`` and arrived as ``LIFERAY_ROUTES_CLIENT_EXTENSION``,
+    repointing a tree LDM manages. Suffix patterns (``*_API_KEY``,
+    ``*_OAUTH2_*_CLIENT_SECRET``) were never affected, because a prefix does
+    not disturb a suffix match -- which is why the credential half of
+    LDM-#1910 held and this went unnoticed. The branch itself was unreachable
+    until LDM-#1903 made it callable.
     """
     if blacklist is None:
         blacklist = _get_effective_blacklist(self, paths)
     prefix = target_id.upper().replace("-", "_") + "_"
-    return {
-        k[len(prefix) :] if target_id.lower() != "liferay" else k: v
-        for k, v in os.environ.items()
-        if k.upper().startswith(prefix) and not is_env_var_blacklisted(k, blacklist)
-    }
+    keeps_full_name = target_id.lower() == "liferay"
+
+    delivered = {}
+    for key, value in os.environ.items():
+        if not key.upper().startswith(prefix):
+            continue
+        # Test the name the container will actually RECEIVE. The host spelling
+        # is tested too, so a blacklist entry written against either form
+        # still bites; checking only one is exactly how LDM-#1954 happened.
+        name = key if keeps_full_name else key[len(prefix) :]
+        if is_env_var_blacklisted(key, blacklist) or is_env_var_blacklisted(
+            name, blacklist
+        ):
+            continue
+        delivered[name] = value
+    return delivered

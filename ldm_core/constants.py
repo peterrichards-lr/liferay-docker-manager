@@ -110,7 +110,10 @@ RELEASE_ANNOUNCEMENTS = {
             "it, so every extension was pointed at a path containing nothing. "
             "That tree is where Liferay publishes per-extension config, "
             "including the OAuth2 credentials it generates when it registers "
-            "your extension's application",
+            "your extension's application. NOTE: the tree is mounted, but "
+            "reading it is still blocked -- Liferay writes it 750/640 and "
+            "your extension container is not in the owning group, so the "
+            "credentials do not reach it yet (LDM-#1944)",
         ),
         (
             "Custom services join the shared config space",
