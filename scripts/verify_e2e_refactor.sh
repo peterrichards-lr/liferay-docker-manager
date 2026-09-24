@@ -2729,6 +2729,15 @@ report_ok "✅ The portal runs with umask ${UMASK_VAL}, so the config trees it p
 # Reporting a pass there would relocate LDM-#1946's defect into this script,
 # so the probe failing is announced loudly and the assertion is recorded as
 # NOT RUN rather than as satisfied.
+#
+# This DOES run on macOS, and that is measured, not assumed. Docker Desktop
+# rewrites OWNERSHIP, not the mode bits: a file written by a container at
+# umask 0027 reads back 640 on an APFS host, and 644 at umask 0022. What macOS
+# cannot show is the CONSEQUENCE -- each container is handed ownership of what
+# it mounts, so a second container at an unrelated uid reads a 640 file
+# happily and the refusal never reproduces. That asymmetry is why LDM-#1944
+# was reported by an external team on DXP Cloud and never seen locally: the
+# mode is visible here, the failure is not.
 echo ">> Verifying the published config trees are readable on disk (LDM-#1944/#1946)..."
 FSPERM_PROBE="${LDM_WORKSPACE}/${PROJECT_NAME}/.ldm-mode-probe"
 rm -f "$FSPERM_PROBE"
@@ -2741,8 +2750,8 @@ if [ "$FSPERM_READBACK" != "640" ]; then
     # Not a failure of LDM. Announce it so a green run is never mistaken for
     # evidence that the permissions were checked.
     echo "⚠️  SKIPPED (not run): this filesystem does not honour chmod -- probed 640, read back '${FSPERM_READBACK:-unreadable}'." | tee -a "$RESULTS_FILE_TMP"
-    echo "   Docker Desktop bind mounts, exFAT/FAT32 with 'noowners' and Windows all behave this way." | tee -a "$RESULTS_FILE_TMP"
-    echo "   The LDM-#1944 file-mode assertion was NOT evaluated on this run. Native Linux only." | tee -a "$RESULTS_FILE_TMP"
+    echo "   exFAT/FAT32 mounted 'noowners' behave this way; so, in general, does Windows." | tee -a "$RESULTS_FILE_TMP"
+    echo "   The LDM-#1944 file-mode assertion was NOT evaluated on this run." | tee -a "$RESULTS_FILE_TMP"
 else
     # Liferay writes these, not LDM. The healthcheck curls /c/portal/layout,
     # which is what triggers `_updateDXPRoutes`, so by the time `ldm wait`

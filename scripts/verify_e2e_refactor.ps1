@@ -2597,10 +2597,15 @@ exit 1
     # Layers 1 and 2 can both pass while the filesystem quietly discards the
     # mode, which is the whole of LDM-#1946.
     #
-    # On Windows this can essentially never run: NTFS ACLs are not POSIX modes
-    # and Docker Desktop presents bind mounts as the host user regardless. That
-    # is stated rather than skipped silently -- reporting a pass here would
-    # relocate LDM-#1946's defect into this script.
+    # Whether this runs on Windows is decided by the probe, not asserted here.
+    # NTFS ACLs are not POSIX modes, so it very likely skips -- but that has
+    # not been measured, and the sh half's equivalent assumption turned out to
+    # be wrong for macOS: Docker Desktop rewrites OWNERSHIP, not the mode bits,
+    # so a container writing at umask 0027 really does leave 640 on an APFS
+    # host. Let the probe answer it.
+    #
+    # A skip is announced, never counted as a pass -- reporting a pass here
+    # would relocate LDM-#1946's defect into this script.
     #
     # Parity with the LDM-#1944/#1946 block in verify_e2e_refactor.sh.
     Write-Host ">> Verifying the published config trees are readable on disk (LDM-#1944/#1946)..."
@@ -2627,7 +2632,7 @@ echo "SEEN $seen BAD$bad"
     # survive a read-back.
     if ($fsPermStat -match 'NOHONOUR\s+(\S*)') {
         Write-Verdict "[WARNING] SKIPPED (not run): this filesystem does not honour chmod -- probed 640, read back '$($Matches[1])'."
-        Write-Verdict "[WARNING] Docker Desktop bind mounts, exFAT/FAT32 with 'noowners' and Windows all behave this way. The LDM-#1944 file-mode assertion was NOT evaluated on this run."
+        Write-Verdict "[WARNING] exFAT/FAT32 mounted 'noowners' behave this way, as does NTFS in general. The LDM-#1944 file-mode assertion was NOT evaluated on this run."
     }
     elseif ($fsPermStat -match 'SEEN\s+(\d+)\s+BAD(.*)') {
         $fsPermSeen = [int]$Matches[1]

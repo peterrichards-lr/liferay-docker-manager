@@ -126,6 +126,17 @@ Three things worth carrying forward:
   `/proc/<pid>/status` inside the container instead -- which also works on a
   macOS or Windows host, since it reports Linux process state rather than
   anything about the host filesystem.
+- **A MODE bug is visible on macOS; an OWNERSHIP bug is not.** The section
+  below says you cannot verify any of this off native Linux. That is true of
+  uid-translation failures and it is what LDM-#599 and LDM-#1941 were. It is
+  NOT true of modes, and LDM-#1944 is a mode bug. Measured on APFS: a file
+  written by a container at umask `0027` reads back `640` on the host, and
+  `644` at `0022` -- Docker Desktop rewrites ownership, not the mode bits.
+  What macOS cannot show is the consequence: each container is handed
+  ownership of whatever it mounts, so a second container at an unrelated uid
+  reads that `640` file happily and the refusal never reproduces. That is
+  precisely why LDM-#1944 was reported by an external team on DXP Cloud and
+  never seen on a developer machine.
 
 ### You cannot verify any of this on macOS or Windows
 
