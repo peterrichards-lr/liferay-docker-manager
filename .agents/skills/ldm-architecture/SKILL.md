@@ -139,6 +139,42 @@ it. When diagnosing an empty config tree, establish which of the two it is --
 "cannot read the directory" and "read a directory with nothing in it" are
 indistinguishable in a log that only reports the tree as empty.
 
+#### The CX build hardcodes localhost; LDM redirects it
+
+A built client extension does not point at your project. The Liferay CX build
+writes the developer's own address into the OAuth application config --
+measured on every `ldm-cx-samples` artifact:
+
+```text
+.serviceAddress = localhost:3002
+.serviceScheme  = http
+homePageURL     = $[conf:.serviceScheme]://$[conf:.serviceAddress]
+typeSettings    = ['.serviceAddress=localhost:3002', '.serviceScheme=http', ...]
+```
+
+`_rewrite_oauth_urls_in_zip` (`workspace/utils.py`) rewrites these inside the
+zip before it is deployed, so the portal calls back to the project rather than
+to whatever was on the machine that built the artifact:
+
+| field | becomes | when |
+|---|---|---|
+| `.serviceAddress` | `<ext-name>.<host_name>` | the value contains `localhost` |
+| `.serviceScheme` | `https` | currently `http` **and** the project has SSL |
+| `homePageURL` | the project's external URL | the value contains `localhost` |
+
+Three things to know before changing any of it:
+
+- **It applies only to `oAuthApplicationUserAgent` and
+  `oAuthApplicationHeadlessServer` blocks.** A block without a matching `type`
+  is left alone entirely, which is easy to miss when writing a fixture.
+- **Both representations are rewritten.** The dict keys *and* the
+  `typeSettings` list of `key=value` strings. A real built config carries both,
+  so changing one path without the other leaves the artifact internally
+  inconsistent.
+- **It prefers `client-extension.yaml` over the generated
+  `*.client-extension-config.json`** when both are in the zip, and rewrites
+  only the one it picks.
+
 #### The container's umask is usually the right lever, not a reclaim
 
 Where a container writes files the host or another container must read, the

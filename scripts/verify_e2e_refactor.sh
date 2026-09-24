@@ -3464,6 +3464,9 @@ ${CXSVC_NAME}:
 ${CXSVC_NAME}-oauth:
     name: Synthetic CX OAuth
     type: oAuthApplicationHeadlessServer
+    .serviceAddress: localhost:8080
+    .serviceScheme: http
+    homePageURL: http://localhost:8080
     scopes:
         - Liferay.Headless.Admin.User.everything
 CXSVCEOF
@@ -3520,6 +3523,60 @@ shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])
 " "${CXSVC_NAME}" "cxsvc-build/${CXSVC_NAME}"
 
 log_and_run "Deploying CX service" "$LDM_CMD" -y deploy . "${CXSVC_NAME}.zip"
+
+# LDM-#1944 follow-up: the Liferay CX build hardcodes `localhost` and `http`
+# into `.serviceAddress`, `.serviceScheme` and `homePageURL` -- measured on the
+# ecopulse samples, where every built config carries
+# `.serviceAddress = localhost:3002`. `_rewrite_oauth_urls_in_zip` redirects
+# them at the project's own host and protocol, and until now the fixture
+# declared none of them, so the suite never exercised it.
+if ! "$VENV_PYTHON" - "$CXSVC_NAME" "$LDM_WORKSPACE/$PROJECT_NAME" <<'CXSVC_OAUTH_PY'
+import pathlib
+import sys
+import zipfile
+
+import yaml
+
+name, proj = sys.argv[1], pathlib.Path(sys.argv[2])
+deployed = proj / "osgi" / "client-extensions" / f"{name}.zip"
+if not deployed.exists():
+    print(f"ERROR: {deployed} was not deployed, so the rewrite cannot be checked.")
+    sys.exit(1)
+
+with zipfile.ZipFile(deployed) as z:
+    data = yaml.safe_load(z.read("client-extension.yaml").decode("utf-8"))
+
+block = next(
+    (b for b in data.values()
+     if isinstance(b, dict) and b.get("type") == "oAuthApplicationHeadlessServer"),
+    None,
+)
+if block is None:
+    print("ERROR: no oAuthApplicationHeadlessServer block in the deployed zip.")
+    sys.exit(1)
+
+fails = []
+addr = block.get(".serviceAddress", "")
+if "localhost" in addr:
+    fails.append(
+        f".serviceAddress was left as {addr!r}. The Liferay build hardcodes "
+        f"localhost; LDM must redirect it at the project host, or the portal "
+        f"calls back to the wrong place."
+    )
+hp = block.get("homePageURL", "")
+if "localhost:8080" in hp:
+    fails.append(f"homePageURL was left as {hp!r}")
+
+for f in fails:
+    print(f"ERROR: {f}")
+sys.exit(1 if fails else 0)
+CXSVC_OAUTH_PY
+then
+    echo "❌ ERROR: LDM did not rewrite the OAuth service address for the deployed CX (LDM-#1944)." | tee -a "$RESULTS_FILE_TMP"
+    CXSVC_OK=false
+else
+    report_ok "✅ The OAuth service address and home page URL are redirected away from localhost on deploy (LDM-#1944)."
+fi
 "$LDM_CMD" -y run . --no-up --no-seed >/dev/null 2>&1 || true
 
 if ! "$VENV_PYTHON" - "$CXSVC_NAME" <<'CXSVC_PY'

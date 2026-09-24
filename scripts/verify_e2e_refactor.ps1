@@ -3282,6 +3282,9 @@ ${cxSvcName}:
 ${cxSvcName}-oauth:
     name: Synthetic CX OAuth
     type: oAuthApplicationHeadlessServer
+    .serviceAddress: localhost:8080
+    .serviceScheme: http
+    homePageURL: http://localhost:8080
     scopes:
         - Liferay.Headless.Admin.User.everything
 "@ | Out-File -FilePath "cxsvc-build/$cxSvcName/client-extension.yaml" -Encoding ascii -Append

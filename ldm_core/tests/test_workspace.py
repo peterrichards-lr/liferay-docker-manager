@@ -647,6 +647,126 @@ class TestWorkspaceScanners(unittest.TestCase):
                 self.assertEqual(data["my-ext"][".serviceAddress"], "my-ext.localhost")
                 self.assertEqual(data["my-ext"]["homePageURL"], "http://localhost:8082")
 
+    def test_the_scheme_is_rewritten_to_https_when_ssl_is_on(self):
+        """LDM-#1944 follow-up: `.serviceScheme` had no coverage at all.
+
+        The Liferay CX build hardcodes `http` and `localhost` -- measured on
+        the ecopulse samples -- so LDM rewrites both to match the project. The
+        address half was tested; the scheme half was not.
+        """
+        import yaml
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            root_dir = tmp_path / "root"
+            root_dir.mkdir(parents=True)
+            self.handler.write_meta(root_dir, {"ssl": "true", "host_name": "proj.test"})
+
+            zip_path = tmp_path / "my-ext.zip"
+            with zipfile.ZipFile(zip_path, "w") as z:
+                z.writestr(
+                    "client-extension.yaml",
+                    "my-ext:\n"
+                    "  type: oAuthApplicationHeadlessServer\n"
+                    "  .serviceAddress: localhost:8080\n"
+                    "  .serviceScheme: http\n",
+                )
+
+            self.handler.workspace._rewrite_oauth_urls_in_zip(
+                zip_path, "proj.test", "my-ext", root_dir
+            )
+
+            with zipfile.ZipFile(zip_path, "r") as z:
+                data = yaml.safe_load(z.read("client-extension.yaml").decode("utf-8"))
+            self.assertEqual("https", data["my-ext"][".serviceScheme"])
+            self.assertEqual("my-ext.proj.test", data["my-ext"][".serviceAddress"])
+
+    def test_the_scheme_is_left_alone_without_ssl(self):
+        """The control. Forcing https on a plain-http project would break it."""
+        import yaml
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            root_dir = tmp_path / "root"
+            root_dir.mkdir(parents=True)
+            self.handler.write_meta(
+                root_dir, {"ssl": "false", "host_name": "proj.test"}
+            )
+
+            zip_path = tmp_path / "my-ext.zip"
+            with zipfile.ZipFile(zip_path, "w") as z:
+                z.writestr(
+                    "client-extension.yaml",
+                    "my-ext:\n"
+                    "  type: oAuthApplicationHeadlessServer\n"
+                    "  .serviceAddress: localhost:8080\n"
+                    "  .serviceScheme: http\n",
+                )
+
+            self.handler.workspace._rewrite_oauth_urls_in_zip(
+                zip_path, "proj.test", "my-ext", root_dir
+            )
+
+            with zipfile.ZipFile(zip_path, "r") as z:
+                data = yaml.safe_load(z.read("client-extension.yaml").decode("utf-8"))
+            self.assertEqual("http", data["my-ext"][".serviceScheme"])
+
+    def test_the_typesettings_list_form_is_rewritten_too(self):
+        """LDM-#1944 follow-up: this is the form a REAL built config uses.
+
+        `ecopulse-headless-auth.client-extension-config.json` carries
+
+            typeSettings = ['.serviceAddress=localhost:3002',
+                            '.serviceScheme=http', ...]
+
+        alongside the dict keys. Only the dict form had coverage, so the
+        representation every real extension actually ships was untested.
+        """
+        import json
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            root_dir = tmp_path / "root"
+            root_dir.mkdir(parents=True)
+            self.handler.write_meta(root_dir, {"ssl": "true", "host_name": "proj.test"})
+
+            zip_path = tmp_path / "my-ext.zip"
+            with zipfile.ZipFile(zip_path, "w") as z:
+                z.writestr(
+                    "my-ext.client-extension-config.json",
+                    json.dumps(
+                        {
+                            "com.liferay.oauth2.provider.configuration."
+                            "OAuth2ProviderApplicationHeadlessServerConfiguration~my-ext": {
+                                "type": "oAuthApplicationHeadlessServer",
+                                ".serviceAddress": "localhost:8080",
+                                ".serviceScheme": "http",
+                                "typeSettings": [
+                                    ".serviceAddress=localhost:8080",
+                                    ".serviceScheme=http",
+                                    "scopes=Liferay.Headless.Delivery.everything.read",
+                                ],
+                            }
+                        }
+                    ),
+                )
+
+            self.handler.workspace._rewrite_oauth_urls_in_zip(
+                zip_path, "proj.test", "my-ext", root_dir
+            )
+
+            with zipfile.ZipFile(zip_path, "r") as z:
+                raw = z.read("my-ext.client-extension-config.json").decode("utf-8")
+            block = next(iter(json.loads(raw).values()))
+            settings = block["typeSettings"]
+            self.assertIn(".serviceAddress=my-ext.proj.test", settings)
+            self.assertIn(".serviceScheme=https", settings)
+            self.assertIn(
+                "scopes=Liferay.Headless.Delivery.everything.read",
+                settings,
+                "an unrelated typeSetting was dropped by the rewrite",
+            )
+
     def test_scan_extension_metadata_folder(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             folder = Path(tmp_dir)
