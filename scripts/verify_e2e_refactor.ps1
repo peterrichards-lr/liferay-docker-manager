@@ -2528,6 +2528,63 @@ services:
     # Wait for Health
     Log-AndRun "Waiting for Liferay health" $LDM_CMD "-y wait . --timeout 600"
 
+    # LDM-#1944: the running portal's umask, read from the container's own
+    # /proc.
+    #
+    # Liferay runs under Tomcat, and 'catalina.sh' sets UMASK="0027" unless
+    # the variable is already set:
+    #
+    #     if [ -z "$UMASK" ]; then
+    #         UMASK="0027"
+    #     fi
+    #     umask $UMASK
+    #
+    # 0027 is 750 on directories and 640 on files, so every config tree
+    # Liferay publishes under 'routes/' was readable only by uid 1000 -- and a
+    # client extension runs as whatever uid its own image declares, so it was
+    # refused with 'Permission denied' on the tree holding its OAuth2
+    # credentials.
+    #
+    # Asserted against the LIVE process rather than against the compose file.
+    # A compose-level check proves LDM emitted a variable; it cannot prove
+    # Tomcat honoured it, and the '[ -z "$UMASK" ]' guard is the only reason
+    # it does.
+    #
+    # '/proc/<pid>/status' is read INSIDE the container, so this is valid on a
+    # Windows host too -- it reports the Linux process's umask, not anything
+    # about the host filesystem. The resulting FILE modes cannot be checked
+    # here: Docker Desktop presents bind-mounted files as the host user
+    # regardless of mode (LDM-#1946).
+    #
+    # Parity with the LDM-#1944 block in verify_e2e_refactor.sh.
+    Write-Host ">> Verifying the portal runs with a readable umask (LDM-#1944)..."
+    $umaskProbe = @'
+for p in /proc/[0-9]*; do
+    if grep -qa catalina "$p/cmdline" 2>/dev/null; then
+        grep -i "^Umask" "$p/status" 2>/dev/null && exit 0
+    fi
+done
+exit 1
+'@
+    $umaskRaw = (& docker exec ldm-smoke-test sh -c $umaskProbe 2>$null) -join "`n"
+    $umaskVal = ($umaskRaw -replace '(?i)^\s*umask:\s*', '').Trim()
+    if ([string]::IsNullOrWhiteSpace($umaskVal)) {
+        throw "Could not read the portal process umask from /proc (LDM-#1944). No process matching 'catalina' was found in container 'ldm-smoke-test'. This assertion must not be skipped silently -- it is the only check that proves Tomcat honoured the UMASK variable rather than defaulting to 0027."
+    }
+    # The resulting file mode, not the literal value: any umask that leaves
+    # OTHER unable to read reproduces LDM-#1944, so the assertion is on the
+    # outcome rather than on the one value we happen to set.
+    #
+    # Other-read specifically, NOT group-read. A client extension runs as
+    # whatever uid its own image declares and is not in Liferay's group, so
+    # group-read buys it nothing -- umask 0027 gives 640, which HAS group-read
+    # and is exactly the bug. A check for 0o44 would pass against it.
+    $umaskFileMode = [Convert]::ToInt32('666', 8) -band (-bnot [Convert]::ToInt32($umaskVal, 8))
+    if (($umaskFileMode -band [Convert]::ToInt32('4', 8)) -eq 0) {
+        throw ("The portal runs with umask ${umaskVal}, so files it creates are mode " + [Convert]::ToString($umaskFileMode, 8) + " -- unreadable to any uid but its own (LDM-#1944). A client extension runs as whatever uid its own image declares, so it cannot read routes/default/<ext-id> and never receives its OAuth2 credentials. catalina.sh defaults UMASK to 0027; LDM must override it.")
+    }
+    Write-Verdict "[SUCCESS] The portal runs with umask ${umaskVal}, so the config trees it publishes are readable by a client extension (LDM-#1944)."
+
     # LDM-#1509: the project above was seeded -- provisioned without --no-seed,
     # and the run reports "Project bootstrapped from seed". Assert LDM still
     # SAYS so afterwards.

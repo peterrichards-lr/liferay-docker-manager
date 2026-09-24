@@ -87,6 +87,68 @@ class TestTheRoutesVolumeIsShared(unittest.TestCase):
         )
 
 
+class TestLiferayRunsWithAReadableUmask(unittest.TestCase):
+    """LDM-#1944: a client extension could not read its OAuth2 credentials.
+
+    Liferay runs under Tomcat, and `catalina.sh` sets `UMASK="0027"` unless
+    the variable is already set in the environment:
+
+        if [ -z "$UMASK" ]; then
+            UMASK="0027"
+        fi
+        umask $UMASK
+
+    0027 is 750 on directories and 640 on files, so `routes/default/<ext-id>`
+    -- the tree holding the OAuth2 credentials Liferay generates when it
+    registers an extension -- was readable only by uid 1000. An extension
+    runs as whatever uid its own image declares, so it was refused.
+
+    Measured in liferay/dxp:2026.q1.7-lts, replicating catalina.sh's logic:
+
+        UMASK unset -> dir drwxr-x---  file -rw-r-----
+        UMASK=0022  -> dir drwxr-xr-x  file -rw-r--r--
+
+    Nothing in Liferay's own code sets a mode -- the k8s agent calls
+    `Files.createDirectories` with an empty `FileAttribute[]` and the class
+    contains no permissions API at all -- so the umask is the only input.
+
+    This test guards the variable surviving. It cannot observe the resulting
+    file modes, which needs a real boot on a real Linux filesystem: Docker
+    Desktop presents bind-mounted files as the host user regardless of mode,
+    so macOS and Windows cannot see this either way.
+    """
+
+    def test_liferay_is_given_a_umask(self):
+        self.assertTrue(
+            [e for e in _liferay_service()["environment"] if e.startswith("UMASK=")],
+            "without UMASK, catalina.sh defaults to 0027 and every config "
+            "tree Liferay publishes is unreadable to a client extension "
+            "(LDM-#1944)",
+        )
+
+    def test_the_umask_grants_read_beyond_the_owner(self):
+        """0027 is the bug. Anything that leaves group AND other unable to
+        read reproduces it, so the assertion is on the resulting mode rather
+        than on a literal string."""
+        value = next(
+            e.split("=", 1)[1]
+            for e in _liferay_service()["environment"]
+            if e.startswith("UMASK=")
+        )
+        file_mode = 0o666 & ~int(value, 8)
+        # OTHER-read (0o004), not group-read. A client extension runs as
+        # whatever uid its own image declares and is NOT in Liferay's group,
+        # so group-read buys it nothing: umask 0027 yields 640, which HAS
+        # group-read and still reproduces LDM-#1944 exactly. Asserting
+        # `& 0o044` would therefore pass against the bug.
+        self.assertTrue(
+            file_mode & 0o004,
+            f"UMASK={value} yields file mode {oct(file_mode)}, which no uid "
+            f"but Liferay's own can read -- that is LDM-#1944 (LDM-#1946 is "
+            f"the guard that would catch this at runtime)",
+        )
+
+
 class TestTheExtensionWaitsForLiferayToBeServing(unittest.TestCase):
     """LDM-#1955: this had no pytest coverage at all, only E2E.
 

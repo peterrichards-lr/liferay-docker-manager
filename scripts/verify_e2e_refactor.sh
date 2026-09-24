@@ -2652,6 +2652,64 @@ if ! "$LDM_CMD" -y wait . --timeout 600; then
     exit 1
 fi
 
+# LDM-#1944: the running portal's umask, read from the container's own /proc.
+#
+# Liferay runs under Tomcat, and `catalina.sh` sets `UMASK="0027"` unless the
+# variable is already set:
+#
+#     if [ -z "$UMASK" ]; then
+#         UMASK="0027"
+#     fi
+#     umask $UMASK
+#
+# 0027 is 750 on directories and 640 on files, so every config tree Liferay
+# publishes under `routes/` was readable only by uid 1000 -- and a client
+# extension runs as whatever uid its own image declares, so it was refused
+# with `Permission denied` on the tree holding its OAuth2 credentials.
+#
+# Asserted against the LIVE process rather than against the compose file. A
+# compose-level check proves LDM emitted a variable; it cannot prove Tomcat
+# honoured it, and the `[ -z "$UMASK" ]` guard is the only reason it does.
+#
+# `/proc/<pid>/status` is read INSIDE the container, so this is valid on a
+# macOS or Windows host too -- it reports the Linux process's umask, not
+# anything about the host filesystem. That matters because the resulting FILE
+# modes cannot be checked here: Docker Desktop presents bind-mounted files as
+# the host user regardless of mode (LDM-#1946).
+echo ">> Verifying the portal runs with a readable umask (LDM-#1944)..."
+UMASK_RAW=$(docker exec "$PROJECT_NAME" sh -c '
+for p in /proc/[0-9]*; do
+    if grep -qa catalina "$p/cmdline" 2>/dev/null; then
+        grep -i "^Umask" "$p/status" 2>/dev/null && exit 0
+    fi
+done
+exit 1' 2>/dev/null)
+UMASK_VAL=$(echo "$UMASK_RAW" | awk '{print $2}' | tr -d '[:space:]')
+if [ -z "$UMASK_VAL" ]; then
+    echo "❌ ERROR: could not read the portal process umask from /proc (LDM-#1944)." | tee -a "$RESULTS_FILE_TMP"
+    echo "   No process matching 'catalina' was found in container '${PROJECT_NAME}'."
+    echo "   This assertion must not be skipped silently -- it is the only check that"
+    echo "   proves Tomcat honoured the UMASK variable rather than defaulting to 0027."
+    exit 1
+fi
+# The resulting file mode, not the literal value: any umask that leaves OTHER
+# unable to read reproduces LDM-#1944, so the assertion is on the outcome
+# rather than on the one value we happen to set.
+#
+# Other-read specifically, NOT group-read. A client extension runs as whatever
+# uid its own image declares and is not in Liferay's group, so group-read buys
+# it nothing -- umask 0027 gives 640, which HAS group-read and is exactly the
+# bug. A check for `& 0044` would pass against it.
+UMASK_FILE_MODE=$("$VENV_PYTHON" -c "print(0o666 & ~int('${UMASK_VAL}', 8))")
+if [ "$((UMASK_FILE_MODE & 0004))" -eq 0 ]; then
+    echo "❌ ERROR: the portal runs with umask ${UMASK_VAL}, so files it creates are mode $(printf '%o' "$UMASK_FILE_MODE") -- unreadable to any uid but its own (LDM-#1944)." | tee -a "$RESULTS_FILE_TMP"
+    echo "   A client extension runs as whatever uid its own image declares, so it"
+    echo "   cannot read routes/default/<ext-id> and never receives its OAuth2"
+    echo "   credentials. catalina.sh defaults UMASK to 0027; LDM must override it."
+    exit 1
+fi
+report_ok "✅ The portal runs with umask ${UMASK_VAL}, so the config trees it publishes are readable by a client extension (LDM-#1944)."
+
 # LDM-#1509: the project above was seeded -- it is provisioned without
 # --no-seed and the run reports "Project bootstrapped from seed". Assert LDM
 # still SAYS so afterwards.

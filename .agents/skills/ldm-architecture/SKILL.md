@@ -86,6 +86,47 @@ Two instances in one cycle, found days apart and initially read as unrelated:
 creates it, a pre-boot pass is the wrong tool and the fix belongs after the
 write -- or in what the container is told to do, not what the host did earlier.
 
+#### The container's umask is usually the right lever, not a reclaim
+
+LDM-#1944 is the worked example, and it inverts the instinct above. The
+symptom looked like a permissions problem to be reconciled after the write;
+the cause was that the writing process had a restrictive umask, and the fix
+was one environment variable set before the container ever started.
+
+**Liferay runs under Tomcat, and `catalina.sh` defaults its umask to `0027`:**
+
+```sh
+# Set UMASK unless it has been overridden
+if [ -z "$UMASK" ]; then
+    UMASK="0027"
+fi
+umask $UMASK
+```
+
+`0027` is `750` on directories and `640` on files. Every config tree Liferay
+publishes under `routes/` was therefore readable only by uid 1000, and a
+client extension runs as whatever uid its own image declares. LDM now sets
+`UMASK=0022` on the Liferay service (`handlers/composer.py`), which the
+`[ -z "$UMASK" ]` guard is what makes possible.
+
+Three things worth carrying forward:
+
+- **Nothing in Liferay sets a mode.** The k8s agent calls
+  `Files.createDirectories` with an empty `FileAttribute[]` and the class
+  contains no permissions API at all. The umask is the only input, so there is
+  no "deliberate restriction" to work around -- an earlier reading of
+  LDM-#1944 assumed there was, and ranked remediations against it.
+- **Group-readable is not readable.** `0027` yields `640`, which HAS group
+  read. It is still the bug, because the extension is not in Liferay's group.
+  Any assertion here must test **other**-read; a check for group-read passes
+  against the defect.
+- **Measure through the real startup.** A bare `sh -c 'mkdir -p'` in the same
+  image reports `755`/`644`, because it bypasses `catalina.sh` entirely. That
+  probe suggests the bug does not exist. Read the running process's umask from
+  `/proc/<pid>/status` inside the container instead -- which also works on a
+  macOS or Windows host, since it reports Linux process state rather than
+  anything about the host filesystem.
+
 ### You cannot verify any of this on macOS or Windows
 
 Docker Desktop's virtiofs/gRPC-FUSE bind mounts present files as the host user
@@ -479,4 +520,4 @@ When LDM generates, deploys, or reasons about Client Extensions:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-23* | *Last Reviewed: 2026-09-23*
+*Last Updated: 2026-09-24* | *Last Reviewed: 2026-09-24*
