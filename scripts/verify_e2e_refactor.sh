@@ -3461,7 +3461,31 @@ ${CXSVC_NAME}:
     .serviceAddress: ${CXSVC_NAME}:8080
     name: Synthetic CX Service
     type: microservice
+${CXSVC_NAME}-oauth:
+    name: Synthetic CX OAuth
+    type: oAuthApplicationHeadlessServer
+    scopes:
+        - Liferay.Headless.Admin.User.everything
 CXSVCEOF
+# LDM-#1944: an `oAuthApplicationHeadlessServer` is what makes Liferay publish
+# a per-extension routes tree at all. Without one, `BaseConfigurationFactory`
+# never runs, no `ext.lxc.liferay.com/projectName` label is set, and
+# `RoutesPortalK8sConfigMapModifier` never creates the directory -- so a
+# fixture declaring only `type: microservice` can never observe the pairing
+# between the directory Liferay creates and the one LDM mounts.
+#
+# That is the whole reason this bug survived four wrong diagnoses: every
+# assertion we had looked at LDM's side of the boundary only.
+cat > "cxsvc-build/${CXSVC_NAME}/${CXSVC_NAME}.client-extension-config.json" <<CXSVCCFG
+{
+    "com.liferay.oauth2.provider.configuration.OAuth2ProviderApplicationHeadlessServerConfiguration~${CXSVC_NAME}": {
+        "projectId": "${CXSVC_NAME}",
+        "projectName": "${CXSVC_NAME}",
+        ".serviceAddress": "${CXSVC_NAME}:8080",
+        ".serviceScheme": "http"
+    }
+}
+CXSVCCFG
 # The Dockerfile is what makes it a service rather than a static extension.
 #
 # LDM-#1911: it also carries application code at /opt/liferay/routes, the way a
@@ -3626,6 +3650,92 @@ if [ "$CXSVC_OK" = true ]; then
     report_ok "✅ Client-extension service: DXP metadata at /etc/liferay/lxc/dxp-metadata (not over the app), domain supplied, host resolvable, and the extension's own /opt/liferay/routes code still visible inside the running container (LDM-#1911/#1918)."
 fi
 rm -rf "cxsvc-build" "${CXSVC_NAME}.zip"
+
+# LDM-#1944: the pairing. Does the directory Liferay CREATES match the one LDM
+# MOUNTS?
+#
+# This is the assertion that was missing, and its absence is why the issue
+# survived four wrong diagnoses. Every check we had looked at one side of the
+# boundary: LDM's compose said what it mounted, and nothing compared that to
+# what Liferay actually published. The failure is silent in both directions --
+# `_scaffold_routes_tree` creates whatever the compose declares, so a wrong
+# name yields a real, empty, READABLE directory sitting beside the populated
+# one. It reads as "the tree is empty", which is indistinguishable from "the
+# extension was refused" in any log.
+#
+# Liferay names the directory from `ext.lxc.liferay.com/projectName`, which it
+# takes from the extension's own `client-extension-config.json`. LDM used to
+# derive it from the `LCP.json` id, and those differ for essentially every
+# extension -- the id drops the hyphens the directory keeps.
+#
+# The check is deliberately phrased as a SUBSET rule rather than an equality:
+# every directory Liferay publishes must be one LDM mounted. That catches the
+# mismatch whatever the naming convention turns out to be, without this script
+# having to re-derive Liferay's rules.
+echo ">> Verifying Liferay's routes directories are the ones LDM mounted (LDM-#1944)..."
+PAIRING_ROUTES="${LDM_WORKSPACE}/${PROJECT_NAME}/routes/default"
+
+# Liferay publishes the tree from the client-extension config lifecycle, which
+# runs after the artifact is processed -- not instantly. Bounded wait, then
+# report what was found either way.
+PAIRING_WAITED=0
+while [ "$PAIRING_WAITED" -lt 180 ]; do
+    if [ -n "$(find "$PAIRING_ROUTES" -mindepth 1 -maxdepth 1 -type d ! -name dxp 2>/dev/null | head -1)" ]; then
+        break
+    fi
+    sleep 5
+    PAIRING_WAITED=$((PAIRING_WAITED + 5))
+done
+
+PAIRING_PUBLISHED=$(find "$PAIRING_ROUTES" -mindepth 1 -maxdepth 1 -type d ! -name dxp -exec basename {} \; 2>/dev/null | sort)
+
+if [ -z "$PAIRING_PUBLISHED" ]; then
+    # Announced, never a silent pass. An empty tree here means the assertion
+    # had nothing to compare -- most likely the OAuth application was not
+    # registered, so Liferay never reached the code that creates the
+    # directory. That is worth knowing; it is not evidence the paths agree.
+    echo "⚠️  SKIPPED (not run): Liferay published no per-extension routes directory within ${PAIRING_WAITED}s." | tee -a "$RESULTS_FILE_TMP"
+    echo "   Nothing to pair against, so LDM-#1944 was NOT verified on this run." | tee -a "$RESULTS_FILE_TMP"
+    echo "   Expected the oAuthApplicationHeadlessServer in the fixture to drive BaseConfigurationFactory." | tee -a "$RESULTS_FILE_TMP"
+else
+    PAIRING_MOUNTED=$("$VENV_PYTHON" - <<'PAIRING_PY'
+import pathlib
+
+import yaml
+
+compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text())
+names = set()
+for svc in (compose.get("services") or {}).values():
+    for spec in svc.get("volumes") or []:
+        source = (
+            spec.get("source") if isinstance(spec, dict) else str(spec).split(":")[0]
+        )
+        parts = str(source or "").rstrip("/").split("/routes/default/")
+        if len(parts) == 2 and parts[1] and parts[1] != "dxp":
+            names.add(parts[1])
+print("\n".join(sorted(names)))
+PAIRING_PY
+)
+    PAIRING_UNMOUNTED=""
+    for d in $PAIRING_PUBLISHED; do
+        if ! echo "$PAIRING_MOUNTED" | grep -qx "$d"; then
+            PAIRING_UNMOUNTED="${PAIRING_UNMOUNTED} ${d}"
+        fi
+    done
+
+    if [ -n "$PAIRING_UNMOUNTED" ]; then
+        echo "❌ ERROR: Liferay published routes directories that LDM does not mount (LDM-#1944)." | tee -a "$RESULTS_FILE_TMP"
+        echo "   Liferay created :$(echo "$PAIRING_PUBLISHED" | tr '\n' ' ')" | tee -a "$RESULTS_FILE_TMP"
+        echo "   LDM mounted     :$(echo "$PAIRING_MOUNTED" | tr '\n' ' ')" | tee -a "$RESULTS_FILE_TMP"
+        echo "   Unmounted       :${PAIRING_UNMOUNTED}" | tee -a "$RESULTS_FILE_TMP"
+        echo "   The extension reads a real, empty, readable directory while Liferay fills" | tee -a "$RESULTS_FILE_TMP"
+        echo "   a different one beside it. Liferay names it from projectName in the" | tee -a "$RESULTS_FILE_TMP"
+        echo "   extension's client-extension-config.json, NOT from the LCP.json id." | tee -a "$RESULTS_FILE_TMP"
+        exit 1
+    fi
+
+    report_ok "✅ Every routes directory Liferay published ($(echo "$PAIRING_PUBLISHED" | tr '\n' ' ')) is one LDM mounted (LDM-#1944)."
+fi
 
 # LDM-#1928/#1923: the fixture above declares NO LCP.json, so `ext["env"]` is
 # empty and `_extension_routes_mounts` takes its `or` fallback every time. The
