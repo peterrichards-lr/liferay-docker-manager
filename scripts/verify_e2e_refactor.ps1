@@ -3295,6 +3295,18 @@ ${cxSvcName}-oauth:
     }
 }
 "@ | Out-File -FilePath "cxsvc-build/$cxSvcName/$cxSvcName.client-extension-config.json" -Encoding ascii
+    # LDM-#1962: every real client extension carries an LCP.json. LDM now
+    # refuses to deploy a service extension without one, so a fixture lacking
+    # it is rejected and quarantined -- which is exactly what happened to this
+    # fixture on the first master run after the fix landed.
+    @"
+{
+    "id": "${cxSvcName}",
+    "memory": 512,
+    "kind": "Deployment"
+}
+"@ | Out-File -FilePath "cxsvc-build/$cxSvcName/LCP.json" -Encoding ascii
+
     # The Dockerfile is what makes it a service rather than a static extension.
     #
     # LDM-#1911: it also carries application code at /opt/liferay/routes, the

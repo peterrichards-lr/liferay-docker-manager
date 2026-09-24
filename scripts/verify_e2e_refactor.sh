@@ -3476,6 +3476,20 @@ CXSVCEOF
 #
 # That is the whole reason this bug survived four wrong diagnoses: every
 # assertion we had looked at LDM's side of the boundary only.
+# LDM-#1962: every real client extension carries an LCP.json -- every sample
+# in ldm-cx-samples has one beside its client-extension.yaml. LDM now refuses
+# to deploy a service extension without one, so a fixture lacking it is
+# rejected and quarantined, exactly as intended.
+#
+# That refusal caught this fixture on the first master run after the fix
+# landed, which is the guard doing its job on our own unrealistic test data.
+cat > "cxsvc-build/${CXSVC_NAME}/LCP.json" <<CXSVCLCP
+{
+    "id": "${CXSVC_NAME}",
+    "memory": 512,
+    "kind": "Deployment"
+}
+CXSVCLCP
 cat > "cxsvc-build/${CXSVC_NAME}/${CXSVC_NAME}.client-extension-config.json" <<CXSVCCFG
 {
     "com.liferay.oauth2.provider.configuration.OAuth2ProviderApplicationHeadlessServerConfiguration~${CXSVC_NAME}": {
