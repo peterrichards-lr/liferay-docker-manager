@@ -2528,6 +2528,128 @@ services:
     # Wait for Health
     Log-AndRun "Waiting for Liferay health" $LDM_CMD "-y wait . --timeout 600"
 
+    # LDM-#1944: the running portal's umask, read from the container's own
+    # /proc.
+    #
+    # Liferay runs under Tomcat, and 'catalina.sh' sets UMASK="0027" unless
+    # the variable is already set:
+    #
+    #     if [ -z "$UMASK" ]; then
+    #         UMASK="0027"
+    #     fi
+    #     umask $UMASK
+    #
+    # 0027 is 750 on directories and 640 on files, so every config tree
+    # Liferay publishes under 'routes/' was readable only by uid 1000 -- and a
+    # client extension runs as whatever uid its own image declares, so it was
+    # refused with 'Permission denied' on the tree holding its OAuth2
+    # credentials.
+    #
+    # Asserted against the LIVE process rather than against the compose file.
+    # A compose-level check proves LDM emitted a variable; it cannot prove
+    # Tomcat honoured it, and the '[ -z "$UMASK" ]' guard is the only reason
+    # it does.
+    #
+    # '/proc/<pid>/status' is read INSIDE the container, so this is valid on a
+    # Windows host too -- it reports the Linux process's umask, not anything
+    # about the host filesystem. The resulting FILE modes cannot be checked
+    # here: Docker Desktop presents bind-mounted files as the host user
+    # regardless of mode (LDM-#1946).
+    #
+    # Parity with the LDM-#1944 block in verify_e2e_refactor.sh.
+    Write-Host ">> Verifying the portal runs with a readable umask (LDM-#1944)..."
+    $umaskProbe = @'
+for p in /proc/[0-9]*; do
+    if grep -qa catalina "$p/cmdline" 2>/dev/null; then
+        grep -i "^Umask" "$p/status" 2>/dev/null && exit 0
+    fi
+done
+exit 1
+'@
+    $umaskRaw = (& docker exec ldm-smoke-test sh -c $umaskProbe 2>$null) -join "`n"
+    $umaskVal = ($umaskRaw -replace '(?i)^\s*umask:\s*', '').Trim()
+    if ([string]::IsNullOrWhiteSpace($umaskVal)) {
+        throw "Could not read the portal process umask from /proc (LDM-#1944). No process matching 'catalina' was found in container 'ldm-smoke-test'. This assertion must not be skipped silently -- it is the only check that proves Tomcat honoured the UMASK variable rather than defaulting to 0027."
+    }
+    # The resulting file mode, not the literal value: any umask that leaves
+    # OTHER unable to read reproduces LDM-#1944, so the assertion is on the
+    # outcome rather than on the one value we happen to set.
+    #
+    # Other-read specifically, NOT group-read. A client extension runs as
+    # whatever uid its own image declares and is not in Liferay's group, so
+    # group-read buys it nothing -- umask 0027 gives 640, which HAS group-read
+    # and is exactly the bug. A check for 0o44 would pass against it.
+    $umaskFileMode = [Convert]::ToInt32('666', 8) -band (-bnot [Convert]::ToInt32($umaskVal, 8))
+    if (($umaskFileMode -band [Convert]::ToInt32('4', 8)) -eq 0) {
+        throw ("The portal runs with umask ${umaskVal}, so files it creates are mode " + [Convert]::ToString($umaskFileMode, 8) + " -- unreadable to any uid but its own (LDM-#1944). A client extension runs as whatever uid its own image declares, so it cannot read routes/default/<ext-id> and never receives its OAuth2 credentials. catalina.sh defaults UMASK to 0027; LDM must override it.")
+    }
+    Write-Verdict "[SUCCESS] The portal runs with umask ${umaskVal}, so the config trees it publishes are readable by a client extension (LDM-#1944)."
+
+    # LDM-#1946 / LDM-#1944: the modes that actually landed on disk.
+    #
+    # Third and last layer of the LDM-#1944 assertion, and the only one that
+    # looks at a real file:
+    #
+    #   1. a unit test asserts LDM emits a umask granting other-read
+    #   2. the /proc check above asserts Tomcat HONOURED it
+    #   3. this asserts the resulting files are actually readable
+    #
+    # Layers 1 and 2 can both pass while the filesystem quietly discards the
+    # mode, which is the whole of LDM-#1946.
+    #
+    # Whether this runs on Windows is decided by the probe, not asserted here.
+    # NTFS ACLs are not POSIX modes, so it very likely skips -- but that has
+    # not been measured, and the sh half's equivalent assumption turned out to
+    # be wrong for macOS: Docker Desktop rewrites OWNERSHIP, not the mode bits,
+    # so a container writing at umask 0027 really does leave 640 on an APFS
+    # host. Let the probe answer it.
+    #
+    # A skip is announced, never counted as a pass -- reporting a pass here
+    # would relocate LDM-#1946's defect into this script.
+    #
+    # Parity with the LDM-#1944/#1946 block in verify_e2e_refactor.sh.
+    Write-Host ">> Verifying the published config trees are readable on disk (LDM-#1944/#1946)..."
+    $fsPermRoutes = Join-Path (Join-Path $LDM_WORKSPACE $PROJECT_NAME) "routes"
+    $fsPermStat = & docker run --rm -v "${fsPermRoutes}:/w" alpine sh -c '
+probe=/w/.ldm-mode-probe
+: > "$probe" 2>/dev/null || exit 3
+chmod 640 "$probe" 2>/dev/null
+back=$(stat -c "%a" "$probe" 2>/dev/null)
+rm -f "$probe"
+[ "$back" != "640" ] && { echo "NOHONOUR $back"; exit 0; }
+bad=""
+seen=0
+for f in $(find /w -type f 2>/dev/null); do
+    seen=$((seen + 1))
+    m=$(stat -c "%a" "$f" 2>/dev/null)
+    [ "$((0$m & 0004))" -eq 0 ] && bad="$bad $m:$f"
+done
+echo "SEEN $seen BAD$bad"
+' 2>&1 | Out-String
+
+    # The probe runs inside a container so the mode semantics are the mount's
+    # own, not Windows'. It is the same question either way: does a chmod here
+    # survive a read-back.
+    if ($fsPermStat -match 'NOHONOUR\s+(\S*)') {
+        Write-Verdict "[WARNING] SKIPPED (not run): this filesystem does not honour chmod -- probed 640, read back '$($Matches[1])'."
+        Write-Verdict "[WARNING] exFAT/FAT32 mounted 'noowners' behave this way, as does NTFS in general. The LDM-#1944 file-mode assertion was NOT evaluated on this run."
+    }
+    elseif ($fsPermStat -match 'SEEN\s+(\d+)\s+BAD(.*)') {
+        $fsPermSeen = [int]$Matches[1]
+        $fsPermBad = $Matches[2].Trim()
+        if ($fsPermBad) {
+            throw ("Liferay published config files a client extension cannot read (LDM-#1944): $fsPermBad. catalina.sh defaults UMASK to 0027 (files 640); LDM sets UMASK=0022 so these land 644 -- if they are 640 the override did not take.")
+        }
+        if ($fsPermSeen -eq 0) {
+            Write-Verdict "[WARNING] SKIPPED (not run): no files under routes/ after the health wait, so there were none to check. Expected the dxp tree once the healthcheck curled /c/portal/layout."
+        } else {
+            Write-Verdict "[SUCCESS] All $fsPermSeen published config file(s) under routes/ are readable by a client extension (LDM-#1944/#1946)."
+        }
+    }
+    else {
+        throw "Could not probe the routes filesystem for LDM-#1944/#1946. Output was: $fsPermStat"
+    }
+
     # LDM-#1509: the project above was seeded -- provisioned without --no-seed,
     # and the run reports "Project bootstrapped from seed". Assert LDM still
     # SAYS so afterwards.

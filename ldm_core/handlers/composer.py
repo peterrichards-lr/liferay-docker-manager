@@ -951,6 +951,32 @@ class ComposerService:
                 opt_map[opt] = opt
 
         liferay_env = []
+        # LDM-#1944: Liferay runs under Tomcat, and `catalina.sh` sets
+        # `UMASK="0027"` unless the variable is already set:
+        #
+        #     if [ -z "$UMASK" ]; then
+        #         UMASK="0027"
+        #     fi
+        #     umask $UMASK
+        #
+        # 0027 is 750 on directories and 640 on files, so every config tree
+        # Liferay publishes under `routes/` was readable only by uid 1000. A
+        # client extension runs as whatever uid its own image declares, so it
+        # was refused with `Permission denied` on `routes/default/<ext-id>` --
+        # the tree holding the OAuth2 credentials Liferay generates for it.
+        # That is the whole of LDM-#1944; nothing in Liferay's own code sets a
+        # mode (`Files.createDirectories` is called with an empty
+        # `FileAttribute[]`), so the umask is the only input.
+        #
+        # 0022 gives 755/644. That is TIGHTER than the status quo, not looser:
+        # `routes` is already reclaimed at chmod 777 pre-boot (`handlers/
+        # base.py`), so the credentials are world-readable on the host today.
+        #
+        # Do not remove this as an unused variable -- it is read by
+        # `catalina.sh`, not by LDM, so nothing in this repository references
+        # it. The `[ -z "$UMASK" ]` guard above is what makes the override
+        # work at all.
+        liferay_env.append("UMASK=0022")
         liferay_env.append(f"LIFERAY_JVM_OPTS={' '.join(opt_map.values())}")
         liferay_env.append(
             "LIFERAY_LOG4J2_CONFIGURATION_FILE=/opt/liferay/osgi/log4j/portal-log4j-ext.xml"
