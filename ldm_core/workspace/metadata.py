@@ -74,6 +74,54 @@ def _parse_client_extension_config_json(self, content):
     return None
 
 
+def parse_cx_project_name(content):
+    """The name Liferay publishes this extension's routes tree under.
+
+    LDM-#1944. Liferay does NOT use the `LCP.json` id for that directory. The
+    chain, from the portal source:
+
+    * the CX build emits `<name>.client-extension-config.json` carrying BOTH
+      `projectId` (equal to the `LCP.json` id) and `projectName` (equal to the
+      extension directory)
+    * `BaseConfigurationFactory` reads `ext.lxc.liferay.com.projectName`, or
+      `projectName`, and publishes it as the label
+      `ext.lxc.liferay.com/projectName`
+    * `RoutesPortalK8sConfigMapModifier` resolves the path straight from that
+      label and calls `Files.createDirectories` on it
+
+    So the tree is `routes/default/<projectName>`, and an extension mounted at
+    `routes/default/<id>` reads a real, empty, readable directory while Liferay
+    fills a different one beside it.
+
+    The two are not interchangeable: the id drops the hyphens the directory
+    keeps. Across `ldm-cx-samples`, all 16 differ.
+
+    The configuration key is also a fallback source, because it is suffixed
+    with the same name -- `...HeadlessServerConfiguration~ecopulse-headless-auth`.
+    """
+    try:
+        data = json.loads(content)
+    except Exception:
+        return None
+
+    if not isinstance(data, dict):
+        return None
+
+    prefix = "com.liferay.oauth2.provider.configuration.OAuth2ProviderApplicationHeadlessServerConfiguration~"
+    suffix_name = None
+    for key, val in data.items():
+        if isinstance(val, dict):
+            # `projectName` is authoritative -- it is the value Liferay itself
+            # resolves the directory from. `projectId` is deliberately NOT a
+            # fallback: it is the id, which is the wrong string.
+            name = val.get("ext.lxc.liferay.com.projectName") or val.get("projectName")
+            if name:
+                return str(name).strip()
+        if suffix_name is None and key.startswith(prefix):
+            suffix_name = key[len(prefix) :]
+    return suffix_name
+
+
 def _parse_lcp_json(self, content, context_name=None):
     info: dict[str, Any] = {
         "id": None,
@@ -86,6 +134,7 @@ def _parse_lcp_json(self, content, context_name=None):
         "readinessProbe": None,
         "livenessProbe": None,
         "oauth_erc": None,
+        "project_name": None,  # LDM-#1944
         "env": {},
         "has_load_balancer": False,
     }
@@ -178,11 +227,14 @@ def _scan_extension_zip_metadata(self, zip_ref, info):
         elif name == "client-extension-config.json" or f.endswith(
             ".client-extension-config.json"
         ):
-            erc = _parse_client_extension_config_json(
-                self, zip_ref.read(f).decode("utf-8")
-            )
+            content = zip_ref.read(f).decode("utf-8")
+            erc = _parse_client_extension_config_json(self, content)
             if erc:
                 info["oauth_erc"] = erc
+            # LDM-#1944: same in the deployed-zip path as in the folder scan.
+            project_name = parse_cx_project_name(content)
+            if project_name:
+                info["project_name"] = project_name
 
 
 def _scan_extension_folder_metadata(self, folder_path, info):
@@ -200,9 +252,15 @@ def _scan_extension_folder_metadata(self, folder_path, info):
         )
     cfg_file = next(folder_path.glob("*client-extension-config.json"), None)
     if cfg_file:
-        erc = _parse_client_extension_config_json(self, cfg_file.read_text())
+        content = cfg_file.read_text()
+        erc = _parse_client_extension_config_json(self, content)
         if erc:
             info["oauth_erc"] = erc
+        # LDM-#1944: the name Liferay publishes the routes tree under. Not the
+        # LCP.json id -- see parse_cx_project_name.
+        project_name = parse_cx_project_name(content)
+        if project_name:
+            info["project_name"] = project_name
 
 
 def _scan_extension_metadata(self, folder_path=None, zip_ref=None):
@@ -218,6 +276,7 @@ def _scan_extension_metadata(self, folder_path=None, zip_ref=None):
         "readinessProbe": None,
         "livenessProbe": None,
         "oauth_erc": None,
+        "project_name": None,  # LDM-#1944
         "env": {},
         "has_load_balancer": False,
     }

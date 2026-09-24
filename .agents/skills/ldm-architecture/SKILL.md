@@ -80,18 +80,71 @@ Two instances in one cycle, found days apart and initially read as unrelated:
 | | what the container created afterwards | symptom |
 |---|---|---|
 | LDM-#1941 | `osgi/marketplace/override` | `ldm snapshot` produced no backup at all on native Linux -- the whole `osgi` tree failed one archive entry |
-| LDM-#1944 | `routes/default/<ext>/` | a client extension cannot read the OAuth2 credentials Liferay publishes for it |
+| LDM-#1944 | `routes/default/<projectName>/` | Liferay creates and populates it after boot, so nothing LDM does before the stack starts can touch it |
 
 **Before adding a fix here, ask when the content appears.** If a container
 creates it, a pre-boot pass is the wrong tool and the fix belongs after the
 write -- or in what the container is told to do, not what the host did earlier.
 
+#### How Liferay names the per-extension routes directory
+
+Liferay resolves the directory from the extension's **`projectName`**, not from
+its `LCP.json` id. LDM must mount the same name, or it binds a directory
+Liferay never writes to.
+
+The CX build emits `<name>.client-extension-config.json`, which carries **both**
+identifiers:
+
+```text
+projectId   = ecopulseheadlessauth      <- equals the LCP.json id
+projectName = ecopulse-headless-auth    <- equals the extension directory
+```
+
+`BaseConfigurationFactory` (`oauth2-provider-service`) reads the property and
+publishes it as a ConfigMap label:
+
+```java
+String projectName = GetterUtil.getString(
+    properties.get("ext.lxc.liferay.com.projectName"),
+    (String)properties.get("projectName"));
+...
+labels.put("ext.lxc.liferay.com/projectName", _projectName);
+```
+
+`RoutesPortalK8sConfigMapModifier` then resolves the path straight from that
+label:
+
+```java
+String projectName = labels.get("ext.lxc.liferay.com/projectName");
+Path projectPath = virtualInstanceIdPath.resolve(projectName);
+Files.createDirectories(projectPath);
+```
+
+So the tree Liferay publishes is `routes/default/<projectName>`.
+
+**The two identifiers differ for essentially every extension.** The id drops
+the hyphens the directory keeps -- measured across `ldm-cx-samples`, 16 of 16.
+Treating them as interchangeable works only for an extension whose name happens
+to contain no hyphens.
+
+LDM already parses `*client-extension-config.json` (`workspace/metadata.py`
+reads `oauth_erc` from it), so `projectName` is available wherever the mount
+path is decided.
+
+**A wrong name does not surface as a permission error.** Both directories
+exist and both are readable: `_scaffold_routes_tree` creates whatever the
+generated compose declares, so an extension bound to the wrong name reads a
+real, empty, readable directory while Liferay populates a different one beside
+it. When diagnosing an empty config tree, establish which of the two it is --
+"cannot read the directory" and "read a directory with nothing in it" are
+indistinguishable in a log that only reports the tree as empty.
+
 #### The container's umask is usually the right lever, not a reclaim
 
-LDM-#1944 is the worked example, and it inverts the instinct above. The
-symptom looked like a permissions problem to be reconciled after the write;
-the cause was that the writing process had a restrictive umask, and the fix
-was one environment variable set before the container ever started.
+Where a container writes files the host or another container must read, the
+lever is usually the writing process's umask, set before it starts -- not a
+reclaim afterwards. A mode that is wrong from creation cannot be reconciled by
+a pre-boot pass, and racing it after the write is worse.
 
 **Liferay runs under Tomcat, and `catalina.sh` defaults its umask to `0027`:**
 
@@ -114,8 +167,8 @@ Three things worth carrying forward:
 - **Nothing in Liferay sets a mode.** The k8s agent calls
   `Files.createDirectories` with an empty `FileAttribute[]` and the class
   contains no permissions API at all. The umask is the only input, so there is
-  no "deliberate restriction" to work around -- an earlier reading of
-  LDM-#1944 assumed there was, and ranked remediations against it.
+  no "deliberate restriction" to work around: the mode is whatever the writing
+  process's umask produced, and nothing in Liferay chooses it.
 - **Group-readable is not readable.** `0027` yields `640`, which HAS group
   read. It is still the bug, because the extension is not in Liferay's group.
   Any assertion here must test **other**-read; a check for group-read passes
@@ -129,14 +182,14 @@ Three things worth carrying forward:
 - **A MODE bug is visible on macOS; an OWNERSHIP bug is not.** The section
   below says you cannot verify any of this off native Linux. That is true of
   uid-translation failures and it is what LDM-#599 and LDM-#1941 were. It is
-  NOT true of modes, and LDM-#1944 is a mode bug. Measured on APFS: a file
-  written by a container at umask `0027` reads back `640` on the host, and
-  `644` at `0022` -- Docker Desktop rewrites ownership, not the mode bits.
-  What macOS cannot show is the consequence: each container is handed
+  NOT true of modes. Measured on APFS: a file written by a container at umask
+  `0027` reads back `640` on the host, and `644` at `0022` -- Docker Desktop
+  rewrites ownership, not the mode bits. So a mode can be asserted anywhere.
+  What macOS cannot show is the **consequence**: each container is handed
   ownership of whatever it mounts, so a second container at an unrelated uid
-  reads that `640` file happily and the refusal never reproduces. That is
-  precisely why LDM-#1944 was reported by an external team on DXP Cloud and
-  never seen on a developer machine.
+  reads that `640` file happily and a refusal never reproduces. A uid-access
+  failure therefore needs native Linux even though the mode that causes it is
+  visible everywhere.
 
 ### You cannot verify any of this on macOS or Windows
 

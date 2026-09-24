@@ -3435,6 +3435,12 @@ sys.exit(1 if fails else 0)
     # verify_e2e_refactor.sh.
     Write-Host ">> Verifying the routes mounts are DERIVED from LCP.json (LDM-#1928/#1923)..."
     $cxDerivName = "derived-svc"
+    # LDM-#1944: a real extension carries TWO identifiers and they differ --
+    # the LCP.json id drops the hyphens the directory keeps. Liferay names the
+    # routes tree from projectName; mounting the id binds a directory it never
+    # writes to. Declaring them differently is what lets the assertion tell
+    # them apart.
+    $cxDerivId = "derivedsvc"
     $cxDerivDxp  = "/opt/custom/lxc/dxp-tree"
     $cxDerivExt  = "/opt/custom/lxc/ext-tree"
     Remove-Item -Recurse -Force "cxderiv-build", "$cxDerivName.zip" -ErrorAction SilentlyContinue
@@ -3449,7 +3455,7 @@ ${cxDerivName}:
     # pair and reads both -- the paths here are deliberately NOT the constants.
     @"
 {
-    "id": "${cxDerivName}",
+    "id": "${cxDerivId}",
     "memory": 512,
     "env": {
         "LIFERAY_ROUTES_DXP": "${cxDerivDxp}",
@@ -3457,6 +3463,18 @@ ${cxDerivName}:
     }
 }
 "@ | Out-File -FilePath "cxderiv-build/$cxDerivName/LCP.json" -Encoding ascii
+    # LDM-#1944: what the Liferay CX build emits, carrying BOTH identifiers.
+    # Liferay reads projectName from here, publishes it as the
+    # ext.lxc.liferay.com/projectName label, and resolves the routes directory
+    # from that label.
+    @"
+{
+    "com.liferay.oauth2.provider.configuration.OAuth2ProviderApplicationHeadlessServerConfiguration~${cxDerivName}": {
+        "projectId": "${cxDerivId}",
+        "projectName": "${cxDerivName}"
+    }
+}
+"@ | Out-File -FilePath "cxderiv-build/$cxDerivName/$cxDerivName.client-extension-config.json" -Encoding ascii
     @'
 FROM alpine
 CMD ["sleep", "3600"]
@@ -3473,6 +3491,7 @@ import pathlib
 import yaml
 
 name, dxp_target, ext_target = sys.argv[1], sys.argv[2], sys.argv[3]
+project_name = sys.argv[4]
 compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text())
 services = compose.get("services") or {}
 svc = next((v for k, v in services.items() if k.endswith(name)), None)
@@ -3496,9 +3515,14 @@ if not ext_mounts:
                  "LCP.json and nothing is mounted there, so the extension "
                  "reads an empty path and generated OAuth2 credentials never "
                  "reach it: %s" % (ext_target, vols))
-elif not [v for v in ext_mounts if "/routes/default/%s:" % name in v]:
-    fails.append("the derived ext mount is not this extension's own subtree "
-                 "(routes/default/%s): %s" % (name, ext_mounts))
+elif not [v for v in ext_mounts if "/routes/default/%s:" % project_name in v]:
+    fails.append("the derived ext mount is not routes/default/%s (the "
+                 "projectName Liferay publishes under): %s"
+                 % (project_name, ext_mounts))
+elif [v for v in ext_mounts if "/routes/default/%s:" % name in v]:
+    fails.append("the ext mount used the LCP.json id %r instead of the "
+                 "projectName %r -- that directory is one Liferay never "
+                 "writes to (LDM-#1944): %s" % (name, project_name, ext_mounts))
 
 # The negative half, and the point of the whole fixture: falling back to the
 # constants while an explicit declaration exists is the bug this catches.
@@ -3513,7 +3537,7 @@ for f in fails:
     print("ERROR: " + f)
 sys.exit(1 if fails else 0)
 '@ | Out-File -FilePath "cxderiv-check.py" -Encoding ascii
-    & $VENV_PYTHON "cxderiv-check.py" $cxDerivName $cxDerivDxp $cxDerivExt
+    & $VENV_PYTHON "cxderiv-check.py" $cxDerivId $cxDerivDxp $cxDerivExt $cxDerivName
     if ($LASTEXITCODE -ne 0) {
         throw "The routes mounts ignore the extension's own LCP.json declaration (LDM-#1928/#1923)."
     }
