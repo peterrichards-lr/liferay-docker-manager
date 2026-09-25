@@ -2837,7 +2837,14 @@ FSPERM_PROBE="${LDM_WORKSPACE}/${PROJECT_NAME}/.ldm-mode-probe"
 rm -f "$FSPERM_PROBE"
 : > "$FSPERM_PROBE"
 chmod 640 "$FSPERM_PROBE" 2>/dev/null || true
-FSPERM_READBACK=$(stat -f '%Lp' "$FSPERM_PROBE" 2>/dev/null || stat -c '%a' "$FSPERM_PROBE" 2>/dev/null)
+# GNU `stat -c` FIRST, BSD `stat -f` second. The other order is broken on
+# Linux: `-f` there means `--file-system`, so `stat -f '%Lp'` SUCCEEDS with
+# filesystem information, the `||` never fires, and the readback is a block of
+# text rather than a mode. Observed on a real CI run reporting
+# "this filesystem does not honour chmod" against ext4, which does -- the
+# announce-don't-pass design stopped it being a false green, but the check had
+# never once actually run.
+FSPERM_READBACK=$(stat -c '%a' "$FSPERM_PROBE" 2>/dev/null || stat -f '%Lp' "$FSPERM_PROBE" 2>/dev/null)
 rm -f "$FSPERM_PROBE"
 
 if [ "$FSPERM_READBACK" != "640" ]; then
@@ -2862,7 +2869,7 @@ else
     # split into two filenames. Bash-only, which this script already is.
     while IFS= read -r -d '' f; do
         FSPERM_SEEN=$((FSPERM_SEEN + 1))
-        mode=$(stat -f '%Lp' "$f" 2>/dev/null || stat -c '%a' "$f" 2>/dev/null)
+        mode=$(stat -c '%a' "$f" 2>/dev/null || stat -f '%Lp' "$f" 2>/dev/null)
         # Other-read, not group-read. A client extension runs as whatever uid
         # its own image declares and is not in Liferay's group, so 640 -- which
         # HAS group read -- is exactly the bug.
@@ -3380,18 +3387,6 @@ rm -rf "cxsvc-build" "${CXSVC_NAME}.zip"
 # and Liferay may not populate. `migrate_layout` scaffolded routes/default/dxp
 # until it was accidentally unwired (LDM-#1917); the composer now derives the
 # whole set from the compose it just generated.
-echo ">> Verifying the routes tree is scaffolded on the host (LDM-#1928)..."
-ROUTES_OK=true
-for d in "routes/default/dxp" "routes/default/${CXSVC_NAME}"; do
-    if [ ! -d "$d" ]; then
-        echo "❌ ERROR: ${d} was not created, so Docker will auto-create it as an empty root-owned directory (LDM-#1928/#1917)." | tee -a "$RESULTS_FILE_TMP"
-        ROUTES_OK=false
-    fi
-done
-if [ "$ROUTES_OK" = true ]; then
-    report_ok "✅ Routes tree scaffolded on the host: routes/default/dxp and routes/default/${CXSVC_NAME} (LDM-#1928)."
-fi
-
 # LDM-#1928: a CUSTOM service is part of the project too, and had none of the
 # shared space -- no routes, no LXC variables, no route back to the host and
 # no wait for Liferay. Nothing in this suite exercised custom_containers at
@@ -3521,6 +3516,38 @@ shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])
 
 log_and_run "Deploying CX service" "$LDM_CMD" -y deploy . "${CXSVC_NAME}.zip"
 "$LDM_CMD" -y run . --no-up --no-seed >/dev/null 2>&1 || true
+
+# LDM-#1928/#1917: the host-side scaffold.
+#
+# Docker creates a missing bind-mount source itself, as an empty ROOT-OWNED
+# directory, so every subtree the compose mounts has to exist first.
+#
+# Placed AFTER the deploy and the compose regeneration above, which is the fix
+# for a real ordering bug: this check used to sit ~140 lines earlier, before
+# the fixture was even written. `routes/default/<ext>` is derived by
+# `_scaffold_routes_tree` from the compose it has just generated, so it cannot
+# exist until an extension is IN that compose. The assertion was therefore
+# failing on every run for a reason that had nothing to do with the behaviour
+# it was testing, and the suite was red for other reasons long enough that
+# nobody separated them.
+#
+# `routes/default/dxp` is different: since LDM-#1917 re-wired `migrate_layout`
+# it is created unconditionally on every run, extensions or not. Both are
+# asserted here so the two creators stay distinguishable -- if `dxp` ever goes
+# missing, that is the scaffold; if `<ext>` goes missing, that is the compose
+# derivation.
+echo ">> Verifying the routes tree is scaffolded on the host (LDM-#1928)..."
+ROUTES_OK=true
+for d in "routes/default/dxp" "routes/default/${CXSVC_NAME}"; do
+    if [ ! -d "$d" ]; then
+        echo "❌ ERROR: ${d} was not created, so Docker will auto-create it as an empty root-owned directory (LDM-#1928/#1917)." | tee -a "$RESULTS_FILE_TMP"
+        ROUTES_OK=false
+    fi
+done
+if [ "$ROUTES_OK" = true ]; then
+    report_ok "✅ Routes tree scaffolded on the host: routes/default/dxp and routes/default/${CXSVC_NAME} (LDM-#1928)."
+fi
+
 
 if ! "$VENV_PYTHON" - "$CXSVC_NAME" <<'CXSVC_PY'
 import sys, pathlib, yaml
@@ -3682,6 +3709,15 @@ rm -rf "cxsvc-build" "${CXSVC_NAME}.zip"
 # derive it from the `LCP.json` id, and those differ for essentially every
 # extension -- the id drops the hyphens the directory keeps.
 #
+# The fixtures make this DISCRIMINATING, which matters more than it sounds.
+# `synthetic-svc` declares an LCP.json id equal to its projectName, so for that
+# extension the two candidate names coincide and the assertion cannot tell a
+# fixed LDM from a broken one. `derived-svc` declares `derivedsvc` against a
+# projectName of `derived-svc`, and carries its own OAuth application so
+# Liferay actually publishes a tree for it -- so if LDM ever reverts to
+# mounting the id, Liferay's `derived-svc` directory is unmounted and this
+# fails. A pairing check against matching names proves nothing.
+#
 # The check is deliberately phrased as a SUBSET rule rather than an equality:
 # every directory Liferay publishes must be one LDM mounted. That catches the
 # mismatch whatever the naming convention turns out to be, without this script
@@ -3790,6 +3826,13 @@ ${CXDERIV_NAME}:
     .serviceAddress: ${CXDERIV_NAME}:8080
     name: Derived Routes CX
     type: microservice
+${CXDERIV_NAME}-oauth:
+    name: Derived Routes CX OAuth
+    type: oAuthApplicationHeadlessServer
+    .serviceAddress: localhost:8080
+    .serviceScheme: http
+    scopes:
+        - Liferay.Headless.Admin.User.everything
 CXDERIVEOF
 # The declaration under test. A real client extension carries exactly this
 # pair and reads both -- the paths here are deliberately NOT the constants.
