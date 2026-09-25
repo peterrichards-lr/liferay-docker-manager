@@ -1457,6 +1457,39 @@ class EnvironmentSetupStage(PipelineStage):
         if getattr(manager.args, "command", "") != "quickstart":
             UI.phase(1, 3, "Synchronizing Assets")
 
+        # LDM-#1917: re-wire `migrate_layout`.
+        #
+        # It was never meant to be removed. `64c75e9f` rewrote `sync_stack`
+        # wholesale -- 2,517 lines out of `stack.py` -- and the call went with
+        # it, unmentioned in the commit message. `tests/test_stack.py` had
+        # stubbed the method since before that, so nothing went red and it sat
+        # unreachable for months while still being maintained: `c91c5123`
+        # removed a chmod block from it a month AFTER it stopped being called.
+        #
+        # Two guarantees died with it, and neither was re-homed:
+        #
+        # * `osgi/marketplace` has no other Python creator. The only thing that
+        #   makes it is a `mkdir -p` run INSIDE a container, which is skipped
+        #   when there is no docker binary, under `--dry-run`, and on Windows
+        #   -- while `composer.py` bind-mounts it unconditionally, so Docker
+        #   creates the source as root (the LDM-#1134 hazard).
+        # * `routes/default/dxp` is otherwise scaffolded only when some service
+        #   mounts it. `_scaffold_routes_tree` matches a routes-root-plus-slash
+        #   prefix and Liferay's own mount is the routes root exactly, so it
+        #   never matches.
+        #
+        # Placed here, before `ComposerStage`, because the point is to deny
+        # Docker the chance to create a bind-mount source itself -- which it
+        # does as root. It must therefore run before anything is mounted, not
+        # after. `safe_mkdir` announces rather than acts under `--dry-run`, and
+        # every call is `exist_ok=True`, so this is idempotent and safe to run
+        # on every pass.
+        #
+        # This is NOT retired by LDM-#1944. That is about the permissions
+        # Liferay sets on content it writes at runtime; this is about who
+        # creates the directory in the first place. Different failure modes.
+        manager.migrate_layout(paths)
+
         # LDM-#1511: a pre-warmed seed is a database dump restored into a
         # container LDM owns. In `external` mode there is no such container, so
         # the lookup is skipped rather than attempted -- which is what happened

@@ -142,21 +142,27 @@ class TestThePermissionsTableMatchesTheCode(unittest.TestCase):
                 "a comment that claimed otherwise.",
             )
 
-    def test_the_marketplace_gap_stays_recorded_until_it_is_fixed(self):
-        """Pins a known defect so the table cannot silently outlive it.
+    def test_the_marketplace_row_names_its_creator(self):
+        """LDM-#1917: this row used to read `nothing`, and the test that
+        replaced this one pinned that gap so the table could not silently
+        outlive it.
 
-        `marketplace` is bind-mounted unconditionally and created by nothing on
-        the Python side (LDM-#1917 / LDM-#1942). When that is fixed, this test
-        fails -- which is the point: the fix must update the table in the same
-        change.
+        The gap is now closed -- `migrate_layout` is wired back into
+        `EnvironmentSetupStage` and creates it -- so the assertion inverts:
+        the row must name a creator, and must not claim there is none.
         """
         text = self._documented()
-        self.assertIn(
-            "**`marketplace`**",
+        self.assertNotIn(
+            "| `marketplace` | nothing |",
             text,
-            "The table no longer flags `marketplace` as the outlier with no "
-            "creator. If that gap has been fixed, update the row and this "
-            "test together; if not, restore the row.",
+            "the table still says nothing creates `marketplace`; "
+            "`migrate_layout` does (LDM-#1917)",
+        )
+        self.assertIn(
+            "`marketplace` | `migrate_layout`",
+            text,
+            "the `marketplace` row must name `migrate_layout` as its creator, "
+            "so that unwiring it again is visible here (LDM-#1917)",
         )
 
     def test_the_verification_constraint_is_recorded(self):

@@ -492,6 +492,60 @@ class TestRunPipeline(unittest.TestCase):
             self.context.get("paths")
         )
 
+    def test_environment_setup_runs_the_pre_boot_scaffold(self):
+        """LDM-#1917: `migrate_layout` was silently unwired and stayed that way.
+
+        `64c75e9f` rewrote `sync_stack` wholesale -- 2,517 lines out of
+        `stack.py` -- and the call went with it, unmentioned in the commit
+        message. `tests/test_stack.py` had stubbed the method since before
+        that, so nothing went red, and it sat unreachable for months while
+        still being maintained: `c91c5123` removed a chmod block from it a
+        month AFTER it stopped being called.
+
+        Two guarantees died with it. `osgi/marketplace` had no other Python
+        creator -- the only thing that made it was a `mkdir -p` inside a
+        container, skipped with no docker binary, under `--dry-run`, and on
+        Windows -- while the composer bind-mounts it unconditionally, so
+        Docker created the source as root. `routes/default/dxp` was scaffolded
+        only when some service mounted it.
+
+        This asserts the CALL, because a missing call is precisely what
+        happened and what nothing noticed. `test_migrate_layout_basic` covers
+        what the method does once reached.
+        """
+        self.context.set("paths", self._paths_for_environment_setup())
+        self.context.set("no_up", True)
+
+        EnvironmentSetupStage().execute(self.context)
+
+        self.context.manager.migrate_layout.assert_called_once_with(
+            self.context.get("paths")
+        )
+
+    def test_the_scaffold_stage_runs_before_the_composer_stage(self):
+        """It must precede `ComposerStage`, not follow it.
+
+        Pre-creating these directories exists to deny Docker the chance to
+        create a bind-mount source itself, which it does as root (the
+        LDM-#1134 hazard). Running the scaffold after the compose is written,
+        or after the stack starts, would be too late to prevent anything.
+
+        Asserted on the real pipeline's stage order rather than on the source
+        text. A first version of this test used `inspect.getsource` and
+        checked that "migrate_layout" appeared in `EnvironmentSetupStage` --
+        which passed with the call deleted, because the comment explaining it
+        still contained the word.
+        """
+        from ldm_core.pipelines.run import create_run_pipeline
+
+        order = [type(stage).__name__ for stage in create_run_pipeline().stages]
+        self.assertLess(
+            order.index("EnvironmentSetupStage"),
+            order.index("ComposerStage"),
+            f"the pre-boot scaffold no longer runs before the compose is "
+            f"written (LDM-#1917/#1134): {order}",
+        )
+
     def test_environment_setup_skips_hydration_when_no_up(self):
         self.context.set("paths", self._paths_for_environment_setup())
         self.context.set("no_up", True)

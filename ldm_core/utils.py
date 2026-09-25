@@ -4099,7 +4099,18 @@ def reclaim_volume_permissions(
             f"Reclaiming volume permissions for {path} (Docker volume may have root-owned files)..."
         )
 
-    docker_cmd = f"chown -R {uid}:{gid} /workspace; chmod -R {chmod_val} /workspace; "
+    # LDM-#1946: the `stat` is the verification. Without it this function
+    # answers "did the docker run execute", not "did the mode change" -- and
+    # those differ on any filesystem that silently discards modes (exFAT/FAT32
+    # mounted `noowners`, NTFS, Docker Desktop's bind mounts). Measured: a
+    # `chmod 750` on FAT32 exits 0, prints nothing, and leaves the mode
+    # untouched. `ldm start --fix-permissions` exists for exactly those
+    # external drives, so this is the common case there, not an edge one.
+    docker_cmd = (
+        f"chown -R {uid}:{gid} /workspace; "
+        f"chmod -R {chmod_val} /workspace; "
+        f"stat -c '%a' /workspace"
+    )
     # str(), not Path(path).as_posix() -- path may already be a PurePosixPath
     # (the remote-mapped case), and re-wrapping it in a local Path type
     # would resolve it against this host's path conventions instead.
@@ -4122,9 +4133,49 @@ def reclaim_volume_permissions(
             capture_output=True,
             timeout=15,
         )
+        # LDM-#1946: report a mode that did not take, rather than reporting
+        # success regardless.
+        #
+        # The RETURN VALUE is deliberately left as "the command ran". One
+        # caller -- the `shutil.rmtree` fallback in `safe_rmtree` above --
+        # treats False as "give up and re-raise", so returning False here
+        # would stop LDM deleting a project directory on precisely the
+        # external drives this helper exists to serve. The honest signal goes
+        # to the user instead; the control flow is unchanged.
+        _verify_reclaimed_mode(res, path, chmod_val)
         return res is not None
     except Exception:
         return False
+
+
+def _verify_reclaimed_mode(res, path, chmod_val):
+    """Warns when a reclaimed directory did not actually take the mode.
+
+    LDM-#1946. Split out so the check is testable without driving Docker, and
+    so `reclaim_volume_permissions` keeps one exit path.
+    """
+    from ldm_core.ui import UI
+
+    actual = ""
+    if res is not None:
+        # Last line: the chown/chmod above may have printed to stdout too.
+        lines = str(getattr(res, "stdout", res) or "").strip().splitlines()
+        actual = lines[-1].strip() if lines else ""
+    if not actual or not actual.isdigit():
+        # Nothing to compare against. Silence is correct here: the command may
+        # legitimately have produced no output (a remote engine, a stubbed
+        # runner in tests), and inventing a warning would train people to
+        # ignore this one.
+        return
+
+    if actual.lstrip("0") != chmod_val.lstrip("0"):
+        UI.warning(
+            f"Permissions on {path} did not take: asked for {chmod_val}, "
+            f"filesystem reports {actual}. This filesystem does not honour "
+            f"chmod (exFAT/FAT32 with 'noowners', NTFS, or a Docker Desktop "
+            f"bind mount), so a container may still be unable to read or "
+            f"write there (LDM-#1946)."
+        )
 
 
 def get_all_options(parser):

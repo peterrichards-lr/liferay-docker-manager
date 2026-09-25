@@ -103,6 +103,43 @@ def _hydrate_from_workspace(self, workspace_root, paths, overwrite=True):
     return True
 
 
+def _reject_unidentified_cx(zip_path, paths) -> bool:
+    """Refuse a service extension that declares no `LCP.json` id.
+
+    LDM-#1962. Returns True when the artifact was rejected, in which case the
+    caller must not continue -- step 3 of the sync moves the zip into
+    `osgi/client-extensions`, which is a bind mount Liferay reads from, so an
+    artifact left there is deployed whatever LDM decided.
+
+    LDM will not invent the missing id. Liferay names the config tree it
+    publishes from the extension's `projectName`, which routinely differs from
+    the directory, so a guess binds a tree Liferay never writes to (LDM-#1944).
+
+    Split out of `_sync_cx_artifact` to keep that function within its branch
+    budget, and because "should this be deployed at all" is a separate question
+    from "how is it synced".
+    """
+    from ldm_core.workspace.site_initializers import (
+        cx_service_missing_lcp_id,
+        reject_cx_artifact,
+    )
+
+    if not cx_service_missing_lcp_id(zip_path):
+        return False
+
+    # Prefer the copy already in `osgi/client-extensions`: on an existing
+    # project that is the one Liferay will read, and it is the one that has to
+    # move. Moved, never deleted.
+    already_deployed = paths["cx"] / zip_path.name
+    target = already_deployed if already_deployed.exists() else zip_path
+    reject_cx_artifact(
+        target,
+        paths["root"],
+        "it ships a Dockerfile but declares no LCP.json id",
+    )
+    return True
+
+
 def _sync_cx_artifact(
     self, zip_path, paths, overwrite=True, defer_site_initializers=False
 ):
@@ -121,6 +158,9 @@ def _sync_cx_artifact(
     """
     ce_source_truth = paths["root"] / "client-extensions"
     ce_source_truth.mkdir(parents=True, exist_ok=True)
+
+    if _reject_unidentified_cx(zip_path, paths):
+        return
 
     # Step 1: Copy ZIP to root client-extensions/
     root_zip_path = ce_source_truth / zip_path.name

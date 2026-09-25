@@ -7,6 +7,7 @@ import tempfile
 import typing
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -968,6 +969,54 @@ class TestUpdateChecks(unittest.TestCase):
             # Should return False instead of raising/crashing
             res = reclaim_volume_permissions("/tmp/some-dir", uid="1001", gid="1001")
             self.assertFalse(res)
+
+    def test_a_mode_that_did_not_take_is_reported(self):
+        """LDM-#1946: the helper used to answer "did the docker run execute".
+
+        It returned success whether or not the mode changed. Measured on
+        FAT32/exFAT mounted `noowners`: `chmod 750` exits 0, prints nothing,
+        and leaves the mode untouched -- and `ldm start --fix-permissions`
+        exists for exactly those external drives, so this is the common case
+        there rather than an edge one.
+        """
+        from ldm_core.utils import _verify_reclaimed_mode
+
+        with patch("ldm_core.ui.UI.warning") as warn:
+            _verify_reclaimed_mode(SimpleNamespace(stdout="700\n"), "/vol/ext", "777")
+        self.assertTrue(
+            warn.called, "a mode that did not take must be reported (LDM-#1946)"
+        )
+        said = " ".join(str(a) for a in warn.call_args[0])
+        self.assertIn("777", said, "the requested mode must be named")
+        self.assertIn("700", said, "the actual mode must be named")
+
+    def test_a_mode_that_took_is_silent(self):
+        """The control. A warning on every successful reclaim would be noise,
+        and noise is how a real one gets ignored."""
+        from ldm_core.utils import _verify_reclaimed_mode
+
+        with patch("ldm_core.ui.UI.warning") as warn:
+            _verify_reclaimed_mode(SimpleNamespace(stdout="777\n"), "/vol/x", "777")
+        self.assertFalse(warn.called)
+
+    def test_leading_zeroes_are_not_a_mismatch(self):
+        """`stat` reports `755`, a caller may ask for `0755`. Comparing the
+        strings naively would warn on every single reclaim."""
+        from ldm_core.utils import _verify_reclaimed_mode
+
+        with patch("ldm_core.ui.UI.warning") as warn:
+            _verify_reclaimed_mode(SimpleNamespace(stdout="755\n"), "/vol/x", "0755")
+        self.assertFalse(warn.called)
+
+    def test_no_output_is_not_reported_as_a_mismatch(self):
+        """A remote engine or a stubbed runner produces nothing to compare.
+        Inventing a warning there trains people to ignore this one."""
+        from ldm_core.utils import _verify_reclaimed_mode
+
+        with patch("ldm_core.ui.UI.warning") as warn:
+            _verify_reclaimed_mode(SimpleNamespace(stdout=""), "/vol/x", "777")
+            _verify_reclaimed_mode(None, "/vol/x", "777")
+        self.assertFalse(warn.called)
 
     @patch("ldm_core.utils.requests.get")
     def test_validate_liferay_tag(self, mock_get):

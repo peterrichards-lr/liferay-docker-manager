@@ -2027,6 +2027,100 @@ verify_stop_hint_and_start_confirmation() {
     return 0
 }
 
+verify_ssl_renewal_reissues() {
+    # The certificate directory and the renewal command, both asserted because
+    # `docs/TROUBLESHOOTING.md` told Windows/WSL users to
+    # `rm -rf ~/.ldm/infra/certs` -- a path that has never existed anywhere in
+    # this repository. The delete silently removed nothing, LDM reused the
+    # certificates already on disk, and a correctly-set `CAROOT` therefore
+    # looked like it had done nothing at all. Reported from a real WSL setup,
+    # where it cost an afternoon and was diagnosed as "mkcert keeps using the
+    # Linux CA" when the certificates were simply never replaced.
+    #
+    # `ldm renew-ssl` is the supported path and it does the whole job: it
+    # unlinks `<host>.pem`/`<host>-key.pem` from `<home>/liferay-docker-certs`
+    # and re-issues against whatever CA is currently in effect.
+    #
+    # Isolated via `LDM_HOME`, which `get_actual_home()` honours (LDM-#1349) --
+    # so this never touches the developer's real certificate store.
+    local ldm_cmd="$1"
+    local work_dir="$2"
+
+    local iso_home="${work_dir}/ssl-home"
+    local run_dir="${work_dir}/ssl-work/sslproj"
+    local host="sslprobe.test"
+
+    if ! command -v mkcert >/dev/null 2>&1; then
+        # Announced, not silently passed: without mkcert there is no CA to
+        # issue from and the assertion below would be vacuous.
+        echo "⚠️  SKIPPED (not run): mkcert is not installed, so SSL renewal cannot be exercised."
+        return 0
+    fi
+
+    rm -rf "$iso_home" "${work_dir}/ssl-work"
+    mkdir -p "$iso_home" "$run_dir" || return 1
+    printf '{"tag":"2026.q1.7-lts","container_name":"sslproj","port":18099,"db_type":"postgresql","host_name":"%s"}' "$host" > "${run_dir}/meta"
+
+    local cert_dir="${iso_home}/liferay-docker-certs"
+    local cert="${cert_dir}/${host}.pem"
+    local key="${cert_dir}/${host}-key.pem"
+
+    local out code
+    out=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" renew-ssl 2>&1) && code=0 || code=$?
+    if [ "$code" -ne 0 ]; then
+        rm -rf "$iso_home" "${work_dir}/ssl-work"
+        echo "❌ ERROR: 'ldm renew-ssl' exited ${code}."
+        echo "   Output was: $(echo "$out" | tail -5)"
+        return 1
+    fi
+
+    # 1. The directory the documentation names must be the one LDM uses.
+    if [ ! -f "$cert" ] || [ ! -f "$key" ]; then
+        rm -rf "$iso_home" "${work_dir}/ssl-work"
+        echo "❌ ERROR: 'ldm renew-ssl' did not produce ${host}.pem and ${host}-key.pem in <home>/liferay-docker-certs."
+        echo "   Found: $(find "$cert_dir" -maxdepth 1 -type f -exec basename {} \; 2>/dev/null | tr '\n' ' ')"
+        echo "   docs/TROUBLESHOOTING.md tells WSL users where to find these; if the location moves, that guidance silently stops working."
+        return 1
+    fi
+
+    # 2. The path the documentation USED to name must stay absent. If a
+    #    `.ldm/infra/certs` ever appears, the old instructions become right
+    #    again and this assertion should be revisited rather than deleted.
+    if [ -d "${iso_home}/.ldm/infra/certs" ]; then
+        rm -rf "$iso_home" "${work_dir}/ssl-work"
+        echo "❌ ERROR: certificates now also live in .ldm/infra/certs -- docs/TROUBLESHOOTING.md and this check both assume they do not."
+        return 1
+    fi
+
+    # 3. Renewal must actually RE-ISSUE. A no-op would leave a WSL user with
+    #    Linux-CA-signed certificates after every documented remedy, which is
+    #    exactly the reported symptom.
+    local serial_before serial_after
+    serial_before=$(openssl x509 -in "$cert" -noout -serial 2>/dev/null)
+    out=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" renew-ssl 2>&1) && code=0 || code=$?
+    serial_after=$(openssl x509 -in "$cert" -noout -serial 2>/dev/null)
+
+    if [ -z "$serial_before" ] || [ "$serial_before" = "$serial_after" ]; then
+        rm -rf "$iso_home" "${work_dir}/ssl-work"
+        echo "❌ ERROR: 'ldm renew-ssl' did not re-issue the certificate (serial unchanged: ${serial_before:-unreadable})."
+        echo "   A renewal that silently no-ops is indistinguishable from the LDM-#1944-era"
+        echo "   WSL report, where the remedy appeared to run and the old certificate stayed."
+        return 1
+    fi
+
+    rm -rf "$iso_home" "${work_dir}/ssl-work"
+    echo "✅ 'ldm renew-ssl' re-issues into <home>/liferay-docker-certs (serial changes), and .ldm/infra/certs is not used."
+    return 0
+}
+
+echo ">> Verifying SSL renewal re-issues into the documented directory (LDM-#1958)..."
+if SSLRENEW_OUT=$(verify_ssl_renewal_reissues "$LDM_CMD" "$LDM_WORKSPACE"); then
+    report_ok "$SSLRENEW_OUT"
+else
+    echo "$SSLRENEW_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
 echo ">> Verifying --mac-address is persisted (LDM-#1759/#1771)..."
 if MAC_PIN_OUT=$(verify_mac_address_persisted "$LDM_CMD" "$LDM_WORKSPACE"); then
     report_ok "$MAC_PIN_OUT"
@@ -2652,6 +2746,158 @@ if ! "$LDM_CMD" -y wait . --timeout 600; then
     exit 1
 fi
 
+# LDM-#1944: the running portal's umask, read from the container's own /proc.
+#
+# Liferay runs under Tomcat, and `catalina.sh` sets `UMASK="0027"` unless the
+# variable is already set:
+#
+#     if [ -z "$UMASK" ]; then
+#         UMASK="0027"
+#     fi
+#     umask $UMASK
+#
+# 0027 is 750 on directories and 640 on files, so every config tree Liferay
+# publishes under `routes/` was readable only by uid 1000 -- and a client
+# extension runs as whatever uid its own image declares, so it was refused
+# with `Permission denied` on the tree holding its OAuth2 credentials.
+#
+# Asserted against the LIVE process rather than against the compose file. A
+# compose-level check proves LDM emitted a variable; it cannot prove Tomcat
+# honoured it, and the `[ -z "$UMASK" ]` guard is the only reason it does.
+#
+# `/proc/<pid>/status` is read INSIDE the container, so this is valid on a
+# macOS or Windows host too -- it reports the Linux process's umask, not
+# anything about the host filesystem. That matters because the resulting FILE
+# modes cannot be checked here: Docker Desktop presents bind-mounted files as
+# the host user regardless of mode (LDM-#1946).
+echo ">> Verifying the portal runs with a readable umask (LDM-#1944)..."
+UMASK_RAW=$(docker exec "$PROJECT_NAME" sh -c '
+for p in /proc/[0-9]*; do
+    if grep -qa catalina "$p/cmdline" 2>/dev/null; then
+        grep -i "^Umask" "$p/status" 2>/dev/null && exit 0
+    fi
+done
+exit 1' 2>/dev/null)
+UMASK_VAL=$(echo "$UMASK_RAW" | awk '{print $2}' | tr -d '[:space:]')
+if [ -z "$UMASK_VAL" ]; then
+    echo "❌ ERROR: could not read the portal process umask from /proc (LDM-#1944)." | tee -a "$RESULTS_FILE_TMP"
+    echo "   No process matching 'catalina' was found in container '${PROJECT_NAME}'."
+    echo "   This assertion must not be skipped silently -- it is the only check that"
+    echo "   proves Tomcat honoured the UMASK variable rather than defaulting to 0027."
+    exit 1
+fi
+# The resulting file mode, not the literal value: any umask that leaves OTHER
+# unable to read reproduces LDM-#1944, so the assertion is on the outcome
+# rather than on the one value we happen to set.
+#
+# Other-read specifically, NOT group-read. A client extension runs as whatever
+# uid its own image declares and is not in Liferay's group, so group-read buys
+# it nothing -- umask 0027 gives 640, which HAS group-read and is exactly the
+# bug. A check for `& 0044` would pass against it.
+UMASK_FILE_MODE=$("$VENV_PYTHON" -c "print(0o666 & ~int('${UMASK_VAL}', 8))")
+if [ "$((UMASK_FILE_MODE & 0004))" -eq 0 ]; then
+    echo "❌ ERROR: the portal runs with umask ${UMASK_VAL}, so files it creates are mode $(printf '%o' "$UMASK_FILE_MODE") -- unreadable to any uid but its own (LDM-#1944)." | tee -a "$RESULTS_FILE_TMP"
+    echo "   A client extension runs as whatever uid its own image declares, so it"
+    echo "   cannot read routes/default/<ext-id> and never receives its OAuth2"
+    echo "   credentials. catalina.sh defaults UMASK to 0027; LDM must override it."
+    exit 1
+fi
+report_ok "✅ The portal runs with umask ${UMASK_VAL}, so the config trees it publishes are readable by a client extension (LDM-#1944)."
+
+# LDM-#1946 / LDM-#1944: the modes that actually landed on disk.
+#
+# This is the third and last layer of the LDM-#1944 assertion, and the only
+# one that looks at a real file:
+#
+#   1. a unit test asserts LDM emits a umask granting other-read
+#   2. the /proc check above asserts Tomcat HONOURED it
+#   3. this asserts the resulting files are actually readable
+#
+# Layers 1 and 2 can both pass while the filesystem quietly discards the mode,
+# which is the whole of LDM-#1946: `reclaim_volume_permissions` answers "did
+# the docker run execute", not "did the mode change", and returns success on
+# exFAT/FAT32 with `noowners` where the mode is left untouched.
+#
+# So probe the filesystem FIRST. On one that does not honour modes, a `stat`
+# here proves nothing in either direction -- it can report a mode nothing set.
+# Reporting a pass there would relocate LDM-#1946's defect into this script,
+# so the probe failing is announced loudly and the assertion is recorded as
+# NOT RUN rather than as satisfied.
+#
+# This DOES run on macOS, and that is measured, not assumed. Docker Desktop
+# rewrites OWNERSHIP, not the mode bits: a file written by a container at
+# umask 0027 reads back 640 on an APFS host, and 644 at umask 0022. What macOS
+# cannot show is the CONSEQUENCE -- each container is handed ownership of what
+# it mounts, so a second container at an unrelated uid reads a 640 file
+# happily and the refusal never reproduces. That asymmetry is why LDM-#1944
+# was reported by an external team on DXP Cloud and never seen locally: the
+# mode is visible here, the failure is not.
+echo ">> Verifying the published config trees are readable on disk (LDM-#1944/#1946)..."
+FSPERM_PROBE="${LDM_WORKSPACE}/${PROJECT_NAME}/.ldm-mode-probe"
+rm -f "$FSPERM_PROBE"
+: > "$FSPERM_PROBE"
+chmod 640 "$FSPERM_PROBE" 2>/dev/null || true
+# GNU `stat -c` FIRST, BSD `stat -f` second. The other order is broken on
+# Linux: `-f` there means `--file-system`, so `stat -f '%Lp'` SUCCEEDS with
+# filesystem information, the `||` never fires, and the readback is a block of
+# text rather than a mode. Observed on a real CI run reporting
+# "this filesystem does not honour chmod" against ext4, which does -- the
+# announce-don't-pass design stopped it being a false green, but the check had
+# never once actually run.
+FSPERM_READBACK=$(stat -c '%a' "$FSPERM_PROBE" 2>/dev/null || stat -f '%Lp' "$FSPERM_PROBE" 2>/dev/null)
+rm -f "$FSPERM_PROBE"
+
+if [ "$FSPERM_READBACK" != "640" ]; then
+    # Not a failure of LDM. Announce it so a green run is never mistaken for
+    # evidence that the permissions were checked.
+    echo "⚠️  SKIPPED (not run): this filesystem does not honour chmod -- probed 640, read back '${FSPERM_READBACK:-unreadable}'." | tee -a "$RESULTS_FILE_TMP"
+    echo "   exFAT/FAT32 mounted 'noowners' behave this way; so, in general, does Windows." | tee -a "$RESULTS_FILE_TMP"
+    echo "   The LDM-#1944 file-mode assertion was NOT evaluated on this run." | tee -a "$RESULTS_FILE_TMP"
+else
+    # Liferay writes these, not LDM. The healthcheck curls /c/portal/layout,
+    # which is what triggers `_updateDXPRoutes`, so by the time `ldm wait`
+    # returned the dxp tree has been published.
+    #
+    # The FILES are the target, not the directory: LDM scaffolds
+    # `routes/default/dxp` itself, so its mode is LDM's doing, while the files
+    # inside carry Liferay's umask -- and those are what an extension reads.
+    FSPERM_BAD=""
+    FSPERM_SEEN=0
+    # Process substitution, not a pipe: a pipe puts the loop in a subshell and
+    # the two counters below would be discarded, leaving the assertion unable
+    # to fail. `-print0`/`read -d ""` so a path containing whitespace cannot
+    # split into two filenames. Bash-only, which this script already is.
+    while IFS= read -r -d '' f; do
+        FSPERM_SEEN=$((FSPERM_SEEN + 1))
+        mode=$(stat -c '%a' "$f" 2>/dev/null || stat -f '%Lp' "$f" 2>/dev/null)
+        # Other-read, not group-read. A client extension runs as whatever uid
+        # its own image declares and is not in Liferay's group, so 640 -- which
+        # HAS group read -- is exactly the bug.
+        if [ "$((0$mode & 0004))" -eq 0 ]; then
+            FSPERM_BAD="${FSPERM_BAD}\n     ${mode}  ${f}"
+        fi
+    done < <(find "${LDM_WORKSPACE}/${PROJECT_NAME}/routes" -type f -print0 2>/dev/null)
+
+    if [ -n "$FSPERM_BAD" ]; then
+        echo "❌ ERROR: Liferay published config files that a client extension cannot read (LDM-#1944)." | tee -a "$RESULTS_FILE_TMP"
+        # shellcheck disable=SC2059
+        printf "$FSPERM_BAD\n" | tee -a "$RESULTS_FILE_TMP"
+        echo "   catalina.sh defaults UMASK to 0027 (files 640). LDM sets UMASK=0022 on the" | tee -a "$RESULTS_FILE_TMP"
+        echo "   Liferay service so these land 644; if they are 640 the override did not take." | tee -a "$RESULTS_FILE_TMP"
+        exit 1
+    fi
+
+    if [ "$FSPERM_SEEN" -eq 0 ]; then
+        # Not a pass. Liferay publishes the dxp tree once the portal has served
+        # a request, and the healthcheck does exactly that -- so an empty tree
+        # here means the assertion had nothing to assert on.
+        echo "⚠️  SKIPPED (not run): no files under routes/ after the health wait, so there were none to check." | tee -a "$RESULTS_FILE_TMP"
+        echo "   Expected the dxp tree to be published once the healthcheck curled /c/portal/layout." | tee -a "$RESULTS_FILE_TMP"
+    else
+        report_ok "✅ All ${FSPERM_SEEN} published config file(s) under routes/ are readable by a client extension (LDM-#1944/#1946)."
+    fi
+fi
+
 # LDM-#1509: the project above was seeded -- it is provisioned without
 # --no-seed and the run reports "Project bootstrapped from seed". Assert LDM
 # still SAYS so afterwards.
@@ -3141,18 +3387,6 @@ rm -rf "cxsvc-build" "${CXSVC_NAME}.zip"
 # and Liferay may not populate. `migrate_layout` scaffolded routes/default/dxp
 # until it was accidentally unwired (LDM-#1917); the composer now derives the
 # whole set from the compose it just generated.
-echo ">> Verifying the routes tree is scaffolded on the host (LDM-#1928)..."
-ROUTES_OK=true
-for d in "routes/default/dxp" "routes/default/${CXSVC_NAME}"; do
-    if [ ! -d "$d" ]; then
-        echo "❌ ERROR: ${d} was not created, so Docker will auto-create it as an empty root-owned directory (LDM-#1928/#1917)." | tee -a "$RESULTS_FILE_TMP"
-        ROUTES_OK=false
-    fi
-done
-if [ "$ROUTES_OK" = true ]; then
-    report_ok "✅ Routes tree scaffolded on the host: routes/default/dxp and routes/default/${CXSVC_NAME} (LDM-#1928)."
-fi
-
 # LDM-#1928: a CUSTOM service is part of the project too, and had none of the
 # shared space -- no routes, no LXC variables, no route back to the host and
 # no wait for Liferay. Nothing in this suite exercised custom_containers at
@@ -3222,7 +3456,45 @@ ${CXSVC_NAME}:
     .serviceAddress: ${CXSVC_NAME}:8080
     name: Synthetic CX Service
     type: microservice
+${CXSVC_NAME}-oauth:
+    name: Synthetic CX OAuth
+    type: oAuthApplicationHeadlessServer
+    scopes:
+        - Liferay.Headless.Admin.User.everything
 CXSVCEOF
+# LDM-#1944: an `oAuthApplicationHeadlessServer` is what makes Liferay publish
+# a per-extension routes tree at all. Without one, `BaseConfigurationFactory`
+# never runs, no `ext.lxc.liferay.com/projectName` label is set, and
+# `RoutesPortalK8sConfigMapModifier` never creates the directory -- so a
+# fixture declaring only `type: microservice` can never observe the pairing
+# between the directory Liferay creates and the one LDM mounts.
+#
+# That is the whole reason this bug survived four wrong diagnoses: every
+# assertion we had looked at LDM's side of the boundary only.
+# LDM-#1962: every real client extension carries an LCP.json -- every sample
+# in ldm-cx-samples has one beside its client-extension.yaml. LDM now refuses
+# to deploy a service extension without one, so a fixture lacking it is
+# rejected and quarantined, exactly as intended.
+#
+# That refusal caught this fixture on the first master run after the fix
+# landed, which is the guard doing its job on our own unrealistic test data.
+cat > "cxsvc-build/${CXSVC_NAME}/LCP.json" <<CXSVCLCP
+{
+    "id": "${CXSVC_NAME}",
+    "memory": 512,
+    "kind": "Deployment"
+}
+CXSVCLCP
+cat > "cxsvc-build/${CXSVC_NAME}/${CXSVC_NAME}.client-extension-config.json" <<CXSVCCFG
+{
+    "com.liferay.oauth2.provider.configuration.OAuth2ProviderApplicationHeadlessServerConfiguration~${CXSVC_NAME}": {
+        "projectId": "${CXSVC_NAME}",
+        "projectName": "${CXSVC_NAME}",
+        ".serviceAddress": "${CXSVC_NAME}:8080",
+        ".serviceScheme": "http"
+    }
+}
+CXSVCCFG
 # The Dockerfile is what makes it a service rather than a static extension.
 #
 # LDM-#1911: it also carries application code at /opt/liferay/routes, the way a
@@ -3244,6 +3516,38 @@ shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])
 
 log_and_run "Deploying CX service" "$LDM_CMD" -y deploy . "${CXSVC_NAME}.zip"
 "$LDM_CMD" -y run . --no-up --no-seed >/dev/null 2>&1 || true
+
+# LDM-#1928/#1917: the host-side scaffold.
+#
+# Docker creates a missing bind-mount source itself, as an empty ROOT-OWNED
+# directory, so every subtree the compose mounts has to exist first.
+#
+# Placed AFTER the deploy and the compose regeneration above, which is the fix
+# for a real ordering bug: this check used to sit ~140 lines earlier, before
+# the fixture was even written. `routes/default/<ext>` is derived by
+# `_scaffold_routes_tree` from the compose it has just generated, so it cannot
+# exist until an extension is IN that compose. The assertion was therefore
+# failing on every run for a reason that had nothing to do with the behaviour
+# it was testing, and the suite was red for other reasons long enough that
+# nobody separated them.
+#
+# `routes/default/dxp` is different: since LDM-#1917 re-wired `migrate_layout`
+# it is created unconditionally on every run, extensions or not. Both are
+# asserted here so the two creators stay distinguishable -- if `dxp` ever goes
+# missing, that is the scaffold; if `<ext>` goes missing, that is the compose
+# derivation.
+echo ">> Verifying the routes tree is scaffolded on the host (LDM-#1928)..."
+ROUTES_OK=true
+for d in "routes/default/dxp" "routes/default/${CXSVC_NAME}"; do
+    if [ ! -d "$d" ]; then
+        echo "❌ ERROR: ${d} was not created, so Docker will auto-create it as an empty root-owned directory (LDM-#1928/#1917)." | tee -a "$RESULTS_FILE_TMP"
+        ROUTES_OK=false
+    fi
+done
+if [ "$ROUTES_OK" = true ]; then
+    report_ok "✅ Routes tree scaffolded on the host: routes/default/dxp and routes/default/${CXSVC_NAME} (LDM-#1928)."
+fi
+
 
 if ! "$VENV_PYTHON" - "$CXSVC_NAME" <<'CXSVC_PY'
 import sys, pathlib, yaml
@@ -3388,6 +3692,101 @@ if [ "$CXSVC_OK" = true ]; then
 fi
 rm -rf "cxsvc-build" "${CXSVC_NAME}.zip"
 
+# LDM-#1944: the pairing. Does the directory Liferay CREATES match the one LDM
+# MOUNTS?
+#
+# This is the assertion that was missing, and its absence is why the issue
+# survived four wrong diagnoses. Every check we had looked at one side of the
+# boundary: LDM's compose said what it mounted, and nothing compared that to
+# what Liferay actually published. The failure is silent in both directions --
+# `_scaffold_routes_tree` creates whatever the compose declares, so a wrong
+# name yields a real, empty, READABLE directory sitting beside the populated
+# one. It reads as "the tree is empty", which is indistinguishable from "the
+# extension was refused" in any log.
+#
+# Liferay names the directory from `ext.lxc.liferay.com/projectName`, which it
+# takes from the extension's own `client-extension-config.json`. LDM used to
+# derive it from the `LCP.json` id, and those differ for essentially every
+# extension -- the id drops the hyphens the directory keeps.
+#
+# The fixtures make this DISCRIMINATING, which matters more than it sounds.
+# `synthetic-svc` declares an LCP.json id equal to its projectName, so for that
+# extension the two candidate names coincide and the assertion cannot tell a
+# fixed LDM from a broken one. `derived-svc` declares `derivedsvc` against a
+# projectName of `derived-svc`, and carries its own OAuth application so
+# Liferay actually publishes a tree for it -- so if LDM ever reverts to
+# mounting the id, Liferay's `derived-svc` directory is unmounted and this
+# fails. A pairing check against matching names proves nothing.
+#
+# The check is deliberately phrased as a SUBSET rule rather than an equality:
+# every directory Liferay publishes must be one LDM mounted. That catches the
+# mismatch whatever the naming convention turns out to be, without this script
+# having to re-derive Liferay's rules.
+echo ">> Verifying Liferay's routes directories are the ones LDM mounted (LDM-#1944)..."
+PAIRING_ROUTES="${LDM_WORKSPACE}/${PROJECT_NAME}/routes/default"
+
+# Liferay publishes the tree from the client-extension config lifecycle, which
+# runs after the artifact is processed -- not instantly. Bounded wait, then
+# report what was found either way.
+PAIRING_WAITED=0
+while [ "$PAIRING_WAITED" -lt 180 ]; do
+    if [ -n "$(find "$PAIRING_ROUTES" -mindepth 1 -maxdepth 1 -type d ! -name dxp 2>/dev/null | head -1)" ]; then
+        break
+    fi
+    sleep 5
+    PAIRING_WAITED=$((PAIRING_WAITED + 5))
+done
+
+PAIRING_PUBLISHED=$(find "$PAIRING_ROUTES" -mindepth 1 -maxdepth 1 -type d ! -name dxp -exec basename {} \; 2>/dev/null | sort)
+
+if [ -z "$PAIRING_PUBLISHED" ]; then
+    # Announced, never a silent pass. An empty tree here means the assertion
+    # had nothing to compare -- most likely the OAuth application was not
+    # registered, so Liferay never reached the code that creates the
+    # directory. That is worth knowing; it is not evidence the paths agree.
+    echo "⚠️  SKIPPED (not run): Liferay published no per-extension routes directory within ${PAIRING_WAITED}s." | tee -a "$RESULTS_FILE_TMP"
+    echo "   Nothing to pair against, so LDM-#1944 was NOT verified on this run." | tee -a "$RESULTS_FILE_TMP"
+    echo "   Expected the oAuthApplicationHeadlessServer in the fixture to drive BaseConfigurationFactory." | tee -a "$RESULTS_FILE_TMP"
+else
+    PAIRING_MOUNTED=$("$VENV_PYTHON" - <<'PAIRING_PY'
+import pathlib
+
+import yaml
+
+compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text())
+names = set()
+for svc in (compose.get("services") or {}).values():
+    for spec in svc.get("volumes") or []:
+        source = (
+            spec.get("source") if isinstance(spec, dict) else str(spec).split(":")[0]
+        )
+        parts = str(source or "").rstrip("/").split("/routes/default/")
+        if len(parts) == 2 and parts[1] and parts[1] != "dxp":
+            names.add(parts[1])
+print("\n".join(sorted(names)))
+PAIRING_PY
+)
+    PAIRING_UNMOUNTED=""
+    for d in $PAIRING_PUBLISHED; do
+        if ! echo "$PAIRING_MOUNTED" | grep -qx "$d"; then
+            PAIRING_UNMOUNTED="${PAIRING_UNMOUNTED} ${d}"
+        fi
+    done
+
+    if [ -n "$PAIRING_UNMOUNTED" ]; then
+        echo "❌ ERROR: Liferay published routes directories that LDM does not mount (LDM-#1944)." | tee -a "$RESULTS_FILE_TMP"
+        echo "   Liferay created :$(echo "$PAIRING_PUBLISHED" | tr '\n' ' ')" | tee -a "$RESULTS_FILE_TMP"
+        echo "   LDM mounted     :$(echo "$PAIRING_MOUNTED" | tr '\n' ' ')" | tee -a "$RESULTS_FILE_TMP"
+        echo "   Unmounted       :${PAIRING_UNMOUNTED}" | tee -a "$RESULTS_FILE_TMP"
+        echo "   The extension reads a real, empty, readable directory while Liferay fills" | tee -a "$RESULTS_FILE_TMP"
+        echo "   a different one beside it. Liferay names it from projectName in the" | tee -a "$RESULTS_FILE_TMP"
+        echo "   extension's client-extension-config.json, NOT from the LCP.json id." | tee -a "$RESULTS_FILE_TMP"
+        exit 1
+    fi
+
+    report_ok "✅ Every routes directory Liferay published ($(echo "$PAIRING_PUBLISHED" | tr '\n' ' ')) is one LDM mounted (LDM-#1944)."
+fi
+
 # LDM-#1928/#1923: the fixture above declares NO LCP.json, so `ext["env"]` is
 # empty and `_extension_routes_mounts` takes its `or` fallback every time. The
 # constants happen to be right, so every assertion passes -- and the DERIVED
@@ -3410,6 +3809,13 @@ rm -rf "cxsvc-build" "${CXSVC_NAME}.zip"
 # compose-level fact, and the runtime half is already covered above.
 echo ">> Verifying the routes mounts are DERIVED from LCP.json (LDM-#1928/#1923)..."
 CXDERIV_NAME="derived-svc"
+# LDM-#1944: a real extension carries TWO identifiers and they are not the
+# same string -- the LCP.json id drops the hyphens the directory keeps
+# (`ecopulseheadlessauth` against `ecopulse-headless-auth`). Liferay names the
+# routes tree from `projectName`; LDM used to mount the id, which binds a
+# directory Liferay never writes to. Declaring them differently here is what
+# makes the assertion below able to tell the two apart at all.
+CXDERIV_ID="derivedsvc"
 CXDERIV_OK=true
 CXDERIV_DXP="/opt/custom/lxc/dxp-tree"
 CXDERIV_EXT="/opt/custom/lxc/ext-tree"
@@ -3420,12 +3826,19 @@ ${CXDERIV_NAME}:
     .serviceAddress: ${CXDERIV_NAME}:8080
     name: Derived Routes CX
     type: microservice
+${CXDERIV_NAME}-oauth:
+    name: Derived Routes CX OAuth
+    type: oAuthApplicationHeadlessServer
+    .serviceAddress: localhost:8080
+    .serviceScheme: http
+    scopes:
+        - Liferay.Headless.Admin.User.everything
 CXDERIVEOF
 # The declaration under test. A real client extension carries exactly this
 # pair and reads both -- the paths here are deliberately NOT the constants.
 cat > "cxderiv-build/${CXDERIV_NAME}/LCP.json" <<CXDERIVLCP
 {
-    "id": "${CXDERIV_NAME}",
+    "id": "${CXDERIV_ID}",
     "memory": 512,
     "env": {
         "LIFERAY_ROUTES_DXP": "${CXDERIV_DXP}",
@@ -3433,6 +3846,18 @@ cat > "cxderiv-build/${CXDERIV_NAME}/LCP.json" <<CXDERIVLCP
     }
 }
 CXDERIVLCP
+# LDM-#1944: what the Liferay CX build emits, carrying BOTH identifiers. This
+# is the file Liferay's own chain reads `projectName` from before publishing
+# it as the `ext.lxc.liferay.com/projectName` label, which
+# `RoutesPortalK8sConfigMapModifier` then resolves the directory from.
+cat > "cxderiv-build/${CXDERIV_NAME}/${CXDERIV_NAME}.client-extension-config.json" <<CXDERIVCFG
+{
+    "com.liferay.oauth2.provider.configuration.OAuth2ProviderApplicationHeadlessServerConfiguration~${CXDERIV_NAME}": {
+        "projectId": "${CXDERIV_ID}",
+        "projectName": "${CXDERIV_NAME}"
+    }
+}
+CXDERIVCFG
 cat > "cxderiv-build/${CXDERIV_NAME}/Dockerfile" <<'CXDERIV_DOCKERFILE'
 FROM alpine
 CMD ["sleep", "3600"]
@@ -3445,13 +3870,14 @@ shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])
 log_and_run "Deploying derived-routes CX" "$LDM_CMD" -y deploy . "${CXDERIV_NAME}.zip"
 "$LDM_CMD" -y run . --no-up --no-seed >/dev/null 2>&1 || true
 
-if ! "$VENV_PYTHON" - "$CXDERIV_NAME" "$CXDERIV_DXP" "$CXDERIV_EXT" <<'CXDERIV_PY'
+if ! "$VENV_PYTHON" - "$CXDERIV_ID" "$CXDERIV_DXP" "$CXDERIV_EXT" "$CXDERIV_NAME" <<'CXDERIV_PY'
 import sys
 import pathlib
 
 import yaml
 
 name, dxp_target, ext_target = sys.argv[1], sys.argv[2], sys.argv[3]
+project_name = sys.argv[4]
 compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text())
 services = compose.get("services") or {}
 svc = next((v for k, v in services.items() if k.endswith(name)), None)
@@ -3475,9 +3901,19 @@ if not ext_mounts:
                  "LCP.json and nothing is mounted there, so the extension "
                  "reads an empty path and generated OAuth2 credentials never "
                  "reach it: %s" % (ext_target, vols))
-elif not [v for v in ext_mounts if "/routes/default/%s:" % name in v]:
-    fails.append("the derived ext mount is not this extension's own subtree "
-                 "(routes/default/%s): %s" % (name, ext_mounts))
+elif not [v for v in ext_mounts if "/routes/default/%s:" % project_name in v]:
+    # LDM-#1944: projectName, NOT the LCP.json id. Liferay resolves the
+    # directory from the ext.lxc.liferay.com/projectName label, which comes
+    # from the built client-extension-config.json. Mounting the id binds a
+    # directory Liferay never writes to -- and it does not fail loudly,
+    # because the scaffold creates it and the extension reads it empty.
+    fails.append("the derived ext mount is not routes/default/%s (the "
+                 "projectName Liferay publishes under): %s"
+                 % (project_name, ext_mounts))
+elif [v for v in ext_mounts if "/routes/default/%s:" % name in v]:
+    fails.append("the ext mount used the LCP.json id %r instead of the "
+                 "projectName %r -- that directory is one Liferay never "
+                 "writes to (LDM-#1944): %s" % (name, project_name, ext_mounts))
 
 # The negative half, and the point of the whole fixture: falling back to the
 # constants while an explicit declaration exists is the bug this catches.

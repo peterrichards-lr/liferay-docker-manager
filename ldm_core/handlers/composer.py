@@ -951,6 +951,32 @@ class ComposerService:
                 opt_map[opt] = opt
 
         liferay_env = []
+        # LDM-#1944: Liferay runs under Tomcat, and `catalina.sh` sets
+        # `UMASK="0027"` unless the variable is already set:
+        #
+        #     if [ -z "$UMASK" ]; then
+        #         UMASK="0027"
+        #     fi
+        #     umask $UMASK
+        #
+        # 0027 is 750 on directories and 640 on files, so every config tree
+        # Liferay publishes under `routes/` was readable only by uid 1000. A
+        # client extension runs as whatever uid its own image declares, so it
+        # was refused with `Permission denied` on `routes/default/<ext-id>` --
+        # the tree holding the OAuth2 credentials Liferay generates for it.
+        # That is the whole of LDM-#1944; nothing in Liferay's own code sets a
+        # mode (`Files.createDirectories` is called with an empty
+        # `FileAttribute[]`), so the umask is the only input.
+        #
+        # 0022 gives 755/644. That is TIGHTER than the status quo, not looser:
+        # `routes` is already reclaimed at chmod 777 pre-boot (`handlers/
+        # base.py`), so the credentials are world-readable on the host today.
+        #
+        # Do not remove this as an unused variable -- it is read by
+        # `catalina.sh`, not by LDM, so nothing in this repository references
+        # it. The `[ -z "$UMASK" ]` guard above is what makes the override
+        # work at all.
+        liferay_env.append("UMASK=0022")
         liferay_env.append(f"LIFERAY_JVM_OPTS={' '.join(opt_map.values())}")
         liferay_env.append(
             "LIFERAY_LOG4J2_CONFIGURATION_FILE=/opt/liferay/osgi/log4j/portal-log4j-ext.xml"
@@ -1400,7 +1426,15 @@ class ComposerService:
                             for p in ext.get("ports", [])
                             if isinstance(p, dict) and p.get("external")
                         ),
-                        ext.get("loadBalancer", {}).get("targetPort", 8080),
+                        # LDM-#1962: `or {}`, not a `.get` default. The key
+                        # EXISTS with value None for any extension declaring
+                        # no loadBalancer, and `dict.get`'s default only
+                        # applies when the key is ABSENT. This raised
+                        # `'NoneType' object has no attribute 'get'` and took
+                        # the whole compose generation down for a perfectly
+                        # well-formed extension. The sibling in
+                        # `_build_extensions_services` already had it right.
+                        (ext.get("loadBalancer") or {}).get("targetPort", 8080),
                     )
                     env_key = f"LIFERAY_ROUTES_CLIENT_EXTENSION_{ext_id.replace('-', '_').upper()}"
                     liferay_env.append(f"{env_key}=http://{svc_id}:{ms_port}")
@@ -2271,9 +2305,31 @@ class ComposerService:
             ext_env.get("LIFERAY_ROUTES_CLIENT_EXTENSION")
             or self.LXC_EXT_INIT_METADATA_MOUNT
         )
+        # LDM-#1944: the per-extension subtree is named from the extension's
+        # `projectName`, NOT its `LCP.json` id. Liferay resolves the directory
+        # from the `ext.lxc.liferay.com/projectName` ConfigMap label and calls
+        # `Files.createDirectories` on it (`RoutesPortalK8sConfigMapModifier`),
+        # and that label is fed from `projectName` in the extension's own
+        # `<name>.client-extension-config.json`.
+        #
+        # The two differ for essentially every extension -- the id drops the
+        # hyphens the directory keeps (`ecopulseheadlessauth` against
+        # `ecopulse-headless-auth`), and all 16 samples in `ldm-cx-samples`
+        # differ. Mounting the id binds a directory Liferay never writes to.
+        #
+        # This does not fail loudly. `_scaffold_routes_tree` creates whatever
+        # the compose declares, so the extension reads a real, EMPTY, READABLE
+        # directory while Liferay populates a different one beside it -- which
+        # is why this was diagnosed as a permissions problem four times over.
+        #
+        # `ext_id` remains the fallback: an extension whose config carries no
+        # `projectName` is no worse off than before.
+        routes_name = ext.get("project_name") or ext_id
         mounts = [f"{(routes / 'default' / 'dxp').as_posix()}:{dxp_target}"]
-        if ext_id:
-            mounts.append(f"{(routes / 'default' / ext_id).as_posix()}:{ext_target}")
+        if routes_name:
+            mounts.append(
+                f"{(routes / 'default' / routes_name).as_posix()}:{ext_target}"
+            )
         return mounts
 
     def _build_extensions_services(  # noqa: C901, PLR0912

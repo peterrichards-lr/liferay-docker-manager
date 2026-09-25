@@ -1400,6 +1400,94 @@ function Test-StopHintAndStartConfirmation {
     }
 }
 
+function Test-SslRenewalReissues {
+    # The certificate directory and the renewal command, both asserted because
+    # 'docs/TROUBLESHOOTING.md' told Windows/WSL users to
+    # 'rm -rf ~/.ldm/infra/certs' -- a path that has never existed anywhere in
+    # this repository. The delete silently removed nothing, LDM reused the
+    # certificates already on disk, and a correctly-set CAROOT therefore looked
+    # like it had done nothing at all. Reported from a real WSL setup, where it
+    # cost an afternoon and was diagnosed as "mkcert keeps using the Linux CA"
+    # when the certificates were simply never replaced.
+    #
+    # 'ldm renew-ssl' is the supported path and does the whole job: it unlinks
+    # <host>.pem/<host>-key.pem from <home>/liferay-docker-certs and re-issues
+    # against whatever CA is currently in effect.
+    #
+    # Isolated via LDM_HOME, which get_actual_home() honours (LDM-#1349) -- so
+    # this never touches the developer's real certificate store.
+    #
+    # Parity with verify_ssl_renewal_reissues in verify_e2e_refactor.sh.
+    param([string]$LdmCmd, [string]$WorkDir)
+
+    if (-not (Get-Command mkcert -ErrorAction SilentlyContinue)) {
+        # Announced, not silently passed: without mkcert there is no CA to
+        # issue from and the assertion below would be vacuous.
+        return @{ Ok = $true; Message = "[WARNING] SKIPPED (not run): mkcert is not installed, so SSL renewal cannot be exercised." }
+    }
+    if (-not (Get-Command openssl -ErrorAction SilentlyContinue)) {
+        return @{ Ok = $true; Message = "[WARNING] SKIPPED (not run): openssl is not available, so the certificate serial cannot be read." }
+    }
+
+    $isoHome = Join-Path $WorkDir 'ssl-home'
+    $runDir  = Join-Path (Join-Path $WorkDir 'ssl-work') 'sslproj'
+    $hostName = 'sslprobe.test'
+
+    Remove-Item -Recurse -Force $isoHome, (Join-Path $WorkDir 'ssl-work') -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $isoHome, $runDir | Out-Null
+    ('{"tag":"2026.q1.7-lts","container_name":"sslproj","port":18099,"db_type":"postgresql","host_name":"' + $hostName + '"}') |
+        Out-File -FilePath (Join-Path $runDir 'meta') -Encoding ascii
+
+    $certDir = Join-Path $isoHome 'liferay-docker-certs'
+    $cert    = Join-Path $certDir "$hostName.pem"
+    $key     = Join-Path $certDir "$hostName-key.pem"
+
+    $prevHome = $env:LDM_HOME
+    $prevLoc  = Get-Location
+    $env:LDM_HOME = $isoHome
+    Set-Location $runDir
+
+    try {
+        $out = & $LdmCmd renew-ssl 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm renew-ssl' exited ${LASTEXITCODE}.`n   Output was: ${out}" }
+        }
+
+        # 1. The directory the documentation names must be the one LDM uses.
+        if (-not (Test-Path $cert) -or -not (Test-Path $key)) {
+            $found = (Get-ChildItem $certDir -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }) -join ' '
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm renew-ssl' did not produce $hostName.pem and $hostName-key.pem in <home>/liferay-docker-certs.`n   Found: ${found}`n   docs/TROUBLESHOOTING.md tells WSL users where to find these; if the location moves, that guidance silently stops working." }
+        }
+
+        # 2. The path the documentation USED to name must stay absent.
+        if (Test-Path (Join-Path $isoHome '.ldm/infra/certs')) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: certificates now also live in .ldm/infra/certs -- docs/TROUBLESHOOTING.md and this check both assume they do not." }
+        }
+
+        # 3. Renewal must actually RE-ISSUE. A no-op would leave a WSL user
+        #    with Linux-CA-signed certificates after every documented remedy,
+        #    which is exactly the reported symptom.
+        $serialBefore = (& openssl x509 -in $cert -noout -serial 2>$null) -join ''
+        & $LdmCmd renew-ssl 2>&1 | Out-Null
+        $serialAfter = (& openssl x509 -in $cert -noout -serial 2>$null) -join ''
+
+        if ([string]::IsNullOrWhiteSpace($serialBefore) -or $serialBefore -eq $serialAfter) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm renew-ssl' did not re-issue the certificate (serial unchanged: ${serialBefore}). A renewal that silently no-ops is indistinguishable from the WSL report, where the remedy appeared to run and the old certificate stayed." }
+        }
+
+        return @{ Ok = $true; Message = "[SUCCESS] 'ldm renew-ssl' re-issues into <home>/liferay-docker-certs (serial changes), and .ldm/infra/certs is not used." }
+    }
+    finally {
+        Set-Location $prevLoc
+        if ($null -eq $prevHome) {
+            Remove-Item Env:LDM_HOME -ErrorAction SilentlyContinue
+        } else {
+            $env:LDM_HOME = $prevHome
+        }
+        Remove-Item -Recurse -Force $isoHome, (Join-Path $WorkDir 'ssl-work') -ErrorAction SilentlyContinue
+    }
+}
+
 function Test-MacAddressPersisted {
     # LDM-#1771: '--mac-address' (LDM-#1752) is the v2.23.0 cycle's headline
     # feature, and it shipped in v2.23.0-pre.2 parsed and then discarded --
@@ -1954,6 +2042,15 @@ try {
         Write-Verdict $configRevert.Message
     } else {
         Write-Host $configRevert.Message -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying SSL renewal re-issues into the documented directory (LDM-#1958)..."
+    $sslRenew = Test-SslRenewalReissues -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE
+    if ($sslRenew.Ok) {
+        Write-Verdict $sslRenew.Message
+    } else {
+        Write-Host $sslRenew.Message -ForegroundColor Red
         exit 1
     }
 
@@ -2528,6 +2625,128 @@ services:
     # Wait for Health
     Log-AndRun "Waiting for Liferay health" $LDM_CMD "-y wait . --timeout 600"
 
+    # LDM-#1944: the running portal's umask, read from the container's own
+    # /proc.
+    #
+    # Liferay runs under Tomcat, and 'catalina.sh' sets UMASK="0027" unless
+    # the variable is already set:
+    #
+    #     if [ -z "$UMASK" ]; then
+    #         UMASK="0027"
+    #     fi
+    #     umask $UMASK
+    #
+    # 0027 is 750 on directories and 640 on files, so every config tree
+    # Liferay publishes under 'routes/' was readable only by uid 1000 -- and a
+    # client extension runs as whatever uid its own image declares, so it was
+    # refused with 'Permission denied' on the tree holding its OAuth2
+    # credentials.
+    #
+    # Asserted against the LIVE process rather than against the compose file.
+    # A compose-level check proves LDM emitted a variable; it cannot prove
+    # Tomcat honoured it, and the '[ -z "$UMASK" ]' guard is the only reason
+    # it does.
+    #
+    # '/proc/<pid>/status' is read INSIDE the container, so this is valid on a
+    # Windows host too -- it reports the Linux process's umask, not anything
+    # about the host filesystem. The resulting FILE modes cannot be checked
+    # here: Docker Desktop presents bind-mounted files as the host user
+    # regardless of mode (LDM-#1946).
+    #
+    # Parity with the LDM-#1944 block in verify_e2e_refactor.sh.
+    Write-Host ">> Verifying the portal runs with a readable umask (LDM-#1944)..."
+    $umaskProbe = @'
+for p in /proc/[0-9]*; do
+    if grep -qa catalina "$p/cmdline" 2>/dev/null; then
+        grep -i "^Umask" "$p/status" 2>/dev/null && exit 0
+    fi
+done
+exit 1
+'@
+    $umaskRaw = (& docker exec ldm-smoke-test sh -c $umaskProbe 2>$null) -join "`n"
+    $umaskVal = ($umaskRaw -replace '(?i)^\s*umask:\s*', '').Trim()
+    if ([string]::IsNullOrWhiteSpace($umaskVal)) {
+        throw "Could not read the portal process umask from /proc (LDM-#1944). No process matching 'catalina' was found in container 'ldm-smoke-test'. This assertion must not be skipped silently -- it is the only check that proves Tomcat honoured the UMASK variable rather than defaulting to 0027."
+    }
+    # The resulting file mode, not the literal value: any umask that leaves
+    # OTHER unable to read reproduces LDM-#1944, so the assertion is on the
+    # outcome rather than on the one value we happen to set.
+    #
+    # Other-read specifically, NOT group-read. A client extension runs as
+    # whatever uid its own image declares and is not in Liferay's group, so
+    # group-read buys it nothing -- umask 0027 gives 640, which HAS group-read
+    # and is exactly the bug. A check for 0o44 would pass against it.
+    $umaskFileMode = [Convert]::ToInt32('666', 8) -band (-bnot [Convert]::ToInt32($umaskVal, 8))
+    if (($umaskFileMode -band [Convert]::ToInt32('4', 8)) -eq 0) {
+        throw ("The portal runs with umask ${umaskVal}, so files it creates are mode " + [Convert]::ToString($umaskFileMode, 8) + " -- unreadable to any uid but its own (LDM-#1944). A client extension runs as whatever uid its own image declares, so it cannot read routes/default/<ext-id> and never receives its OAuth2 credentials. catalina.sh defaults UMASK to 0027; LDM must override it.")
+    }
+    Write-Verdict "[SUCCESS] The portal runs with umask ${umaskVal}, so the config trees it publishes are readable by a client extension (LDM-#1944)."
+
+    # LDM-#1946 / LDM-#1944: the modes that actually landed on disk.
+    #
+    # Third and last layer of the LDM-#1944 assertion, and the only one that
+    # looks at a real file:
+    #
+    #   1. a unit test asserts LDM emits a umask granting other-read
+    #   2. the /proc check above asserts Tomcat HONOURED it
+    #   3. this asserts the resulting files are actually readable
+    #
+    # Layers 1 and 2 can both pass while the filesystem quietly discards the
+    # mode, which is the whole of LDM-#1946.
+    #
+    # Whether this runs on Windows is decided by the probe, not asserted here.
+    # NTFS ACLs are not POSIX modes, so it very likely skips -- but that has
+    # not been measured, and the sh half's equivalent assumption turned out to
+    # be wrong for macOS: Docker Desktop rewrites OWNERSHIP, not the mode bits,
+    # so a container writing at umask 0027 really does leave 640 on an APFS
+    # host. Let the probe answer it.
+    #
+    # A skip is announced, never counted as a pass -- reporting a pass here
+    # would relocate LDM-#1946's defect into this script.
+    #
+    # Parity with the LDM-#1944/#1946 block in verify_e2e_refactor.sh.
+    Write-Host ">> Verifying the published config trees are readable on disk (LDM-#1944/#1946)..."
+    $fsPermRoutes = Join-Path (Join-Path $LDM_WORKSPACE $PROJECT_NAME) "routes"
+    $fsPermStat = & docker run --rm -v "${fsPermRoutes}:/w" alpine sh -c '
+probe=/w/.ldm-mode-probe
+: > "$probe" 2>/dev/null || exit 3
+chmod 640 "$probe" 2>/dev/null
+back=$(stat -c "%a" "$probe" 2>/dev/null)
+rm -f "$probe"
+[ "$back" != "640" ] && { echo "NOHONOUR $back"; exit 0; }
+bad=""
+seen=0
+for f in $(find /w -type f 2>/dev/null); do
+    seen=$((seen + 1))
+    m=$(stat -c "%a" "$f" 2>/dev/null)
+    [ "$((0$m & 0004))" -eq 0 ] && bad="$bad $m:$f"
+done
+echo "SEEN $seen BAD$bad"
+' 2>&1 | Out-String
+
+    # The probe runs inside a container so the mode semantics are the mount's
+    # own, not Windows'. It is the same question either way: does a chmod here
+    # survive a read-back.
+    if ($fsPermStat -match 'NOHONOUR\s+(\S*)') {
+        Write-Verdict "[WARNING] SKIPPED (not run): this filesystem does not honour chmod -- probed 640, read back '$($Matches[1])'."
+        Write-Verdict "[WARNING] exFAT/FAT32 mounted 'noowners' behave this way, as does NTFS in general. The LDM-#1944 file-mode assertion was NOT evaluated on this run."
+    }
+    elseif ($fsPermStat -match 'SEEN\s+(\d+)\s+BAD(.*)') {
+        $fsPermSeen = [int]$Matches[1]
+        $fsPermBad = $Matches[2].Trim()
+        if ($fsPermBad) {
+            throw ("Liferay published config files a client extension cannot read (LDM-#1944): $fsPermBad. catalina.sh defaults UMASK to 0027 (files 640); LDM sets UMASK=0022 so these land 644 -- if they are 640 the override did not take.")
+        }
+        if ($fsPermSeen -eq 0) {
+            Write-Verdict "[WARNING] SKIPPED (not run): no files under routes/ after the health wait, so there were none to check. Expected the dxp tree once the healthcheck curled /c/portal/layout."
+        } else {
+            Write-Verdict "[SUCCESS] All $fsPermSeen published config file(s) under routes/ are readable by a client extension (LDM-#1944/#1946)."
+        }
+    }
+    else {
+        throw "Could not probe the routes filesystem for LDM-#1944/#1946. Output was: $fsPermStat"
+    }
+
     # LDM-#1509: the project above was seeded -- provisioned without --no-seed,
     # and the run reports "Project bootstrapped from seed". Assert LDM still
     # SAYS so afterwards.
@@ -3053,6 +3272,41 @@ ${cxSvcName}:
     name: Synthetic CX Service
     type: microservice
 "@ | Out-File -FilePath "cxsvc-build/$cxSvcName/client-extension.yaml" -Encoding ascii
+    # LDM-#1944: an oAuthApplicationHeadlessServer is what makes Liferay
+    # publish a per-extension routes tree at all. Without one,
+    # BaseConfigurationFactory never runs, no ext.lxc.liferay.com/projectName
+    # label is set, and the directory is never created -- so a fixture
+    # declaring only 'type: microservice' can never observe the pairing
+    # between what Liferay creates and what LDM mounts.
+    @"
+${cxSvcName}-oauth:
+    name: Synthetic CX OAuth
+    type: oAuthApplicationHeadlessServer
+    scopes:
+        - Liferay.Headless.Admin.User.everything
+"@ | Out-File -FilePath "cxsvc-build/$cxSvcName/client-extension.yaml" -Encoding ascii -Append
+    @"
+{
+    "com.liferay.oauth2.provider.configuration.OAuth2ProviderApplicationHeadlessServerConfiguration~${cxSvcName}": {
+        "projectId": "${cxSvcName}",
+        "projectName": "${cxSvcName}",
+        ".serviceAddress": "${cxSvcName}:8080",
+        ".serviceScheme": "http"
+    }
+}
+"@ | Out-File -FilePath "cxsvc-build/$cxSvcName/$cxSvcName.client-extension-config.json" -Encoding ascii
+    # LDM-#1962: every real client extension carries an LCP.json. LDM now
+    # refuses to deploy a service extension without one, so a fixture lacking
+    # it is rejected and quarantined -- which is exactly what happened to this
+    # fixture on the first master run after the fix landed.
+    @"
+{
+    "id": "${cxSvcName}",
+    "memory": 512,
+    "kind": "Deployment"
+}
+"@ | Out-File -FilePath "cxsvc-build/$cxSvcName/LCP.json" -Encoding ascii
+
     # The Dockerfile is what makes it a service rather than a static extension.
     #
     # LDM-#1911: it also carries application code at /opt/liferay/routes, the
@@ -3179,6 +3433,55 @@ sys.exit(1 if fails else 0)
     Write-Verdict "[SUCCESS] Client-extension service: DXP metadata at /etc/liferay/lxc/dxp-metadata (not over the app), domain supplied, host resolvable, and the extension's own /opt/liferay/routes code still visible inside the running container (LDM-#1911/#1918)."
     Remove-Item -Recurse -Force "cxsvc-build", "$cxSvcName.zip", "cxsvc-check.py" -ErrorAction SilentlyContinue
 
+    # LDM-#1944: the pairing -- does the directory Liferay CREATES match the
+    # one LDM MOUNTS? This is the assertion that was missing, and its absence
+    # is why the issue survived four wrong diagnoses: every check looked at
+    # one side of the boundary only.
+    #
+    # Phrased as a SUBSET rule rather than equality: every directory Liferay
+    # publishes must be one LDM mounted. That catches the mismatch whatever
+    # the naming convention turns out to be.
+    #
+    # Parity with the LDM-#1944 pairing block in verify_e2e_refactor.sh.
+    Write-Host ">> Verifying Liferay's routes directories are the ones LDM mounted (LDM-#1944)..."
+    $pairingRoutes = Join-Path (Join-Path $LDM_WORKSPACE $PROJECT_NAME) "routes/default"
+    $pairingWaited = 0
+    while ($pairingWaited -lt 180) {
+        $found = Get-ChildItem -Path $pairingRoutes -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -ne "dxp" }
+        if ($found) { break }
+        Start-Sleep -Seconds 5
+        $pairingWaited += 5
+    }
+    $pairingPublished = @(Get-ChildItem -Path $pairingRoutes -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ne "dxp" } | ForEach-Object { $_.Name } | Sort-Object)
+
+    if ($pairingPublished.Count -eq 0) {
+        Write-Verdict "[WARNING] SKIPPED (not run): Liferay published no per-extension routes directory within ${pairingWaited}s. Nothing to pair against, so LDM-#1944 was NOT verified on this run."
+    } else {
+        $pairingMounted = @(& $VENV_PYTHON -c @"
+import pathlib, yaml
+compose = yaml.safe_load(pathlib.Path('docker-compose.yml').read_text())
+names = set()
+for svc in (compose.get('services') or {}).values():
+    for spec in svc.get('volumes') or []:
+        source = spec.get('source') if isinstance(spec, dict) else str(spec).split(':')[0]
+        parts = str(source or '').rstrip('/').split('/routes/default/')
+        if len(parts) == 2 and parts[1] and parts[1] != 'dxp':
+            names.add(parts[1])
+print('\n'.join(sorted(names)))
+"@)
+        $pairingUnmounted = @($pairingPublished | Where-Object { $pairingMounted -notcontains $_ })
+        if ($pairingUnmounted.Count -gt 0) {
+            throw ("Liferay published routes directories that LDM does not mount (LDM-#1944). Liferay created: " +
+                ($pairingPublished -join ' ') + " | LDM mounted: " + ($pairingMounted -join ' ') +
+                " | Unmounted: " + ($pairingUnmounted -join ' ') +
+                ". The extension reads a real, empty, readable directory while Liferay fills a different one beside it." +
+                " Liferay names it from projectName in the extension's client-extension-config.json, NOT from the LCP.json id.")
+        }
+        Write-Verdict ("[SUCCESS] Every routes directory Liferay published (" + ($pairingPublished -join ' ') + ") is one LDM mounted (LDM-#1944).")
+    }
+
     # LDM-#1928: the host side. Docker creates a missing bind-mount source as
     # an empty root-owned directory, so a subtree LDM never scaffolds is one
     # nothing can write to.
@@ -3216,6 +3519,12 @@ sys.exit(1 if fails else 0)
     # verify_e2e_refactor.sh.
     Write-Host ">> Verifying the routes mounts are DERIVED from LCP.json (LDM-#1928/#1923)..."
     $cxDerivName = "derived-svc"
+    # LDM-#1944: a real extension carries TWO identifiers and they differ --
+    # the LCP.json id drops the hyphens the directory keeps. Liferay names the
+    # routes tree from projectName; mounting the id binds a directory it never
+    # writes to. Declaring them differently is what lets the assertion tell
+    # them apart.
+    $cxDerivId = "derivedsvc"
     $cxDerivDxp  = "/opt/custom/lxc/dxp-tree"
     $cxDerivExt  = "/opt/custom/lxc/ext-tree"
     Remove-Item -Recurse -Force "cxderiv-build", "$cxDerivName.zip" -ErrorAction SilentlyContinue
@@ -3225,12 +3534,19 @@ ${cxDerivName}:
     .serviceAddress: ${cxDerivName}:8080
     name: Derived Routes CX
     type: microservice
+${cxDerivName}-oauth:
+    name: Derived Routes CX OAuth
+    type: oAuthApplicationHeadlessServer
+    .serviceAddress: localhost:8080
+    .serviceScheme: http
+    scopes:
+        - Liferay.Headless.Admin.User.everything
 "@ | Out-File -FilePath "cxderiv-build/$cxDerivName/client-extension.yaml" -Encoding ascii
     # The declaration under test. A real client extension carries exactly this
     # pair and reads both -- the paths here are deliberately NOT the constants.
     @"
 {
-    "id": "${cxDerivName}",
+    "id": "${cxDerivId}",
     "memory": 512,
     "env": {
         "LIFERAY_ROUTES_DXP": "${cxDerivDxp}",
@@ -3238,6 +3554,18 @@ ${cxDerivName}:
     }
 }
 "@ | Out-File -FilePath "cxderiv-build/$cxDerivName/LCP.json" -Encoding ascii
+    # LDM-#1944: what the Liferay CX build emits, carrying BOTH identifiers.
+    # Liferay reads projectName from here, publishes it as the
+    # ext.lxc.liferay.com/projectName label, and resolves the routes directory
+    # from that label.
+    @"
+{
+    "com.liferay.oauth2.provider.configuration.OAuth2ProviderApplicationHeadlessServerConfiguration~${cxDerivName}": {
+        "projectId": "${cxDerivId}",
+        "projectName": "${cxDerivName}"
+    }
+}
+"@ | Out-File -FilePath "cxderiv-build/$cxDerivName/$cxDerivName.client-extension-config.json" -Encoding ascii
     @'
 FROM alpine
 CMD ["sleep", "3600"]
@@ -3254,6 +3582,7 @@ import pathlib
 import yaml
 
 name, dxp_target, ext_target = sys.argv[1], sys.argv[2], sys.argv[3]
+project_name = sys.argv[4]
 compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text())
 services = compose.get("services") or {}
 svc = next((v for k, v in services.items() if k.endswith(name)), None)
@@ -3277,9 +3606,14 @@ if not ext_mounts:
                  "LCP.json and nothing is mounted there, so the extension "
                  "reads an empty path and generated OAuth2 credentials never "
                  "reach it: %s" % (ext_target, vols))
-elif not [v for v in ext_mounts if "/routes/default/%s:" % name in v]:
-    fails.append("the derived ext mount is not this extension's own subtree "
-                 "(routes/default/%s): %s" % (name, ext_mounts))
+elif not [v for v in ext_mounts if "/routes/default/%s:" % project_name in v]:
+    fails.append("the derived ext mount is not routes/default/%s (the "
+                 "projectName Liferay publishes under): %s"
+                 % (project_name, ext_mounts))
+elif [v for v in ext_mounts if "/routes/default/%s:" % name in v]:
+    fails.append("the ext mount used the LCP.json id %r instead of the "
+                 "projectName %r -- that directory is one Liferay never "
+                 "writes to (LDM-#1944): %s" % (name, project_name, ext_mounts))
 
 # The negative half, and the point of the whole fixture: falling back to the
 # constants while an explicit declaration exists is the bug this catches.
@@ -3294,7 +3628,7 @@ for f in fails:
     print("ERROR: " + f)
 sys.exit(1 if fails else 0)
 '@ | Out-File -FilePath "cxderiv-check.py" -Encoding ascii
-    & $VENV_PYTHON "cxderiv-check.py" $cxDerivName $cxDerivDxp $cxDerivExt
+    & $VENV_PYTHON "cxderiv-check.py" $cxDerivId $cxDerivDxp $cxDerivExt $cxDerivName
     if ($LASTEXITCODE -ne 0) {
         throw "The routes mounts ignore the extension's own LCP.json declaration (LDM-#1928/#1923)."
     }
