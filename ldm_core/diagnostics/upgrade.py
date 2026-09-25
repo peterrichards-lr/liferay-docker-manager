@@ -394,7 +394,9 @@ pause
             temp_new.unlink()
         manual_cmd = _get_manual_upgrade_cmd(handler, url, exe_path)
         UI.error(f"Failed to apply update: {e}")
-        UI.detail(
+        # LDM-#1971: the self-upgrade has failed and `sys.exit(1)` follows;
+        # the manual command is the only thing the user can act on.
+        UI.info(
             f"Please try the manual installation command:\n\n    {UI.CYAN}{manual_cmd}{UI.COLOR_OFF}\n"
         )
         sys.exit(1)

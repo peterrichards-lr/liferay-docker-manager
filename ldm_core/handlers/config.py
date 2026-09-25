@@ -15,6 +15,7 @@ from ldm_core.utils import (
     atomic_copy,
     get_actual_home,
     is_continuation_line,
+    is_credential_shaped,
     is_local_host,
     run_command,
     safe_write_text,
@@ -1312,14 +1313,49 @@ class ConfigService:
             if not config:
                 UI.detail("No global configuration found.")
             else:
+                # LDM-#1970: this printed every stored value verbatim,
+                # including API keys and auth tokens -- into the terminal, and
+                # so into transcripts, logs and anything capturing output.
+                #
+                # Masked by KEY NAME. `UI.redact` cannot help: it matches
+                # `KEY=value` with no spaces, and this prints `key = value`.
                 for k, v in sorted(config.items()):
-                    print(f"  {k} = {v}")
+                    shown = "[REDACTED]" if is_credential_shaped(k) else v
+                    print(f"  {k} = {shown}")
+                if any(is_credential_shaped(k) for k in config):
+                    UI.detail(
+                        "Credential-shaped values are hidden. "
+                        "Use 'ldm config <key> --reveal' to print one."
+                    )
             return
 
         if key and value is None:
             # Get specific key
             val = config.get(key)
             if val is not None:
+                # LDM-#1970: `ldm config get <key>` is a documented scripting
+                # mechanism (docs/reference/cli/system.md), so masking it
+                # unconditionally would break working scripts. It requires an
+                # explicit opt-in instead, following the precedent already set
+                # by `ldm info --credentials --password-only`.
+                #
+                # There is no key name in this output, so nothing downstream
+                # could redact it after the fact -- the decision has to be made
+                # here, from the key.
+                if is_credential_shaped(key) and not getattr(
+                    self.manager.args, "reveal", False
+                ):
+                    # Exits non-zero rather than printing nothing. A script
+                    # doing `TOKEN=$(ldm config gemini_api_key)` must fail
+                    # loudly here; returning 0 with empty stdout would bind an
+                    # empty token and break somewhere else entirely.
+                    UI.die(
+                        f"'{key}' holds a credential and is not printed by default.",
+                        tip=(
+                            f"Use 'ldm config {key} --reveal' to print it. It will "
+                            f"appear in your terminal history and scrollback."
+                        ),
+                    )
                 print(val)
             else:
                 UI.die(f"Configuration key '{key}' not found.")
