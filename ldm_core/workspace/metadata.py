@@ -301,7 +301,38 @@ def _resolve_and_persist_cx_port(self, ext_info, ext_id, meta, root_dir):
 
     meta_port_key = f"port_{ext_id}"
     if meta_port_key not in meta:
-        resolved_port = self.manager.find_available_port("127.0.0.1", default_port)
+        # LDM-#1969: exclude the ports already assigned to OTHER extensions in
+        # this project, or two of them get the same one.
+        #
+        # `find_available_port` asks whether a port is free ON THE HOST RIGHT
+        # NOW. During a first run neither extension's container exists yet, so
+        # both probes return the same free port, both are persisted, and the
+        # collision only appears when the second container tries to bind:
+        #
+        #     Bind for 0.0.0.0:28080 failed: port is already allocated
+        #
+        # `meta` accumulates each `port_<ext_id>` as it is resolved and is
+        # shared across the scan loop, so it already holds everything assigned
+        # so far -- including on a re-run, where previously-persisted ports
+        # must also be avoided.
+        #
+        # This mirrors what `handlers/infra.py` already does for the proxy
+        # ports, which maintains an `allocated_ports` list and passes it as
+        # `exclude`. The client-extension path never adopted the pattern.
+        taken = []
+        for key, value in meta.items():
+            if key == meta_port_key or not key.startswith("port_"):
+                continue
+            try:
+                taken.append(int(value))
+            except (ValueError, TypeError):
+                # A malformed entry is not worth failing a run over; it simply
+                # cannot be excluded.
+                continue
+
+        resolved_port = self.manager.find_available_port(
+            "127.0.0.1", default_port, exclude=taken
+        )
         meta[meta_port_key] = str(resolved_port)
         self.manager.write_meta(root_dir, meta)
 
