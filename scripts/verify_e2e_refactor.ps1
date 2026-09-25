@@ -3534,6 +3534,13 @@ ${cxDerivName}:
     .serviceAddress: ${cxDerivName}:8080
     name: Derived Routes CX
     type: microservice
+${cxDerivName}-oauth:
+    name: Derived Routes CX OAuth
+    type: oAuthApplicationHeadlessServer
+    .serviceAddress: localhost:8080
+    .serviceScheme: http
+    scopes:
+        - Liferay.Headless.Admin.User.everything
 "@ | Out-File -FilePath "cxderiv-build/$cxDerivName/client-extension.yaml" -Encoding ascii
     # The declaration under test. A real client extension carries exactly this
     # pair and reads both -- the paths here are deliberately NOT the constants.
