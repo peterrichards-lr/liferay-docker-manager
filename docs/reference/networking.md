@@ -35,6 +35,7 @@ LDM automates the routing and SSL orchestration for both the main Liferay instan
 - **Predictable Subdomains**: Server-Side Client Extensions (SSCE) with a `Dockerfile` are automatically assigned a unique subdomain based on their ID. For example, if your project host is `my-project.local`, an extension with ID `custom-logic` will be accessible at `https://custom-logic.my-project.local`.
 - **Zero-Config HTTPS**: LDM generates a single SSL certificate that covers both the main host and its wildcard (e.g., `my-project.local` and `*.my-project.local`). This secures all extensions automatically.
 - **Automated Routing**: Traffic on port 443 is intercepted by the global Traefik proxy and routed to the correct container using SNI (Server Name Indication) and Docker labels.
+- **No host port is published.** A client-extension container binds nothing on the host: the subdomain above is the only way in, and Traefik reaches the container over the Docker network on the port its `LCP.json` declares. LDM previously also published a host port, which was never on this access path and was silently relocated when it collided -- a caller reading the port out of `LCP.json` reached nothing, or another extension's container (LDM-#1973). If you need to reach an extension directly, use `docker compose port <service> <port>` or address it by subdomain.
 - **Liferay Integration**: LDM automatically injects `LIFERAY_WEB_SERVER_HOST` and other necessary properties into Liferay to ensure it can communicate seamlessly with its client extension subdomains.
 
 > [!TIP]
@@ -42,4 +43,4 @@ LDM automates the routing and SSL orchestration for both the main Liferay instan
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-02* | *Last Reviewed: 2026-09-02*
+*Last Updated: 2026-09-25* | *Last Reviewed: 2026-09-25*

@@ -618,6 +618,19 @@ class TestWorkspaceScanners(unittest.TestCase):
             self.assertEqual(meta.get("port_my-service-ext"), "8081")
 
     def test_rewrite_oauth_urls_in_zip_non_ssl_localhost(self):
+        """LDM-#1973: the rewritten URL carries NO port.
+
+        This asserted `http://localhost:8082`, taken from `meta[port_my-ext]`.
+        That was the port resolved BEFORE the composer's rewrite, and the
+        composer published something else -- an extension resolved to 8080 was
+        published on 28080, so the URL baked into the extension's own OAuth
+        configuration pointed at nothing, or at a different extension's
+        container. Nothing reported the discrepancy.
+
+        The host mapping is gone entirely now. The extension is reached through
+        Traefik by subdomain, so the URL is the subdomain, matching what the
+        SSL branch has always emitted.
+        """
         import yaml
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -645,7 +658,15 @@ class TestWorkspaceScanners(unittest.TestCase):
                 yaml_content = z.read("client-extension.yaml").decode("utf-8")
                 data = yaml.safe_load(yaml_content)
                 self.assertEqual(data["my-ext"][".serviceAddress"], "my-ext.localhost")
-                self.assertEqual(data["my-ext"]["homePageURL"], "http://localhost:8082")
+                self.assertEqual(
+                    data["my-ext"]["homePageURL"], "http://my-ext.localhost"
+                )
+                self.assertNotIn(
+                    "8082",
+                    yaml_content,
+                    "the pre-rewrite host port must not reach the artifact: "
+                    "nothing listens on it (LDM-#1973)",
+                )
 
     def test_scan_extension_metadata_folder(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -93,24 +93,53 @@ class TestComposerService(unittest.TestCase):
         self.assertIn("proj-ms1", services)
         self.assertEqual(services["proj-ms1"]["image"], "proj-ms1:latest")
         self.assertIn("com.liferay.ldm.project=proj", services["proj-ms1"]["labels"])
-        # LDM-#1911: /etc/liferay/lxc/dxp-metadata -- the path the extension's
-        # own image declares. This assertion has now been wrong three times:
-        # /workspace/routes (the original regression, defended for ~25
-        # releases), then /opt/liferay/routes (LDM-#1918, which is right for
-        # the LIFERAY container but shadows a node-runner extension's own
-        # application code), and now this. The two containers do not share a
-        # filesystem convention, and each correction was made by assuming they
-        # did.
+        # This assertion has now been wrong FOUR times: /workspace/routes (the
+        # original regression, defended for ~25 releases), then
+        # /opt/liferay/routes (LDM-#1918, right for the LIFERAY container but
+        # it shadows a node-runner extension's own application code), then the
+        # two leaf mounts at the paths the extension's image declares
+        # (LDM-#1911), and now the anchored mount (LDM-#1944).
+        #
+        # Each correction was made by assuming the two containers share a
+        # filesystem convention. They do not. The fourth was different in kind:
+        # the leaf mounts were at the right PATHS and still failed, because a
+        # bind mount resolves its source inode once and cannot survive that
+        # directory being replaced.
         self.assertTrue(
             any(
-                v.startswith(f"{Path('/tmp/routes/default/dxp').as_posix()}:")
-                and ":/etc/liferay/lxc/dxp-metadata" in v
+                v.startswith(f"{Path('/tmp/routes/default').as_posix()}:")
+                and ":/etc/liferay/lxc/routes" in v
                 for v in services["proj-ms1"]["volumes"]
             ),
             services["proj-ms1"]["volumes"],
         )
+        # The trees are now addressed through the variables rather than by
+        # separate mounts, so the pairing has to be checked on both sides.
+        # The `pragma`s are for detect-secrets, which reads a `KEY=value` with
+        # no spaces as a high-entropy string. These are filesystem paths.
+        env = services["proj-ms1"]["environment"]
+        self.assertIn(
+            "LIFERAY_ROUTES_DXP=/etc/liferay/lxc/routes/dxp",  # pragma: allowlist secret
+            env,
+        )
+        self.assertIn(
+            "LIFERAY_ROUTES_CLIENT_EXTENSION=/etc/liferay/lxc/routes/ms1",  # pragma: allowlist secret
+            env,
+        )
 
-    def test_build_extensions_services_non_ssl_port_mapping(self):
+    def test_a_client_extension_publishes_no_host_port(self):
+        """LDM-#1973: this asserted the opposite until the mapping was removed.
+
+        It expected `0.0.0.0:8083:8080` from `meta["port_ms1"] = "8083"`. The
+        mapping was not on the access path -- Traefik routes the extension by
+        subdomain over the Docker network -- and it was the mechanism behind
+        LDM-#1969: the composer funnelled 8080 to 28080 AFTER the per-project
+        uniqueness resolution, so two extensions reaching 8080 both published
+        on 28080 and the second container failed to bind.
+
+        Note the block was already `if not ssl_enabled`, so an SSL project has
+        never published these and client extensions work there.
+        """
         paths = {"root": Path("/tmp"), "cx": Path("/tmp/cx"), "ce_dir": Path("/tmp/ce")}
         meta = {"port_ms1": "8083"}
         self.manager.workspace.scan_client_extensions.return_value = [
@@ -127,7 +156,46 @@ class TestComposerService(unittest.TestCase):
             paths, meta, "localhost", "proj", False
         )
         self.assertIn("proj-ms1", services)
-        self.assertIn("0.0.0.0:8083:8080", services["proj-ms1"]["ports"])
+        self.assertFalse(
+            services["proj-ms1"].get("ports"),
+            "a client extension must publish no host port: the number was "
+            "silently relocated, and a caller reading it from LCP.json reached "
+            "nothing or another extension's container (LDM-#1973)",
+        )
+
+    def test_the_traefik_route_replaces_the_host_port(self):
+        """The access path, asserted where the removed mapping was asserted.
+
+        Deleting a mount or a mapping is only safe if the thing that replaces
+        it is pinned in the same place, or the next reader sees a removal with
+        no counterpart.
+        """
+        paths = {"root": Path("/tmp"), "cx": Path("/tmp/cx"), "ce_dir": Path("/tmp/ce")}
+        self.manager.workspace.scan_client_extensions.return_value = [
+            {
+                "id": "ms1",
+                "deploy": True,
+                "is_service": True,
+                "path": "/tmp/ms1",
+                "ports": [{"port": 8080}],
+            }
+        ]
+
+        for ssl_enabled in (False, True):
+            with self.subTest(ssl=ssl_enabled):
+                services = self.composer._build_extensions_services(
+                    paths, {}, "example.test", "proj", ssl_enabled
+                )
+                labels = services["proj-ms1"]["labels"]
+                self.assertIn("traefik.enable=true", labels)
+                self.assertTrue(
+                    [lbl for lbl in labels if "rule=Host(`ms1.example.test`)" in lbl],
+                    f"no subdomain router, so nothing reaches it: {labels}",
+                )
+                self.assertTrue(
+                    [lbl for lbl in labels if "loadbalancer.server.port=8080" in lbl],
+                    f"Traefik is not pointed at the container port: {labels}",
+                )
 
     def test_build_liferay_service_volumes_and_jvm(self):
         paths = {

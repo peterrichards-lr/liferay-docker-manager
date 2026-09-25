@@ -1954,19 +1954,23 @@ class BaseHandler:
                         arch = platform.machine().lower()
                         is_intel = "x86" in arch or "i386" in arch
 
+                        # LDM-#1971: the commands below were `UI.detail`, so
+                        # this printed "To fix this, run:" and then nothing
+                        # before `sys.exit(1)` -- a fatal error whose
+                        # remediation was blank.
                         UI.info("\nTo fix this, run:")
-                        UI.detail("colima stop")
+                        UI.info("colima stop")
 
                         if is_intel:
                             # Intel Macs (especially on Monterey) often need sshfs with :w
                             # We explicitly suggest adding :w to the HOME mount
-                            UI.detail("colima start --mount /Users/$(whoami):w")
-                            UI.detail(
+                            UI.info("colima start --mount /Users/$(whoami):w")
+                            UI.info(
                                 f"{UI.WHITE}Note: If write errors persist, try: 'colima stop' then 'colima start --vm-type vz --mount /Users/$(whoami):w'{UI.COLOR_OFF}"
                             )
                         else:
                             # Apple Silicon defaults to vz/virtiofs
-                            UI.detail(
+                            UI.info(
                                 f"colima start {mount_hint} --vm-type vz --mount-type virtiofs"
                             )
 
@@ -2085,7 +2089,11 @@ class BaseHandler:
             if hasattr(os, "getuid") and os.getuid() == 0:
                 UI.error("FATAL: RUNNING AS ROOT/SUDO IS PROHIBITED")
                 if platform.system().lower() == "linux":
-                    UI.detail(
+                    # LDM-#1971: a second, independent root check carrying the
+                    # same suppressed `usermod` fix as the one in cli.py. Both
+                    # were found only by auditing for the pattern rather than
+                    # fixing the one site that was reported.
+                    UI.info(
                         f"If you are using sudo because of Docker permissions, please run:\n"
                         f"{UI.CYAN}sudo usermod -aG docker $USER{UI.COLOR_OFF} and restart your terminal session.\n"
                     )

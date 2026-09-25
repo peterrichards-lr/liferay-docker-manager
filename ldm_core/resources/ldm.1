@@ -163,8 +163,13 @@ Forcefully reset the default admin account credentials (`test@liferay.com`).
 .SS config \- Configuration Management
 All subcommands have backward-compatible flat aliases (e.g. \fBldm env\fR, \fBldm defaults\fR, \fBldm feature\fR, \fBldm log-level\fR, \fBldm edit\fR).
 .TP
-\fBldm config get\fR [\fIKEY\fR]
-Show one or all generic project config values.
+\fBldm config get\fR [\fIKEY\fR] [\fB\-\-reveal\fR]
+Show one or all generic project config values. Values whose key name looks like
+a credential (containing \fBpassword\fR, \fBsecret\fR, \fBtoken\fR,
+\fBcredential\fR or \fBprivate\fR, or a whole word of \fBkey\fR, \fBpat\fR,
+\fBauth\fR or \fBpass\fR) are hidden. The listing shows \fB[REDACTED]\fR;
+requesting one by name refuses and exits non\-zero. Pass \fB\-\-reveal\fR to
+print it, which also puts it in your terminal history.
 .TP
 \fBldm config set\fR \fIKEY\fR \fIVALUE\fR
 Set a generic project config value.

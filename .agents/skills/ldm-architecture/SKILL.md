@@ -453,9 +453,66 @@ be checked against this section.
 | Container | Host source | Container target |
 |---|---|---|
 | Liferay | `routes/` (whole tree) | `/opt/liferay/routes` |
-| Client extension | `routes/default/dxp` | `LIFERAY_ROUTES_DXP` (default `/etc/liferay/lxc/dxp-metadata`) |
-| Client extension | `routes/default/<ext-id>` | `LIFERAY_ROUTES_CLIENT_EXTENSION` (default `/etc/liferay/lxc/ext-init-metadata`) |
+| Client extension | `routes/default` (the virtual-instance tree) | `/etc/liferay/lxc/routes` |
 | Custom service | `routes/default/dxp` | `/etc/liferay/lxc/dxp-metadata` |
+
+A client extension addresses the two trees it needs as **subdirectories of
+that one mount**, through the variables it already reads:
+
+| Variable | Value LDM sets |
+|---|---|
+| `LIFERAY_ROUTES_DXP` | `/etc/liferay/lxc/routes/dxp` |
+| `LIFERAY_ROUTES_CLIENT_EXTENSION` | `/etc/liferay/lxc/routes/<projectName>` |
+
+The Liferay Cloud defaults -- `/etc/liferay/lxc/dxp-metadata` and
+`/etc/liferay/lxc/ext-init-metadata` -- are what an extension's own LCP.json
+declares, and what it gets when it runs on Liferay Cloud. **Under LDM they are
+overridden**, because LDM owns the mount layout and the extension cannot know
+it. See *Mount the root, not the leaf* below.
+
+### Mount above the leaf, but not above the instance
+
+**A bind mount resolves its source inode once, at container-create time.**
+
+Until LDM-#1944 each tree was mounted separately, at its leaf. Something
+deletes and recreates `routes/default/<projectName>` between the mount being
+established and Liferay publishing into it. The container keeps the orphaned
+inode and reads an empty directory for the rest of its life, while the live
+directory is populated beside it.
+
+Measured on a live deployment: the extension container held inode `2013443`
+while the live host directory was `2013444`, in the same capture where the
+mount still read as empty. Reproduced against plain Docker with no Liferay
+involved -- a leaf mount shows `(EMPTY)` after a host deltree and recreate; a
+parent mount survives it.
+
+Anchoring above it means the leaf is resolved **inside** the container, on
+every read, so it follows whatever the live directory is. This is why the
+Liferay container never had this bug: it has always mounted above the level
+that gets replaced.
+
+**Stop at `routes/default`, not `routes`.** `default` is the virtual-instance
+id, so mounting `routes` would expose every other virtual instance's trees --
+a separate decision, recorded in
+`test_refactor_regressions.py::test_it_is_the_instance_subtree_not_the_whole_routes_directory`
+before this change and deliberately kept. One level is enough: measured across
+four days on the deployment that reported this, `default/` and `default/dxp/`
+both persisted while `default/<projectName>/` was replaced.
+
+**The controlled comparison.** The same capture holds `routes/default/dxp/`
+(inode 2213516, directory mtime four days earlier) mounted into the same
+container at the same moment, reading correctly. Liferay does not recreate
+that one. Same host, same container-create moment, same mechanism -- the only
+variable is whether the directory is deleted and recreated after the mount is
+established.
+
+**Do not re-narrow this mount.** Anchoring at the instance tree means every
+extension in a project can read every other extension's OAuth2 credentials. That is a
+knowing trade, decided on LDM-#1944: LDM is for demos, testbeds and
+experimentation, never production. Narrowing the mount to restore isolation
+reintroduces the stale-inode bug. Isolation needs a mechanism that does not
+depend on a leaf bind mount surviving deletion -- a copy-on-publish, or a
+sidecar projecting only the relevant subtree.
 
 ### Two trees, not one
 
@@ -469,15 +526,32 @@ A real client extension declares **both** and reads **both**:
 ```
 
 `default/dxp` is what Liferay publishes about **itself** -- the main domain,
-which `lxcConfig.dxpMainDomain()` resolves. `default/<ext-id>` is what Liferay
+which `lxcConfig.dxpMainDomain()` resolves. `default/<projectName>` is what Liferay
 publishes about **that extension**, including the OAuth2 credentials generated
 when it registers the extension's application. LDM forwarded the second
 variable out of LCP.json and mounted nothing at it, so extensions were pointed
 at an empty path.
 
-**Derive the target, do not assume it.** LCP.json reaches the composer as
-`ext["env"]` (`ldm_core/workspace/metadata.py:135`), so an extension declaring
-a non-standard path is honoured; the constants are only a fallback.
+**LDM sets both variables, overriding LCP.json.** This is the one place where
+the extension's own declaration does not win, and the exception is deliberate:
+the declaration describes Liferay Cloud's layout, where those paths ARE the
+trees. Under the anchored mount nothing is mounted at them, so honouring the
+declaration points the extension at an empty path -- the exact failure
+LDM-#1944 removes. LCP.json still reaches the composer as `ext["env"]`
+(`ldm_core/workspace/metadata.py:135`) and still wins for every other
+variable.
+
+**The per-extension subtree is named from `projectName`, not the LCP.json
+id.** Liferay resolves the directory from the `ext.lxc.liferay.com/projectName`
+ConfigMap label and calls `Files.createDirectories` on it
+(`RoutesPortalK8sConfigMapModifier`); that label is fed from `projectName` in
+the extension's `<name>.client-extension-config.json`. The two differ for
+essentially every extension -- the id drops the hyphens the directory keeps
+(`ecopulseheadlessauth` against `ecopulse-headless-auth`) -- and all 16 samples
+in `ldm-cx-samples` differ. Using the id binds a directory Liferay never writes
+to, and it does not fail loudly: the extension reads a real, empty, readable
+directory while Liferay populates a different one beside it, which is why this
+was diagnosed as a permissions problem four times over (LDM-#1944).
 
 ### Deploying an extension is TWO things, with opposite timing
 
@@ -569,7 +643,12 @@ an unshared path.
   bind-mount source itself, as an empty root-owned directory. Subtrees are
   created from the generated compose (`_scaffold_routes_tree`) so a mount and
   its directory cannot drift, using local `paths` and never the remote-mapped
-  `mount_paths`.
+  `mount_paths`. Since LDM-#1944 that function derives directories from **two**
+  places: the volume sources, and any `LIFERAY_ROUTES_*` variable pointing
+  inside the anchored mount. The second exists because the anchored mount's
+  only source is `routes` itself, so the per-extension subtrees would otherwise
+  never be created -- and `config.node` treats a MISSING tree as a
+  configuration error rather than an empty one.
 - **A custom service is an arbitrary third-party image.** It gets the same
   shared space, but everything LDM adds is additive: a volume, variable,
   `extra_hosts` or `depends_on` the user declared always wins.
@@ -590,4 +669,4 @@ When LDM generates, deploys, or reasons about Client Extensions:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-24* | *Last Reviewed: 2026-09-24*
+*Last Updated: 2026-09-25* | *Last Reviewed: 2026-09-25*

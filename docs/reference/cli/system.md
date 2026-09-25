@@ -322,6 +322,32 @@ ldm config MY_VAR "value"       # Detected as 'set'
 ldm config MY_VAR --remove      # Detected as 'remove'
 ```
 
+### Credential-shaped values are hidden (`--reveal`)
+
+Values whose **key name** looks like a credential -- anything containing
+`password`, `secret`, `token`, `credential` or `private`, or a whole word of
+`key`, `pat`, `auth` or `pass` -- are not printed.
+
+```bash
+ldm config                      # gemini_api_key = [REDACTED]
+ldm config gemini_api_key       # refuses, exits non-zero
+ldm config gemini_api_key --reveal   # prints the value
+```
+
+The listing masks them. Reading one by name refuses and **exits non-zero**
+rather than printing nothing, so a script writing
+`TOKEN=$(ldm config gemini_api_key)` fails at that line instead of silently
+binding an empty string.
+
+`--reveal` is the opt-in, matching `ldm info --credentials --password-only`.
+The value goes to your terminal history and scrollback, and to anything
+capturing the session, so prefer reading `~/.ldmrc` directly when you only need
+to confirm a value is present.
+
+Key names are always shown; only values are hidden. The match errs toward
+hiding -- `tombstone_keep_credentials` is a boolean and is masked anyway,
+because showing a secret is worse than hiding a flag (LDM-#1970).
+
 ## `config defaults` (legacy: `defaults`)
 
 View or manage LDM's Cascading Configuration Defaults. This system resolves settings (like the default DB type, search mode, or host name) using a hierarchy: Convention -> Global -> User -> Project.
