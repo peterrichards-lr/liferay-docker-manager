@@ -3387,18 +3387,6 @@ rm -rf "cxsvc-build" "${CXSVC_NAME}.zip"
 # and Liferay may not populate. `migrate_layout` scaffolded routes/default/dxp
 # until it was accidentally unwired (LDM-#1917); the composer now derives the
 # whole set from the compose it just generated.
-echo ">> Verifying the routes tree is scaffolded on the host (LDM-#1928)..."
-ROUTES_OK=true
-for d in "routes/default/dxp" "routes/default/${CXSVC_NAME}"; do
-    if [ ! -d "$d" ]; then
-        echo "❌ ERROR: ${d} was not created, so Docker will auto-create it as an empty root-owned directory (LDM-#1928/#1917)." | tee -a "$RESULTS_FILE_TMP"
-        ROUTES_OK=false
-    fi
-done
-if [ "$ROUTES_OK" = true ]; then
-    report_ok "✅ Routes tree scaffolded on the host: routes/default/dxp and routes/default/${CXSVC_NAME} (LDM-#1928)."
-fi
-
 # LDM-#1928: a CUSTOM service is part of the project too, and had none of the
 # shared space -- no routes, no LXC variables, no route back to the host and
 # no wait for Liferay. Nothing in this suite exercised custom_containers at
@@ -3528,6 +3516,38 @@ shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])
 
 log_and_run "Deploying CX service" "$LDM_CMD" -y deploy . "${CXSVC_NAME}.zip"
 "$LDM_CMD" -y run . --no-up --no-seed >/dev/null 2>&1 || true
+
+# LDM-#1928/#1917: the host-side scaffold.
+#
+# Docker creates a missing bind-mount source itself, as an empty ROOT-OWNED
+# directory, so every subtree the compose mounts has to exist first.
+#
+# Placed AFTER the deploy and the compose regeneration above, which is the fix
+# for a real ordering bug: this check used to sit ~140 lines earlier, before
+# the fixture was even written. `routes/default/<ext>` is derived by
+# `_scaffold_routes_tree` from the compose it has just generated, so it cannot
+# exist until an extension is IN that compose. The assertion was therefore
+# failing on every run for a reason that had nothing to do with the behaviour
+# it was testing, and the suite was red for other reasons long enough that
+# nobody separated them.
+#
+# `routes/default/dxp` is different: since LDM-#1917 re-wired `migrate_layout`
+# it is created unconditionally on every run, extensions or not. Both are
+# asserted here so the two creators stay distinguishable -- if `dxp` ever goes
+# missing, that is the scaffold; if `<ext>` goes missing, that is the compose
+# derivation.
+echo ">> Verifying the routes tree is scaffolded on the host (LDM-#1928)..."
+ROUTES_OK=true
+for d in "routes/default/dxp" "routes/default/${CXSVC_NAME}"; do
+    if [ ! -d "$d" ]; then
+        echo "❌ ERROR: ${d} was not created, so Docker will auto-create it as an empty root-owned directory (LDM-#1928/#1917)." | tee -a "$RESULTS_FILE_TMP"
+        ROUTES_OK=false
+    fi
+done
+if [ "$ROUTES_OK" = true ]; then
+    report_ok "✅ Routes tree scaffolded on the host: routes/default/dxp and routes/default/${CXSVC_NAME} (LDM-#1928)."
+fi
+
 
 if ! "$VENV_PYTHON" - "$CXSVC_NAME" <<'CXSVC_PY'
 import sys, pathlib, yaml
