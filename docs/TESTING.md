@@ -674,6 +674,70 @@ Run the PowerShell E2E verification script (ensure your PowerShell ExecutionPoli
 powershell -ExecutionPolicy Bypass -File scripts/verify_e2e_refactor.ps1
 ```
 
+### **Running only part of the suite (`LDM_E2E_SECTIONS`)**
+
+The full run is long, and for years the only thing that started it was
+`release-e2e.yml` on `push: tags: ["v*"]` — that is, *after* a version number
+had already been burnt. Every client-extension and routes regression of the
+2.26 cycle (LDM-#1944, #1918, #1928, #1962, #1969) was therefore found by the
+suite meant to prevent it, one tag too late (LDM-#1975).
+
+Both halves of the script accept `LDM_E2E_SECTIONS`, a comma-separated list of
+named sections. It defaults to `all`, so an unset variable behaves exactly as
+before.
+
+| Section | What it covers |
+|---------|----------------|
+| `guardrails` | CLI refusals, compute targets, port-conflict diagnosis. No portal is booted for these. |
+| `boundary` | The portal's umask and the permissions of the config trees it publishes, plus the client-extension deploy, the services LDM generates for it, the routes tree it scaffolds, and the assertion that Liferay's own routes directories are the ones LDM mounted (LDM-#1944/#1918/#1928/#1923/#1573). |
+| `project` | The remaining assertions against the booted portal — hot deploy, snapshots, JSON schemas, exit codes, the reported access URL. |
+| `extras` | Portal patch overlay, non-ASCII naming, shared database and shared search. Each of these boots or rebuilds another stack. |
+
+```bash
+LDM_E2E_SECTIONS=boundary bash scripts/verify_e2e_refactor.sh
+```
+
+```powershell
+$env:LDM_E2E_SECTIONS = "boundary"
+powershell -ExecutionPolicy Bypass -File scripts/verify_e2e_refactor.ps1
+```
+
+Everything **outside** a section always runs, because every section needs it:
+the environment prep, the image pull, `infra setup`, provisioning and booting
+the test project, the teardown and the report. A slice is therefore not
+proportional to the checks it keeps — the Liferay boot is a floor no selection
+can get under. Measured against run `35862407660`, the last green full run
+before this was added:
+
+| Phase | Duration | In a `boundary` slice |
+|-------|----------|-----------------------|
+| Prelude (venv, image pull, `infra setup`) | 1m58s | runs |
+| `guardrails` | 2m54s | skipped |
+| Provision + Liferay health wait | 1m39s | runs |
+| `project` | 3m17s | skipped |
+| `boundary` | 53s | **runs** |
+| `extras` | 11m34s | skipped |
+| Final status + teardown | 5s | runs |
+| **Total** | **22m20s** | **~4m35s**, plus up to 180s for the LDM-#1944 routes-pairing wait added after that run |
+
+Two honesty guards come with it, and neither is optional:
+
+* An unknown section name is **refused**, not treated as "matches nothing". A
+  typo that silently verified nothing would be the LDM-#1611 failure mode
+  exactly — a green run that checked nothing.
+* A partial run writes `Sections: … (PARTIAL RUN — not a full verification)`
+  into the report header, ends with `E2E SECTIONS PASSED` rather than
+  `ALL E2E VERIFICATIONS PASSED`, and is **not** copied into
+  `references/verification-results/`. That directory is what
+  `scripts/sync_compatibility.py` builds the compatibility matrix from, and a
+  slice must never enter it looking like a full run.
+
+`.github/workflows/pr-boundary-e2e.yml` runs `LDM_E2E_SECTIONS=boundary` on
+every pull request to `master` that touches `ldm_core/handlers/composer.py`,
+`ldm_core/workspace/**`, `ldm_core/pipelines/**` or the suite itself. That is
+the whole point of the mechanism: boundary regressions are now discovered
+before the tag instead of after it.
+
 ### **Declaring which environment a run represents**
 
 `scripts/sync_compatibility.py` builds the compatibility matrix from the
@@ -993,4 +1057,4 @@ table above as the CI budget** — the workflow prints its own timings from
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-20* | *Last Reviewed: 2026-09-20*
+*Last Updated: 2026-09-25* | *Last Reviewed: 2026-09-25*
