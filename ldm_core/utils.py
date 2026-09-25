@@ -893,6 +893,52 @@ def _blacklist_pattern_matches(key, pattern):
     return key == pattern
 
 
+def is_credential_shaped(key):
+    """True when a config key's NAME says it holds a credential.
+
+    LDM-#1970. Masking is decided from the key, never from the rendered text.
+    Two reasons that matters:
+
+    * `ldm config <key>` prints the value alone -- there is no key name in the
+      output for a regex to match against, so a post-hoc scrub cannot work.
+    * `UI.redact` requires `KEY=value` with no spaces. The config listing
+      prints `key = value`, and stored config is JSON (`"key": "value"`), so
+      neither form matches it. See LDM-#1974 for the same weakness in the
+      debug bundle.
+
+    Deliberately NOT `is_env_var_blacklisted`, despite the similar shape. That
+    answers "may this environment variable be forwarded into a container",
+    which is a different question, and its patterns are `_`-suffix-shaped and
+    case-sensitive: `ngrok_authtoken` -- a real stored secret -- matches none
+    of them even uppercased, because there is no underscore before `TOKEN`.
+
+    The key is TOKENISED rather than substring-matched. A bare
+    `key.endswith("key")` masks `monkey`, `donkey` and `turkey`, and
+    `"key" in key` also masks `keystore_path` -- measured, not hypothetical.
+    Splitting on the separators config keys actually use avoids both while
+    still catching `gemini_api_key` and `github_pat`.
+
+    Errs toward masking: `tombstone_keep_credentials` is a boolean flag and is
+    masked anyway. Hiding a non-secret is a cosmetic annoyance; printing a
+    secret is not.
+    """
+    if not key:
+        return False
+
+    tokens = [t for t in re.split(r"[^a-z0-9]+", str(key).lower()) if t]
+
+    # Matched anywhere WITHIN a token, because these compound without a
+    # separator: `authtoken`, `apisecret`, `dbpassword`.
+    embedded = ("password", "passwd", "secret", "token", "credential", "private")
+    # Matched as a WHOLE token only -- too short or too common otherwise.
+    whole = {"key", "keys", "pat", "apikey", "auth", "pass"}
+
+    return any(
+        any(marker in token for marker in embedded) or token in whole
+        for token in tokens
+    )
+
+
 def is_env_var_blacklisted(key, blacklist):
     """Checks if an environment variable key matches any pattern in the blacklist.
 

@@ -2243,6 +2243,15 @@ def get_parser():  # noqa: PLR0915
         parents=[base_sub_parent],
         help="Manage cascading project and global configuration",
     )
+    # LDM-#1970: credential-shaped values are hidden by default. `ldm config
+    # get <key>` is a documented scripting mechanism, so masking it outright
+    # would break working scripts -- this is the explicit opt-in, following the
+    # precedent of `ldm info --credentials --password-only`.
+    config_parser.add_argument(
+        "--reveal",
+        action="store_true",
+        help="Print a credential-shaped config value instead of hiding it",
+    )
     config_subparsers = config_parser.add_subparsers(dest="subcommand")
 
     cfg_get = config_subparsers.add_parser(
@@ -2251,6 +2260,11 @@ def get_parser():  # noqa: PLR0915
         help="Show one or all generic project config values",
     )
     cfg_get.add_argument("key", nargs="?")
+    cfg_get.add_argument(
+        "--reveal",
+        action="store_true",
+        help="Print a credential-shaped config value instead of hiding it",
+    )
 
     cfg_set = config_subparsers.add_parser(
         "set",
@@ -3050,16 +3064,23 @@ def _check_root_safety(args):
                     or allow_root_file.exists()
                 )
                 if not allow_root:
+                    # LDM-#1971: these were `UI.detail`, which prints nothing
+                    # unless --info/--verbose. The user saw "Security Risk"
+                    # and an exit, with the explanation, the docs link and the
+                    # actual fix all suppressed -- on a check that runs on
+                    # EVERY invocation, so it is the first thing a new Linux
+                    # user hits. They cannot re-run with --verbose to recover
+                    # it either, because the process is ending.
                     UI.error("Security Risk: Do not run LDM with 'sudo'.")
-                    UI.detail(
+                    UI.info(
                         "Running as root causes cache ownership issues in your home directory (~/.shiv).\n"
                         "LDM will prompt for your password only when elevated privileges are needed (e.g. hosts file updates)."
                     )
-                    UI.detail(
+                    UI.info(
                         f"\nSee troubleshooting: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/tutorials/quick_start.md#troubleshooting-sudo--root-issues{UI.COLOR_OFF}"
                     )
                     if platform.system().lower() == "linux":
-                        UI.detail(
+                        UI.info(
                             f"\nIf you are using sudo because of Docker permissions, please run:\n"
                             f"{UI.CYAN}sudo usermod -aG docker $USER{UI.COLOR_OFF} and restart your terminal session."
                         )

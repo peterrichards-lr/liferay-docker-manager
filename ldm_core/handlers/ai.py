@@ -22,7 +22,10 @@ class AiService(BaseHandler):
         gemini_val = config.get(cfg_key)
         if not gemini_val:
             UI.info("To use 'ldm ai', you need a free Google Gemini API Key.")
-            UI.detail(
+            # LDM-#1971: this URL is the one thing a user without a key needs,
+            # and it was suppressed immediately before the prompt that demands
+            # one -- after which `UI.die` ends the run.
+            UI.info(
                 f"Get one here: {UI.CYAN}https://aistudio.google.com/app/apikey{UI.COLOR_OFF}"
             )
             gemini_val = UI.ask("Enter your Gemini API Key")
