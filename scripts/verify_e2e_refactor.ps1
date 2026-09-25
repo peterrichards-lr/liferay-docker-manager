@@ -3339,9 +3339,19 @@ if svc is None:
 
 fails = []
 vols = svc.get("volumes") or []
-if not [v for v in vols if ":/etc/liferay/lxc/dxp-metadata" in v]:
-    fails.append("DXP metadata not mounted at /etc/liferay/lxc/dxp-metadata, "
-                 "the path the extension's image declares: %s" % vols)
+# LDM-#1944: ONE mount, at the virtual-instance tree. Both config trees are
+# addressed as subdirectories of it, through the variables the extension reads.
+# The leaf mounts this replaced were at the RIGHT paths and still failed: a
+# bind mount resolves its source inode once, at container-create time, and
+# Liferay deletes and recreates routes/default/<projectName> after that.
+anchor_mounts = [v for v in vols if v.endswith(":/etc/liferay/lxc/routes")]
+if not anchor_mounts:
+    fails.append("the routes tree is not mounted at /etc/liferay/lxc/routes, "
+                 "so neither config tree resolves (LDM-#1944): %s" % vols)
+elif not [v for v in anchor_mounts if v.split(":")[0].endswith("/routes/default")]:
+    fails.append("the anchored mount is not routes/default. A leaf goes stale "
+                 "when Liferay recreates it (LDM-#1944), and `routes` itself "
+                 "would expose every other virtual instance: %s" % anchor_mounts)
 if [v for v in vols if v.endswith(":/opt/liferay/routes") or ":/opt/liferay/routes:" in v]:
     fails.append("mounted over /opt/liferay/routes, which for a node-runner "
                  "extension is the application's own code -- the container "
@@ -3360,17 +3370,36 @@ if not svc.get("extra_hosts"):
 if not [e for e in env if e.startswith("LIFERAY_LXC_DXP_DOMAINS=")]:
     fails.append("LIFERAY_LXC_DXP_DOMAINS absent: %s" % env)
 
-# LDM-#1928: the extension's OWN config tree. A real extension declares BOTH
-# in its LCP.json and reads both. LDM forwarded LIFERAY_ROUTES_CLIENT_EXTENSION
-# out of LCP.json and mounted nothing at it, so generated OAuth2 credentials
-# could never reach the extension.
-ext_mounts = [v for v in vols if ":/etc/liferay/lxc/ext-init-metadata" in v]
-if not ext_mounts:
-    fails.append("the extension's own config tree is not mounted at "
-                 "/etc/liferay/lxc/ext-init-metadata (LDM-#1928): %s" % vols)
-elif not [v for v in ext_mounts if "/routes/default/%s:" % name in v]:
-    fails.append("the ext-init mount is not this extension's own subtree "
-                 "(routes/default/%s): %s" % (name, ext_mounts))
+# LDM-#1928: the extension needs BOTH config trees, and LDM forwarded
+# LIFERAY_ROUTES_CLIENT_EXTENSION out of LCP.json while mounting nothing at it,
+# so generated OAuth2 credentials could never reach the extension.
+#
+# LDM-#1944 changed where the answer lives: LDM now SETS both variables, to
+# paths inside the single anchored mount, overriding the declaration. So the
+# pairing is checked between the variables and the mount.
+anchor_target = "/etc/liferay/lxc/routes"
+declared = {}
+for entry in env:
+    key, _, value = str(entry).partition("=")
+    if key in ("LIFERAY_ROUTES_DXP", "LIFERAY_ROUTES_CLIENT_EXTENSION"):
+        declared[key] = value
+
+for var in ("LIFERAY_ROUTES_DXP", "LIFERAY_ROUTES_CLIENT_EXTENSION"):
+    value = declared.get(var)
+    if not value:
+        fails.append("%s is not set, so the extension cannot resolve that "
+                     "config tree (LDM-#1944): %s" % (var, env))
+    elif not value.startswith(anchor_target + "/"):
+        fails.append("%s=%s is outside the mounted tree at %s (LDM-#1944)"
+                     % (var, value, anchor_target))
+
+ext_value = declared.get("LIFERAY_ROUTES_CLIENT_EXTENSION", "")
+if ext_value and not ext_value.endswith("/%s" % name):
+    fails.append("LIFERAY_ROUTES_CLIENT_EXTENSION=%s is not this extension's "
+                 "own subtree (expected to end /%s)" % (ext_value, name))
+if declared.get("LIFERAY_ROUTES_DXP", "").endswith("/%s" % name):
+    fails.append("LIFERAY_ROUTES_DXP points at the per-extension tree rather "
+                 "than the shared dxp one: %s" % declared)
 
 deps = svc.get("depends_on") or {}
 dep_names = deps if isinstance(deps, (list, tuple)) else list(deps)
@@ -3430,7 +3459,7 @@ sys.exit(1 if fails else 0)
     if ($cxSvcShadowed) {
         throw "The extension's own code at /opt/liferay/routes is not visible inside its container -- an LDM mount is shadowing the application (LDM-#1911)."
     }
-    Write-Verdict "[SUCCESS] Client-extension service: DXP metadata at /etc/liferay/lxc/dxp-metadata (not over the app), domain supplied, host resolvable, and the extension's own /opt/liferay/routes code still visible inside the running container (LDM-#1911/#1918)."
+    Write-Verdict "[SUCCESS] Client-extension service: routes anchored at /etc/liferay/lxc/routes with both trees addressed inside it (not over the app), domain supplied, host resolvable, and the extension's own /opt/liferay/routes code still visible inside the running container (LDM-#1911/#1918/#1944)."
     Remove-Item -Recurse -Force "cxsvc-build", "$cxSvcName.zip", "cxsvc-check.py" -ErrorAction SilentlyContinue
 
     # LDM-#1944: the pairing -- does the directory Liferay CREATES match the
@@ -3515,9 +3544,8 @@ print('\n'.join(sorted(names)))
     # Compose generation only: no build and no run. The derivation is a
     # compose-level fact, and the runtime half is already covered above.
     #
-    # Parity with the LDM-#1928/#1923 derivation block in
-    # verify_e2e_refactor.sh.
-    Write-Host ">> Verifying the routes mounts are DERIVED from LCP.json (LDM-#1928/#1923)..."
+    # Parity with the LDM-#1944 override block in verify_e2e_refactor.sh.
+    Write-Host ">> Verifying LDM OVERRIDES the routes paths an extension declares (LDM-#1944)..."
     $cxDerivName = "derived-svc"
     # LDM-#1944: a real extension carries TWO identifiers and they differ --
     # the LCP.json id drops the hyphens the directory keeps. Liferay names the
@@ -3593,94 +3621,76 @@ if svc is None:
 
 fails = []
 vols = svc.get("volumes") or []
+env = svc.get("environment") or []
+ANCHOR = "/etc/liferay/lxc/routes"
 
-# The DXP tree at the declared path, not the constant.
-if not [v for v in vols if v.endswith(":" + dxp_target)]:
-    fails.append("LIFERAY_ROUTES_DXP was declared as %s in LCP.json and the "
-                 "DXP tree is not mounted there: %s" % (dxp_target, vols))
-# The per-extension tree at the declared path, and still this extension's own
-# subtree on the host side.
-ext_mounts = [v for v in vols if v.endswith(":" + ext_target)]
-if not ext_mounts:
-    fails.append("LIFERAY_ROUTES_CLIENT_EXTENSION was declared as %s in "
-                 "LCP.json and nothing is mounted there, so the extension "
-                 "reads an empty path and generated OAuth2 credentials never "
-                 "reach it: %s" % (ext_target, vols))
-elif not [v for v in ext_mounts if "/routes/default/%s:" % project_name in v]:
-    fails.append("the derived ext mount is not routes/default/%s (the "
-                 "projectName Liferay publishes under): %s"
-                 % (project_name, ext_mounts))
-elif [v for v in ext_mounts if "/routes/default/%s:" % name in v]:
-    fails.append("the ext mount used the LCP.json id %r instead of the "
-                 "projectName %r -- that directory is one Liferay never "
-                 "writes to (LDM-#1944): %s" % (name, project_name, ext_mounts))
+# LDM-#1944 INVERTED what this fixture was written to prove.
+#
+# It declares non-standard paths in its LCP.json, and used to assert LDM
+# mounted the trees THERE -- LDM-#1923 option 4, "the declaration wins". That
+# was right while each tree was mounted at its own leaf, and is wrong now: a
+# leaf bind mount resolves its source inode once, at container-create time,
+# and Liferay recreates routes/default/<projectName> after that. LDM owns the
+# layout, so honouring a declared path points the extension at nothing.
+#
+# Still the sharpest test here: the only extension in this suite that declares
+# anything at all, so a version that quietly resumed honouring the declaration
+# would pass every other assertion.
+declared = {}
+for entry in env:
+    key, _, value = str(entry).partition("=")
+    if key in ("LIFERAY_ROUTES_DXP", "LIFERAY_ROUTES_CLIENT_EXTENSION"):
+        declared[key] = value
 
-# The negative half, and the point of the whole fixture: falling back to the
-# constants while an explicit declaration exists is the bug this catches.
+for target in (dxp_target, ext_target):
+    if [v for v in vols if v.endswith(":" + target)]:
+        fails.append("mounted at the LCP.json-declared path %s. Since "
+                     "LDM-#1944 the mount is anchored at %s and LDM sets the "
+                     "variables instead: %s" % (target, ANCHOR, vols))
+
 for constant in ("/etc/liferay/lxc/dxp-metadata", "/etc/liferay/lxc/ext-init-metadata"):
     if [v for v in vols if v.endswith(":" + constant)]:
-        fails.append("mounted at the CONSTANT %s although LCP.json declares "
-                     "its own path -- the declaration was ignored and the "
-                     "derivation is dead code (LDM-#1928/#1923): %s"
-                     % (constant, vols))
+        fails.append("mounted at the old constant %s, which nothing addresses "
+                     "any more (LDM-#1944): %s" % (constant, vols))
 
-for f in fails:
-    print("ERROR: " + f)
-sys.exit(1 if fails else 0)
-'@ | Out-File -FilePath "cxderiv-check.py" -Encoding ascii
-    & $VENV_PYTHON "cxderiv-check.py" $cxDerivId $cxDerivDxp $cxDerivExt $cxDerivName
-    if ($LASTEXITCODE -ne 0) {
-        throw "The routes mounts ignore the extension's own LCP.json declaration (LDM-#1928/#1923)."
-    }
-    Write-Verdict "[SUCCESS] Routes mounts follow the extension's own LCP.json ($cxDerivDxp, $cxDerivExt), not the built-in constants (LDM-#1928/#1923)."
-    Remove-Item -Recurse -Force "cxderiv-build", "$cxDerivName.zip", "cxderiv-check.py" -ErrorAction SilentlyContinue
+anchor_mounts = [v for v in vols if v.endswith(":" + ANCHOR)]
+if not anchor_mounts:
+    fails.append("no mount at %s, so neither config tree resolves "
+                 "(LDM-#1944): %s" % (ANCHOR, vols))
+elif not [v for v in anchor_mounts if v.split(":")[0].endswith("/routes/default")]:
+    fails.append("the anchored mount is not routes/default -- a leaf goes "
+                 "stale, and `routes` itself would expose every other virtual "
+                 "instance: %s" % anchor_mounts)
 
-    # LDM-#1928: a CUSTOM service is part of the project too. Nothing in this
-    # suite exercised custom_containers at all, so the branch shipped unverified.
-    Write-Host ">> Verifying a custom service joins the shared config space (LDM-#1928)..."
-    @'
-import json
-import pathlib
+for var, was in (
+    ("LIFERAY_ROUTES_DXP", dxp_target),
+    ("LIFERAY_ROUTES_CLIENT_EXTENSION", ext_target),
+):
+    value = declared.get(var)
+    if not value:
+        fails.append("%s is not set: %s" % (var, env))
+    elif value == was:
+        fails.append("%s is still the LCP.json-declared %s. LDM must override "
+                     "it, because nothing is mounted there (LDM-#1944)."
+                     % (var, was))
+    elif not value.startswith(ANCHOR + "/"):
+        fails.append("%s=%s is outside the anchored mount at %s (LDM-#1944)"
+                     % (var, value, ANCHOR))
 
-meta_path = pathlib.Path("meta")
-meta = json.loads(meta_path.read_text())
-meta["custom_containers"] = [
-    {"service_name": "synthetic-custom", "image": "alpine:latest"}
-]
-meta_path.write_text(json.dumps(meta))
-'@ | Out-File -FilePath "custom-meta.py" -Encoding ascii
-    & $VENV_PYTHON "custom-meta.py"
-    & $LDM_CMD -y run . --no-up --no-seed 2>&1 | Out-Null
-
-    @'
-import pathlib
-import sys
-
-import yaml
-
-compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text())
-services = compose.get("services") or {}
-svc = next((v for k, v in services.items() if k.endswith("synthetic-custom")), None)
-if svc is None:
-    print("ERROR: no compose service for the custom container.")
-    sys.exit(1)
-
-fails = []
-vols = svc.get("volumes") or []
-if not [v for v in vols if ":/etc/liferay/lxc/dxp-metadata" in v]:
-    fails.append("a custom service gets no routes mount: %s" % vols)
-
-env = svc.get("environment") or []
-if not [e for e in env if e.startswith("LIFERAY_LXC_DXP_MAIN_DOMAIN=")]:
-    fails.append("LIFERAY_LXC_DXP_MAIN_DOMAIN absent from a custom service: %s" % env)
-
-if not svc.get("extra_hosts"):
-    fails.append("extra_hosts absent from a custom service")
-
-deps = svc.get("depends_on") or {}
-if not [d for d in (deps if isinstance(deps, (list, tuple)) else list(deps))
-        if "liferay" in str(d)]:
-    fails.append("a custom service does not wait for Liferay: %s" % deps)
+# LDM-#1944's first half, unchanged: the subtree is named from projectName,
+# NOT the LCP.json id. Using the id names a directory Liferay never writes to,
+# and it does not fail loudly.
+ext_value = declared.get("LIFERAY_ROUTES_CLIENT_EXTENSION", "")
+if ext_value.startswith(ANCHOR + "/"):
+    leaf = ext_value[len(ANCHOR) + 1 :].strip("/")
+    if leaf == name:
+        fails.append("LIFERAY_ROUTES_CLIENT_EXTENSION uses the LCP.json id %r "
+                     "instead of the projectName %r (LDM-#1944)"
+                     % (name, project_name))
+    elif leaf != project_name:
+        fails.append("LIFERAY_ROUTES_CLIENT_EXTENSION points at %r, but "
+                     "Liferay publishes under the projectName %r (LDM-#1944)"
+                     % (leaf, project_name))
 
 for f in fails:
     print("ERROR: %s" % f)

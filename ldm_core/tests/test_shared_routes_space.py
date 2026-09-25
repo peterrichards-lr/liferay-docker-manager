@@ -32,6 +32,8 @@ from ldm_core.handlers.composer import ComposerService
 
 DXP = "/etc/liferay/lxc/dxp-metadata"
 EXT_INIT = "/etc/liferay/lxc/ext-init-metadata"
+# LDM-#1944: the single anchored mount that replaced the two leaves above.
+ROUTES_MOUNT = "/etc/liferay/lxc/routes"
 
 
 def _composer():
@@ -51,29 +53,87 @@ def _source_for(mounts, target):
 
 
 class TestAClientExtensionSeesBothConfigTrees:
-    def test_both_trees_are_mounted(self):
+    """LDM-#1928 established that an extension needs both trees.
+
+    LDM-#1944 changed HOW it gets them: one mount at the routes root, with the
+    two trees addressed as subdirectories via the variables the extension
+    already reads. The requirement is unchanged; the mechanism is not.
+    """
+
+    def _env(self, ext, ext_id="ms1"):
+        return dict(
+            e.split("=", 1) for e in _composer()._extension_routes_env(ext, ext_id)
+        )
+
+    def test_both_trees_are_reachable(self):
+        """The LDM-#1928 requirement, restated against the new mechanism."""
+        env = self._env({"id": "ms1"})
+        assert set(env) == {"LIFERAY_ROUTES_DXP", "LIFERAY_ROUTES_CLIENT_EXTENSION"}, (
+            "an extension reads both config trees; pointing it at only the "
+            "DXP one leaves LIFERAY_ROUTES_CLIENT_EXTENSION at nothing "
+            "(LDM-#1928)"
+        )
+        for value in env.values():
+            assert value.startswith(ROUTES_MOUNT + "/"), (
+                f"{value} is outside the single mounted tree, so nothing is "
+                f"mounted at it (LDM-#1944)"
+            )
+
+    def test_the_mount_is_the_instance_tree_not_a_leaf(self):
+        """The LDM-#1944 fix itself.
+
+        A leaf bind mount resolves its source inode once, at container-create
+        time, and cannot survive that directory being deleted and recreated --
+        which something does between the mount being established and Liferay
+        publishing. Measured: the extension held inode 2013443 while the live
+        directory was 2013444.
+        """
         mp = _mount_paths()
         mounts = _composer()._extension_routes_mounts({"id": "ms1"}, "ms1", mp)
-        assert _targets(mounts) == {DXP, EXT_INIT}, (
-            "an extension reads both config trees; mounting only the DXP one "
-            "points LIFERAY_ROUTES_CLIENT_EXTENSION at nothing (LDM-#1928)"
+        assert len(mounts) == 1, f"expected one anchored mount, got {mounts}"
+        source, target = mounts[0].split(":")
+        assert target == ROUTES_MOUNT
+        assert source.endswith("/routes/default"), (
+            f"mounted at {source}. It must be the virtual-instance directory: "
+            f"a leaf mount goes stale when its directory is replaced "
+            f"(LDM-#1944), and `routes` itself would expose every other "
+            f"virtual instance's trees."
         )
 
     def test_the_extension_tree_is_its_own_subdirectory(self):
         """Per-extension, because Liferay publishes per-extension config."""
-        mp = _mount_paths()
-        mounts = _composer()._extension_routes_mounts({"id": "ms1"}, "ms1", mp)
-        source = _source_for(mounts, EXT_INIT)
-        assert source.endswith("/routes/default/ms1"), source
+        env = self._env({"id": "ms1"})
+        assert env["LIFERAY_ROUTES_CLIENT_EXTENSION"] == f"{ROUTES_MOUNT}/ms1"
+
+    def test_the_subtree_is_named_from_the_project_name_not_the_id(self):
+        """LDM-#1944's first half, which the anchoring did not replace.
+
+        Liferay derives the directory from the `ext.lxc.liferay.com/projectName`
+        ConfigMap label, not the LCP.json id. All 16 samples in
+        `ldm-cx-samples` have ids that differ from their projectName.
+        """
+        env = self._env(
+            {"id": "ecopulseheadlessauth", "project_name": "ecopulse-headless-auth"}
+        )
+        assert (
+            env["LIFERAY_ROUTES_CLIENT_EXTENSION"]
+            == f"{ROUTES_MOUNT}/ecopulse-headless-auth"
+        ), env
+
+    def test_the_id_remains_the_fallback(self):
+        """An extension whose config carries no projectName is no worse off."""
+        env = self._env({"id": "ms1", "project_name": None})
+        assert env["LIFERAY_ROUTES_CLIENT_EXTENSION"] == f"{ROUTES_MOUNT}/ms1"
 
     def test_the_dxp_tree_is_shared_not_per_extension(self):
-        """DXP metadata describes Liferay itself, so every extension sees the
-        same directory -- the one Liferay writes."""
-        mp = _mount_paths()
-        a = _composer()._extension_routes_mounts({"id": "a"}, "a", mp)
-        b = _composer()._extension_routes_mounts({"id": "b"}, "b", mp)
-        assert _source_for(a, DXP) == _source_for(b, DXP)
-        assert _source_for(a, EXT_INIT) != _source_for(b, EXT_INIT)
+        """DXP metadata describes Liferay itself, so every extension resolves
+        the same directory -- the one Liferay writes."""
+        a = self._env({"id": "a"}, "a")
+        b = self._env({"id": "b"}, "b")
+        assert a["LIFERAY_ROUTES_DXP"] == b["LIFERAY_ROUTES_DXP"]
+        assert (
+            a["LIFERAY_ROUTES_CLIENT_EXTENSION"] != b["LIFERAY_ROUTES_CLIENT_EXTENSION"]
+        )
 
     def test_neither_tree_is_mounted_over_the_application(self):
         """LDM-#1911: /opt/liferay/routes in an extension container is the
@@ -85,12 +145,14 @@ class TestAClientExtensionSeesBothConfigTrees:
                 f"mounted at {target}, which shadows the extension's own code"
             )
 
-    def test_the_extensions_own_declaration_wins(self):
-        """Derived from LCP.json, which LDM already parses into ext['env'] --
-        so a non-standard path is honoured rather than overridden. This is what
-        LDM-#1923 wanted; it is infeasible from the built image, not from here.
+    def test_ldm_overrides_the_extensions_own_declaration(self):
+        """The deliberate inversion of LDM-#1923 option 4.
+
+        Honouring the declaration was right while the mount was a leaf. Under
+        the anchored mount it points the extension at a path nothing is
+        mounted at, which is the failure LDM-#1944 exists to remove -- LDM owns
+        the layout and the extension cannot know it.
         """
-        mp = _mount_paths()
         ext = {
             "id": "ms1",
             "env": {
@@ -98,13 +160,9 @@ class TestAClientExtensionSeesBothConfigTrees:
                 "LIFERAY_ROUTES_CLIENT_EXTENSION": "/custom/ext",
             },
         }
-        mounts = _composer()._extension_routes_mounts(ext, "ms1", mp)
-        assert _targets(mounts) == {"/custom/dxp", "/custom/ext"}, mounts
-
-    def test_the_constants_are_only_a_fallback(self):
-        mp = _mount_paths()
-        mounts = _composer()._extension_routes_mounts({"id": "ms1"}, "ms1", mp)
-        assert _targets(mounts) == {DXP, EXT_INIT}
+        env = self._env(ext)
+        assert env["LIFERAY_ROUTES_DXP"] == f"{ROUTES_MOUNT}/dxp"
+        assert env["LIFERAY_ROUTES_CLIENT_EXTENSION"] == f"{ROUTES_MOUNT}/ms1"
 
 
 class TestACustomServiceGetsTheSameSharedSpace:
@@ -210,6 +268,53 @@ class TestTheRoutesTreeIsScaffoldedOnTheHost:
             self._svc(root, "dxp"), {"root": root}, {"root": Path("/remote/elsewhere")}
         )
         assert not (root / "routes").exists()
+
+    def test_it_creates_the_subtrees_the_anchored_mount_hides(self):
+        """LDM-#1944: the anchored mount's only source is `routes/default`.
+
+        The volume-derived loop therefore never reaches the per-extension
+        subtrees, and they still have to exist -- an extension starting before
+        Liferay has published reads the tree immediately, and `config.node`
+        treats a MISSING tree as a configuration error rather than an empty
+        one. Before anchoring they existed because they WERE the mount sources.
+        """
+        root = Path(tempfile.mkdtemp())
+        mp = {"root": root}
+        routes = ComposerService.routes_root(mp).as_posix()
+        services = {
+            "ext": {
+                "volumes": [f"{routes}/default:{ROUTES_MOUNT}"],
+                "environment": [
+                    f"LIFERAY_ROUTES_DXP={ROUTES_MOUNT}/dxp",
+                    f"LIFERAY_ROUTES_CLIENT_EXTENSION={ROUTES_MOUNT}/my-ext",
+                ],
+            }
+        }
+        _composer()._scaffold_routes_tree(services, mp, mp)
+        for sub in ("dxp", "my-ext"):
+            assert (root / "routes" / "default" / sub).is_dir(), (
+                f"routes/default/{sub} was not created. The anchored mount "
+                f"hides it from the volume-derived loop, so it must be "
+                f"derived from the environment instead (LDM-#1944)"
+            )
+
+    def test_it_ignores_a_routes_variable_pointing_outside_the_mount(self):
+        """Not a general mkdir: only paths inside the anchor are ours."""
+        root = Path(tempfile.mkdtemp())
+        mp = {"root": root}
+        routes = ComposerService.routes_root(mp).as_posix()
+        _composer()._scaffold_routes_tree(
+            {
+                "ext": {
+                    "volumes": [f"{routes}/default:{ROUTES_MOUNT}"],
+                    "environment": ["LIFERAY_ROUTES_DXP=/somewhere/else"],
+                }
+            },
+            mp,
+            mp,
+        )
+        assert not (root / "routes" / "somewhere").exists()
+        assert not Path("/somewhere/else").exists()
 
     def test_it_does_not_create_directories_for_unrelated_mounts(self):
         """Only sources under the routes root -- it is not a general mkdir."""

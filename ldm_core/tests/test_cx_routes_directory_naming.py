@@ -45,13 +45,24 @@ def _config(**overrides):
     return json.dumps({CONFIG_KEY: body})
 
 
-def _ext_subtree(ext):
-    """The host directory the extension's config-tree mount binds."""
-    mounts = ComposerService(MagicMock())._extension_routes_mounts(
-        ext, ext.get("id"), {"root": Path("/proj")}
+def _routes_env(ext):
+    """What the extension is told, as a dict.
+
+    LDM-#1944 anchored the mount at the routes root, so the per-extension
+    directory is no longer a mount SOURCE -- it is a path inside the single
+    mount, carried by `LIFERAY_ROUTES_CLIENT_EXTENSION`. The naming question
+    this module exists for is unchanged; only where the answer appears moved.
+    """
+    return dict(
+        e.split("=", 1)
+        for e in ComposerService(MagicMock())._extension_routes_env(ext, ext.get("id"))
     )
-    ext_mounts = [m for m in mounts if "dxp-metadata" not in m.split(":")[1]]
-    return ext_mounts[0].split(":")[0].rsplit("/", 1)[-1] if ext_mounts else None
+
+
+def _ext_subtree(ext):
+    """The last path segment of the extension's own config tree."""
+    value = _routes_env(ext).get("LIFERAY_ROUTES_CLIENT_EXTENSION")
+    return value.rsplit("/", 1)[-1] if value else None
 
 
 class TestTheProjectNameIsParsed(unittest.TestCase):
@@ -101,14 +112,27 @@ class TestTheMountUsesTheProjectName(unittest.TestCase):
     def test_the_dxp_subtree_is_unaffected(self):
         """Only the per-extension tree is named this way. `dxp` is shared and
         literal."""
+        env = _routes_env({"id": DECLARED_ID, "project_name": PROJECT_NAME, "env": {}})
+        self.assertTrue(env["LIFERAY_ROUTES_DXP"].endswith("/routes/dxp"), env)
+
+    def test_the_single_mount_is_the_instance_tree(self):
+        """LDM-#1944's second half, asserted here because this module is where
+        someone changing the naming will look.
+
+        The per-extension directory must NOT be a mount source. A leaf bind
+        mount resolves its inode once, at container-create time, and goes stale
+        when that directory is deleted and recreated -- which is what happens
+        between the mount being established and Liferay publishing.
+        """
         mounts = ComposerService(MagicMock())._extension_routes_mounts(
             {"id": DECLARED_ID, "project_name": PROJECT_NAME, "env": {}},
             DECLARED_ID,
             {"root": Path("/proj")},
         )
-        self.assertTrue(
-            [m for m in mounts if m.split(":")[0].endswith("/routes/default/dxp")]
-        )
+        self.assertEqual(1, len(mounts), mounts)
+        source = mounts[0].split(":")[0]
+        self.assertTrue(source.endswith("/routes/default"), source)
+        self.assertNotIn(PROJECT_NAME, source, f"{source} is a leaf mount (LDM-#1944)")
 
 
 class TestTheTwoIdentifiersAreNotInterchangeable(unittest.TestCase):

@@ -2187,6 +2187,42 @@ class ComposerService:
     # half was ever mounted.
     LXC_EXT_INIT_METADATA_MOUNT = "/etc/liferay/lxc/ext-init-metadata"
 
+    # LDM-#1944: the project's virtual-instance tree, mounted at ONE path,
+    # with the two trees above addressed as subdirectories of it.
+    #
+    # The two constants above are leaf mounts, and a leaf bind mount resolves
+    # its source inode ONCE, at container-create time. When the host directory
+    # is deleted and recreated -- which something does, between the mount being
+    # established and Liferay publishing -- the container keeps the orphaned
+    # inode and reads an empty directory forever, while the live one is
+    # populated beside it. Measured on AICA's deployment: the extension held
+    # inode 2013443 while the live directory was 2013444, and reproduced
+    # against plain Docker with no Liferay involved.
+    #
+    # Anchoring here means the leaf is resolved INSIDE the container, on every
+    # read, so it follows whatever the live directory is.
+    #
+    # `routes_root`'s docstring already recorded the asymmetry this removes --
+    # "Liferay mounts the whole tree; every other container gets a subtree of
+    # it". The Liferay container has never had this bug, because it mounts
+    # above the level that gets replaced.
+    #
+    # `routes/default`, NOT `routes`. `default` is the virtual-instance id, and
+    # mounting `routes` would expose every OTHER virtual instance's trees --
+    # a separate decision, recorded deliberately in
+    # `test_refactor_regressions.py::test_it_is_the_dxp_subtree_not_the_whole_routes_directory`.
+    # One level is enough: measured across four days on the deployment that
+    # reported this, `default/` and `default/dxp/` both persisted while
+    # `default/<projectName>/` was replaced, so `default` is not what goes.
+    #
+    # Isolation is knowingly traded away: every extension in a project can read
+    # every other extension's OAuth2 credentials. Decided deliberately on
+    # LDM-#1944 -- LDM is for demos, testbeds and experimentation, never
+    # production. Do NOT re-narrow this to a per-extension mount to "fix" that;
+    # doing so reintroduces this bug. Isolation needs a mechanism that does not
+    # depend on a leaf bind mount surviving deletion.
+    LXC_ROUTES_MOUNT = "/etc/liferay/lxc/routes"
+
     def _apply_ext_runtime_options(self, service, ext, svc_id, ms_port, scale):
         """Healthcheck, replicas and memory limit for one extension service.
 
@@ -2261,7 +2297,8 @@ class ComposerService:
             return
         from ldm_core.utils import safe_mkdir
 
-        prefix = f"{self.routes_root(mount_paths).as_posix()}/"
+        routes = self.routes_root(mount_paths)
+        prefix = f"{routes.as_posix()}/"
         for service in services.values():
             for spec in service.get("volumes") or []:
                 source = (
@@ -2271,66 +2308,106 @@ class ComposerService:
                 )
                 if source and str(source).startswith(prefix):
                     safe_mkdir(Path(str(source)), parents=True, exist_ok=True)
+            # LDM-#1944: with the extension mount anchored at the routes ROOT,
+            # the loop above no longer reaches the per-extension subtrees --
+            # the only source it sees is `routes` itself, which already exists.
+            #
+            # They still have to be created. An extension starting before
+            # Liferay has published reads the tree immediately, and a path that
+            # does not exist is a different failure from one that is empty:
+            # `config.node` treats a missing tree as a configuration error
+            # rather than an empty one. Before anchoring, these directories
+            # existed because they WERE the mount sources.
+            #
+            # Derived from the environment for the same reason the loop above
+            # is derived from the volumes: a container path and its host
+            # directory cannot drift if one is read off the other.
+            for entry in service.get("environment") or []:
+                key, _, value = str(entry).partition("=")
+                if not key.startswith("LIFERAY_ROUTES_"):
+                    continue
+                anchor = f"{self.LXC_ROUTES_MOUNT}/"
+                if not value.startswith(anchor):
+                    continue
+                safe_mkdir(
+                    routes.joinpath("default", *value[len(anchor) :].split("/")),
+                    parents=True,
+                    exist_ok=True,
+                )
 
     def _extension_routes_mounts(self, ext, ext_id, mount_paths):
-        """The config-tree subtrees a client extension can see.
+        """The config-tree space a client extension can see: the whole tree.
 
-        LDM-#1928. Two trees, not one:
+        LDM-#1928 established that an extension needs TWO trees, not one --
+        `default/dxp` (what Liferay publishes about ITSELF, which
+        `lxcConfig.dxpMainDomain()` resolves) and `default/<projectName>` (what
+        it publishes about THIS extension, including the OAuth2 credentials
+        generated when it registers the extension's application). Before that,
+        only the DXP half was ever mounted.
 
-        * `default/dxp` -- what Liferay publishes about ITSELF (the main
-          domain, which `lxcConfig.dxpMainDomain()` resolves).
-        * `default/<ext-id>` -- what Liferay publishes about THIS extension,
-          including the OAuth2 credentials generated when it registers the
-          extension's application. Never mounted before, so an extension was
-          handed `LIFERAY_ROUTES_CLIENT_EXTENSION` out of its own LCP.json and
-          pointed at a path containing nothing.
+        LDM-#1944 replaced those two leaf mounts with one anchored at the
+        routes root. See `LXC_ROUTES_MOUNT` for why; in short, a leaf bind
+        mount cannot survive its source directory being deleted and recreated,
+        and something recreates it between the mount being established and
+        Liferay publishing.
 
-        The container-side targets are DERIVED from the extension's own
-        declaration rather than assumed. LCP.json reaches us as `ext["env"]`
-        (`ldm_core/workspace/metadata.py:135`), so when an extension declares a
-        non-standard path we honour it; the constants are only the fallback.
-        This is LDM-#1923's option 4 ("keep the constant as the default and
-        let LCP.json override it"), which that issue called the pragmatic
-        answer. It is NOT the part #1923 flagged as infeasible -- reading the
-        value from the built IMAGE is still not done, and #1923 stays open for
-        it. The distinction matters: an extension that declares nothing still
-        gets the constant, so the constant can still be wrong a fourth time.
-        Custom services do not get this at all (`_apply_shared_project_context`
-        uses the constants directly).
+        Two earlier decisions were subsumed rather than reverted, and both are
+        worth keeping in view because each was a separate day's diagnosis:
+
+        * The per-extension subtree is named from the extension's
+          `projectName`, NOT its `LCP.json` id. Liferay resolves the directory
+          from the `ext.lxc.liferay.com/projectName` ConfigMap label and calls
+          `Files.createDirectories` on it
+          (`RoutesPortalK8sConfigMapModifier`), and that label is fed from
+          `projectName` in the extension's own
+          `<name>.client-extension-config.json`. The two differ for
+          essentially every extension -- the id drops the hyphens the
+          directory keeps (`ecopulseheadlessauth` against
+          `ecopulse-headless-auth`) -- and all 16 samples in `ldm-cx-samples`
+          differ. That naming now lives in `_extension_routes_env`, because
+          under the anchored mount it decides a path INSIDE the container
+          rather than a mount source.
+
+        * The container-side targets used to be derived from the extension's
+          own declaration, with the constants as fallback (LDM-#1923 option
+          4). That is now inverted: LDM sets them. See `_extension_routes_env`.
+
+        NOT /opt/liferay/routes. That is correct for the Liferay container --
+        it writes its config trees there -- but a client extension built on
+        `liferay/node-runner` does `COPY . /opt/liferay`, so /opt/liferay/routes
+        holds the APPLICATION'S OWN route handlers. Mounting over it shadows
+        the app and the container will not start. Measured on a live
+        deployment: 16 .cjs handlers sat there (LDM-#1911).
         """
-        ext_env = ext.get("env") or {}
         routes = self.routes_root(mount_paths)
-        dxp_target = ext_env.get("LIFERAY_ROUTES_DXP") or self.LXC_DXP_METADATA_MOUNT
-        ext_target = (
-            ext_env.get("LIFERAY_ROUTES_CLIENT_EXTENSION")
-            or self.LXC_EXT_INIT_METADATA_MOUNT
-        )
-        # LDM-#1944: the per-extension subtree is named from the extension's
-        # `projectName`, NOT its `LCP.json` id. Liferay resolves the directory
-        # from the `ext.lxc.liferay.com/projectName` ConfigMap label and calls
-        # `Files.createDirectories` on it (`RoutesPortalK8sConfigMapModifier`),
-        # and that label is fed from `projectName` in the extension's own
-        # `<name>.client-extension-config.json`.
-        #
-        # The two differ for essentially every extension -- the id drops the
-        # hyphens the directory keeps (`ecopulseheadlessauth` against
-        # `ecopulse-headless-auth`), and all 16 samples in `ldm-cx-samples`
-        # differ. Mounting the id binds a directory Liferay never writes to.
-        #
-        # This does not fail loudly. `_scaffold_routes_tree` creates whatever
-        # the compose declares, so the extension reads a real, EMPTY, READABLE
-        # directory while Liferay populates a different one beside it -- which
-        # is why this was diagnosed as a permissions problem four times over.
-        #
-        # `ext_id` remains the fallback: an extension whose config carries no
-        # `projectName` is no worse off than before.
+        return [f"{(routes / 'default').as_posix()}:{self.LXC_ROUTES_MOUNT}"]
+
+    def _extension_routes_env(self, ext, ext_id):
+        """Where, INSIDE the container, each tree now lives.
+
+        LDM-#1944. These override whatever the extension's own LCP.json
+        declares, which is a deliberate reversal of the rule applied to every
+        other variable here.
+
+        LDM owns the mount layout, and the extension cannot know it. An
+        extension declaring `/etc/liferay/lxc/ext-init-metadata` is describing
+        Liferay Cloud's layout, where that path IS the tree; under the anchored
+        mount nothing is mounted there, so honouring the declaration would
+        point it at an empty path -- the exact failure this change exists to
+        remove. Honouring it was right while the mount was a leaf, and is wrong
+        now that it is not.
+
+        The values still route through the SAME variables the extension reads,
+        so nothing downstream needs to know. `application.json` interpolates
+        them into `config.node.config.trees`, and the SDK resolves the trees
+        from there rather than reading either path itself.
+        """
         routes_name = ext.get("project_name") or ext_id
-        mounts = [f"{(routes / 'default' / 'dxp').as_posix()}:{dxp_target}"]
+        anchor = self.LXC_ROUTES_MOUNT
+        env = [f"LIFERAY_ROUTES_DXP={anchor}/dxp"]
         if routes_name:
-            mounts.append(
-                f"{(routes / 'default' / routes_name).as_posix()}:{ext_target}"
-            )
-        return mounts
+            env.append(f"LIFERAY_ROUTES_CLIENT_EXTENSION={anchor}/{routes_name}")
+        return env
 
     def _build_extensions_services(  # noqa: C901, PLR0912
         self, paths, meta, host_name, project_name, ssl_enabled, mount_paths=None
@@ -2428,6 +2505,19 @@ class ComposerService:
                 ]
                 env_vars = ext.get("env", {})
                 env_list += [f"{k}={v}" for k, v in env_vars.items()]
+
+                # LDM-#1944: AFTER the extension's own declarations, so LDM
+                # wins on these two specifically.
+                #
+                # Every other variable here follows "the extension's own
+                # declaration wins". These two are the exception because LDM
+                # owns the mount layout and the extension cannot know it: an
+                # extension declaring `/etc/liferay/lxc/ext-init-metadata` is
+                # describing Liferay Cloud's layout, and under the anchored
+                # mount nothing is mounted there. Honouring the declaration
+                # would point it at an empty path, which is the failure this
+                # change removes.
+                env_list += self._extension_routes_env(ext, ext_id)
 
                 # LDM-#1903: section 4 of docs/reference/configuration.md
                 # documents service-specific targeting "including Client

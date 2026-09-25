@@ -93,21 +93,38 @@ class TestComposerService(unittest.TestCase):
         self.assertIn("proj-ms1", services)
         self.assertEqual(services["proj-ms1"]["image"], "proj-ms1:latest")
         self.assertIn("com.liferay.ldm.project=proj", services["proj-ms1"]["labels"])
-        # LDM-#1911: /etc/liferay/lxc/dxp-metadata -- the path the extension's
-        # own image declares. This assertion has now been wrong three times:
-        # /workspace/routes (the original regression, defended for ~25
-        # releases), then /opt/liferay/routes (LDM-#1918, which is right for
-        # the LIFERAY container but shadows a node-runner extension's own
-        # application code), and now this. The two containers do not share a
-        # filesystem convention, and each correction was made by assuming they
-        # did.
+        # This assertion has now been wrong FOUR times: /workspace/routes (the
+        # original regression, defended for ~25 releases), then
+        # /opt/liferay/routes (LDM-#1918, right for the LIFERAY container but
+        # it shadows a node-runner extension's own application code), then the
+        # two leaf mounts at the paths the extension's image declares
+        # (LDM-#1911), and now the anchored mount (LDM-#1944).
+        #
+        # Each correction was made by assuming the two containers share a
+        # filesystem convention. They do not. The fourth was different in kind:
+        # the leaf mounts were at the right PATHS and still failed, because a
+        # bind mount resolves its source inode once and cannot survive that
+        # directory being replaced.
         self.assertTrue(
             any(
-                v.startswith(f"{Path('/tmp/routes/default/dxp').as_posix()}:")
-                and ":/etc/liferay/lxc/dxp-metadata" in v
+                v.startswith(f"{Path('/tmp/routes/default').as_posix()}:")
+                and ":/etc/liferay/lxc/routes" in v
                 for v in services["proj-ms1"]["volumes"]
             ),
             services["proj-ms1"]["volumes"],
+        )
+        # The trees are now addressed through the variables rather than by
+        # separate mounts, so the pairing has to be checked on both sides.
+        # The `pragma`s are for detect-secrets, which reads a `KEY=value` with
+        # no spaces as a high-entropy string. These are filesystem paths.
+        env = services["proj-ms1"]["environment"]
+        self.assertIn(
+            "LIFERAY_ROUTES_DXP=/etc/liferay/lxc/routes/dxp",  # pragma: allowlist secret
+            env,
+        )
+        self.assertIn(
+            "LIFERAY_ROUTES_CLIENT_EXTENSION=/etc/liferay/lxc/routes/ms1",  # pragma: allowlist secret
+            env,
         )
 
     def test_build_extensions_services_non_ssl_port_mapping(self):
