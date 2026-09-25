@@ -18,7 +18,7 @@ The LDM CI pipeline runs Bandit security scans. We explicitly ignore the followi
 
 | Code | Intent & Disclosure |
 | :--- | :--- |
-| **B103** | Permissive permissions. Used in `migrate_layout` for legacy projects and `cmd_upgrade` to ensure the newly downloaded binary is executable, and -- separately and more broadly -- to make container-shared bind mounts writable by the uid the container runs as. See *Bind-Mount Permissions* below for why the latter is `777` and where. **Mitigation**: All calls are wrapped in `try...except` and LDM prioritizes standard user ownership. |
+| **B103** | Permissive permissions. Used in `cmd_upgrade` to ensure the newly downloaded binary is executable, and -- separately and more broadly -- to make container-shared bind mounts writable by the uid the container runs as. (This entry previously also credited `migrate_layout`; `c91c5123` removed the `chmod` from that method in May 2026, so it no longer sets permissions at all -- see LDM-#1917.) See *Bind-Mount Permissions* below for why the latter is `777` and where. **Mitigation**: All calls are wrapped in `try...except` and LDM prioritizes standard user ownership. |
 | **B104** | Hardcoded bind to all interfaces. Required for macOS loopback, Gogo shell access, host port availability checks (especially on Windows WSL2/Hyper-V), and infrastructure setup. |
 | **B105** | Hardcoded passwords or tokens. Used for default local development database passwords (e.g., `test`) and transient mount verification tokens. **Mitigation**: These are only used in isolated sandbox environments and are not intended for production secrets. |
 | **B108** | Hardcoded /tmp directory. Used only for transient mount verification tokens. |
@@ -181,4 +181,4 @@ f7e5b56e5e4e6e94fe5de5424e66fef84be863f385
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-02* | *Last Reviewed: 2026-09-23*
+*Last Updated: 2026-09-25* | *Last Reviewed: 2026-09-25*

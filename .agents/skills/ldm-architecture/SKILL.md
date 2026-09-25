@@ -244,8 +244,14 @@ say so plainly, not to branch.
 
 ### Who creates what
 
-`marketplace` is the outlier, and its absence went unnoticed for months because
-a comment asserted the opposite (LDM-#1917).
+`migrate_layout` (`handlers/base.py`) is the pre-boot scaffold: it creates
+every essential directory plus `routes/default/dxp`, in pure Python, with no
+docker, platform or dry-run early exit. The name is historical -- it does not
+migrate anything -- and it was silently unwired for months by `64c75e9f`, which
+is why `marketplace` had no creator at all (LDM-#1917). It runs in
+`EnvironmentSetupStage`, **before** `ComposerStage`, because the point is to
+deny Docker the chance to create a bind-mount source itself, which it does as
+root (the LDM-#1134 hazard).
 
 | path key | created by | pre-boot reclaim | snapshot reclaim |
 |---|---|---|---|
@@ -262,7 +268,7 @@ a comment asserted the opposite (LDM-#1917).
 | `log4j` | `validate_properties` | yes | no |
 | `portal_log4j` | `validate_properties` | yes | no |
 | `routes` | `validate_properties` | yes | no |
-| **`marketplace`** | **nothing** | no | uid 1000, `777` (LDM-#1941) |
+| `marketplace` | `migrate_layout` | no | uid 1000, `777` (LDM-#1941) |
 
 "Both" means `verify_runtime_environment` (`handlers/base.py`) and the Missing
 Mount Paths check in `validate_properties` (`handlers/config.py`). The two
