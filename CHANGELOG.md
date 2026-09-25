@@ -5,11 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.0-pre.3] - 2026-09-25
+
+### Fixed
+
+- **A client extension can finally read the config tree Liferay writes** (LDM-#1944). This is the release that closes the bug an external team reported, and the cause was not the one it looked like. **A bind mount resolves its source inode once, at container-create time.** LDM mounted each config tree at its own leaf -- `routes/default/<projectName>` -- and Liferay deletes and recreates that directory after the mount exists. The container kept the orphaned inode and read an empty directory for the rest of its life, while the live one was populated beside it. Measured on the reporting deployment: the extension held inode `2013444` while the host directory was `2013445`, holding 38 files Liferay had written without error. The decisive evidence was the control in the same capture -- `routes/default/dxp/`, mounted into the *same container at the same moment*, reading correctly, because Liferay does not recreate that one.
+  There is now **one** mount, at `routes/default`, with both trees addressed as subdirectories through the variables the extension already reads: `LIFERAY_ROUTES_DXP=/etc/liferay/lxc/routes/dxp` and `LIFERAY_ROUTES_CLIENT_EXTENSION=/etc/liferay/lxc/routes/<projectName>`. The leaf is then resolved **inside** the container on every read, so it follows whatever the live directory is. This is why the Liferay container never had this bug: it has always mounted above the level that gets replaced.
+  **Two consequences worth knowing.** LDM now *overrides* the routes paths an extension declares in its own `LCP.json`, which reverses the behaviour introduced in v2.26.0-pre.1 -- LDM owns the mount layout and the extension cannot know it, so honouring the declaration would point it at a path nothing is mounted at. And every client extension in a project can now read every other extension's OAuth2 credentials, and the DXP tree. That isolation is **deliberately traded**: LDM is for demos, testbeds and experimentation, not production. Narrowing the mount to restore it would reintroduce this bug.
+  Verified end to end on native Linux against a running Liferay, which is what LDM-#1944 was held open for.
+
+- **BEHAVIOUR CHANGE: client extensions no longer publish a host port** (LDM-#1973, LDM-#1969). A client extension is reached through Traefik, by subdomain -- `<ext-id>.<host_name>` -- which resolves over the Docker network to the port its `LCP.json` declares. The host port mapping was never on that access path, and SSL projects had never had one at all. It was also actively harmful: the published port was computed by a rewrite (`8080` became `28080`, `80`/`443` gained 10000) applied **downstream** of the per-project uniqueness resolution and never deduplicated itself, so two extensions could be assigned distinct ports and still collide -- `Bind for 0.0.0.0:28080 failed: port is already allocated`. Fixing the allocation in isolation did not help, because the exclusion set is computed before the rewrite.
+  Worse, the relocation was silent, and something downstream believed it: the OAuth URL written **into the extension's own configuration, inside the deployed artifact**, used the pre-rewrite number, so it pointed at nothing or at a different extension's container. That URL is now the subdomain with no port, matching what SSL has always emitted. **If you were reaching an extension on a published host port, use its subdomain instead** -- `ldm fix-hosts` adds the entry.
+
+- **`ldm config` no longer prints stored credentials** (LDM-#1970). It printed every stored value verbatim, which put a live API key and an auth token into a user's terminal and therefore into that session's scrollback and any capture of it. Values are now masked by **key name**, because neither redaction point could work: the listing prints `key = value` with spaces while `UI.redact` requires `KEY=value`, and `ldm config <key>` prints the value alone with no key beside it for anything downstream to key on. Asking for a credential by name now **refuses and exits non-zero** rather than printing nothing, so `TOKEN=$(ldm config gemini_api_key)` fails at that line instead of binding an empty string. `--reveal` is the opt-in. If you have run `ldm config` in a shared or recorded session, rotate what it printed.
+
+- **Fatal errors now show you the fix** (LDM-#1971). Five failure paths put the error at one verbosity tier and the remedy at a lower one, so the remedy printed nothing unless `--info` or `--verbose` was already set -- and re-running to recover it was impossible, because the process had exited. The `sudo` guard runs on **every** invocation, so this was the first thing a new Linux user met: a refusal, with `sudo usermod -aG docker $USER` suppressed. The Colima path printed the literal words "To fix this, run:" followed by nothing at all.
+
+- **`scripts/setup_pre_commit.sh` installs the git hook** (LDM-#1950). It tested for `pre-commit` anywhere on `PATH`, so a global install satisfied the check while the project venv had none, and the hook installation was nested inside that same test -- meaning it never ran once dependencies were present, which is exactly when it is needed. `.git/hooks/pre-commit` carries an absolute interpreter path and is shared by every worktree, so a deleted checkout left the hook pointing at a missing interpreter and commits stopped being gated with nothing reporting it. Contributors should re-run the script.
+
 ## [v2.26.0-pre.2] - 2026-09-25
 
-### Added
+### Fixed
 
--
+- **LDM mounted a routes directory Liferay never writes to** (LDM-#1944). Liferay names the per-extension config tree from the extension's `projectName`, taken from the `ext.lxc.liferay.com/projectName` ConfigMap label; LDM derived it from the `id` in `LCP.json`. Those are different strings for essentially every extension -- the id drops the hyphens the directory keeps, and all 16 samples in `ldm-cx-samples` differ. Traced through Liferay's own `BaseConfigurationFactory` and `RoutesPortalK8sConfigMapModifier` rather than inferred. **It did not fail loudly**, which is why it survived four diagnoses: the scaffold creates whatever the compose declares, so the extension read a real, empty, *readable* directory while Liferay filled a different one beside it.
+
+- **A client extension with no `LCP.json` id is refused, not silently dropped** (LDM-#1962). Such an artifact previously crashed compose generation: `ldm run` exited **0** having written no `docker-compose.yml` at all, and every client extension in the project vanished without a word. Every real client extension carries an `LCP.json` beside its `client-extension.yaml`, so this shape is not a supported one -- LDM now refuses it explicitly and moves the zip into a `rejected/` directory rather than deploying something it cannot identify. A site initializer is exempt, matching the existing `is_service` rule.
+
+- **The pre-boot scaffold is re-wired** (LDM-#1917). `migrate_layout` creates every essential directory before the stack starts, specifically to deny Docker the chance to create a bind-mount source itself as an empty root-owned directory. It had been silently unwired by a refactor months earlier, which is why `marketplace` had no creator at all.
+
+### Changed
+
+- **Liferay runs with `UMASK=0022`** (LDM-#1944, LDM-#1946). `catalina.sh` defaults Tomcat's umask to `0027` unless the variable is already set -- `750` on directories, `640` on files -- so every config tree Liferay published was readable only by uid 1000, while a client extension runs as whatever uid its own image declares. Confirmed against the reporting deployment's logs: `java.io.FileNotFoundException` from `RoutesPortalK8sConfigMapModifier` on three occasions before this change, and none after.
+
+- **Service-targeted variables are filtered on the name the container receives** (LDM-#1954). The blacklist was tested against the host spelling, which carries a service prefix the container never sees, so any pattern anchored at the start of the name never matched -- `SERVICEID_LIFERAY_ROUTES_CLIENT_EXTENSION` sailed past a `LIFERAY_ROUTES_*` rule and arrived as `LIFERAY_ROUTES_CLIENT_EXTENSION`, repointing a tree LDM itself mounts.
+
+- **The WSL certificate path in the troubleshooting guide is correct, and asserted** (LDM-#1958).
 
 ## [v2.26.0-pre.1] - 2026-09-23
 
