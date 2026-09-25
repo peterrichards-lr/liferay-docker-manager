@@ -2409,7 +2409,11 @@ class ComposerService:
             env.append(f"LIFERAY_ROUTES_CLIENT_EXTENSION={anchor}/{routes_name}")
         return env
 
-    def _build_extensions_services(  # noqa: C901, PLR0912
+    # LDM-#1973: this carried a complexity suppression for C901 and PLR0912.
+    # Removing the host-port block took the branch count back under the
+    # limit, so it was dropped -- a fair measure of how much of this
+    # function was spent deciding a number nothing used.
+    def _build_extensions_services(
         self, paths, meta, host_name, project_name, ssl_enabled, mount_paths=None
     ):
         # LDM-#1134: see _build_liferay_service's docstring -- `paths` is
@@ -2569,32 +2573,47 @@ class ComposerService:
 
                 services[svc_id]["labels"] = labels
 
-                if not ssl_enabled:
-                    bind_ip = meta.get("bind_ip", "0.0.0.0")  # nosec B104
-                    resolved_port_str = meta.get(f"port_{ext_id}")
-                    safe_host_port = 8080
-                    if resolved_port_str:
-                        try:
-                            safe_host_port = int(resolved_port_str)
-                        except ValueError:
-                            if ms_port is not None:
-                                try:
-                                    safe_host_port = int(str(ms_port))
-                                except ValueError:
-                                    pass
-                    elif ms_port is not None:
-                        try:
-                            safe_host_port = int(str(ms_port))
-                        except ValueError:
-                            pass
-
-                    if safe_host_port in [80, 443, "80", "443"]:
-                        safe_host_port = int(str(safe_host_port)) + 10000
-                    elif safe_host_port in [8080, "8080"]:
-                        safe_host_port = 28080
-                    services[svc_id]["ports"] = [
-                        f"{bind_ip}:{safe_host_port}:{ms_port}"
-                    ]
+                # LDM-#1973: a client extension publishes NO host port.
+                #
+                # It is reached through Traefik, by subdomain -- the router
+                # rule above is `Host(<ext-id>.<host_name>)` and the service
+                # label points Traefik at `ms_port` over `liferay-net`. Both
+                # are set unconditionally; only `.tls=true` depends on SSL. So
+                # the host `-p` mapping was never on the access path.
+                #
+                # It was also actively harmful. The mapping was computed as:
+                #
+                #     safe_host_port = meta[f"port_{ext_id}"] or 8080
+                #     if safe_host_port in (80, 443):  safe_host_port += 10000
+                #     elif safe_host_port == 8080:     safe_host_port = 28080
+                #
+                # a FUNNEL applied downstream of the per-project uniqueness
+                # resolution in `_resolve_and_persist_cx_port`, and never
+                # deduplicated itself. Two extensions reaching 8080 -- one from
+                # its persisted port, one from that literal default, which is
+                # what an extension discovered by the standalone-services path
+                # gets, since nothing calls the resolver for it -- both became
+                # 28080:
+                #
+                #     Bind for 0.0.0.0:28080 failed: port is already allocated
+                #
+                # LDM-#1969 fixed the resolution and the collision survived,
+                # because the exclusion set is computed in pre-rewrite space
+                # and is structurally incapable of seeing the rewrite. The
+                # rewrite is project-independent too, so two concurrent
+                # projects collided even with perfect per-project dedup.
+                #
+                # And the relocation was silent. A caller reading the port from
+                # the extension's own LCP.json -- the only place it is declared
+                # -- connected to nothing, or to a different extension's
+                # container, with nothing in the output saying the number had
+                # moved. A wrong port that looks authoritative is worse than no
+                # port at all.
+                #
+                # Note this block was already `if not ssl_enabled`, so an SSL
+                # project has never published these ports and client extensions
+                # work there. That is the clearest evidence the mapping was
+                # redundant rather than load-bearing.
         return services
 
     def _build_kibana_service(self, meta, project_name):
