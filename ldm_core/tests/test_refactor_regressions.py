@@ -68,8 +68,13 @@ class TestTheRoutesVolumeIsShared(unittest.TestCase):
 
     def test_the_extension_reads_the_tree_liferay_writes(self):
         """Same host directory, so what Liferay writes is what the extension
-        reads -- which is the whole point of the shared volume."""
-        cx = next(v for v in _services()["volumes"] if "dxp-metadata" in v)
+        reads -- which is the whole point of the shared volume.
+
+        LDM-#1944 changed how the extension's mount is selected here: there is
+        one mount now, at `routes/default`, rather than a pair picked out by
+        their container targets.
+        """
+        cx = next(v for v in _services()["volumes"] if ":/etc/liferay/lxc/routes" in v)
         liferay = next(
             v for v in _liferay_service()["volumes"] if ":/opt/liferay/routes" in v
         )
@@ -207,19 +212,50 @@ class TestTheMetadataMountDoesNotShadowTheApplication(unittest.TestCase):
                 f"this shadows the extension's own application code: {v}",
             )
 
-    def test_the_metadata_lands_where_the_image_declares(self):
-        """The image sets LIFERAY_ROUTES_DXP=/etc/liferay/lxc/dxp-metadata, so
-        the consumer needs no change to find it."""
-        got = _services()["volumes"]
-        self.assertTrue(
-            [v for v in got if ":/etc/liferay/lxc/dxp-metadata" in v],
-            f"the extension cannot resolve its config trees: {got}",
-        )
+    def test_the_extension_can_still_resolve_both_trees(self):
+        """This used to assert the image's own declared paths were mounted.
 
-    def test_it_is_the_dxp_subtree_not_the_whole_routes_directory(self):
-        """Mounting all of `routes/` would expose other environments' trees."""
-        mount = next(v for v in _services()["volumes"] if "dxp-metadata" in v)
-        self.assertIn("routes/default/dxp:", mount)
+        LDM-#1944 inverted that: LDM SETS both variables, because it owns the
+        mount layout and the extension cannot know it. The requirement is
+        unchanged -- the extension must be able to resolve both trees -- so
+        that is what is asserted, on whichever side carries the answer.
+        """
+        svc = _services()
+        mount_target = next(
+            v.split(":")[1] for v in svc["volumes"] if ":/etc/liferay/lxc/routes" in v
+        )
+        for var in ("LIFERAY_ROUTES_DXP", "LIFERAY_ROUTES_CLIENT_EXTENSION"):
+            value = next(
+                (
+                    e.split("=", 1)[1]
+                    for e in svc["environment"]
+                    if e.startswith(var + "=")
+                ),
+                None,
+            )
+            if value is None:
+                self.fail(f"{var} is not set: {svc['environment']}")
+            self.assertTrue(
+                value.startswith(mount_target + "/"),
+                f"{var}={value} is outside the mounted tree at {mount_target}, "
+                f"so nothing is mounted at it",
+            )
+
+    def test_it_is_the_instance_subtree_not_the_whole_routes_directory(self):
+        """`default` is the virtual-instance id, so mounting all of `routes/`
+        would expose every OTHER virtual instance's trees.
+
+        Kept when LDM-#1944 raised the anchor. It is the reason the mount stops
+        at `routes/default` rather than going one level higher, which the
+        stale-inode fix did not require -- measured across four days on the
+        deployment that reported it, `default/` persisted while
+        `default/<projectName>/` was replaced.
+        """
+        mount = next(
+            v for v in _services()["volumes"] if ":/etc/liferay/lxc/routes" in v
+        )
+        source = mount.split(":")[0]
+        self.assertTrue(source.endswith("/routes/default"), source)
 
     def test_liferay_still_mounts_the_tree_it_writes_to(self):
         """The other half must not regress while fixing this one."""

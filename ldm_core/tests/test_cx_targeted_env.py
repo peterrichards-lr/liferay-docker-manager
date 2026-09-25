@@ -135,16 +135,30 @@ class TestTheBlacklistIsTestedAgainstTheDeliveredName(unittest.TestCase):
     def test_a_targeted_routes_variable_never_reaches_the_container(self):
         """The one with teeth: it repoints a tree LDM itself mounts, which
         reproduces exactly the symptom LDM-#1928 fixed -- a container pointed
-        at a path nothing is mounted at."""
+        at a path nothing is mounted at.
+
+        LDM-#1944 changed what "does not reach" looks like. LDM now SETS both
+        variables itself, to paths inside the anchored routes mount, so the
+        name is legitimately present and the old `assertFalse(delivered)` would
+        fail on LDM's own value. The question is whether the HOST's value got
+        through, so that is what is asserted -- which is stricter than before,
+        because it also pins that LDM's value survives the forwarding path
+        rather than being silently replaced.
+        """
         for name in (
             "LIFERAY_ROUTES_CLIENT_EXTENSION",
             "LIFERAY_ROUTES_DXP",
         ):
             with self.subTest(name=name):
+                delivered = self._delivered(name)
                 self.assertFalse(
-                    self._delivered(name),
-                    f"{name} is LDM-managed and must not be forwarded by any "
-                    f"route, targeted or not (LDM-#1954)",
+                    [e for e in delivered if e == f"{name}=x"],
+                    f"{name} is LDM-managed and the host's value must not be "
+                    f"forwarded by any route, targeted or not (LDM-#1954)",
+                )
+                self.assertTrue(
+                    [e for e in delivered if "/etc/liferay/lxc/routes/" in e],
+                    f"{name} must still carry LDM's own path (LDM-#1944)",
                 )
 
     def test_a_targeted_lxc_variable_never_reaches_the_container(self):
