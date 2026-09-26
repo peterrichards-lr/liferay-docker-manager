@@ -713,8 +713,13 @@ class TestPowerShellSlugOsSuffix(unittest.TestCase):
 # success assignment, the `catch`, the `finally` and the epilogue are extracted
 # verbatim from the real script, and only the `try` body -- the part that needs
 # Docker -- is supplied by the harness.
+# LDM-#1975: the tail now opens with the section-aware banner rather than the
+# bare "ALL E2E VERIFICATIONS PASSED!" line, because a slice must not claim to
+# have run everything. The anchor moved with it; what this class asserts -- that
+# the epilogue propagates an exit status -- is unchanged, and the extracted tail
+# still runs from the banner to the end of the file.
 _EXIT_TAIL_RE = re.compile(
-    r'^    Write-Host "`n\[SUCCESS\] ALL E2E VERIFICATIONS PASSED!".*\Z',
+    r'^    if \(\$LDM_E2E_SECTIONS -eq "all"\) \{$.*\Z',
     re.M | re.S,
 )
 
@@ -723,6 +728,11 @@ _EXIT_TAIL_RE = re.compile(
 # `chcp`, and no test may invoke those binaries for real.
 _EXIT_TAIL_PREAMBLE = (
     "$ORIGINAL_PWD = (Get-Location).Path\n"
+    # LDM-#1975: the tail reads this to decide which banner to print. A full run
+    # is the case being modelled here -- the exit machinery is identical either
+    # way, and leaving it undefined would exercise a state the script cannot be
+    # in, since it defaults the variable before anything else runs.
+    '$LDM_E2E_SECTIONS = "all"\n'
     'function Finalize-Verification { param($ExitCode) Write-Output "finalize:$ExitCode" }\n'
     "try {\n"
 )

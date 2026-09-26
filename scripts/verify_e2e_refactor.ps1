@@ -135,7 +135,45 @@ $LDM_CMD = "ldm"
 $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $RESULTS_FILE_TMP = Join-Path $ORIGINAL_PWD ".ldm-verify-tmp-${Timestamp}.txt"
 
+# LDM-#1975: which slices of this suite to run. Parity with LDM_E2E_SECTIONS
+# in verify_e2e_refactor.sh -- see the long note there for why the slice exists.
+#
+# In short: this suite only ran on a release tag, so every client-extension and
+# routes regression was found after a version number had been burnt. A pull
+# request cannot afford the whole run but can afford the `boundary` section,
+# which is what .github/workflows/pr-boundary-e2e.yml runs.
+#
+# Sections, in the order they appear below: guardrails, boundary, project,
+# extras. Everything outside a section always runs, because every section needs
+# it -- the environment prep, the image pull, the infra setup, provisioning and
+# booting the portal, the teardown and the report.
+#
+# An unknown name is refused rather than treated as "matches no section": a typo
+# that silently verified nothing would be exactly the green-but-empty result
+# LDM-#1611 was about.
+$LDM_E2E_SECTIONS = "all"
+if ($env:LDM_E2E_SECTIONS) { $LDM_E2E_SECTIONS = $env:LDM_E2E_SECTIONS }
+$KNOWN_SECTIONS = @("all", "guardrails", "boundary", "project", "extras")
+foreach ($requested in ($LDM_E2E_SECTIONS -split ',')) {
+    if ($KNOWN_SECTIONS -notcontains $requested.Trim()) {
+        Write-Host "[ERROR] unknown LDM_E2E_SECTIONS entry '$($requested.Trim())'." -ForegroundColor Red
+        Write-Host "        Known sections: $($KNOWN_SECTIONS -join ', ')."
+        exit 1
+    }
+}
+
+# Named, like Get-VersionBannerLines above, so it can be exercised in a test
+# without a full Docker/ldm E2E run (ldm_core/tests/test_verify_scripts.py).
+function Test-SectionEnabled {
+    param([string]$Name)
+    $requested = $LDM_E2E_SECTIONS -split ',' | ForEach-Object { $_.Trim() }
+    return ($requested -contains "all") -or ($requested -contains $Name)
+}
+
 Write-Host "* Starting Standalone Binary Verification (Windows Native)..."
+if ($LDM_E2E_SECTIONS -ne "all") {
+    Write-Host "[WARNING] PARTIAL RUN: sections $LDM_E2E_SECTIONS. This is not a full verification."
+}
 
 # 0. Dependencies & Virtual Environment
 $LDM_WORKSPACE = Join-Path $ORIGINAL_PWD "e2e-work-dir"
@@ -226,6 +264,12 @@ function Get-SlugOsSuffix {
     $envLabelLine = Get-EnvLabelLine -EnvLabel $env:LDM_ENV_LABEL
     if ($envLabelLine) { Write-Output $envLabelLine }
     Write-Output (Get-RunContextLine -RunContext $env:LDM_RUN_CONTEXT)
+    # LDM-#1975: a partial run declares itself IN THE REPORT. The report is the
+    # artefact that is archived and read afterwards; a warning at the top of the
+    # console scroll does not survive into it.
+    if ($LDM_E2E_SECTIONS -ne "all") {
+        Write-Output "Sections:  $LDM_E2E_SECTIONS (PARTIAL RUN -- not a full verification)"
+    }
 
     $binaryPath = "Not Found"
     try {
@@ -402,7 +446,12 @@ function Finalize-Verification {
     
     if (Test-Path $RESULTS_FILE_TMP) {
         if ($status -eq "pass") {
-            "`n[SUCCESS] ALL E2E VERIFICATIONS PASSED!" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+            # LDM-#1975: "ALL" is a claim about coverage, so only a full run makes it.
+            if ($LDM_E2E_SECTIONS -eq "all") {
+                "`n[SUCCESS] ALL E2E VERIFICATIONS PASSED!" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+            } else {
+                "`n[SUCCESS] E2E SECTIONS PASSED: $LDM_E2E_SECTIONS (PARTIAL RUN)" | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+            }
         }
         Move-Item $RESULTS_FILE_TMP (Join-Path $ORIGINAL_PWD $FinalName) -Force
         # LDM-#1486: the marker must follow $status. This printed
@@ -414,7 +463,11 @@ function Finalize-Verification {
             Write-Host "`n[FAILED] Verification FAILED ($status)" -ForegroundColor Red
             Write-Host "[RESULTS] Results: $FinalName"
         }
-        if ($status -eq "pass") {
+        # LDM-#1975: only a FULL run is archived. references\verification-results
+        # is what scripts/sync_compatibility.py builds the compatibility matrix
+        # from, and a slice would land there indistinguishable from a run that
+        # checked everything.
+        if ($status -eq "pass" -and $LDM_E2E_SECTIONS -eq "all") {
             $archiveDir = Join-Path $ORIGINAL_PWD "references\verification-results"
             if (-not (Test-Path $archiveDir)) { New-Item -ItemType Directory -Path $archiveDir | Out-Null }
             Copy-Item (Join-Path $ORIGINAL_PWD $FinalName) $archiveDir -Force
@@ -2004,6 +2057,10 @@ try {
 
     Log-AndRun "Initializing Infrastructure" $LDM_CMD "-y infra setup --search"
 
+    # LDM-#1975 section: guardrails -- CLI refusals, compute targets, port
+    # diagnosis. None of it needs a booted portal and none of it observes the
+    # Liferay/Docker boundary. Body deliberately not re-indented.
+    if (Test-SectionEnabled "guardrails") {
     Write-Host ">> Verifying Custom SSL Port & Recreate..."
     Log-AndRun "Custom SSL Port Setup" $LDM_CMD "-y infra setup --ssl-port 8443 --force-recreate"
     $dockerInspect = & docker inspect liferay-proxy-global
@@ -2590,6 +2647,7 @@ services:
     }
     & $LDM_CMD -y rm $masterProj --delete > $null 2>&1
     Remove-Item -Recurse -Force $masterProj -ErrorAction SilentlyContinue
+    } # LDM-#1975 end section: guardrails
 
     # 3. Project Run
     # LDM-#1302: a leftover project from a previous run sends 'ldm run' down the
@@ -2625,6 +2683,9 @@ services:
     # Wait for Health
     Log-AndRun "Waiting for Liferay health" $LDM_CMD "-y wait . --timeout 600"
 
+    # LDM-#1975 section: boundary (1 of 2) -- what the portal actually wrote,
+    # and whether a client extension can read it.
+    if (Test-SectionEnabled "boundary") {
     # LDM-#1944: the running portal's umask, read from the container's own
     # /proc.
     #
@@ -2746,7 +2807,12 @@ echo "SEEN $seen BAD$bad"
     else {
         throw "Could not probe the routes filesystem for LDM-#1944/#1946. Output was: $fsPermStat"
     }
+    } # LDM-#1975 end section: boundary (1 of 2)
 
+    # LDM-#1975 section: project -- the remaining assertions against the booted
+    # portal. Real checks, but none of them observes a mount or a generated
+    # compose file, which is what a boundary slice exists to watch.
+    if (Test-SectionEnabled "project") {
     # LDM-#1509: the project above was seeded -- provisioned without --no-seed,
     # and the run reports "Project bootstrapped from seed". Assert LDM still
     # SAYS so afterwards.
@@ -3193,8 +3259,15 @@ zf.close()
     } else {
         throw "LDM reports an access URL that does not serve: $statusUrl -> HTTP $urlCode. 0 means nothing answered -- the dead-URL defect this check exists for (LDM-#1574)."
     }
+    } # LDM-#1975 end section: project
 
 
+    # LDM-#1975 section: boundary (2 of 2) -- the client-extension deploy, the
+    # services LDM generates for it, the routes tree it scaffolds on the host,
+    # and the assertion that Liferay's own routes directories are the ones LDM
+    # mounted. This is the block that would have caught LDM-#1944, #1918, #1928
+    # and #1962 before a tag was cut rather than after.
+    if (Test-SectionEnabled "boundary") {
     Write-Host ">> Verifying Client Extension deploy & staging (#1257 / #1262)..."
     # LDM-#1262: this check previously passed a *directory*
     # ('deploy . synthetic-cx/'). cmd_deploy only recognises trailing arguments
@@ -3695,6 +3768,67 @@ if ext_value.startswith(ANCHOR + "/"):
 for f in fails:
     print("ERROR: %s" % f)
 sys.exit(1 if fails else 0)
+'@ | Out-File -FilePath "cxderiv-check.py" -Encoding ascii
+    & $VENV_PYTHON "cxderiv-check.py" $cxDerivId $cxDerivDxp $cxDerivExt $cxDerivName
+    if ($LASTEXITCODE -ne 0) {
+        throw "The anchored routes mount is wrong for an extension that declares its own paths (LDM-#1944)."
+    }
+    Write-Verdict "[SUCCESS] LDM overrides the extension's declared routes paths ($cxDerivDxp, $cxDerivExt) and addresses both trees inside the anchored routes/default mount, under the projectName (LDM-#1944)."
+    Remove-Item -Recurse -Force "cxderiv-build", "$cxDerivName.zip", "cxderiv-check.py" -ErrorAction SilentlyContinue
+
+    # LDM-#1928: a CUSTOM service is part of the project too. Nothing in this
+    # suite exercised custom_containers at all, so the branch shipped unverified.
+    Write-Host ">> Verifying a custom service joins the shared config space (LDM-#1928)..."
+    @'
+import json
+import pathlib
+
+meta_path = pathlib.Path("meta")
+meta = json.loads(meta_path.read_text())
+meta["custom_containers"] = [
+    {"service_name": "synthetic-custom", "image": "alpine:latest"}
+]
+meta_path.write_text(json.dumps(meta))
+'@ | Out-File -FilePath "custom-meta.py" -Encoding ascii
+    & $VENV_PYTHON "custom-meta.py"
+    & $LDM_CMD -y run . --no-up --no-seed 2>&1 | Out-Null
+
+    @'
+import pathlib
+import sys
+
+import yaml
+
+compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text())
+services = compose.get("services") or {}
+svc = next((v for k, v in services.items() if k.endswith("synthetic-custom")), None)
+if svc is None:
+    print("ERROR: no compose service for the custom container.")
+    sys.exit(1)
+
+fails = []
+vols = svc.get("volumes") or []
+# LDM-#1973/#1944: a custom service is UNCHANGED by the client-extension
+# anchoring. It is an arbitrary third-party image, so everything LDM adds to it
+# stays additive, and `dxp` is not the directory Liferay recreates.
+if not [v for v in vols if ":/etc/liferay/lxc/dxp-metadata" in v]:
+    fails.append("a custom service gets no routes mount: %s" % vols)
+
+env = svc.get("environment") or []
+if not [e for e in env if e.startswith("LIFERAY_LXC_DXP_MAIN_DOMAIN=")]:
+    fails.append("LIFERAY_LXC_DXP_MAIN_DOMAIN absent from a custom service: %s" % env)
+
+if not svc.get("extra_hosts"):
+    fails.append("extra_hosts absent from a custom service")
+
+deps = svc.get("depends_on") or {}
+if not [d for d in (deps if isinstance(deps, (list, tuple)) else list(deps))
+        if "liferay" in str(d)]:
+    fails.append("a custom service does not wait for Liferay: %s" % deps)
+
+for f in fails:
+    print("ERROR: %s" % f)
+sys.exit(1 if fails else 0)
 '@ | Out-File -FilePath "custom-check.py" -Encoding ascii
     & $VENV_PYTHON "custom-check.py"
     if ($LASTEXITCODE -ne 0) {
@@ -3741,7 +3875,12 @@ assert sys.argv[2] in lst, 'client_extensions is %r and omits %r' % (lst, sys.ar
         throw "Snapshot manifest claims client extensions it does not list (LDM-#1573). Manifest: $($snapMeta.FullName)"
     }
     Write-Verdict "[SUCCESS] Snapshot manifest lists the client extension it claims (LDM-#1573)."
+    } # LDM-#1975 end section: boundary (2 of 2)
 
+    # LDM-#1975 section: extras -- portal patch overlay, non-ASCII naming, shared
+    # database and shared search. Each of these boots or rebuilds another stack,
+    # which is where most of the suite's wall-clock time goes.
+    if (Test-SectionEnabled "extras") {
     Write-Host ">> Verifying Portal Patch Overlay (#1264)..."
     # The patch JAR is SYNTHETIC and deliberately inert: a valid OSGi bundle
     # with a unique Bundle-SymbolicName, no Import-Package, no Export-Package
@@ -4976,6 +5115,7 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     } else {
         throw "Shared search mode verification failed."
     }
+    } # LDM-#1975 end section: extras
 
 
     Log-AndRun "Checking Status" $LDM_CMD "-y status"
@@ -4983,7 +5123,11 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     # Clean up any potential orphans from the run
     Invoke-Cleanup $LDM_CMD "-y system prune"
 
-    Write-Host "`n[SUCCESS] ALL E2E VERIFICATIONS PASSED!"
+    if ($LDM_E2E_SECTIONS -eq "all") {
+        Write-Host "`n[SUCCESS] ALL E2E VERIFICATIONS PASSED!"
+    } else {
+        Write-Host "`n[SUCCESS] E2E SECTIONS PASSED: $LDM_E2E_SECTIONS (PARTIAL RUN)"
+    }
     Finalize-Verification 0
     $script:VerificationExitCode = 0
 } catch {

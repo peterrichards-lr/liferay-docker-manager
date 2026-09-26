@@ -62,7 +62,69 @@ if [ "$KEEP_ARTIFACTS" = true ] && [ "$PRUNE_AFTER" = true ]; then
     exit 1
 fi
 
+# LDM-#1975: which slices of this suite to run.
+#
+# The whole script takes 22m20s -- measured on run 35862407660, the last green
+# full run. The ~40 minutes people quote is the tag-push path, most of which is
+# release-e2e.yml's deliberate 15 minute debounce rather than this script.
+#
+# Until now the only thing that ran it was
+# .github/workflows/release-e2e.yml on `push: tags` -- that is, AFTER a version
+# number had already been burnt. Every client-extension and
+# routes regression of this cycle (LDM-#1944, #1918, #1928, #1962, #1969) was
+# therefore caught by the suite meant to prevent it, one tag too late.
+#
+# A pull request cannot afford 22 minutes. It can afford the part that observes
+# the Liferay/Docker boundary: boot a portal, deploy a client extension, and
+# assert that the routes trees LDM mounts are the ones Liferay actually writes
+# to. That is the `boundary` section, and it is what
+# .github/workflows/pr-boundary-e2e.yml runs on a path filter.
+#
+# The sections, in the order they appear below:
+#
+#   guardrails  CLI refusals, compute targets, port diagnosis. No portal.
+#   boundary    the portal umask and published-config permissions, plus the
+#               client-extension deploy, the generated CX services and the
+#               routes mount assertions (LDM-#1944/#1918/#1928/#1923/#1573).
+#   project     the remaining assertions against the booted portal.
+#   extras      portal patches, non-ASCII naming, shared database and search.
+#
+# Everything OUTSIDE a section always runs -- environment prep, image pull,
+# infra setup, provisioning and booting the portal, teardown and the report --
+# because every section needs it. That is also why a slice does not cost in
+# proportion to the checks it keeps: the Liferay boot is a fixed cost that no
+# selection can skip, and it dominates a short slice.
+#
+# A typo must not silently verify nothing, so an unknown name is refused rather
+# than treated as "matches no section".
+LDM_E2E_SECTIONS="${LDM_E2E_SECTIONS:-all}"
+IFS=',' read -r -a _REQUESTED_SECTIONS <<< "$LDM_E2E_SECTIONS"
+for _requested in "${_REQUESTED_SECTIONS[@]}"; do
+    case "$_requested" in
+        all | guardrails | boundary | project | extras) ;;
+        *)
+            echo "❌ ERROR: unknown LDM_E2E_SECTIONS entry '${_requested}'." >&2
+            echo "   Known sections: all, guardrails, boundary, project, extras." >&2
+            exit 1
+            ;;
+    esac
+done
+unset _requested _REQUESTED_SECTIONS
+
+# Named, like print_version_banner below, so it can be exercised in a test
+# without a full Docker/ldm E2E run (ldm_core/tests/test_verify_scripts.py).
+section_enabled() {
+    case ",${LDM_E2E_SECTIONS}," in
+        *,all,*) return 0 ;;
+        *",$1,"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 echo "⚡ Starting Standalone Binary Verification on Port ${TEST_PORT}..."
+if [ "$LDM_E2E_SECTIONS" != "all" ]; then
+    echo "⚠  PARTIAL RUN: sections ${LDM_E2E_SECTIONS}. This is not a full verification."
+fi
 
 # Store the original directory for final report placement
 ORIGINAL_PWD=$(pwd)
@@ -160,6 +222,13 @@ print_run_context_line() {
     echo "Platform:     $PLATFORM_INFO"
     print_env_label_line "${LDM_ENV_LABEL:-}"
     print_run_context_line "${LDM_RUN_CONTEXT:-}"
+    # LDM-#1975: a partial run declares itself IN THE REPORT. The report is the
+    # artefact that is archived and read afterwards, and a warning 200 lines up
+    # the scroll does not survive into it -- the same reasoning the LDM-#1529
+    # version-mismatch gate is built on.
+    if [ "$LDM_E2E_SECTIONS" != "all" ]; then
+        echo "Sections:     $LDM_E2E_SECTIONS (PARTIAL RUN -- not a full verification)"
+    fi
     echo "Binary:       $(which "$LDM_CMD")"
 } >"$RESULTS_FILE_TMP"
 
@@ -374,7 +443,12 @@ cleanup_test_projects() {
     fi
 
     if [ "$status" == "pass" ] && [ -f "$RESULTS_FILE_TMP" ]; then
-        echo -e "\n🎯 ALL E2E VERIFICATIONS PASSED!" >> "$RESULTS_FILE_TMP"
+        # LDM-#1975: "ALL" is a claim about coverage, so only a full run makes it.
+        if [ "$LDM_E2E_SECTIONS" = "all" ]; then
+            echo -e "\n🎯 ALL E2E VERIFICATIONS PASSED!" >> "$RESULTS_FILE_TMP"
+        else
+            echo -e "\n🎯 E2E SECTIONS PASSED: ${LDM_E2E_SECTIONS} (PARTIAL RUN)" >> "$RESULTS_FILE_TMP"
+        fi
     fi
 
     if [ -f "$RESULTS_FILE_TMP" ]; then
@@ -387,7 +461,11 @@ cleanup_test_projects() {
         else
             echo -e "\n\033[0;31m❌ Verification FAILED ($status)\033[0m\n📊 Results: $final_name"
         fi
-        if [ "$status" == "pass" ]; then
+        # LDM-#1975: only a FULL run is archived. references/verification-results
+        # is what scripts/sync_compatibility.py builds the compatibility matrix
+        # from, and a slice that ran two of the suite's areas would land there
+        # indistinguishable from a run that checked everything.
+        if [ "$status" == "pass" ] && [ "$LDM_E2E_SECTIONS" = "all" ]; then
             mkdir -p "${ORIGINAL_PWD}/references/verification-results"
             cp "${ORIGINAL_PWD}/${final_name}" "${ORIGINAL_PWD}/references/verification-results/" 2>/dev/null || true
         fi
@@ -804,6 +882,11 @@ docker pull postgres:16.2 --quiet
 
 log_and_run "Initializing Infrastructure" "$LDM_CMD" -y infra setup --search
 
+# LDM-#1975 section: guardrails -- CLI refusals, compute targets, port
+# diagnosis. None of it needs a booted portal and none of it observes the
+# Liferay/Docker boundary, so a change to mount or compose generation gains
+# nothing from it. Body deliberately not re-indented; see section_enabled above.
+if section_enabled guardrails; then
 echo ">> Verifying Custom SSL Port & Recreate..."
 log_and_run "Custom SSL Port Setup" "$LDM_CMD" -y infra setup --ssl-port 8443 --force-recreate
 if docker inspect liferay-proxy-global | grep -q '"HostPort": "8443"'; then
@@ -2704,6 +2787,7 @@ if [ -n "$REMOTE_HOST" ]; then
     fi
     "$LDM_CMD" target rm "$REMOTE_NODE_NAME" >/dev/null 2>&1 || true
 fi
+fi # LDM-#1975 end section: guardrails
 
 # 3. Project Run
 # LDM-#1302: a leftover project from a previous run sends `ldm run` down the
@@ -2746,6 +2830,10 @@ if ! "$LDM_CMD" -y wait . --timeout 600; then
     exit 1
 fi
 
+# LDM-#1975 section: boundary (1 of 2) -- what the portal actually wrote, and
+# whether a client extension can read it. This half needs the booted portal but
+# not the client extension, so it runs before the CX is staged.
+if section_enabled boundary; then
 # LDM-#1944: the running portal's umask, read from the container's own /proc.
 #
 # Liferay runs under Tomcat, and `catalina.sh` sets `UMASK="0027"` unless the
@@ -2897,7 +2985,12 @@ else
         report_ok "✅ All ${FSPERM_SEEN} published config file(s) under routes/ are readable by a client extension (LDM-#1944/#1946)."
     fi
 fi
+fi # LDM-#1975 end section: boundary (1 of 2)
 
+# LDM-#1975 section: project -- the remaining assertions against the booted
+# portal. Real checks, but none of them observes a mount or a generated compose
+# file, which is what a boundary slice exists to watch.
+if section_enabled project; then
 # LDM-#1509: the project above was seeded -- it is provisioned without
 # --no-seed and the run reports "Project bootstrapped from seed". Assert LDM
 # still SAYS so afterwards.
@@ -3303,8 +3396,15 @@ case "$URL_CODE" in
         exit 1
         ;;
 esac
+fi # LDM-#1975 end section: project
 
 
+# LDM-#1975 section: boundary (2 of 2) -- the client-extension deploy, the
+# services LDM generates for it, the routes tree it scaffolds on the host, and
+# the assertion that Liferay's own routes directories are the ones LDM mounted.
+# This is the block that would have caught LDM-#1944, #1918, #1928 and #1962
+# before a tag was cut rather than after.
+if section_enabled boundary; then
 echo ">> Verifying Client Extension deploy & staging (#1257 / #1262)..."
 # LDM-#1262: this check previously passed a *directory* (`deploy . synthetic-cx/`).
 # `cmd_deploy` only recognises trailing arguments that are existing *files* with a
@@ -4092,7 +4192,12 @@ else
     grep -E "client_extensions" "$SNAP_META" | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
+fi # LDM-#1975 end section: boundary (2 of 2)
 
+# LDM-#1975 section: extras -- portal patch overlay, non-ASCII naming, shared
+# database and shared search. Each of these boots or rebuilds another stack,
+# which is where most of the suite's wall-clock time goes.
+if section_enabled extras; then
 echo ">> Verifying Portal Patch Overlay (#1264)..."
 # The patch JAR is SYNTHETIC and deliberately inert. It is a valid OSGi bundle
 # -- unique Bundle-SymbolicName, no Import-Package, no Export-Package, no
@@ -5164,6 +5269,7 @@ else
     echo "❌ ERROR: shared search mode verification failed." | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
+fi # LDM-#1975 end section: extras
 
 
 # Final
@@ -5172,4 +5278,8 @@ log_and_run "Checking Status" "$LDM_CMD" -y status
 # Clean up any potential orphans from the run
 "$LDM_CMD" -y system prune >/dev/null 2>&1 || true
 
-echo -e "\n🎯 ALL E2E VERIFICATIONS PASSED!"
+if [ "$LDM_E2E_SECTIONS" = "all" ]; then
+    echo -e "\n🎯 ALL E2E VERIFICATIONS PASSED!"
+else
+    echo -e "\n🎯 E2E SECTIONS PASSED: ${LDM_E2E_SECTIONS} (PARTIAL RUN)"
+fi
