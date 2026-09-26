@@ -1,0 +1,130 @@
+# LDM-#1975: the boundary suite, moved in front of the tag instead of behind it.
+#
+# `scripts/verify_e2e_refactor.sh` is the only thing in this repository that
+# observes LDM's edges -- Liferay's config-map writer, Docker's mount and inode
+# semantics, the real filesystem. Until now the only workflow that ran it was
+# `release-e2e.yml`, on `push: tags: ["v*"]` and `workflow_dispatch`. Never on a
+# pull request.
+#
+# So the sequence for every boundary regression was: merge to master, cut a
+# pre-release, burn the version number under the Burn Rule, then discover the
+# bug. LDM-#1944, #1918, #1928, #1962 and #1969 all followed exactly that path.
+# The verification existed and was thorough; it was sequenced after the point at
+# which it could have prevented anything.
+#
+# WHY A SLICE RATHER THAN THE WHOLE SUITE. Measured on run 35862407660 (the last
+# green full run, 2026-09-23), the script step took 22m20s, split like this:
+#
+#   prelude (venv, image pull, infra setup)   1m58s   unavoidable
+#   guardrails                                2m54s   skipped here
+#   provision + Liferay health wait           1m39s   unavoidable
+#   project                                   3m17s   skipped here
+#   boundary (client extension + routes)        53s   THE POINT
+#   extras (patches, non-ASCII, shared db)   11m34s   skipped here
+#   final + teardown                             5s   unavoidable
+#
+# The `boundary` section is the cheapest part of the suite and the one that
+# catches the defects that keep escaping, so it is the one worth paying for on
+# every pull request. Note what does NOT shrink: the portal still has to boot.
+# A slice is ~5 minutes rather than ~0, and that floor is the Liferay boot.
+#
+# WHY NOT `release-e2e.yml` WITH A CONDITION. That workflow opens with a 15
+# minute `sleep` debounce and a tag-alignment job, both of which are meaningless
+# on a pull request, and its `concurrency` group is workflow-wide so PR runs
+# would cancel each other and, worse, cancel a release run.
+name: LDM PR Boundary E2E
+
+on:
+  pull_request:
+    branches: ["master"]
+    # LDM-#1975: the code that decides what gets mounted and what ends up in the
+    # generated compose file. A change anywhere in here can produce a mount that
+    # points at a directory Liferay never writes to (LDM-#1944) without failing a
+    # single one of the 2875 in-process tests, because none of them has a Liferay.
+    #
+    # The workflow file is in the list on purpose: a change to the slice itself
+    # should be exercised by the slice.
+    paths:
+      - "ldm_core/handlers/composer.py"
+      - "ldm_core/workspace/**"
+      - "ldm_core/pipelines/**"
+      - "scripts/verify_e2e_refactor.sh"
+      - ".github/workflows/pr-boundary-e2e.yml"
+  workflow_dispatch: # Allow the slice to be run against any branch on demand
+
+# Per-ref, not workflow-wide: two open pull requests must not cancel each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  boundary-slice:
+    name: Client extension & routes boundary
+    runs-on: ubuntu-latest
+    # The slice measures at roughly 5-8 minutes; the upper end is the LDM-#1944
+    # routes-pairing wait, which is bounded at 180s. Anything past 30 minutes is
+    # a hang, and a hang should not sit there consuming a runner.
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+          pip install -e . # Puts `ldm` on PATH; the script verifies the binary
+
+      - name: Synchronize Resources
+        run: |
+          python3 scripts/sync_baseline.py
+          python3 scripts/sync_colors.py
+
+      # LDM-#1701: without this the job runs on ubuntu-latest's default JDK 17
+      # and every `ldm import` dies in ImportValidationStage, which requires 21.
+      # Same step, same reasoning, as release-e2e.yml and the two verification
+      # workflows -- kept identical so the four stay comparable.
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      # Deliberately NO Playwright install. release-e2e.yml installs chromium
+      # because its job also uploads `test-results/`, but the bash suite contains
+      # no Playwright invocation at all -- it is a Docker and filesystem harness.
+      # Skipping it saves the 36s that step cost on run 35862407660.
+      - name: Run the boundary slice of the E2E suite
+        shell: bash
+        env:
+          # The client-extension and routes sections only. The script refuses an
+          # unknown name rather than silently matching nothing, so a typo here
+          # fails the job instead of producing a green run that verified nothing.
+          LDM_E2E_SECTIONS: boundary
+        run: bash scripts/verify_e2e_refactor.sh
+
+      # The report names its own sections in the header and is stamped PARTIAL
+      # RUN, so it cannot be mistaken for a full verification after the fact. The
+      # script also refuses to copy a partial run into
+      # references/verification-results/, which is what feeds the compatibility
+      # matrix -- this artifact is for reading a failure, not for publishing.
+      - name: Upload Verification Report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-boundary-slice-report
+          path: verify-*.txt
+          retention-days: 7
