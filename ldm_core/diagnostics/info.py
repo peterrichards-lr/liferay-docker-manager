@@ -295,7 +295,19 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
             if ssl_enabled:
                 local_url = f"https://{ext_id}.{host_name}"
             else:
-                local_url = f"http://{ext_id}.{host_name}:{port}"
+                # LDM-#1981: the EXTENSION's port, not Liferay's.
+                #
+                # `port` above is `meta["port"]` -- the port Liferay itself is
+                # published on. Using it here told the user their extension was
+                # at `http://<ext>.<host>:<liferay-port>`, which reaches
+                # LIFERAY and returns its 404. The extension is published on
+                # `port_<ext_id>`, assigned per extension.
+                #
+                # This is the address a user is most likely to follow, so a
+                # wrong one costs exactly the debugging the command exists to
+                # save -- it sent an external team chasing a proxy fault.
+                ext_port = meta.get(f"port_{ext_id}") or port
+                local_url = f"http://{ext_id}.{host_name}:{ext_port}"
 
             urls_str = local_url
             if is_shared and share_subdomain:
