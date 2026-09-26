@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.0-pre.4] - 2026-09-26
+
+### Fixed
+
+- **A client extension is reachable again in a project without SSL** (LDM-#1985, LDM-#1969). Two corrections to one block, and the net change is four deleted lines.
+  **The collision was the rewrite, not the allocation.** LDM published a client extension's host port through a fixed mapping -- anything landing on 8080 became `28080`, and 80/443 gained 10000. `28080` is a *constant*, so it was never a per-project answer: the first extension in every project that resolved to 8080 claimed it, and at most one client extension on the whole host could bind it. Two projects with one extension each both published `0.0.0.0:28080`, measured. The per-project deduplication added in v2.26.0-pre.3 could not prevent this, because it runs upstream and the rewrite discarded its answer. The mapping is gone; the allocated port is published verbatim, so two extensions get 8080 and 8081 and keep them.
+  **And removing the port removed the only way in.** v2.26.0-pre.3 deleted the mapping entirely, on the reasoning that an extension is reached through Traefik on its own subdomain. That holds only where a proxy exists, and one is provisioned **only for an SSL project** -- so a non-SSL project's extension carried routing labels with nothing running to read them, and no published port either. It could not be reached from the host at all. The port is published again, and only when SSL is off: that condition is exactly "no proxy will front this", so the mapping appears where it is the only working address and SSL projects continue to publish nothing and use the subdomain.
+  **The OAuth URL written into the extension's own artifact is correct again.** It names the allocated port, which was wrong while the rewrite existed -- `:8080` written for a container published on 28080 -- and is accurate now the rewrite is gone.
+
+### Changed
+
+- **The client-extension boundary checks run on pull requests, not only after a release tag** (LDM-#1975). `verify_e2e_refactor.sh` is the only suite that observes LDM's edges with Liferay and Docker, and it ran solely on tag pushes -- so every client-extension regression this cycle was found *after* a version number had been spent. A path-filtered slice now runs on any pull request touching the compose builder, the workspace scanners or the pipelines: about five and a half minutes against the full suite's twenty-two, because the boundary assertions themselves take under a minute and the rest is booting a portal. A partial run says so in its own output and is never recorded as a full verification.
+
+- **The PowerShell suite checks custom services again** (LDM-#1982). An edit in v2.26.0-pre.3 removed that check from `verify_e2e_refactor.ps1` while leaving its error message behind, so a different check ran under its name. Windows verification only; the Linux script, which is what CI runs, was unaffected.
+
 ## [v2.26.0-pre.3] - 2026-09-25
 
 ### Fixed
