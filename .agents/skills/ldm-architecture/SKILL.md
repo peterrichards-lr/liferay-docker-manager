@@ -609,12 +609,34 @@ So `depends_on: service_healthy` guarantees Liferay is *serving* before an
 extension starts. It does **not** guarantee that extension's credentials
 already exist — they cannot, if the trigger has not happened yet.
 
-**Why the design still works: a bind mount is live.** Files the host gains
-after the container started appear inside it immediately. Measured, because
-the whole approach rests on it. What is therefore NOT guaranteed is that an
-extension which reads its config once at startup will see credentials written
-later; whether the `@liferay/client-extension` SDK re-reads is outside this
-repository, and is the open half of LDM-#1915.
+**A bind mount is live, and that is necessary but NOT sufficient.** Files the
+host gains after the container started appear inside it immediately. Measured,
+because the whole approach rests on it.
+
+**The SDK does not re-read.** This was the open half of LDM-#1915 and now has
+an answer, from the installed code on the reporting deployment. The OAuth
+application is resolved once, in the constructor --
+`serverOauthApp = lxcConfig.oauthApplication(erc)` -- so if the credentials are
+not on disk at container start it returns `undefined` and stays that way for
+the life of the process. `config-node` then caches the miss on purpose ("map
+undefined value so we don't process it over and over again"), so a lazy getter
+alone does not recover it either.
+
+**No amount of LDM-side scheduling fixes that.** The credentials are written
+when Liferay registers the extension's application, which is downstream of the
+portal being healthy -- see *When the tree is actually populated* below, where
+the observed gap was roughly two minutes. So even a container that correctly
+waits for `service_healthy` can start before its own credentials exist.
+
+LDM-#1978 claimed the wait was being skipped on the `compose create` +
+`compose start` path. It was measured and retracted: `compose start` honours
+`depends_on` conditions (24s against a 25s `up` baseline, on a dependency with
+a 20s healthcheck). The ordering is correct and the race is inherent, which
+makes the point above stronger rather than weaker.
+
+Do not conclude from a green E2E that an extension will pick the credentials
+up. LDM's responsibility ends at publishing them where the extension can read
+them; whether it re-reads is the consumer's.
 
 **Docker must actually share the host path.** If the project lives outside the
 paths Docker Desktop shares, Docker silently creates a VM-local directory
