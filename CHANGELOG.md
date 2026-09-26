@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.0-pre.5] - 2026-09-26
+
+### Fixed
+
+- **Two client extensions in one project no longer fight over the same host port** (LDM-#1987, LDM-#1969). The root cause, after three fixes that did not reach it.
+  LDM allocates a distinct host port per client extension and records it correctly. **The composer never received it.** The routine that scans extensions reads its own copy of the project metadata, assigns the ports into *that*, and saves it; the compose builder is holding a different copy, which never gains those entries -- and the run pipeline rewrites its copy over the top before the compose is generated, so they are not on disk to be re-read either. Every extension therefore fell back to the same default of 8080, two of them published `0.0.0.0:8080:8080`, and the second container could not start: `port is already allocated`.
+  The allocated port is now carried on the extension itself rather than passed between two copies of a shared dictionary, so it cannot be lost that way again.
+  This is why the earlier attempts missed. v2.26.0-pre.3 deduplicated the allocation -- correcting a value nothing read. It then removed the host port entirely, which silenced the collision but left a client extension unreachable in a project without SSL, where no proxy exists to route it. v2.26.0-pre.4 restored the port and removed a rewrite that had been mapping everything to a fixed `28080`; that rewrite had been hiding the defect, because a constant needs no saved state and a project with one extension always worked.
+
+- **`ldm info` and the dashboard reported the wrong address for a client extension** (LDM-#1981). Both appended the wrong port -- `ldm info` used Liferay's, and the dashboard a hardcoded 8080 -- so the URL LDM told you to visit reached **Liferay**, which answered 404. Both now report the extension's own port. This is the address a user is most likely to follow, and a wrong one costs exactly the debugging these commands exist to save.
+
+### Changed
+
+- **The verification suite now checks the generated compose for duplicate host ports** (LDM-#1987). Nothing had ever read the port mappings: the only sign of a clash was a container failing to start, minutes later and in a different phase, looking like a Docker fault rather than a configuration one. The suite now fails at generation time and names both services. Its absence is the single clearest reason the defect above survived four passes.
+
 ## [v2.26.0-pre.4] - 2026-09-26
 
 ### Fixed
