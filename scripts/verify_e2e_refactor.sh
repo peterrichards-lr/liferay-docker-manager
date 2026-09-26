@@ -3820,6 +3820,72 @@ if [ "$CXSVC_OK" = true ]; then
 fi
 rm -rf "cxsvc-build" "${CXSVC_NAME}.zip"
 
+# LDM-#1987/#1969: no two services may publish the same host port.
+#
+# This is a COMPOSE-LEVEL assertion, and its absence is why LDM-#1969 survived
+# four attempted fixes. Nothing in this suite ever read the generated port
+# mappings; the only signal was a container failing to bind, which happens in
+# the `extras` section, minutes later, and reads as a Docker error rather than
+# a compose defect. So the boundary slice that exists to catch this class could
+# not have caught this member of it.
+#
+# The defect it pins: the port `_resolve_and_persist_cx_port` deduplicates was
+# never reaching the composer -- `scan_client_extensions` resolves its own copy
+# of the meta, and the composer held the pipeline's -- so every client
+# extension fell through to the same default and two of them published
+# `0.0.0.0:8080:8080`.
+#
+# Deliberately general rather than client-extension specific: Docker cannot
+# bind one host port twice for ANY pair of services, so a duplicate anywhere in
+# the file is a defect whatever produced it.
+echo ">> Verifying no two services publish the same host port (LDM-#1987/#1969)..."
+if ! "$VENV_PYTHON" - <<'PORTDUP_PY'
+import collections
+import pathlib
+import sys
+
+import yaml
+
+compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text()) or {}
+seen = collections.defaultdict(list)
+for name, svc in (compose.get("services") or {}).items():
+    for spec in (svc or {}).get("ports") or []:
+        if isinstance(spec, dict):
+            published = spec.get("published")
+            if published is None:
+                continue
+            host_port = str(published)
+        else:
+            # "ip:host:container", "host:container", or a bare "container".
+            parts = str(spec).split(":")
+            if len(parts) >= 3:
+                host_port = parts[-2]
+            elif len(parts) == 2:
+                host_port = parts[0]
+            else:
+                continue
+        host_port = host_port.split("/")[0].strip()
+        if host_port:
+            seen[host_port].append(name)
+
+dupes = {p: n for p, n in seen.items() if len(set(n)) > 1}
+if dupes:
+    for port, names in sorted(dupes.items()):
+        print(f"ERROR: host port {port} is published by {', '.join(sorted(set(names)))}")
+    sys.exit(1)
+
+print("  %d distinct host port(s) published, no duplicates." % len(seen))
+sys.exit(0)
+PORTDUP_PY
+then
+    echo "❌ ERROR: two services publish the same host port (LDM-#1987/#1969)." | tee -a "$RESULTS_FILE_TMP"
+    echo "   Docker cannot bind one host port twice, so the second container fails" | tee -a "$RESULTS_FILE_TMP"
+    echo "   to start with 'port is already allocated'. If these are client" | tee -a "$RESULTS_FILE_TMP"
+    echo "   extensions, the resolved port is not reaching the composer." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+report_ok "✅ No two services publish the same host port (LDM-#1987/#1969)."
+
 # LDM-#1944: the pairing. Does the directory Liferay CREATES match the one LDM
 # MOUNTS?
 #

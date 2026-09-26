@@ -2615,7 +2615,35 @@ class ComposerService:
                 # verbatim. Two extensions get 8080 and 8081 and keep them.
                 if not ssl_enabled:
                     bind_ip = meta.get("bind_ip", "0.0.0.0")  # nosec B104
-                    resolved_port_str = meta.get(f"port_{ext_id}")
+                    # LDM-#1987: read the port off the EXTENSION, not off
+                    # `meta`.
+                    #
+                    # `meta.get(f"port_{ext_id}")` was always None here, so
+                    # every extension fell through to `ms_port` -- 8080 for any
+                    # extension declaring no ports -- and two of them published
+                    # the same host port. The second container then failed to
+                    # bind, which is LDM-#1969.
+                    #
+                    # The cause is a dict-identity seam. `scan_client_extensions`
+                    # takes no `meta` parameter at all; it reads its own copy
+                    # from disk (`workspace/metadata.py`), and the resolver
+                    # mutates and persists THAT. This function holds the
+                    # pipeline's `project_meta`, which never receives the keys
+                    # -- and `run.py` rewrites that dict wholesale before the
+                    # composer runs, so they are not on disk to be re-read
+                    # either.
+                    #
+                    # `_resolve_and_persist_cx_port` now returns the value and
+                    # the scan attaches it as `host_port`, so nothing depends on
+                    # two callers sharing a mutable dict.
+                    #
+                    # Every test in this area used to bracket that seam without
+                    # crossing it: the composer tests hand-built a meta dict AND
+                    # mocked the scan, so they asserted the composer honours a
+                    # key the real pipeline never supplied.
+                    resolved_port_str = ext.get("host_port") or meta.get(
+                        f"port_{ext_id}"
+                    )
                     safe_host_port = 8080
                     if resolved_port_str:
                         try:

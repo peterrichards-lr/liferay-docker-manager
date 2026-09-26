@@ -3535,6 +3535,64 @@ sys.exit(1 if fails else 0)
     Write-Verdict "[SUCCESS] Client-extension service: routes anchored at /etc/liferay/lxc/routes with both trees addressed inside it (not over the app), domain supplied, host resolvable, and the extension's own /opt/liferay/routes code still visible inside the running container (LDM-#1911/#1918/#1944)."
     Remove-Item -Recurse -Force "cxsvc-build", "$cxSvcName.zip", "cxsvc-check.py" -ErrorAction SilentlyContinue
 
+    # LDM-#1987/#1969: no two services may publish the same host port.
+    #
+    # A COMPOSE-LEVEL assertion, and its absence is why LDM-#1969 survived four
+    # attempted fixes. Nothing in this suite read the generated port mappings;
+    # the only signal was a container failing to bind, which happens in the
+    # `extras` section and reads as a Docker error rather than a compose
+    # defect.
+    #
+    # Deliberately general rather than client-extension specific: Docker cannot
+    # bind one host port twice for ANY pair of services.
+    #
+    # Parity with the LDM-#1987 block in verify_e2e_refactor.sh.
+    Write-Host ">> Verifying no two services publish the same host port (LDM-#1987/#1969)..."
+    @'
+import collections
+import pathlib
+import sys
+
+import yaml
+
+compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text()) or {}
+seen = collections.defaultdict(list)
+for name, svc in (compose.get("services") or {}).items():
+    for spec in (svc or {}).get("ports") or []:
+        if isinstance(spec, dict):
+            published = spec.get("published")
+            if published is None:
+                continue
+            host_port = str(published)
+        else:
+            parts = str(spec).split(":")
+            if len(parts) >= 3:
+                host_port = parts[-2]
+            elif len(parts) == 2:
+                host_port = parts[0]
+            else:
+                continue
+        host_port = host_port.split("/")[0].strip()
+        if host_port:
+            seen[host_port].append(name)
+
+dupes = {p: n for p, n in seen.items() if len(set(n)) > 1}
+if dupes:
+    for port, names in sorted(dupes.items()):
+        print("ERROR: host port %s is published by %s" % (port, ", ".join(sorted(set(names)))))
+    sys.exit(1)
+
+print("  %d distinct host port(s) published, no duplicates." % len(seen))
+sys.exit(0)
+'@ | Out-File -FilePath "portdup-check.py" -Encoding ascii
+    & $VENV_PYTHON "portdup-check.py"
+    if ($LASTEXITCODE -ne 0) {
+        Remove-Item -Force "portdup-check.py" -ErrorAction SilentlyContinue
+        throw "Two services publish the same host port; the second container cannot bind (LDM-#1987/#1969)."
+    }
+    Remove-Item -Force "portdup-check.py" -ErrorAction SilentlyContinue
+    Write-Verdict "[SUCCESS] No two services publish the same host port (LDM-#1987/#1969)."
+
     # LDM-#1944: the pairing -- does the directory Liferay CREATES match the
     # one LDM MOUNTS? This is the assertion that was missing, and its absence
     # is why the issue survived four wrong diagnoses: every check looked at

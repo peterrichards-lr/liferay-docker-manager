@@ -299,6 +299,11 @@ def _resolve_and_persist_cx_port(self, ext_info, ext_id, meta, root_dir):
     except (ValueError, TypeError):
         default_port = 8080
 
+    # LDM-#1987: the caller needs this value, and reading it back out of `meta`
+    # does not work. `scan_client_extensions` resolved its OWN copy of the meta
+    # from disk, so the dict mutated here is not the dict the composer holds --
+    # see the docstring there. Returning it removes the shared-dict assumption
+    # rather than trying to satisfy it.
     meta_port_key = f"port_{ext_id}"
     if meta_port_key not in meta:
         # LDM-#1969: exclude the ports already assigned to OTHER extensions in
@@ -335,6 +340,8 @@ def _resolve_and_persist_cx_port(self, ext_info, ext_id, meta, root_dir):
         )
         meta[meta_port_key] = str(resolved_port)
         self.manager.write_meta(root_dir, meta)
+
+    return meta.get(meta_port_key)
 
 
 def _process_built_cx_zips(  # noqa: C901
@@ -410,8 +417,9 @@ def _process_built_cx_zips(  # noqa: C901
                         safe_copy(root_zip_copy, dest_zip)
 
                     ext_id = ext_info.get("id") or item.stem
+                    host_port = None
                     if is_service:
-                        _resolve_and_persist_cx_port(
+                        host_port = _resolve_and_persist_cx_port(
                             self, ext_info, ext_id, meta, root_dir
                         )
 
@@ -429,6 +437,10 @@ def _process_built_cx_zips(  # noqa: C901
                             "id": ext_info.get("id") or item.stem,
                             "path": target_folder,
                             "is_service": is_service,
+                            # LDM-#1987: the host port travels WITH the
+                            # extension, not through a meta dict the composer
+                            # does not share.
+                            "host_port": host_port,
                             "port": next(
                                 (
                                     p.get("port")
@@ -472,7 +484,9 @@ def _process_existing_cx_folders(
             }
             ext_id = ext_info.get("id") or item.name
             if is_service:
-                _resolve_and_persist_cx_port(self, ext_info, ext_id, meta, root_dir)
+                entry["host_port"] = _resolve_and_persist_cx_port(
+                    self, ext_info, ext_id, meta, root_dir
+                )
 
             if host_name:
                 dest_zip = osgi_cx_dir / f"{item.name}.zip"
