@@ -244,7 +244,14 @@ def api_projects():
                 ext_id = ext.get("id")
                 ext_name = f"{name}-{ext_id}"
 
-                local_url = f"http://{ext_id}.{host_name}:8080"
+                # LDM-#1981: the extension's own port, not a hardcoded
+                # 8080. 8080 is Liferay's container port and the dashboard
+                # published it for every extension, so every link went to
+                # Liferay. `port_<ext_id>` is what the extension is published
+                # on; `meta["port"]` is the last resort and is at least the
+                # project's real Liferay port rather than a guess.
+                ext_port = meta.get(f"port_{ext_id}") or port
+                local_url = f"http://{ext_id}.{host_name}:{ext_port}"
                 public_url = None
                 if is_shared and share_subdomain:
                     for u in fetched_urls:
