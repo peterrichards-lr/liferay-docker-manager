@@ -127,18 +127,22 @@ class TestComposerService(unittest.TestCase):
             env,
         )
 
-    def test_a_client_extension_publishes_no_host_port(self):
-        """LDM-#1973: this asserted the opposite until the mapping was removed.
+    def test_a_non_ssl_client_extension_publishes_its_resolved_port(self):
+        """LDM-#1985. This assertion has been inverted twice; read the reason.
 
-        It expected `0.0.0.0:8083:8080` from `meta["port_ms1"] = "8083"`. The
-        mapping was not on the access path -- Traefik routes the extension by
-        subdomain over the Docker network -- and it was the mechanism behind
-        LDM-#1969: the composer funnelled 8080 to 28080 AFTER the per-project
-        uniqueness resolution, so two extensions reaching 8080 both published
-        on 28080 and the second container failed to bind.
+        Originally it expected `0.0.0.0:8083:8080` from `meta["port_ms1"]`.
+        LDM-#1973 changed it to expect NO port, on the grounds that Traefik
+        routes the extension by subdomain so the mapping was redundant. That
+        holds only where a proxy EXISTS, and `setup_infrastructure` returns
+        without provisioning one unless SSL is on -- so a non-SSL project got
+        an extension with routing labels, no proxy to read them, and no port.
 
-        Note the block was already `if not ssl_enabled`, so an SSL project has
-        never published these and client extensions work there.
+        The port is published again, and the value is now the resolved one
+        VERBATIM. The `8080 -> 28080` rewrite that used to sit between them is
+        gone: 28080 was a constant, so the first extension in every project
+        that resolved to 8080 landed on it and at most one on the whole host
+        could bind it. That was LDM-#1969, and it was never a deduplication
+        failure -- the rewrite discarded the deduplicated answer.
         """
         paths = {"root": Path("/tmp"), "cx": Path("/tmp/cx"), "ce_dir": Path("/tmp/ce")}
         meta = {"port_ms1": "8083"}
@@ -155,46 +159,80 @@ class TestComposerService(unittest.TestCase):
         services = self.composer._build_extensions_services(
             paths, meta, "localhost", "proj", False
         )
-        self.assertIn("proj-ms1", services)
-        self.assertFalse(
-            services["proj-ms1"].get("ports"),
-            "a client extension must publish no host port: the number was "
-            "silently relocated, and a caller reading it from LCP.json reached "
-            "nothing or another extension's container (LDM-#1973)",
-        )
+        self.assertIn("0.0.0.0:8083:8080", services["proj-ms1"]["ports"])
 
-    def test_the_traefik_route_replaces_the_host_port(self):
-        """The access path, asserted where the removed mapping was asserted.
+    def test_the_resolved_port_is_published_unrewritten(self):
+        """The LDM-#1969 fix, asserted at the value rather than the symptom.
 
-        Deleting a mount or a mapping is only safe if the thing that replaces
-        it is pinned in the same place, or the next reader sees a removal with
-        no counterpart.
+        8080 must publish as 8080. If it becomes 28080 the deduplication is
+        being discarded and two projects collide on a shared constant.
+        """
+        paths = {"root": Path("/tmp"), "cx": Path("/tmp/cx"), "ce_dir": Path("/tmp/ce")}
+        for resolved in ("8080", "80", "443"):
+            with self.subTest(resolved=resolved):
+                self.manager.workspace.scan_client_extensions.return_value = [
+                    {
+                        "id": "ms1",
+                        "deploy": True,
+                        "is_service": True,
+                        "path": "/tmp/ms1",
+                        "ports": [{"port": 8080}],
+                    }
+                ]
+                services = self.composer._build_extensions_services(
+                    paths, {"port_ms1": resolved}, "localhost", "proj", False
+                )
+                published = services["proj-ms1"]["ports"][0].split(":")[1]
+                self.assertEqual(
+                    resolved,
+                    published,
+                    f"resolved {resolved} was rewritten to {published}; the "
+                    f"rewrite is a shared constant and collides across "
+                    f"projects (LDM-#1969/#1985)",
+                )
+
+    def test_an_ssl_client_extension_publishes_nothing(self):
+        """LDM-#1973's valid half, kept.
+
+        With SSL the global proxy exists and fronts the extension on its
+        subdomain, so a host port is genuinely redundant. This is also why the
+        original block was `if not ssl_enabled` -- that condition IS "no proxy
+        will front this".
         """
         paths = {"root": Path("/tmp"), "cx": Path("/tmp/cx"), "ce_dir": Path("/tmp/ce")}
         self.manager.workspace.scan_client_extensions.return_value = [
-            {
-                "id": "ms1",
-                "deploy": True,
-                "is_service": True,
-                "path": "/tmp/ms1",
-                "ports": [{"port": 8080}],
-            }
+            {"id": "ms1", "deploy": True, "is_service": True, "path": "/tmp/ms1"}
         ]
+        services = self.composer._build_extensions_services(
+            paths, {"port_ms1": "8080"}, "h.test", "proj", True
+        )
+        self.assertFalse(services["proj-ms1"].get("ports"))
 
+    def test_the_traefik_route_is_present_either_way(self):
+        """The subdomain is the access path wherever a proxy exists, and the
+        labels are emitted regardless of SSL -- unlike the Liferay service's,
+        which are gated on it (`composer.py`, the `if ssl_enabled` block).
+        """
+        paths = {"root": Path("/tmp"), "cx": Path("/tmp/cx"), "ce_dir": Path("/tmp/ce")}
         for ssl_enabled in (False, True):
             with self.subTest(ssl=ssl_enabled):
+                self.manager.workspace.scan_client_extensions.return_value = [
+                    {
+                        "id": "ms1",
+                        "deploy": True,
+                        "is_service": True,
+                        "path": "/tmp/ms1",
+                        "ports": [{"port": 8080}],
+                    }
+                ]
                 services = self.composer._build_extensions_services(
                     paths, {}, "example.test", "proj", ssl_enabled
                 )
                 labels = services["proj-ms1"]["labels"]
                 self.assertIn("traefik.enable=true", labels)
                 self.assertTrue(
-                    [lbl for lbl in labels if "rule=Host(`ms1.example.test`)" in lbl],
-                    f"no subdomain router, so nothing reaches it: {labels}",
-                )
-                self.assertTrue(
-                    [lbl for lbl in labels if "loadbalancer.server.port=8080" in lbl],
-                    f"Traefik is not pointed at the container port: {labels}",
+                    [lb for lb in labels if "rule=Host(`ms1.example.test`)" in lb],
+                    f"no subdomain router: {labels}",
                 )
 
     def test_build_liferay_service_volumes_and_jvm(self):

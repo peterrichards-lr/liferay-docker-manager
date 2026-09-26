@@ -80,31 +80,35 @@ def _rewrite_oauth_urls_in_zip(  # noqa: C901, PLR0912, PLR0915
     ssl_enabled = str(meta.get("ssl", "false")).lower() == "true"
     protocol = "https" if ssl_enabled else "http"
 
-    # LDM-#1973: no port. The extension is reached through Traefik by
-    # subdomain, and this URL is written INTO the extension's own OAuth
-    # configuration, so a wrong one is baked into the artifact.
+    # LDM-#1985: the port is back, and is now CORRECT.
     #
-    # It used to append `meta[port_<ext_name>]`, which was the port resolved
-    # BEFORE the composer's rewrite: an extension resolved to 8080 was
-    # published on 28080, and this wrote `:8080` -- a URL pointing at nothing,
-    # or at a different extension's container. That is the "dependent caller
-    # using the wrong port" this class of bug was predicted to produce, and it
-    # was live before the host publication was removed.
+    # This URL is written INTO the extension's own OAuth configuration, inside
+    # the deployed artifact, so a wrong one is baked in.
     #
-    # `{ext_name}.{host_name}` resolves because `verify_runtime_environment`
-    # adds a hosts entry for every deployed extension with a load balancer
-    # (`ldm_core/handlers/base.py:104-106`), and Traefik routes it on the
-    # global proxy's HTTP entrypoint.
+    # It used to be wrong. `meta[port_<ext_name>]` is the port the resolver
+    # assigned, and the composer then rewrote 8080 to 28080 before publishing
+    # it -- so this wrote `:8080` for a container listening on 28080. LDM-#1973
+    # removed the port entirely to escape that, which was right only where a
+    # Traefik proxy exists to serve the bare subdomain; a non-SSL project has
+    # none (LDM-#1985).
     #
-    # Symmetrical with the SSL branch, which has always emitted no port.
+    # With the rewrite deleted, the resolved port IS the published port, so
+    # reading it here is accurate again. SSL keeps the bare subdomain, because
+    # there the proxy fronts it and nothing is published.
     if host_name == "localhost":
-        external_url = (
-            "https://localhost" if ssl_enabled else f"http://{ext_name}.localhost"
-        )
+        if ssl_enabled:
+            external_url = "https://localhost"
+        else:
+            port = meta.get(f"port_{ext_name}") or "8080"
+            external_url = f"http://localhost:{port}"
     elif ssl_enabled:
         external_url = f"https://{ext_name}.{host_name}"
     else:
-        external_url = f"http://{ext_name}.{host_name}"
+        port = meta.get(f"port_{ext_name}")
+        if port and port not in ["80", "443", 80, 443]:
+            external_url = f"http://{ext_name}.{host_name}:{port}"
+        else:
+            external_url = f"http://{ext_name}.{host_name}"
 
     modified = False
     with tempfile.TemporaryDirectory() as tmpdir:

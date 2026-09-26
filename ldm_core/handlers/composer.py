@@ -2573,47 +2573,68 @@ class ComposerService:
 
                 services[svc_id]["labels"] = labels
 
-                # LDM-#1973: a client extension publishes NO host port.
+                # LDM-#1985: publish a host port, but ONLY when no proxy
+                # will front this project, and WITHOUT the rewrite that used
+                # to sit here.
                 #
-                # It is reached through Traefik, by subdomain -- the router
-                # rule above is `Host(<ext-id>.<host_name>)` and the service
-                # label points Traefik at `ms_port` over `liferay-net`. Both
-                # are set unconditionally; only `.tls=true` depends on SSL. So
-                # the host `-p` mapping was never on the access path.
+                # Two separate mistakes are being undone.
                 #
-                # It was also actively harmful. The mapping was computed as:
+                # LDM-#1969 was a collision -- two client extensions binding
+                # the same host port. Its cause was the rewrite this block no
+                # longer performs:
                 #
-                #     safe_host_port = meta[f"port_{ext_id}"] or 8080
                 #     if safe_host_port in (80, 443):  safe_host_port += 10000
                 #     elif safe_host_port == 8080:     safe_host_port = 28080
                 #
-                # a FUNNEL applied downstream of the per-project uniqueness
-                # resolution in `_resolve_and_persist_cx_port`, and never
-                # deduplicated itself. Two extensions reaching 8080 -- one from
-                # its persisted port, one from that literal default, which is
-                # what an extension discovered by the standalone-services path
-                # gets, since nothing calls the resolver for it -- both became
-                # 28080:
+                # 28080 is a CONSTANT, so it is not a per-project answer: the
+                # first extension in EVERY project that resolves to 8080 lands
+                # on it, and at most one client extension on the whole host
+                # can ever bind it. Measured against two separate projects,
+                # one extension each, both publishing `0.0.0.0:28080`. The
+                # per-project deduplication in `_resolve_and_persist_cx_port`
+                # cannot see this, because it runs upstream and the rewrite
+                # discards its answer for anything landing on 8080.
                 #
-                #     Bind for 0.0.0.0:28080 failed: port is already allocated
+                # LDM-#1973 then removed the whole block, on the grounds that
+                # an extension is reached through Traefik by subdomain so the
+                # mapping was redundant. That is true only where a proxy
+                # EXISTS, and `setup_infrastructure` returns without
+                # provisioning one unless SSL is on (`handlers/infra.py`, the
+                # `if not use_ssl: return` early exit). In a non-SSL project
+                # the extension then carried routing labels with nothing
+                # running to read them, and no port either -- unreachable from
+                # the host. That is LDM-#1985.
                 #
-                # LDM-#1969 fixed the resolution and the collision survived,
-                # because the exclusion set is computed in pre-rewrite space
-                # and is structurally incapable of seeing the rewrite. The
-                # rewrite is project-independent too, so two concurrent
-                # projects collided even with perfect per-project dedup.
+                # Note the condition below is the ORIGINAL one and is the
+                # point: `not ssl_enabled` is precisely "no proxy will front
+                # this", so the mapping appears exactly where it is the only
+                # way in, and SSL projects continue to publish nothing and use
+                # the subdomain.
                 #
-                # And the relocation was silent. A caller reading the port from
-                # the extension's own LCP.json -- the only place it is declared
-                # -- connected to nothing, or to a different extension's
-                # container, with nothing in the output saying the number had
-                # moved. A wrong port that looks authoritative is worse than no
-                # port at all.
-                #
-                # Note this block was already `if not ssl_enabled`, so an SSL
-                # project has never published these ports and client extensions
-                # work there. That is the clearest evidence the mapping was
-                # redundant rather than load-bearing.
+                # The port published is now the resolved, deduplicated one,
+                # verbatim. Two extensions get 8080 and 8081 and keep them.
+                if not ssl_enabled:
+                    bind_ip = meta.get("bind_ip", "0.0.0.0")  # nosec B104
+                    resolved_port_str = meta.get(f"port_{ext_id}")
+                    safe_host_port = 8080
+                    if resolved_port_str:
+                        try:
+                            safe_host_port = int(resolved_port_str)
+                        except ValueError:
+                            if ms_port is not None:
+                                try:
+                                    safe_host_port = int(str(ms_port))
+                                except ValueError:
+                                    pass
+                    elif ms_port is not None:
+                        try:
+                            safe_host_port = int(str(ms_port))
+                        except ValueError:
+                            pass
+
+                    services[svc_id]["ports"] = [
+                        f"{bind_ip}:{safe_host_port}:{ms_port}"
+                    ]
         return services
 
     def _build_kibana_service(self, meta, project_name):
