@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.0-pre.6] - 2026-09-27
+
+### Fixed
+
+- **`ldm system doctor --bundle` no longer puts credentials in a zip it calls sanitized** (LDM-#1974). The bundle is meant to be attached to support tickets and GitHub issues. It contained your global config (`ngrok_authtoken` and any stored API key), every project's metadata (`admin_password`, `db_password`) and the tunnel token. Two of those went through a redaction step that **does nothing to these files** -- it looks for `KEY=value` and they are JSON -- and the tunnel token was copied in whole with no redaction attempted at all. Values are now masked by key name, including inside nested structures, and the tunnel token is recorded as present rather than included. **If you generated a bundle with an earlier version and shared it, treat what it contained as disclosed.**
+
+- **`ldm info` and the dashboard reported the wrong address for a client extension** (LDM-#1981, shipped in pre.5 and noted here for completeness). Both appended a port belonging to something else, so the URL LDM told you to visit reached Liferay and answered 404.
+
+### Added
+
+- **`ldm system doctor` now says whether this filesystem actually honours the permissions LDM sets** (LDM-#1946). FAT32 and exFAT accept a permission change, report success, and silently discard it -- and the mode they synthesise is the **most** restrictive one, so a container is locked out of the whole tree rather than being let in. Docker Desktop hides this on macOS and Windows; on native Linux with an external drive it fails hard while every diagnostic claims the permissions were fixed. The check measures rather than guessing from the filesystem's name, which also catches a POSIX volume with macOS's "Ignore ownership on this volume" set. Where modes are not honoured there is no setting that adapts -- the remedy is to move the project or remount the volume, and the check says so.
+
+- **`ldm system doctor` now reports which Traefik routers the proxy actually loaded** (LDM-#1989). LDM writes the routing rules for every client extension and had no way to tell you whether the proxy picked them up. A rule that did not load returns a plain 404, which is indistinguishable from a wrong hostname, an extension that was never a container, a missing hosts entry, or a proxy fault -- five causes, one symptom, and nothing to separate them. Diagnosing one such 404 with an external team took several days. The check also reports the entrypoints each router is bound to, which is the one thing the container's own configuration cannot tell you.
+
+- **A client extension whose two names differ now says which is which** (LDM-#1984). Its subdomain comes from the `id` in `LCP.json`; its config directory is named from `projectName`. By convention the first drops the hyphens the second keeps, so the two look nearly identical, and requesting the wrong one gets a 404 with nothing to indicate why. LDM now prints both, and which of them is a hostname, whenever they differ.
+
+### Changed
+
+- **A flaky test no longer fails for reasons unrelated to what it tests** (LDM-#1979). Its mocked clock advanced on every reading rather than once per attempt, so the result depended on how many times the code under test happened to look at the clock. It failed on one Python version while three others passed in the same run.
+
 ## [v2.26.0-pre.5] - 2026-09-26
 
 ### Fixed
