@@ -43,6 +43,59 @@ def _get_manual_upgrade_cmd(handler, url, exe_path):
     return f'{prefix}curl -L "{url}" -o "{exe_path}" && {prefix}chmod +x "{exe_path}"'
 
 
+def _announce_post_upgrade_actions(upgraded_from, upgraded_to):
+    """Tell the user what this upgrade needs them to DO, not just that it worked.
+
+    LDM-#1974: `ldm system doctor --bundle` was documented as producing a
+    "sanitized" zip for attaching to support tickets, and wrote `~/.ldmrc`, every
+    project's meta and the lfr-tunnel token into it. Two went through a
+    redaction step that is a no-op on JSON; the token was copied verbatim with
+    none attempted. Anyone who shared such a bundle disclosed their
+    `ngrok_authtoken`, any stored API key, and project `admin_password` /
+    `db_password`.
+
+    A CHANGELOG entry is not enough for that. Someone upgrading past this
+    version has to be told at the moment they upgrade, because the action is
+    theirs and it is time-sensitive -- the credentials stay valid until rotated.
+
+    Version-gated deliberately: it fires only when crossing the release that
+    fixed it, so it does not nag on every subsequent upgrade. Anyone already on
+    2.26.0 or later has either seen it or was never exposed.
+    """
+    from ldm_core.utils import version_to_tuple
+
+    try:
+        was_before = version_to_tuple(str(upgraded_from)) < (2, 26, 0)
+        now_at_or_after = version_to_tuple(str(upgraded_to)) >= (2, 26, 0)
+    except Exception:
+        # Defensive only: `version_to_tuple` returns (0, 0, 0, 0) for anything
+        # it cannot parse rather than raising, so this is unreachable today.
+        # Kept because this runs immediately after the binary is replaced, and a
+        # traceback here would make a SUCCESSFUL upgrade look like a failure.
+        #
+        # Note the (0, 0, 0, 0) fallback means an UNKNOWN starting version
+        # compares as older than the fix and the notice fires. That is the right
+        # direction: an unnecessary rotation reminder costs a minute, a missed
+        # one leaves a live credential in a shared artifact.
+        return
+
+    if not (was_before and now_at_or_after):
+        return
+
+    UI.warning(
+        "Action may be required: 'ldm system doctor --bundle' used to include "
+        "credentials in a zip it described as sanitized (LDM-#1974)."
+    )
+    UI.info(
+        "If you ever attached one of those bundles to a support ticket, a "
+        "GitHub issue or a chat, treat these as disclosed and rotate them:\n"
+        "  - ngrok_authtoken and any API key in ~/.ldmrc\n"
+        "  - admin_password and db_password in each project's meta\n"
+        "  - the lfr-tunnel token (~/.ldm/lfr-tunnel/token)\n"
+        "If you have never run that command with --bundle, nothing was exposed."
+    )
+
+
 def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
     """Self-upgrade the LDM binary to the latest version."""
     UI.heading("LDM Self-Upgrade")
@@ -348,6 +401,7 @@ pause
                 # 'Invalid cross-device link' (Errno 18) by falling back to copy+unlink.
                 safe_move(str(temp_new), str(exe_path))
                 UI.success(f"Successfully upgraded to v{latest}!")
+                _announce_post_upgrade_actions(VERSION, latest)
             except (PermissionError, OSError):
                 UI.detail(
                     "\nRequesting permission to replace the binary in system path..."
@@ -379,6 +433,7 @@ pause
                         subprocess.run([*sudo_prefix, "rm", str(temp_new)], check=True)
 
                     UI.success(f"Successfully upgraded to v{latest}!")
+                    _announce_post_upgrade_actions(VERSION, latest)
                 except Exception as e:
                     UI.error(
                         "Failed to replace binary. Elevated privileges were denied or incorrect."
