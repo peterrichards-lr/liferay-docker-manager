@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.0-pre.7] - 2026-09-27
+
+### Added
+
+- **Upgrading now tells you if you need to rotate credentials** (LDM-#1995). The debug-bundle leak fixed in v2.26.0-pre.6 is fixed in the code, but a fix cannot undo a disclosure: anyone who generated a `doctor --bundle` and attached it to a ticket or an issue has credentials in someone else's hands, and those stay valid until they are changed. Upgrading past this release now says so once, names exactly what to rotate, and says plainly that nothing was exposed if you never ran that command with `--bundle` — which is most people.
+
+### Changed
+
+- **The snapshot permission list can no longer contain an entry that does nothing** (LDM-#1992). It reclaims permissions over a list of path keys, and `paths.get(key)` cannot distinguish a key that does not exist from a directory that is not there — so a wrong key was a silent no-op, with no warning and no log line. One such entry had never done anything. It is removed, which changes no behaviour because nothing it would have done was ever done, and a test now fails if a key is not real. The two lists this file maintains are also named for what they hold — one takes path keys, the other directory names — because the same string was valid in one and meaningless in the other, which is how the dead entry looked correct.
+
+  Whether a working key should take its place is deliberately still open (LDM-#1942): one candidate would newly reclaim a tree, and the other is your own client-extension source, which this code would chown away. That needs a real Linux run to observe at all, so it is not being guessed at.
+
 ## [v2.26.0-pre.6] - 2026-09-27
 
 ### Fixed
