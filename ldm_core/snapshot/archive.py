@@ -26,6 +26,52 @@ CLIENT_EXTENSION_SOURCES = (
     ("client-extensions", "*/dist/*.zip"),
 )
 
+# LDM-#1942: the reclaim loop and the archive loop take strings from TWO
+# DIFFERENT NAMESPACES, and the strings look alike.
+#
+# `_RECLAIM_PATH_KEYS` are keys into `setup_paths` -- `paths.get(key)`.
+# `_ARCHIVE_DIR_NAMES` are directory names under the project root --
+# `paths["root"] / name`.
+#
+# `client-extensions` used to sit in the reclaim list. It is a valid DIRECTORY
+# NAME and not a valid PATH KEY -- the two client-extension trees are keyed `cx`
+# (`osgi/client-extensions`) and `ce_dir` (`client-extensions`) -- so the same
+# string was correct in the archive list below and a silent miss above, with
+# nothing distinguishing the two namespaces.
+#
+# `paths.get(key)` treats a missing key and a missing directory identically, so
+# a wrong key degrades to a no-op with no warning, no error and no log line.
+# `test_snapshot_reclaim_keys.py` now fails if a key is not real.
+#
+# **The dead entry is removed, and that is a no-op**: it resolved to None on
+# every run, so nothing it would have done was ever done. What is NOT decided
+# here is whether a live key should take its place. Adding `cx` would newly
+# reclaim a tree; adding `ce_dir` would chown the DEVELOPER'S OWN SOURCE to uid
+# 1000 at mode 777. That is a scope decision rather than a typo, and it cannot
+# be observed except on native Linux running as a uid that is not 1000 --
+# otherwise `chown 1000` changes nothing and every assertion passes either way.
+# Tracked on LDM-#1942.
+_RECLAIM_PATH_KEYS = (
+    "deploy",
+    "files",
+    "logs",
+    "configs",
+    "modules",
+    "marketplace",
+)
+
+_ARCHIVE_DIR_NAMES = (
+    "files",
+    "scripts",
+    "osgi",
+    "data",
+    "deploy",
+    "routes",
+    "client-extensions",
+    "configs",
+    ".ldm",
+)
+
 OSGI_MODULE_SOURCES = (
     ("osgi/modules", "*.jar"),
     ("osgi/modules", "*.war"),
@@ -116,26 +162,21 @@ class ArchiveSnapshotService:
             #
             # `data`/`state` take the opposite treatment (host uid, `755`) --
             # see the comment on that loop.
-            for d in [
-                "deploy",
-                "files",
-                "logs",
-                "configs",
-                "modules",
-                "client-extensions",
-                # LDM-#1941: `marketplace` joined this list late. It was not a
-                # bind mount until LDM-#1918 restored it (`ac1210db`), so
-                # nothing containerised had ever written there and there was
-                # never anything the host user could not read back. Once
-                # mounted, Liferay creates `osgi/marketplace/override` as uid
-                # 1000 and the archive below -- which adds the whole `osgi`
-                # tree as one entry -- failed that entry outright, so
-                # `ldm snapshot` produced no backup at all on native Linux.
-                # Pre-creating the directory (the LDM-#1134 remedy for `logs`
-                # and `routes`) does not help: `override` is created by the
-                # container at runtime, not by Docker at mount time.
-                "marketplace",
-            ]:
+            # LDM-#1942: the list now lives at module level as
+            # `_RECLAIM_PATH_KEYS`, beside the archive list it kept drifting
+            # from. The comments that were inside it follow.
+            # LDM-#1941: `marketplace` joined this list late. It was not a
+            # bind mount until LDM-#1918 restored it (`ac1210db`), so
+            # nothing containerised had ever written there and there was
+            # never anything the host user could not read back. Once
+            # mounted, Liferay creates `osgi/marketplace/override` as uid
+            # 1000 and the archive below -- which adds the whole `osgi`
+            # tree as one entry -- failed that entry outright, so
+            # `ldm snapshot` produced no backup at all on native Linux.
+            # Pre-creating the directory (the LDM-#1134 remedy for `logs`
+            # and `routes`) does not help: `override` is created by the
+            # container at runtime, not by Docker at mount time.
+            for d in _RECLAIM_PATH_KEYS:
                 if paths.get(d) and paths[d].exists():
                     reclaim_volume_permissions(
                         paths[d], uid="1000", gid="1000", chmod_val="777"
@@ -178,17 +219,7 @@ class ArchiveSnapshotService:
         out_of_space = False
 
         with tarfile.open(files_tar, "w:gz") as tar:
-            for f in [
-                "files",
-                "scripts",
-                "osgi",
-                "data",
-                "deploy",
-                "routes",
-                "client-extensions",
-                "configs",
-                ".ldm",
-            ]:
+            for f in _ARCHIVE_DIR_NAMES:
                 f_path = paths["root"] / f
                 if f_path.exists():
                     if not self._add_to_archive(tar, f_path, f, skipped):
