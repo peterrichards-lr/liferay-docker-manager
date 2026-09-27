@@ -85,6 +85,189 @@ class DoctorRunner:
         self.mount_type = "unknown"
         self.docker_version = None
 
+    def _check_traefik_routers(self, docker_prefix):
+        """LDM-#1989: LDM writes Traefik routers and never checked they loaded.
+
+        A client extension whose router did not load returns a bare **404**.
+        From outside that is indistinguishable from the wrong hostname
+        (LDM-#1984), an extension that never becomes a container so never gets a
+        router at all, a missing `/etc/hosts` entry, or a genuine proxy fault.
+        Four causes, one symptom, and no command distinguished them.
+
+        Diagnosing one such 404 with an external team took several days and
+        multiple test-node cycles, eliminating those causes one round trip at a
+        time. `/api/http/routers` answers all of them at once, and the proxy has
+        been exposing it the whole time: `infra-compose.yml` starts Traefik with
+        `--api.insecure=true`.
+
+        Queried from INSIDE the container rather than over the published port.
+        The host port may be remapped, firewalled, or -- on a remote node --
+        reachable only through a tunnel that forwards 80 and 443 only. Asking
+        the container about itself avoids every one of those.
+        """
+        probe = run_command(
+            [
+                *docker_prefix,
+                "exec",
+                "liferay-proxy-global",
+                "wget",
+                "-q",
+                "-O",
+                "-",
+                "http://localhost:8080/api/http/routers",
+            ],
+            check=False,
+        )
+        if not probe:
+            # Absence is not a failure. The proxy may not be running, which the
+            # check above already reports, and a Traefik build without wget
+            # would look identical -- so say "not determined" rather than
+            # implying the routers are missing.
+            self.results.append(("Traefik Routers", "Not determined", "warn"))
+            return
+
+        try:
+            routers = json.loads(probe)
+        except (ValueError, TypeError):
+            self.results.append(
+                ("Traefik Routers", "Unreadable response from the proxy API", "warn")
+            )
+            return
+
+        if not isinstance(routers, list):
+            self.results.append(
+                ("Traefik Routers", "Unexpected response shape", "warn")
+            )
+            return
+
+        # Traefik's own `api@internal` and `dashboard@internal` are always
+        # present and tell the user nothing. What matters is the routers the
+        # DOCKER provider built from LDM's labels.
+        ours = [
+            r
+            for r in routers
+            if isinstance(r, dict) and r.get("provider") != "internal"
+        ]
+        broken = [r for r in ours if r.get("status") not in (None, "enabled")]
+
+        if broken:
+            names = sorted(str(r.get("name", "?")) for r in broken)
+            self.results.append(
+                (
+                    "Traefik Routers",
+                    f"{len(ours)} loaded, {len(broken)} not enabled: "
+                    f"{', '.join(names[:3])}",
+                    "warn",
+                )
+            )
+            self.add_hint(
+                "Traefik Routers: a router that is loaded but not enabled "
+                "returns 404 for its hostname, which looks identical to a wrong "
+                "hostname or a missing router. Inspect it with 'docker exec "
+                "liferay-proxy-global wget -qO- "
+                "http://localhost:8080/api/http/routers'."
+            )
+            return
+
+        if not ours:
+            # No project routers at all. Legitimate when nothing is running, and
+            # the exact state a client-extension 404 presents -- so name both
+            # readings rather than implying either.
+            self.results.append(
+                (
+                    "Traefik Routers",
+                    "No project routers loaded (nothing running, or labels not seen)",
+                    "warn",
+                )
+            )
+            return
+
+        # The entrypoints are reported because they are the one thing a labels
+        # dump cannot tell you, and a router on the wrong entrypoint 404s while
+        # every label looks correct.
+        entrypoints = sorted({ep for r in ours for ep in (r.get("entryPoints") or [])})
+        detail = f"{len(ours)} loaded"
+        if entrypoints:
+            detail += f" on {', '.join(entrypoints)}"
+        self.results.append(("Traefik Routers", detail, True))
+
+    def _check_filesystem_honours_modes(self):
+        """LDM-#1946: measure whether modes take, rather than assuming they do.
+
+        `reclaim_volume_permissions()` shells out to Alpine to chown/chmod a
+        project tree. On a filesystem that ignores permissions the command
+        succeeds and changes nothing, and until LDM-#1957 the helper reported
+        that as success because it answered "did the command run".
+
+        Measured on disposable disk images (macOS `hdiutil`), against an APFS
+        control:
+
+            FAT32   msdos, noowners   chmod 750 -> exit 0, mode UNCHANGED
+            exFAT   exfat, noowners   chmod 750 -> exit 0, mode UNCHANGED
+            APFS    owners enabled    chmod 750 -> 0750, as asked
+
+        **The synthesised mode is 0700, not a permissive one.** The intuitive
+        reading -- that a non-POSIX filesystem is permissive so LDM works by
+        accident -- is exactly backwards: a container running as uid 1000 is
+        locked out of the whole tree.
+
+        macOS and Windows hide this because Docker Desktop translates uids
+        regardless of mode. On native Linux with removable media -- the common
+        exFAT case -- it fails hard while every diagnostic reports the
+        permissions as fixed. The same applies to a POSIX volume with macOS's
+        "Ignore ownership on this volume" set, which is off by default on many
+        external drives.
+
+        Empirical, never nominal. A filesystem NAME check reports "APFS" and
+        misses the ownership-ignored case entirely.
+
+        `0751` is deliberate: it differs from the synthesised `0700` and from
+        common defaults (`0755`, `0700`, `0777`), so it cannot pass by
+        coincidence. The probe was observed distinguishing all three
+        filesystems above, so this guard has a canary known to fail rather than
+        assumed to.
+        """
+        import stat
+        import tempfile
+
+        probe_root = Path.cwd()
+        try:
+            with tempfile.TemporaryDirectory(dir=probe_root) as probe_dir:
+                target = Path(probe_dir) / "mode-probe"
+                target.mkdir()
+                target.chmod(0o751)
+                actual = stat.S_IMODE(target.stat().st_mode)
+        except Exception as e:
+            # Never fail the whole doctor run over a probe. An unwritable cwd
+            # is a different problem and other checks report it.
+            self.results.append(
+                ("Filesystem Modes", f"Not determined ({type(e).__name__})", "warn")
+            )
+            return
+
+        if actual == 0o751:
+            self.results.append(("Filesystem Modes", f"Enforced ({probe_root})", True))
+            return
+
+        self.results.append(
+            (
+                "Filesystem Modes",
+                f"NOT enforced -- asked 0751, got {oct(actual)} ({probe_root})",
+                "warn",
+            )
+        )
+        self.add_hint(
+            "Filesystem Modes: this filesystem discards permission changes, so "
+            "'ldm start --fix-permissions' and every chmod LDM makes here are "
+            "inert. There is no setting that adapts to this -- chmod 777 and "
+            "group membership are equally ignored."
+        )
+        self.add_hint(
+            "Move the project to a filesystem that enforces modes, or remount "
+            "this one with explicit uid=/gid= options. On macOS, check "
+            "'Ignore ownership on this volume' in the volume's Get Info panel."
+        )
+
     def add_hint(self, text, doc=None):
         self.hints.append({"text": text, "doc": doc})
 
@@ -229,6 +412,9 @@ class DoctorRunner:
         # 1. System Info
         self.results.append(("Python Version", sys.version.split()[0], True))
         self.results.append(("Platform", platform.platform(), True))
+
+        # 1.15 Does this filesystem actually enforce permission modes?
+        self._check_filesystem_honours_modes()
 
         # 1.2 Virtual Environment Check
         is_in_venv = (
@@ -1238,6 +1424,9 @@ class DoctorRunner:
                         f"Start shared infrastructure by running '{UI.WHITE}{cmd_hint}{UI.COLOR_OFF}'.",
                         f"{GITHUB_DOCS_URL}/README.md#infra-setup-infra-down-infra-restart",
                     )
+
+            # 6.9 Which Traefik routers did the proxy actually load?
+            self._check_traefik_routers(infra_docker_prefix)
 
             # 7. Tag Discovery Check
             from ldm_core.constants import API_BASE_DXP
@@ -3196,9 +3385,23 @@ def _generate_debug_bundle(self, results, project_paths):
         z.writestr("doctor-report.txt", report.getvalue())
 
         # 2. Config Files (~/.ldmrc)
+        #
+        # LDM-#1974: `redact_json_text`, NOT `UI.redact`. This bundle is
+        # documented as "sanitized" and is meant to be attached to support
+        # tickets, and `UI.redact` is a no-op on it: that function matches
+        # `KEY=value` with no spaces, while these files are JSON
+        # (`"key": "value"`). So the bundle shipped `ngrok_authtoken`, any
+        # stored API key, `admin_password` and `db_password` in plaintext under
+        # a name telling the reader it was safe to share.
+        #
+        # Same root cause as LDM-#1970, where `ldm config` printed the same
+        # values for the same reason -- a secret is identifiable from its KEY,
+        # never from the rendered text.
+        from ldm_core.utils import redact_json_text
+
         ldmrc = get_actual_home() / ".ldmrc"
         if ldmrc.exists():
-            z.writestr("ldmrc.txt", UI.redact(ldmrc.read_text()))
+            z.writestr("ldmrc.txt", redact_json_text(ldmrc.read_text()))
 
         # 3. Project Specific Data
         for p_path in project_paths:
@@ -3206,7 +3409,8 @@ def _generate_debug_bundle(self, results, project_paths):
             meta_file = p_path / ".liferay-docker.meta"
             if meta_file.exists():
                 z.writestr(
-                    f"projects/{p_name}/meta.txt", UI.redact(meta_file.read_text())
+                    f"projects/{p_name}/meta.txt",
+                    redact_json_text(meta_file.read_text()),
                 )
 
             compose_file = p_path / "docker-compose.yml"
@@ -3235,9 +3439,20 @@ def _generate_debug_bundle(self, results, project_paths):
                 )
 
         global_ldm_dir = get_actual_home() / ".ldm"
-        if (global_ldm_dir / "lfr-tunnel" / "token").exists():
-            z.write(
-                global_ldm_dir / "lfr-tunnel" / "token", "ldm_config/lfr-tunnel/token"
+        # LDM-#1974: the tunnel token is NOT included.
+        #
+        # This wrote the file verbatim with `z.write`, so unlike the JSON above
+        # no redaction was even attempted -- a live credential copied whole into
+        # a zip labelled "sanitized". Its presence or absence is the only part
+        # that helps diagnose anything; the value never did.
+        tunnel_token = global_ldm_dir / "lfr-tunnel" / "token"
+        if tunnel_token.exists():
+            z.writestr(
+                "ldm_config/lfr-tunnel/token.txt",
+                "[REDACTED] a tunnel token is present at "
+                "~/.ldm/lfr-tunnel/token.\n"
+                "Its value is deliberately excluded from this bundle "
+                "(LDM-#1974).\n",
             )
 
         # Include the global trace log if it exists

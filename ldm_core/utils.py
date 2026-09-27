@@ -939,6 +939,45 @@ def is_credential_shaped(key):
     )
 
 
+def redact_json_text(text):
+    """Mask credential-shaped values in a JSON document, by KEY NAME.
+
+    LDM-#1974: `ldm system doctor --bundle` writes `~/.ldmrc` and every
+    project's `meta` into a zip documented as a "sanitized" bundle intended for
+    support tickets and GitHub issues. Both went through `UI.redact`, which is a
+    **no-op on JSON**: it matches `KEY=value` with no spaces, and JSON is
+    `"key": "value"`. So the bundle shipped `admin_password`, `db_password`,
+    `ngrok_authtoken` and any stored API key in plaintext, under a name that
+    told the user it was safe to attach.
+
+    Same root as LDM-#1970, where `ldm config` printed the same values for the
+    same reason: the decision has to be made from the KEY, because nothing in
+    the rendered text marks a secret as one.
+
+    Returns the ORIGINAL text unchanged when it does not parse as JSON. A
+    caller that cannot be sure should treat a non-JSON document as unredacted
+    and decide separately -- silently returning something that looks processed
+    would be worse than returning the input.
+    """
+    import json
+
+    def _walk(node):
+        if isinstance(node, dict):
+            return {
+                k: ("[REDACTED]" if is_credential_shaped(k) else _walk(v))
+                for k, v in node.items()
+            }
+        if isinstance(node, list):
+            return [_walk(item) for item in node]
+        return node
+
+    try:
+        parsed = json.loads(text)
+    except (ValueError, TypeError):
+        return text
+    return json.dumps(_walk(parsed), indent=4, sort_keys=True)
+
+
 def is_env_var_blacklisted(key, blacklist):
     """Checks if an environment variable key matches any pattern in the blacklist.
 

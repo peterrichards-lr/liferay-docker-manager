@@ -2335,6 +2335,42 @@ class ComposerService:
                     exist_ok=True,
                 )
 
+    @staticmethod
+    def _announce_name_split(ext, ext_id, host_name):
+        """LDM-#1984: one extension, two user-visible names, differing only by
+        hyphens. Say which applies where, once, when they differ.
+
+        The subdomain and the `/etc/hosts` entry are built from the LCP.json
+        **id**; the routes directory is named from **projectName**. The id
+        conventionally drops the hyphens the directory keeps, so the two look
+        almost identical and nothing told anyone which was which.
+
+        Requesting the wrong one gets a Traefik 404 -- no router matched -- and
+        since LDM-#1973 the subdomain is the only way in, so there is no second
+        path that might accidentally work. The two fail differently, which is
+        worse rather than better: the hosts entry is written from the id too, so
+        the stripped name resolves and 404s while the hyphenated name may not
+        resolve at all.
+
+        Observed cost: a consuming team hand-encoded the mapping for three
+        sibling extensions, got one wrong, and read the resulting 404 as a proxy
+        fault. Their repository carries BOTH conventions across those three,
+        which is what a rule nobody can derive looks like.
+
+        Extracted rather than inlined because the branch took
+        `_build_extensions_services` back over its complexity limit, and that
+        suppression was deliberately removed in LDM-#1973.
+        """
+        routes_dir_name = ext.get("project_name")
+        if not routes_dir_name or routes_dir_name == ext_id:
+            return
+        UI.detail(
+            f"Client extension '{ext_id}': reachable at {ext_id}.{host_name} "
+            f"(from its LCP.json id). Its config tree is "
+            f"routes/default/{routes_dir_name} (from projectName) -- the two "
+            f"differ, and only the first is a hostname."
+        )
+
     def _extension_routes_mounts(self, ext, ext_id, mount_paths):
         """The config-tree space a client extension can see: the whole tree.
 
@@ -2448,6 +2484,8 @@ class ComposerService:
             if ext.get("deploy") and ext.get("is_service"):
                 ext_id = ext.get("id")
                 svc_id = f"{project_name}-{ext_id}"
+
+                self._announce_name_split(ext, ext_id, host_name)
                 ms_port = next(
                     (
                         p.get("port")
