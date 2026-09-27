@@ -2,7 +2,6 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from typing import cast
 from unittest.mock import MagicMock, patch
 
 import yaml
@@ -357,17 +356,34 @@ class TestStackOrchestration(unittest.TestCase):
                 "use_shared_search": "true",
             }
 
+            # LDM-#1979: the clock advances once per POLL, not once per
+            # `time.time()` call.
+            #
+            # It used to advance 20s on every call, which made the iteration
+            # count a function of how many times the code under test happens to
+            # consult the clock -- an implementation detail. Add a `time.time()`
+            # anywhere in the readiness path and the budget is spent sooner, so
+            # `assertGreater(call_count, 1)` below starts failing for a reason
+            # that has nothing to do with readiness. It flaked on
+            # `lint-and-test (3.14)` while the other three Python versions
+            # passed in the same run.
+            #
+            # Driving the clock from the status probe makes the loop count a
+            # pure function of the timeout budget and the 20s step, so the
+            # assertion measures the gate rather than the call graph.
             self.t = 1000
+            self.polls = 0
 
-            def mock_time_inc():
+            mock_time.side_effect = lambda: self.t
+
+            def mock_status(*_args, **_kwargs):
+                self.polls += 1
                 self.t += 20
-                return self.t
-
-            mock_time.side_effect = mock_time_inc
+                return "starting"
 
             with (
                 patch.object(
-                    self.manager, "get_container_status", return_value="starting"
+                    self.manager, "get_container_status", side_effect=mock_status
                 ),
                 patch.object(self.manager, "check_port", return_value=True),
                 patch.object(self.manager, "run_command"),
@@ -395,8 +411,15 @@ class TestStackOrchestration(unittest.TestCase):
                     paths=paths,
                     project_meta=meta,
                 )
+                # The gate must POLL and then GIVE UP, not return on the
+                # first look and not hang. Asserted on the poll counter this
+                # test controls, rather than on a mock's call count, which also
+                # counts calls made anywhere else.
                 self.assertGreater(
-                    cast(MagicMock, self.manager.get_container_status).call_count, 1
+                    self.polls,
+                    1,
+                    "the readiness gate did not poll more than once, so it is "
+                    "not waiting for the container at all (LDM-#1979)",
                 )
 
     def test_generate_compose_with_mysql(self):
