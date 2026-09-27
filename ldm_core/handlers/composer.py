@@ -1420,22 +1420,7 @@ class ComposerService:
                 ext_id = ext.get("id")
                 if ext_id:
                     svc_id = f"{project_name}-{ext_id}"
-                    ms_port = next(
-                        (
-                            p.get("port")
-                            for p in ext.get("ports", [])
-                            if isinstance(p, dict) and p.get("external")
-                        ),
-                        # LDM-#1962: `or {}`, not a `.get` default. The key
-                        # EXISTS with value None for any extension declaring
-                        # no loadBalancer, and `dict.get`'s default only
-                        # applies when the key is ABSENT. This raised
-                        # `'NoneType' object has no attribute 'get'` and took
-                        # the whole compose generation down for a perfectly
-                        # well-formed extension. The sibling in
-                        # `_build_extensions_services` already had it right.
-                        (ext.get("loadBalancer") or {}).get("targetPort", 8080),
-                    )
+                    ms_port = self._resolve_container_port(ext)
                     env_key = f"LIFERAY_ROUTES_CLIENT_EXTENSION_{ext_id.replace('-', '_').upper()}"
                     liferay_env.append(f"{env_key}=http://{svc_id}:{ms_port}")
 
@@ -2223,6 +2208,44 @@ class ComposerService:
     # depend on a leaf bind mount surviving deletion.
     LXC_ROUTES_MOUNT = "/etc/liferay/lxc/routes"
 
+    @staticmethod
+    def _resolve_container_port(ext):
+        """The port INSIDE the extension's container, never None.
+
+        LDM-#1996. This was a `next()` over a generator whose guard and whose
+        yielded value were different keys:
+
+            next(
+                (p.get("port") for p in ext.get("ports", [])
+                 if isinstance(p, dict) and p.get("external")),
+                (ext.get("loadBalancer") or {}).get("targetPort", 8080),
+            )
+
+        A `ports` entry with `external` truthy and no `port` key satisfies the
+        guard and yields **None**, and `next` returns that -- its default only
+        applies when the generator is EMPTY, not when it produces a falsy value.
+        So the port became None and the label became
+
+            traefik.http.services.<svc>.loadbalancer.server.port=None
+
+        Traefik cannot parse that, and a malformed `traefik.*` label makes it
+        discard the **whole container's** configuration rather than that one
+        label. The container then runs with correct-looking labels and no
+        router, and its hostname returns 404 -- which is indistinguishable from
+        every other cause of a 404 (see LDM-#1989).
+
+        Same family as the bug this replaced: `dict.get`'s default not applying
+        to a key that exists with value None (LDM-#1962). Both are "the default
+        did not fire because the value was present and falsy".
+
+        `targetPort: None` explicitly declared hits it the same way, which is
+        why the fallback is applied at the end rather than inside either lookup.
+        """
+        for entry in ext.get("ports") or []:
+            if isinstance(entry, dict) and entry.get("external") and entry.get("port"):
+                return entry["port"]
+        return (ext.get("loadBalancer") or {}).get("targetPort") or 8080
+
     def _apply_ext_runtime_options(self, service, ext, svc_id, ms_port, scale):
         """Healthcheck, replicas and memory limit for one extension service.
 
@@ -2486,14 +2509,7 @@ class ComposerService:
                 svc_id = f"{project_name}-{ext_id}"
 
                 self._announce_name_split(ext, ext_id, host_name)
-                ms_port = next(
-                    (
-                        p.get("port")
-                        for p in ext.get("ports", [])
-                        if isinstance(p, dict) and p.get("external")
-                    ),
-                    (ext.get("loadBalancer") or {}).get("targetPort", 8080),
-                )
+                ms_port = self._resolve_container_port(ext)
                 scale = int(meta.get(f"scale_{ext_id}", 1))
 
                 labels = [
