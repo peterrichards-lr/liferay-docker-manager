@@ -161,6 +161,38 @@ components to the same dict by hand -- the one thing the real pipeline does not
 do -- so it reported "no collision" while CI collided. Where practical, drive the
 real wiring rather than a model of it.
 
+### Corollary: an unrealistic fixture disarms every assertion downstream of it
+
+A test can be well written, well targeted, and still prove nothing, because the
+DATA it runs against is the one shape the defect cannot appear in. This is not
+the same failure as a weak assertion, and probing the assertion will not find
+it -- the assertion is fine.
+
+LDM-#1944 is the case to remember. The E2E's client-extension fixture gave its
+`LCP.json` an id EQUAL to its directory name. Liferay names the routes
+directory from `projectName` and LDM was mounting the id, so the bug was live
+for roughly 25 releases -- but in that fixture both strings were
+`synthetic-svc`, which makes the right answer and the wrong answer identical.
+74 port assertions and a full routes-pairing check were green throughout.
+
+**Derive fixtures from the real corpus, and measure rather than imagine it.**
+Across the 16 client extensions in `ldm-cx-samples`, the id differs from the
+directory in 16 of 16 and no service uses port 8080. The fixture did the
+opposite of both, and each was independently load-bearing: 8080 is
+`_resolve_container_port`'s fallback, so a fixture on it returns the right
+answer whether the declared port was read or the read failed (LDM-#1996).
+
+`scripts/check_cx_fixture_realism.py` now enforces those invariants against
+every CX fixture in both E2E suites, and it is a shared file rather than a copy
+in each because the two suites had already drifted apart once (LDM-#1982).
+
+Two questions worth asking of any fixture:
+
+- **Which of its values are equal that would differ in reality?** Every such
+  coincidence collapses a distinction some assertion depends on.
+- **Does any of its values equal a default or fallback in the code under
+  test?** If so, that code can fail completely and still look correct.
+
 ### Corollary: read every failing run, not the first one
 
 A release tag fires three to four workflows. Reporting "the" failure after reading one is how a transient infrastructure error gets mistaken for a code defect, and vice versa. On `v2.15.33-pre.2`, two workflows failed on a genuine defect while `LDM CI & Release` failed independently on `HttpError: other side closed` from `softprops/action-gh-release` -- rerunnable via `gh run rerun --failed`, needing no new tag. Enumerate every non-passing run before diagnosing.
@@ -261,4 +293,4 @@ A release tag fires three to four workflows. Reporting "the" failure after readi
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-22* | *Last Reviewed: 2026-09-22*
+*Last Updated: 2026-09-28* | *Last Reviewed: 2026-09-28*

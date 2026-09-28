@@ -3349,11 +3349,24 @@ zf.close()
     # Compose-generation facts only; no boot required.
     Write-Host ">> Verifying a client-extension SERVICE is generated correctly (LDM-#1918)..."
     $cxSvcName = "synthetic-svc"
+    # LDM-#1975: drawn from the real corpus, not invented. Across the 16 client
+    # extensions in ldm-cx-samples the LCP.json id differs from the directory
+    # name in 16 of 16 (it is the directory with the hyphens dropped), and each
+    # of the four services declares its own port in the 3001-3004 range. ZERO
+    # have id == directory, and none uses 8080.
+    #
+    # Both mattered. id == directory is one of the two conditions under which
+    # LDM-#1944 cannot manifest, and 8080 is _resolve_container_port's
+    # fallback, so a fixture on it cannot tell a successful read from a failed
+    # one (LDM-#1996). scripts/check_cx_fixture_realism.py enforces both.
+    $cxSvcId = "syntheticsvc"
+    $cxSvcPort = "3001"
     Remove-Item -Recurse -Force "cxsvc-build", "$cxSvcName.zip" -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Path "cxsvc-build/$cxSvcName" -Force | Out-Null
     @"
 ${cxSvcName}:
-    .serviceAddress: ${cxSvcName}:8080
+    .serviceAddress: localhost:${cxSvcPort}
+    .serviceScheme: http
     name: Synthetic CX Service
     type: microservice
 "@ | Out-File -FilePath "cxsvc-build/$cxSvcName/client-extension.yaml" -Encoding ascii
@@ -3373,9 +3386,9 @@ ${cxSvcName}-oauth:
     @"
 {
     "com.liferay.oauth2.provider.configuration.OAuth2ProviderApplicationHeadlessServerConfiguration~${cxSvcName}": {
-        "projectId": "${cxSvcName}",
+        "projectId": "${cxSvcId}",
         "projectName": "${cxSvcName}",
-        ".serviceAddress": "${cxSvcName}:8080",
+        ".serviceAddress": "localhost:${cxSvcPort}",
         ".serviceScheme": "http"
     }
 }
@@ -3386,9 +3399,18 @@ ${cxSvcName}-oauth:
     # fixture on the first master run after the fix landed.
     @"
 {
-    "id": "${cxSvcName}",
+    "id": "${cxSvcId}",
     "memory": 512,
-    "kind": "Deployment"
+    "kind": "Deployment",
+    "loadBalancer": {
+        "targetPort": ${cxSvcPort}
+    },
+    "ports": [
+        {
+            "external": true,
+            "port": ${cxSvcPort}
+        }
+    ]
 }
 "@ | Out-File -FilePath "cxsvc-build/$cxSvcName/LCP.json" -Encoding ascii
 
@@ -3407,6 +3429,14 @@ RUN printf 'module.exports = () => "alive";\n' > /opt/liferay/routes/app.cjs
 CMD ["sleep", "3600"]
 '@ | Out-File -FilePath "cxsvc-build/$cxSvcName/Dockerfile" -Encoding ascii
 
+    # The fixture is checked BEFORE it is zipped: every assertion after this
+    # point is only as good as the data it runs against (LDM-#1975). The check
+    # itself is shared with verify_e2e_refactor.sh so the two suites cannot
+    # drift apart on it, which they have done before (LDM-#1982).
+    & $VENV_PYTHON (Join-Path $PSScriptRoot "check_cx_fixture_realism.py") $cxSvcName "cxsvc-build/$cxSvcName"
+    if ($LASTEXITCODE -ne 0) {
+        throw "The '$cxSvcName' CX fixture does not hold the invariants every real client extension holds, so every assertion after it proves less than it appears to (LDM-#1975)."
+    }
     & $VENV_PYTHON -c "import shutil, sys; shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])" $cxSvcName "cxsvc-build/$cxSvcName"
     Invoke-LoggedCommand "Deploying CX service" $LDM_CMD @("-y", "deploy", ".", "$cxSvcName.zip")
     & $LDM_CMD -y run . --no-up --no-seed 2>&1 | Out-Null
@@ -3414,11 +3444,18 @@ CMD ["sleep", "3600"]
     $cxSvcCheck = @'
 import sys, pathlib, yaml
 name = sys.argv[1]
+# LDM-#1975: the compose service is named from the LCP.json id, while the
+# routes tree is named from projectName. The fixture now declares the two
+# differently, as all 16 real samples do, so this lookup has to say which one
+# it means. It matched on `name` for as long as the fixture made them equal --
+# which is exactly why that equality hid LDM-#1944.
+ext_id = sys.argv[2]
 compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text())
 services = compose.get("services") or {}
-svc = next((v for k, v in services.items() if k.endswith(name)), None)
+svc = next((v for k, v in services.items() if k.endswith(ext_id)), None)
 if svc is None:
-    print("ERROR: no compose service for the '%s' client extension." % name)
+    print("ERROR: no compose service for the '%s' client extension "
+          "(looked for a service ending '%s')." % (name, ext_id))
     print("  services present: " + ", ".join(services))
     sys.exit(1)
 
@@ -3514,7 +3551,7 @@ for f in fails:
 sys.exit(1 if fails else 0)
 '@
     $cxSvcCheck | Out-File -FilePath "cxsvc-check.py" -Encoding ascii
-    & $VENV_PYTHON "cxsvc-check.py" $cxSvcName
+    & $VENV_PYTHON "cxsvc-check.py" $cxSvcName $cxSvcId
     if ($LASTEXITCODE -ne 0) {
         throw "Client-extension service definition is wrong (LDM-#1918)."
     }
@@ -3528,7 +3565,7 @@ sys.exit(1 if fails else 0)
     # So look inside the container. One build, one run, no Liferay boot and no
     # dependencies: if any mount hides the extension's own code, its app.cjs is
     # gone. Measured both ways before being committed.
-    $cxSvcService = & $VENV_PYTHON -c "import pathlib, sys, yaml; c = yaml.safe_load(pathlib.Path('docker-compose.yml').read_text()); s = c.get('services') or {}; print(next((k for k in s if k.endswith(sys.argv[1])), ''))" $cxSvcName
+    $cxSvcService = & $VENV_PYTHON -c "import pathlib, sys, yaml; c = yaml.safe_load(pathlib.Path('docker-compose.yml').read_text()); s = c.get('services') or {}; print(next((k for k in s if k.endswith(sys.argv[1])), ''))" $cxSvcId
     if ([string]::IsNullOrWhiteSpace($cxSvcService)) {
         throw "Could not resolve the client-extension service name from docker-compose.yml (LDM-#1911)."
     }
