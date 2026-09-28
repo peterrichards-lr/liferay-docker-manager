@@ -134,7 +134,14 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
         if target_version_str:
             latest, url = check_for_updates(VERSION, force=True, tag=target_version_str)
             if not latest:
-                UI.die(f"Version '{target_version_str}' not found on GitHub Releases.")
+                UI.die(
+                    f"Version '{target_version_str}' not found on GitHub Releases.",
+                    tip=(
+                        "Check the available tags at "
+                        f"{GITHUB_REPO_URL}/releases. Pre-release builds are "
+                        "only offered with '--pre-release'."
+                    ),
+                )
         else:
             latest, url = check_for_updates(
                 VERSION, force=True, pre_release=pre_release
@@ -194,7 +201,15 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
         UI.detail(f"New version found: v{latest}")
 
     if not url or not url.startswith("http"):
-        UI.die("Download URL not found for your architecture.")
+        UI.die(
+            "Download URL not found for your architecture.",
+            details=f"{platform.system()} {platform.machine()}",
+            tip=(
+                "That release may not ship a binary for this platform. Check "
+                f"the assets at {GITHUB_REPO_URL}/releases, or install from "
+                "PyPI with 'pip install --upgrade liferay-docker-manager'."
+            ),
+        )
 
     if is_downgrade:
         UI.warning(
@@ -204,7 +219,11 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
         if handler.manager.non_interactive:
             if not getattr(handler.manager.args, "force", False):
                 UI.die(
-                    "Downgrade aborted: --force is required in non-interactive mode."
+                    "Downgrade aborted: --force is required in non-interactive mode.",
+                    tip=(
+                        "Re-run with '-f' to confirm the downgrade, or drop "
+                        "'-y' to be asked interactively."
+                    ),
                 )
         elif not UI.confirm(
             "Are you sure you want to proceed with the downgrade?", "N"
@@ -258,7 +277,14 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
                 "A release build may be in progress. Please try again later. (HTTP 404: File not found)"
             )
         else:
-            UI.die("Download failed.", e)
+            UI.die(
+                "Download failed.",
+                e,
+                tip=(
+                    "Check your network or proxy and try again. If you are "
+                    "behind a corporate proxy, ensure HTTPS_PROXY is set."
+                ),
+            )
     except Exception as e:
         if temp_new.exists():
             temp_new.unlink()
@@ -307,7 +333,16 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
                 if temp_new.exists():
                     temp_new.unlink()
                 manual_cmd = _get_manual_upgrade_cmd(handler, url, exe_path)
-                UI.error("Integrity verification failed! The hash does not match.")
+                UI.error(
+                    "Integrity verification failed! The hash does not match.",
+                    tip=(
+                        "The download was corrupted or tampered with, and has "
+                        "NOT been applied. Re-run 'ldm upgrade' to fetch it "
+                        f"again; if it fails twice, report it at "
+                        f"{GITHUB_REPO_URL}/issues rather than bypassing the "
+                        "check."
+                    ),
+                )
                 UI.detail(
                     f"If you trust this build, install manually:\n\n    {UI.CYAN}{manual_cmd}{UI.COLOR_OFF}\n"
                 )
@@ -321,7 +356,15 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
         else:
             if temp_new.exists():
                 temp_new.unlink()
-            UI.die(f"Failed to fetch checksums (HTTP {response.status_code})")
+            UI.die(
+                f"Failed to fetch checksums (HTTP {response.status_code})",
+                tip=(
+                    "GitHub rate-limits unauthenticated requests. Wait a few "
+                    "minutes and retry, or set LDM_BOT_PAT to a token."
+                    if response.status_code in (403, 429)
+                    else "Check your network and retry with 'ldm upgrade'."
+                ),
+            )
     except Exception as e:
         UI.warning(f"Could not verify hash remotely ({e}). Proceeding with caution...")
 
@@ -436,7 +479,12 @@ pause
                     _announce_post_upgrade_actions(VERSION, latest)
                 except Exception as e:
                     UI.error(
-                        "Failed to replace binary. Elevated privileges were denied or incorrect."
+                        "Failed to replace binary. Elevated privileges were denied or incorrect.",
+                        tip=(
+                            "The running binary is unchanged, so nothing is "
+                            "broken. Re-run with sufficient privileges, or use "
+                            "'ldm upgrade --repair' once elevated."
+                        ),
                     )
                     UI.debug(f"Details: {e}")
                     UI.detail(

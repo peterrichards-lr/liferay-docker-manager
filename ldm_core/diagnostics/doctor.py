@@ -1058,13 +1058,17 @@ class DoctorRunner:
         ncat_bin = shutil.which("ncat")
         active_nc = nc_bin or ncat_bin
 
+        # telnet, nc/ncat and lcp are deliberately ABSENT here. Each already
+        # has a dedicated check below that says what it is FOR -- "Missing
+        # (Gogo Shell disabled)", "Missing (Cloud Fetch disabled)" -- and
+        # carries a platform-specific install hint. Listing them here as well
+        # reported one cause twice, and for telnet and lcp that was two
+        # WARNINGS each: a machine missing both showed four warnings for two
+        # problems, which overstates how much is wrong.
         tool_list = [
             ("docker", shutil.which("docker")),
             ("mkcert", shutil.which("mkcert")),
             ("openssl", shutil.which("openssl")),
-            ("telnet", shutil.which("telnet")),
-            ("nc/ncat (Deprecated)", active_nc),
-            ("lcp", shutil.which("lcp")),
         ]
 
         # Add Docker Compose (detect if it's the plugin or standalone)
@@ -1074,18 +1078,20 @@ class DoctorRunner:
         if compose_bin:
             tool_list.append(("docker compose", " ".join(compose_bin)))
 
+        # mkcert is optional -- it only gates local SSL -- so its absence is a
+        # warning. docker and openssl are not: without them LDM cannot work.
+        optional_tools = {"mkcert"}
         for tool_name, tool_path in tool_list:
             if tool_path:
                 self.results.append((f"Path: {tool_name}", str(tool_path), True))
-            # Some are optional/warn only
-            elif tool_name == "nc/ncat (Deprecated)":
-                self.results.append(
-                    (f"Path: {tool_name}", "Not Found (Optional/Deprecated)", True)
-                )
-            elif tool_name in ["telnet", "lcp", "mkcert", "nc/ncat"]:
-                self.results.append((f"Path: {tool_name}", "Not Found", "warn"))
             else:
-                self.results.append((f"Path: {tool_name}", "Not Found", False))
+                self.results.append(
+                    (
+                        f"Path: {tool_name}",
+                        "Not Found",
+                        "warn" if tool_name in optional_tools else False,
+                    )
+                )
 
         # 4.1.5 Optional Database Clients (Recommended for developers)
         # Note: LDM uses 'docker exec' for snapshots, so local clients are NOT required for LDM operations.
@@ -2638,6 +2644,22 @@ class DoctorRunner:
                     "Project (Metadata, DNS, Mounts, SSL)", subsystem_status["project"]
                 )
             )
+
+            # This view lists only problems, so a check that ran and passed
+            # looks exactly like a check that never ran. An external consumer
+            # went looking for the filesystem mode check here, did not find
+            # it, and reasonably concluded it might not have executed -- it
+            # had, and had passed. Saying how many passed makes "silent
+            # because healthy" distinguishable from "silent because absent",
+            # which is the whole complaint.
+            passed = sum(1 for _c, _s, ok in self.results if ok is True)
+            total = len(self.results)
+            if total:
+                UI.raw(
+                    f"\n{passed} of {total} checks passed and are not listed "
+                    f"individually. Run '{UI.WHITE}ldm doctor --detailed"
+                    f"{UI.COLOR_OFF}' to see every check."
+                )
 
             # If there are failures or warnings, print the standard table with only the failing/warning checks
             if not all_ok or has_warnings:
