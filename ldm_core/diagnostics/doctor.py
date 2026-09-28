@@ -809,7 +809,7 @@ class DoctorRunner:
             else:
                 self.results.append(("Docker Compose", "Plugin NOT FOUND", False))
                 self.add_hint(
-                    "LDM requires the Docker Compose V2 plugin. Please install it via your Docker self.provider settings."
+                    "LDM requires the Docker Compose V2 plugin. Please install it via your Docker provider settings."
                 )
 
             # 2.1 Docker Credentials Check
@@ -828,7 +828,7 @@ class DoctorRunner:
                     if ok is not True:
                         res_type = "CPU cores" if "CPU" in comp else "RAM"
                         self.add_hint(
-                            f"Allocate more {res_type} in your Docker self.provider settings.",
+                            f"Allocate more {res_type} in your Docker provider settings.",
                             f"{GITHUB_DOCS_URL}/INSTALLATION.md#docker-resource-alignment-windowswsl2macos",
                         )
         else:
@@ -2728,13 +2728,13 @@ class DoctorRunner:
         elif all_ok and has_warnings:
             msg = "Some non-critical issues were detected. Check the items above."
             if self.hints and not detailed_mode and not auto_fix_mode:
-                msg += f" Run '{UI.WHITE}ldm doctor --detailed{UI.COLOR_OFF}' for troubleshooting self.hints and fixes."
+                msg += f" Run '{UI.WHITE}ldm doctor --detailed{UI.COLOR_OFF}' for troubleshooting hints and fixes."
             UI.warning(msg)
             sys.exit(0)
         else:
             msg = "Critical issues were detected. Check the items above."
             if self.hints and not detailed_mode and not auto_fix_mode:
-                msg += f" Run '{UI.WHITE}ldm doctor --detailed{UI.COLOR_OFF}' for troubleshooting self.hints and fixes."
+                msg += f" Run '{UI.WHITE}ldm doctor --detailed{UI.COLOR_OFF}' for troubleshooting hints and fixes."
             if auto_fix_mode:
                 msg += f" (Attempted {len(fixable_commands)} auto-fixes)."
             UI.error(msg)
