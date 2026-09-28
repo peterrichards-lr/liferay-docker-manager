@@ -193,6 +193,51 @@ Two questions worth asking of any fixture:
 - **Does any of its values equal a default or fallback in the code under
   test?** If so, that code can fail completely and still look correct.
 
+### Corollary: a measurement can match prose describing the thing it measures
+
+A grep over a log counts what the pattern matches, not what happened. If the
+log also carries **documentation** of the symptom -- a comment explaining the
+bug, a step name, an echoed script source -- the measurement matches that too,
+and reports a plausible number that is wrong.
+
+Observed in the field (2026-09-28): a collaborator counting SSH drops per CI
+run got exactly 1 on every run, including runs that were visibly clean. Their
+workflow had gained a comment quoting `client_loop: send disconnect: Broken
+pipe`, and CI echoes step source into the log. The count was matching their own
+prose.
+
+**This is worse than a guard satisfied by a comment**, which is the same family.
+A broken guard fails loudly the moment someone probes it. A wrong count just
+reports a number, and a plausible number is not questioned -- theirs was
+consistent across runs, which made it look reliable rather than broken.
+
+Two defences, both cheap:
+
+- **Anchor the pattern to the log's own structure**, not to the message text --
+  a timestamp prefix, a stream name, a log level. Prose in a comment does not
+  carry them.
+- **Check the measurement against a case whose answer you already know.** A
+  count that returns the same non-zero figure for a known-clean run has been
+  falsified, and that is the cheapest possible probe.
+
+**The same error inverts, and the inverted form is harder to see.** A NEGATIVE
+result only means what you think if the probe could have fired at all. Same
+investigation, hours later: `grep -E 'Invalid user|Failed password'` over an
+sshd journal returned **0**, which reads as "no unwanted traffic, this is all
+our own". It was wrong. Those connections never reached authentication, because
+`MaxStartups` had already dropped them -- the throttle fires *upstream* of the
+thing being grepped for. A true fact supported a false conclusion.
+
+Before trusting a zero, ask what would have had to happen for the pattern to
+appear, and confirm that path is reachable.
+
+Four surfaces of one defect have now been seen in a single week: test data too
+simple to fail (LDM-#1944), test data too broad to be meaningful (probing ids
+for extensions that never become containers), a measurement matching
+documentation of the symptom, and a negative result from a probe that could not
+have fired. The common question is **"what is this actually reading, and could
+it produce this answer if nothing were wrong?"**
+
 ### Corollary: read every failing run, not the first one
 
 A release tag fires three to four workflows. Reporting "the" failure after reading one is how a transient infrastructure error gets mistaken for a code defect, and vice versa. On `v2.15.33-pre.2`, two workflows failed on a genuine defect while `LDM CI & Release` failed independently on `HttpError: other side closed` from `softprops/action-gh-release` -- rerunnable via `gh run rerun --failed`, needing no new tag. Enumerate every non-passing run before diagnosing.
