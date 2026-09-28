@@ -121,6 +121,27 @@ section_enabled() {
     esac
 }
 
+# LDM-#1942: record the uid this suite runs as.
+#
+# The snapshot reclaim chowns trees to uid 1000. On a runner that IS uid 1000
+# that call changes nothing, so any assertion about it passes whether the code
+# works or not -- the same false-pass shape as `& 0o044` against `umask 0027`.
+#
+# So the uid is a PRECONDITION for verifying LDM-#1942 at all, and until now it
+# was never recorded: nothing in this suite printed it, and nobody could say
+# from an artifact whether a reclaim assertion had meant anything.
+#
+# Printed unconditionally rather than asserted, because the correct uid is
+# whatever the host happens to use. The point is that a reader can tell.
+E2E_RUN_UID="$(id -u)"
+E2E_RUN_GID="$(id -g)"
+echo "ℹ  Running as uid=${E2E_RUN_UID} gid=${E2E_RUN_GID} ($(id -un))"
+if [ "$E2E_RUN_UID" = "1000" ]; then
+    echo "⚠  This host runs as uid 1000, the same uid the snapshot reclaim"
+    echo "   chowns to. Any assertion about that reclaim is UNVERIFIABLE here"
+    echo "   -- it would pass whether or not the code works (LDM-#1942)."
+fi
+
 echo "⚡ Starting Standalone Binary Verification on Port ${TEST_PORT}..."
 if [ "$LDM_E2E_SECTIONS" != "all" ]; then
     echo "⚠  PARTIAL RUN: sections ${LDM_E2E_SECTIONS}. This is not a full verification."

@@ -170,7 +170,19 @@ function Test-SectionEnabled {
     return ($requested -contains "all") -or ($requested -contains $Name)
 }
 
+# LDM-#1942: no uid probe here, and that is deliberate rather than an omission.
+#
+# verify_e2e_refactor.sh prints the uid it runs as, because the snapshot reclaim
+# chowns trees to uid 1000 and a runner that IS uid 1000 makes every assertion
+# about that reclaim pass whether the code works or not.
+#
+# Windows has no POSIX uid, and Docker Desktop presents bind-mounted files as
+# the host user regardless of ownership -- so the reclaim is not observable on
+# this platform at all, with or without a probe. Recorded here rather than left
+# silent: a check missing from one script and present in the other is how
+# LDM-#1982 removed a whole test without anyone noticing.
 Write-Host "* Starting Standalone Binary Verification (Windows Native)..."
+Write-Host "i  No uid probe on Windows: bind-mount ownership is not observable here (LDM-#1942)."
 if ($LDM_E2E_SECTIONS -ne "all") {
     Write-Host "[WARNING] PARTIAL RUN: sections $LDM_E2E_SECTIONS. This is not a full verification."
 }

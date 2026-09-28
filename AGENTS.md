@@ -103,6 +103,51 @@ To maintain high developer velocity while preserving software quality:
 - **Verify Claims Historically**: Before asserting that a feature "never worked" or "is broken," inspect past commit history (`git log -S`) to avoid misdiagnosing a recent regression as an initial design flaw.
 - **No Unsolicited Audit Cascades**: Do not create cascades of secondary micro-debt issues during routine bug fixes unless a full audit was explicitly requested.
 
+### Delegating to Subagents
+
+This section is in `AGENTS.md` rather than a skill on purpose: the decision to
+delegate is taken **before** any skill loads, so a rule kept in a skill cannot
+reach it.
+
+Each rule below exists because its absence cost something measurable.
+
+- **Delegate for fan-out, not for a task you can name.** If you already know the
+  file and the symbol, read it. Delegation earns its cost when the answer needs
+  sweeping many files and you want the conclusion rather than the file dumps.
+
+- **Brief the question and the method, not the topic.** State the artefact you
+  want back and the cheapest way to produce it. A brief reading "check the shell
+  scripts for X" produced a 16-minute full test-suite run for a question that
+  needed a static scan of two files.
+
+- **State the prohibition explicitly.** A subagent will run the expensive thing
+  if nothing forbids it. `Read-only. Do not run pytest, pre-commit, or any
+  container.` is one line and would have saved that run.
+
+- **One expensive resource at a time.** Never dispatch a subagent that may run
+  the suite, containers or the E2E while this session is running one. The suite
+  is CPU-bound and takes ~16 minutes; Docker is a single shared daemon, so two
+  runs contend for ports and container names, not merely for CPU. Two concurrent
+  suites also triggered repeated out-of-memory kills of background tasks.
+
+- **Ask it to REFUTE, not to confirm.** When a fix rests on a diagnosis, have a
+  subagent try to break the diagnosis before you build on it: number the steps,
+  ask for CONFIRMED / REFUTED / CANNOT DETERMINE per step with `file:line`
+  evidence, and say that a refutation is the valuable outcome. Hand it the
+  evidence rather than your conclusion -- an agent given a conclusion tends to
+  confirm it. This found LDM-#1987 after three fixes built on unverified
+  readings, and corrected three overstatements in the diagnosis it confirmed.
+
+- **Do not poll a background task.** Check once and get on with something else;
+  the harness notifies on completion. Repeated blocking checks produce nothing
+  and look like a hung session.
+
+- **Isolate anything that writes.** Use a git worktree so a subagent cannot
+  disturb this session's working tree. Note a fresh worktree has no ignored
+  files, so `ldm_core/ui_colors.py` is absent and the ANSI tests fail on
+  invisible characters -- generate it with `scripts/sync_colors.py` or tell the
+  subagent the suite is unavailable there.
+
 ## Current Work State
 
 Status updates, active release cycles, open-issue tracking, and any other
@@ -114,4 +159,4 @@ should not need to change as work progresses.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-31* | *Last Reviewed: 2026-08-31*
+*Last Updated: 2026-09-28* | *Last Reviewed: 2026-09-28*

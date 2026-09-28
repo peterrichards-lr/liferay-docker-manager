@@ -133,6 +133,34 @@ Two habits follow:
 
 A related trap in the same issue: the first fix targeted exactly the right volume names and silently did nothing, because a container in `Created` state still referenced them (`volume is in use`). Verify a fix by observing the effect disappear, not by confirming the code looks right.
 
+### Corollary: a test that has never failed has not been shown to test anything
+
+**Break the behaviour deliberately, leaving every message and symbol in place,
+and confirm the test fails.** Then restore it. This is the only technique that
+distinguishes a test which observes a behaviour from one which merely runs
+beside it.
+
+It is cheap and it works. Recent catches, all tests that passed against the bug
+they were written for:
+
+- an assertion searching backwards for `UI.` landed on `{UI.CYAN}` inside an
+  f-string, so three of five sites were false-passing
+- redaction tests exercised the helper directly and never checked that the
+  caller used it, so reverting the caller to the broken function left them green
+- 74 port assertions passed while the resolved value never reached the composer
+  at all (LDM-#1987)
+
+**The last one names the general shape: a test can bracket a seam without
+crossing it.** One test drives the producer, another drives the consumer, and
+nothing exercises the join. Both pass; the join is broken. When probing, ask
+which seam the test crosses, not merely whether it fails.
+
+**Your own reproduction inherits your own blind spot.** A repro built from your
+theory will agree with your theory. LDM-#1987's first reproduction wired two
+components to the same dict by hand -- the one thing the real pipeline does not
+do -- so it reported "no collision" while CI collided. Where practical, drive the
+real wiring rather than a model of it.
+
 ### Corollary: read every failing run, not the first one
 
 A release tag fires three to four workflows. Reporting "the" failure after reading one is how a transient infrastructure error gets mistaken for a code defect, and vice versa. On `v2.15.33-pre.2`, two workflows failed on a genuine defect while `LDM CI & Release` failed independently on `HttpError: other side closed` from `softprops/action-gh-release` -- rerunnable via `gh run rerun --failed`, needing no new tag. Enumerate every non-passing run before diagnosing.
