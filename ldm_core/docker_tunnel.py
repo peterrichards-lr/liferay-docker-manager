@@ -59,13 +59,26 @@ past `MaxStartups` in three hours with zero successful authentications. Port
 exposure and `MaxStartups` sizing are the node operator's to fix.
 """
 
+import atexit
+import os
 import socket
 import subprocess  # nosec B404 - fixed argv, no shell
 import time
+from datetime import datetime
 from typing import Any
 
 from ldm_core.ui import UI
 from ldm_core.utils import _ssh_failure_reason
+
+#: LDM-#1993. Opt-in, default off, for one release cycle. An environment
+#: variable rather than an `~/.ldmrc` key or a CLI flag at the request of the
+#: deployment that reported this and will be the first to enable it: their CI
+#: already passes `LDM_NODE_TARGET` and `LDM_VERSION` this way, whereas a
+#: config key would mean writing a file into an ephemeral runner before the
+#: first call and a flag would mean touching ~30 invocation sites.
+TUNNEL_ENV_VAR = "LDM_DOCKER_TUNNEL"
+
+_TRUTHY = {"1", "true", "yes", "on"}
 
 #: Where dockerd listens on a Linux node. A bind-mounted socket elsewhere would
 #: need this overridden; no supported node layout does.
@@ -102,6 +115,23 @@ class DockerTunnelError(RuntimeError):
         self.stderr = stderr
 
 
+class DockerTunnelClosedError(DockerTunnelError):
+    """The tunnel was established and then died mid-run.
+
+    Deliberately distinct from its parent. "Never established" and
+    "established then died" have different causes and are investigated
+    differently -- the first is credentials, host or firewall, the second is
+    the connection being lost or killed after it was working. Collapsing them
+    into one message costs the reader that distinction, which is exactly the
+    complaint that produced this class: a symptom naming the wrong subject.
+    """
+
+
+def tunnel_enabled() -> bool:
+    """Whether the caller has opted in via `LDM_DOCKER_TUNNEL`."""
+    return os.environ.get(TUNNEL_ENV_VAR, "").strip().lower() in _TRUTHY
+
+
 def _free_loopback_port() -> int:
     """A port the OS says is free, bound to loopback only.
 
@@ -136,6 +166,10 @@ class DockerSshTunnel:
         self.ready_timeout = ready_timeout
         self.port: int | None = None
         self._proc: subprocess.Popen | None = None
+        #: Wall-clock time the forward started answering. Reported on a
+        #: mid-run death so the operator can line it up against their own run
+        #: timeline, which is where the cause usually is.
+        self.established_at: datetime | None = None
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -200,6 +234,7 @@ class DockerSshTunnel:
         self.port = port
 
         if self._wait_until_ready(port):
+            self.established_at = datetime.now()
             return f"tcp://127.0.0.1:{port}"
 
         self._fail()
@@ -275,6 +310,59 @@ class DockerSshTunnel:
             except Exception:  # nosec B112 - best effort, try the next rung
                 continue
 
+    def _drain_stderr(self) -> str:
+        """Whatever ssh said before it exited, best effort.
+
+        Never blocks for long: a dead process's pipe is already closed, and a
+        live one is not our problem here.
+        """
+        if self._proc is None or self._proc.stderr is None:
+            return ""
+        try:
+            return (self._proc.stderr.read() or b"").decode("utf-8", "replace").strip()
+        except Exception:  # nosec B110 - diagnosis is best effort
+            return ""
+
+    def closed_error(self) -> "DockerTunnelClosedError":
+        """The error for a tunnel that was working and has stopped.
+
+        Four things, in the order the reporting deployment asked for them:
+
+        1. that the TUNNEL died -- not that a port refused a connection. The
+           localhost port is an implementation detail, and naming it sends the
+           reader to investigate Docker when the fault is SSH. Their words:
+           "a symptom that names the wrong subject", which is the class that
+           cost them five occurrences.
+        2. WHEN, so it can be correlated against their run's own timeline.
+        3. what ssh last said -- and where nothing survived, say so, because
+           an empty reason is a different fact from an unread one.
+        4. implicitly, by being a distinct class from its parent: this is
+           "established then died", not "never established".
+        """
+        node = getattr(self.target, "name", "<node>")
+        stderr = self._drain_stderr()
+        when = (
+            self.established_at.strftime("%H:%M:%S")
+            if self.established_at
+            else "an unrecorded time"
+        )
+        if stderr:
+            reason = _ssh_failure_reason(stderr)
+            tail = stderr.splitlines()[-1].strip()
+            detail = f"ssh said: {tail}"
+        else:
+            reason = "closed unexpectedly"
+            # Stated rather than omitted: silence from ssh is information.
+            detail = "no diagnostic available from ssh"
+        self.stop()
+        return DockerTunnelClosedError(
+            f"The SSH tunnel to compute node '{node}' has closed; the Docker "
+            f"socket forward is gone. It was established at {when} and {reason}. "
+            f"{detail}.",
+            reason=reason,
+            stderr=stderr,
+        )
+
     # -- context manager ---------------------------------------------------
 
     def __enter__(self) -> "DockerSshTunnel":
@@ -283,3 +371,61 @@ class DockerSshTunnel:
 
     def __exit__(self, *_exc: object) -> None:
         self.stop()
+
+
+# -- process-wide registry -------------------------------------------------
+#
+# One tunnel per node, opened on first use rather than by an explicit setup
+# step: there are ~85 Docker call sites and no single place all of them pass
+# through before work begins, so lazy activation is what makes this reachable
+# without touching every one of them.
+
+_ACTIVE: dict[str, DockerSshTunnel] = {}
+
+
+def tunnel_for(target: Any) -> DockerSshTunnel | None:
+    """A live tunnel for `target`, opening one on first use.
+
+    Returns None when the caller has not opted in, which is the default and
+    means every command keeps its existing `--context` behaviour.
+
+    Raises `DockerTunnelError` if a tunnel cannot be opened, and
+    `DockerTunnelClosedError` if one that was working has since died. Those
+    are separate types on purpose -- see `DockerTunnelClosedError`.
+    """
+    if not tunnel_enabled():
+        return None
+
+    name = getattr(target, "name", None) or str(target)
+    existing = _ACTIVE.get(name)
+    if existing is not None:
+        if existing.is_alive():
+            return existing
+        # It was working and is not any more. Drop it before raising, so a
+        # caller that catches this and retries opens a fresh one rather than
+        # meeting the same corpse.
+        _ACTIVE.pop(name, None)
+        raise existing.closed_error()
+
+    tunnel = DockerSshTunnel(target)
+    tunnel.start()
+    _ACTIVE[name] = tunnel
+    UI.debug(f"Docker tunnel to '{name}' established at {tunnel.docker_host}")
+    return tunnel
+
+
+def shutdown_all() -> None:
+    """Close every open tunnel. Idempotent.
+
+    Registered with `atexit` as a tidiness measure, NOT as the cleanup
+    guarantee -- `atexit` does not run on `SIGKILL`, which is precisely the
+    case the pipe-EOF contract exists to cover. This only makes the normal
+    exit prompt instead of waiting for the OS to close the pipe.
+    """
+    for name in list(_ACTIVE):
+        tunnel = _ACTIVE.pop(name, None)
+        if tunnel is not None:
+            tunnel.stop()
+
+
+atexit.register(shutdown_all)

@@ -1419,6 +1419,64 @@ class CommandRunner:
             return _NO_RETRY
         return self.run(cmd, _ssh_deadline=deadline, **kwargs)
 
+    @staticmethod
+    def _apply_docker_tunnel(cmd: list, resolved_env: dict) -> list:
+        """Route a `--context <node>` command through an SSH tunnel (LDM-#1993).
+
+        Returns the command unchanged unless the caller has opted in with
+        `LDM_DOCKER_TUNNEL`, so the default path is byte-for-byte what it was.
+
+        When a tunnel IS in use, `--context <node>` is stripped and
+        `DOCKER_HOST` points at the loopback forward. Both halves are
+        required: leaving `--context` in place would send Docker back down
+        `ssh://` -- Docker CLI prefers the context over the environment -- and
+        opening one connection per command is the defect being fixed.
+
+        A tunnel failure ends the command here, deliberately. The alternative
+        is Docker failing against a dead localhost port, which reads as a
+        Docker fault rather than an SSH one -- the exact "symptom naming the
+        wrong subject" that made the original bug expensive to diagnose.
+        """
+        # Imported here rather than at module scope: docker_tunnel imports
+        # _ssh_failure_reason from this module, and a top-level import either
+        # way round is a cycle.
+        from ldm_core.docker_tunnel import (
+            DockerTunnelError,
+            tunnel_enabled,
+            tunnel_for,
+        )
+
+        # Short-circuits on the opt-in, so the default path does no extra work
+        # beyond one environment lookup.
+        node = _context_node(cmd) if tunnel_enabled() else None
+        if not node:
+            return cmd
+
+        try:
+            from ldm_core.config import get_active_target
+
+            target = get_active_target(node)
+            if target is None or target.name == "local":
+                return cmd
+            tunnel = tunnel_for(target)
+        except DockerTunnelError as exc:
+            UI.die(str(exc))
+            return cmd  # pragma: no cover - UI.die raises
+        except Exception as exc:  # pragma: no cover - defensive
+            # Never let an opt-in optimisation take down a command it could
+            # simply have declined to touch.
+            UI.debug(f"Docker tunnel unavailable, using --context: {exc}")
+            return cmd
+
+        if tunnel is None or not tunnel.docker_host:
+            return cmd
+
+        resolved_env["DOCKER_HOST"] = tunnel.docker_host
+        stripped = list(cmd)
+        index = stripped.index("--context")
+        del stripped[index : index + 2]
+        return stripped
+
     def run(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self,
         cmd,
@@ -1456,6 +1514,13 @@ class CommandRunner:
         # happened to export.
         if isinstance(cmd, list) and "--context" in cmd:
             resolved_env.pop("DOCKER_HOST", None)
+            # LDM-#1993: opt-in, default off. When a tunnel is in use the node
+            # is reached through a loopback forward instead of a fresh SSH
+            # connection per command, so `--context` is REMOVED rather than
+            # kept -- leaving it would send Docker back down ssh:// and defeat
+            # the whole point. DOCKER_HOST is then the only thing directing
+            # the command, which is why it is set after the pop above.
+            cmd = self._apply_docker_tunnel(cmd, resolved_env)
 
         # Hardening: Sanitize if shell is enabled
         if shell:

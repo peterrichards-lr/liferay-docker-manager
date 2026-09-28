@@ -25,18 +25,25 @@ sshd; `test_it_exits_when_its_stdin_closes` keeps the half of that contract
 which needs no sshd.
 """
 
+import os
 import socket
 import subprocess  # nosec B404 - fixed argv, no shell
 import sys
 import time
 import unittest
+from datetime import datetime
 from types import SimpleNamespace
+from unittest import mock
 
 from ldm_core.docker_tunnel import (
+    TUNNEL_ENV_VAR,
     DockerSshTunnel,
+    DockerTunnelClosedError,
     DockerTunnelError,
     _free_loopback_port,
+    tunnel_enabled,
 )
+from ldm_core.utils import CommandRunner
 
 
 def _target(name="node-a", host="10.0.0.5", user="ec2-user", key_path=None):
@@ -152,6 +159,113 @@ class LifecycleTests(unittest.TestCase):
             child.stdin.close()
         self.assertEqual(
             child.wait(timeout=10), 0, "child did not exit when its stdin closed"
+        )
+
+
+class OptInGateTests(unittest.TestCase):
+    """LDM-#1993: default-off has to mean *nothing changes*.
+
+    This is the half of an opt-in that is never exercised deliberately and so
+    is where a regression would hide: the feature is off for almost everyone,
+    so a fault in the off-path ships quietly and breaks every remote command.
+    """
+
+    def setUp(self):
+        os.environ.pop(TUNNEL_ENV_VAR, None)
+
+    tearDown = setUp
+
+    def test_it_is_off_unless_asked_for(self):
+        self.assertFalse(tunnel_enabled())
+
+    def test_it_accepts_the_spellings_a_ci_file_would_use(self):
+        for value in ("1", "true", "TRUE", "yes", "on"):
+            os.environ[TUNNEL_ENV_VAR] = value
+            self.assertTrue(tunnel_enabled(), f"{value!r} should enable it")
+        for value in ("0", "false", "no", "off", ""):
+            os.environ[TUNNEL_ENV_VAR] = value
+            self.assertFalse(tunnel_enabled(), f"{value!r} should not enable it")
+
+    def test_the_command_is_untouched_when_the_flag_is_absent(self):
+        cmd = ["docker", "--context", "aws-1", "ps"]
+        env: dict[str, str] = {}
+        result = CommandRunner._apply_docker_tunnel(list(cmd), env)
+        self.assertEqual(result, cmd, "default path must not be rewritten")
+        self.assertNotIn("DOCKER_HOST", env, "no tunnel, so nothing to point at")
+
+    def test_a_local_command_is_untouched_even_when_enabled(self):
+        os.environ[TUNNEL_ENV_VAR] = "1"
+        cmd = ["docker", "ps"]  # no --context: nothing to reroute
+        env: dict[str, str] = {}
+        self.assertEqual(CommandRunner._apply_docker_tunnel(list(cmd), env), cmd)
+        self.assertNotIn("DOCKER_HOST", env)
+
+
+class TunnelRoutingTests(unittest.TestCase):
+    """When enabled, BOTH halves must happen or the fix is a no-op."""
+
+    def setUp(self):
+        os.environ[TUNNEL_ENV_VAR] = "1"
+
+    def tearDown(self):
+        os.environ.pop(TUNNEL_ENV_VAR, None)
+
+    def test_it_strips_the_context_and_points_docker_at_the_tunnel(self):
+        fake = SimpleNamespace(docker_host="tcp://127.0.0.1:54321")
+        env: dict[str, str] = {}
+        with (
+            mock.patch(
+                "ldm_core.config.get_active_target", return_value=_target("aws-1")
+            ),
+            mock.patch("ldm_core.docker_tunnel.tunnel_for", return_value=fake),
+        ):
+            out = CommandRunner._apply_docker_tunnel(
+                ["docker", "--context", "aws-1", "ps", "-a"], env
+            )
+        # Leaving --context in place would send Docker back down ssh:// --
+        # the CLI prefers a context over the environment -- so the tunnel
+        # would be opened and then bypassed, and the defect would persist
+        # while every other sign said the feature was on.
+        self.assertEqual(out, ["docker", "ps", "-a"])
+        self.assertEqual(env["DOCKER_HOST"], "tcp://127.0.0.1:54321")
+
+    def test_it_falls_back_to_context_when_the_target_is_local(self):
+        env: dict[str, str] = {}
+        with mock.patch(
+            "ldm_core.config.get_active_target",
+            return_value=SimpleNamespace(name="local", host="127.0.0.1"),
+        ):
+            out = CommandRunner._apply_docker_tunnel(
+                ["docker", "--context", "local", "ps"], env
+            )
+        self.assertEqual(out, ["docker", "--context", "local", "ps"])
+        self.assertNotIn("DOCKER_HOST", env)
+
+
+class MidRunDeathTests(unittest.TestCase):
+    """A tunnel that dies mid-run must name the tunnel, not a localhost port."""
+
+    def test_it_reports_the_tunnel_when_it_dies_after_working(self):
+        t = DockerSshTunnel(_target("aws-1"))
+        t.established_at = datetime(2026, 9, 28, 14, 32, 5)
+        err = t.closed_error()
+
+        text = str(err)
+        self.assertIsInstance(err, DockerTunnelClosedError)
+        self.assertIn("tunnel", text.lower())
+        self.assertIn("aws-1", text)
+        self.assertIn("14:32", text, "the operator correlates this by time")
+        # Silence from ssh is a fact, and differs from a reason nobody read.
+        self.assertIn("no diagnostic available from ssh", text)
+        # The failure it must NOT read as.
+        self.assertNotIn("connection refused", text.lower())
+
+    def test_never_established_and_died_are_different_types(self):
+        # Chased differently: the first is credentials, host or firewall; the
+        # second is a working connection that was lost or killed.
+        self.assertTrue(issubclass(DockerTunnelClosedError, DockerTunnelError))
+        self.assertFalse(
+            isinstance(DockerTunnelError("never up"), DockerTunnelClosedError)
         )
 
 

@@ -141,6 +141,58 @@ Three properties are deliberate:
 > containers as `SSH_READY_TIMEOUT` by the rule below. It has no meaning there
 > and is harmless, but it will appear in the container environment.
 
+## Remote Docker over One SSH Connection (`LDM_DOCKER_TUNNEL`)
+
+**Opt-in, off by default.** When set, LDM reaches a remote node's Docker daemon
+through a single SSH port-forward instead of opening a new SSH connection for
+every `docker` command.
+
+```bash
+export LDM_DOCKER_TUNNEL=1     # also accepts true/yes/on
+```
+
+### Why it exists
+
+Docker's own SSH connection helper opens a **fresh connection per CLI
+invocation**, and LDM issues roughly 85 of them across a run. Measured on a
+reporting deployment's node: 478 `Accepted publickey` in 30 hours against
+`sshd`'s default `MaxStartups 10:30:100`, and 714 log lines of
+
+```text
+sshd: error: beginning MaxStartups throttling
+sshd: drop connection #10 from [...] past MaxStartups
+```
+
+A dropped connection surfaces as `Docker not accessible`, which names neither
+SSH nor the node (LDM-#1993).
+
+With the tunnel, a run opens **one** connection.
+
+### What it does not fix
+
+It removes the connections **LDM** creates. It does not make a node immune: on
+the same node, unrelated background traffic put 159 connections past
+`MaxStartups` in three hours with zero successful authentications. Restricting
+who can reach port 22, or raising `MaxStartups`, is the node operator's to do.
+
+### Behaviour worth knowing
+
+- The forwarded port is bound to **`127.0.0.1` only**, and is chosen at
+  random per run. It grants access to that node's Docker daemon for the life
+  of the run, so anything able to run code on your machine can use it. LDM is
+  for demos, testbeds and experimentation, and this is one more reason not to
+  point it at anything you care about.
+- **Cleanup does not depend on LDM exiting cleanly.** The tunnel's remote end
+  reads a pipe LDM holds open, so if LDM is killed -- including `kill -9`,
+  which cannot be trapped -- the pipe closes and the tunnel exits with it.
+- There is **no idle timeout**, deliberately. A Liferay first boot is
+  legitimately idle for many minutes, and tearing down a healthy tunnel on
+  inactivity would recreate the very failure this setting exists to remove.
+- If the tunnel dies mid-run, LDM says so by name -- *"The SSH tunnel to
+  compute node 'aws-1' has closed"* -- with the time it was established and
+  whatever `ssh` last reported. A tunnel that never opened and one that opened
+  and then died are reported differently, because they are chased differently.
+
 ## Environment Variable Forwarding
 
 LDM forwards specific host environment variables into your project containers
@@ -258,4 +310,4 @@ LDM mounts.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-24* | *Last Reviewed: 2026-09-24*
+*Last Updated: 2026-09-28* | *Last Reviewed: 2026-09-28*
