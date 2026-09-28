@@ -97,6 +97,11 @@ fi
 #
 # A typo must not silently verify nothing, so an unknown name is refused rather
 # than treated as "matches no section".
+# Where this script lives, resolved before anything cds into a workspace.
+# The suite spends most of its life inside a temporary project directory, so a
+# relative path to a sibling helper stops resolving after the first cd.
+E2E_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 LDM_E2E_SECTIONS="${LDM_E2E_SECTIONS:-all}"
 IFS=',' read -r -a _REQUESTED_SECTIONS <<< "$LDM_E2E_SECTIONS"
 for _requested in "${_REQUESTED_SECTIONS[@]}"; do
@@ -610,6 +615,36 @@ log_and_run() {
 # Failure paths already tee; it was only success that was invisible.
 report_ok() {
     echo "$1" | tee -a "$RESULTS_FILE_TMP"
+}
+
+# LDM-#1975: assert a client-extension fixture has the shape real ones have.
+#
+# The invariants, why each one exists, and the measurements behind them live in
+# scripts/check_cx_fixture_realism.py. That logic is a file rather than a
+# heredoc for two reasons: this suite and its PowerShell twin both build CX
+# fixtures and must apply the SAME check -- the two have already drifted once,
+# when a .ps1 edit silently dropped a check the .sh kept (LDM-#1982) -- and a
+# real module is covered by ruff and mypy, which a heredoc never is.
+#
+# The short version: a fixture that is unrealistic in the right way disarms
+# every assertion downstream of it while still passing, which is how LDM-#1944
+# survived 74 green port assertions.
+assert_cx_fixture_realistic() {
+    local label="$1"
+    local fixture_dir="$2"
+
+    # Captured rather than piped: `if cmd | tee` reports tee's exit status, so
+    # the guard would pass unconditionally. On success there is no output.
+    local realism_output=""
+    if realism_output="$("$VENV_PYTHON" \
+            "${E2E_SCRIPT_DIR}/check_cx_fixture_realism.py" \
+            "$label" "$fixture_dir" 2>&1)"; then
+        return 0
+    fi
+    printf '%s\n' "$realism_output" | tee -a "$RESULTS_FILE_TMP"
+
+    echo "❌ ERROR: the '${label}' CX fixture does not hold the invariants every real client extension holds, so the assertions that follow it prove less than they appear to (LDM-#1975)." | tee -a "$RESULTS_FILE_TMP"
+    return 1
 }
 
 # LDM-#1428: name what is holding a port when a port check cannot proceed.
@@ -3499,6 +3534,27 @@ rm -rf "cx-build"
 # boot: they are all compose-generation facts, which is exactly what was lost.
 echo ">> Verifying a client-extension SERVICE is generated correctly (LDM-#1918)..."
 CXSVC_NAME="synthetic-svc"
+# LDM-#1975: the identifiers and the port below are drawn from the real corpus
+# rather than invented. Measured across all 16 samples in ldm-cx-samples:
+#
+#   * the LCP.json id differs from the directory name in 16 of 16 -- it is the
+#     directory with the hyphens dropped. ZERO samples have the two equal.
+#   * each of the four services declares its own container port (3001, 3002,
+#     3003, 3004). NONE of them uses 8080.
+#
+# This fixture used to do the opposite of both, and each was load-bearing for
+# a defect that reached a release:
+#
+#   * id == directory is one of the two conditions under which LDM-#1944
+#     cannot manifest, because it makes "mount the id" and "mount the
+#     projectName" produce the same string.
+#   * 8080 is exactly `_resolve_container_port`'s fallback, so a fixture on
+#     8080 cannot distinguish "read the declared port" from "failed to read
+#     it and returned the default" -- which is what LDM-#1996 was.
+#
+# `assert_cx_fixture_realistic` enforces both against every CX fixture here.
+CXSVC_ID="syntheticsvc"
+CXSVC_PORT="3001"
 CXSVC_OK=true
 rm -rf "cxsvc-build" "${CXSVC_NAME}.zip"
 
@@ -3574,7 +3630,8 @@ fi
 mkdir -p "cxsvc-build/${CXSVC_NAME}"
 cat > "cxsvc-build/${CXSVC_NAME}/client-extension.yaml" <<CXSVCEOF
 ${CXSVC_NAME}:
-    .serviceAddress: ${CXSVC_NAME}:8080
+    .serviceAddress: localhost:${CXSVC_PORT}
+    .serviceScheme: http
     name: Synthetic CX Service
     type: microservice
 ${CXSVC_NAME}-oauth:
@@ -3601,17 +3658,26 @@ CXSVCEOF
 # landed, which is the guard doing its job on our own unrealistic test data.
 cat > "cxsvc-build/${CXSVC_NAME}/LCP.json" <<CXSVCLCP
 {
-    "id": "${CXSVC_NAME}",
+    "id": "${CXSVC_ID}",
     "memory": 512,
-    "kind": "Deployment"
+    "kind": "Deployment",
+    "loadBalancer": {
+        "targetPort": ${CXSVC_PORT}
+    },
+    "ports": [
+        {
+            "external": true,
+            "port": ${CXSVC_PORT}
+        }
+    ]
 }
 CXSVCLCP
 cat > "cxsvc-build/${CXSVC_NAME}/${CXSVC_NAME}.client-extension-config.json" <<CXSVCCFG
 {
     "com.liferay.oauth2.provider.configuration.OAuth2ProviderApplicationHeadlessServerConfiguration~${CXSVC_NAME}": {
-        "projectId": "${CXSVC_NAME}",
+        "projectId": "${CXSVC_ID}",
         "projectName": "${CXSVC_NAME}",
-        ".serviceAddress": "${CXSVC_NAME}:8080",
+        ".serviceAddress": "localhost:${CXSVC_PORT}",
         ".serviceScheme": "http"
     }
 }
@@ -3630,6 +3696,11 @@ RUN mkdir -p /opt/liferay/routes
 RUN printf 'module.exports = () => "alive";\n' > /opt/liferay/routes/app.cjs
 CMD ["sleep", "3600"]
 CXSVC_DOCKERFILE
+# The fixture is checked BEFORE it is zipped: every assertion after this
+# point is only as good as the data it runs against (LDM-#1975).
+if ! assert_cx_fixture_realistic "$CXSVC_NAME" "cxsvc-build/${CXSVC_NAME}"; then
+    CXSVC_OK=false
+fi
 "$VENV_PYTHON" -c "
 import shutil, sys
 shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])
@@ -3670,14 +3741,21 @@ if [ "$ROUTES_OK" = true ]; then
 fi
 
 
-if ! "$VENV_PYTHON" - "$CXSVC_NAME" <<'CXSVC_PY'
+if ! "$VENV_PYTHON" - "$CXSVC_NAME" "$CXSVC_ID" <<'CXSVC_PY'
 import sys, pathlib, yaml
 name = sys.argv[1]
+# LDM-#1975: the compose service is named from the LCP.json id, while the
+# routes tree is named from projectName. Now that the fixture declares the two
+# differently -- as all 16 real samples do -- this lookup has to say which one
+# it means. It matched on `name` for as long as the fixture made them equal,
+# which is precisely why that equality hid LDM-#1944.
+ext_id = sys.argv[2]
 compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text())
 services = compose.get("services") or {}
-svc = next((v for k, v in services.items() if k.endswith(name)), None)
+svc = next((v for k, v in services.items() if k.endswith(ext_id)), None)
 if svc is None:
-    print(f"ERROR: no compose service for the '{name}' client extension.")
+    print(f"ERROR: no compose service for the '{name}' client extension "
+          f"(looked for a service ending '{ext_id}').")
     print("  services present: " + ", ".join(services))
     sys.exit(1)
 
@@ -3809,16 +3887,18 @@ fi
 # anchored routes mount the file is visible; against the pre-#1925
 # /opt/liferay/routes mount it is not.
 if [ "$CXSVC_OK" = true ]; then
-    CXSVC_SERVICE=$("$VENV_PYTHON" - "$CXSVC_NAME" <<'CXSVC_SVCNAME_PY'
+    CXSVC_SERVICE=$("$VENV_PYTHON" - "$CXSVC_ID" <<'CXSVC_SVCNAME_PY'
 import pathlib
 import sys
 
 import yaml
 
-name = sys.argv[1]
+# LDM-#1975: keyed on the LCP.json id, not the directory name -- see the note
+# on the compose lookup above.
+ext_id = sys.argv[1]
 compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text())
 services = compose.get("services") or {}
-print(next((k for k in services if k.endswith(name)), ""))
+print(next((k for k in services if k.endswith(ext_id)), ""))
 CXSVC_SVCNAME_PY
 )
     if [ -z "$CXSVC_SERVICE" ]; then
@@ -4063,6 +4143,9 @@ CXDERIV_NAME="derived-svc"
 # directory Liferay never writes to. Declaring them differently here is what
 # makes the assertion below able to tell the two apart at all.
 CXDERIV_ID="derivedsvc"
+# LDM-#1975: a distinct port from synthetic-svc, and not 8080 -- see
+# assert_cx_fixture_realistic. The real services run on 3001-3004.
+CXDERIV_PORT="3002"
 CXDERIV_OK=true
 CXDERIV_DXP="/opt/custom/lxc/dxp-tree"
 CXDERIV_EXT="/opt/custom/lxc/ext-tree"
@@ -4087,6 +4170,15 @@ cat > "cxderiv-build/${CXDERIV_NAME}/LCP.json" <<CXDERIVLCP
 {
     "id": "${CXDERIV_ID}",
     "memory": 512,
+    "loadBalancer": {
+        "targetPort": ${CXDERIV_PORT}
+    },
+    "ports": [
+        {
+            "external": true,
+            "port": ${CXDERIV_PORT}
+        }
+    ],
     "env": {
         "LIFERAY_ROUTES_DXP": "${CXDERIV_DXP}",
         "LIFERAY_ROUTES_CLIENT_EXTENSION": "${CXDERIV_EXT}"
@@ -4109,6 +4201,9 @@ cat > "cxderiv-build/${CXDERIV_NAME}/Dockerfile" <<'CXDERIV_DOCKERFILE'
 FROM alpine
 CMD ["sleep", "3600"]
 CXDERIV_DOCKERFILE
+if ! assert_cx_fixture_realistic "$CXDERIV_NAME" "cxderiv-build/${CXDERIV_NAME}"; then
+    CXDERIV_OK=false
+fi
 "$VENV_PYTHON" -c "
 import shutil, sys
 shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])
