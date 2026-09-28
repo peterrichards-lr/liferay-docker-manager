@@ -2195,7 +2195,7 @@ class ComposerService:
     # `routes/default`, NOT `routes`. `default` is the virtual-instance id, and
     # mounting `routes` would expose every OTHER virtual instance's trees --
     # a separate decision, recorded deliberately in
-    # `test_refactor_regressions.py::test_it_is_the_dxp_subtree_not_the_whole_routes_directory`.
+    # `test_refactor_regressions.py::test_it_is_the_instance_subtree_not_the_whole_routes_directory`.
     # One level is enough: measured across four days on the deployment that
     # reported this, `default/` and `default/dxp/` both persisted while
     # `default/<projectName>/` was replaced, so `default` is not what goes.
