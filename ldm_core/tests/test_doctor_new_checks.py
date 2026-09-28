@@ -20,6 +20,7 @@ published the whole time.
 import json
 import stat
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from typing import ClassVar
 from unittest.mock import patch
@@ -39,6 +40,10 @@ class _Stub:
     def __init__(self):
         self.results: list = []
         self.hints: list = []
+        # Bound in `_runner()` from the real class, or replaced by a test that
+        # wants to control what the labels asked for. Declared here so the
+        # assignment is not an attribute appearing out of nowhere.
+        self._expected_router_names: Callable[..., set] = lambda _p: set()
 
     def add_hint(self, *args, **_kwargs):
         self.hints.append(args[0] if args else "")
@@ -52,6 +57,9 @@ def _runner():
     stub = _Stub()
     for name in ("_check_filesystem_honours_modes", "_check_traefik_routers"):
         setattr(stub, name, types.MethodType(getattr(DoctorRunner, name), stub))
+    # A staticmethod, so it binds differently -- taken from the real class so
+    # the tests exercise the real enumeration unless they patch it.
+    stub._expected_router_names = DoctorRunner._expected_router_names
     return stub
 
 
@@ -123,7 +131,6 @@ class TestTraefikRoutersCheck(unittest.TestCase):
         """`api@internal` and `dashboard@internal` are always present. Counting
         them would report a healthy proxy with no extensions routed."""
         r = self._run(self.INTERNAL)
-        self.assertEqual("warn", _ok(r, "Traefik Routers"))
         self.assertIn("No project routers", _status(r, "Traefik Routers"))
 
     def test_a_loaded_router_reports_its_entrypoints(self):
@@ -144,6 +151,55 @@ class TestTraefikRoutersCheck(unittest.TestCase):
         status = _status(r, "Traefik Routers")
         self.assertIn("1 loaded", status)
         self.assertIn("websecure", status)
+
+    def test_a_router_asked_for_but_never_produced_is_reported(self):
+        """LDM-#1989, second pass. The case the first pass called healthy.
+
+        Observed live: a client extension running on the right network with
+        `traefik.enable=true`, a correct `rule=Host(...)` and a
+        `loadbalancer.server.port`, and NO router in the runtime table. Not
+        bound to the wrong entrypoint -- absent. Counting what loaded reported
+        "1 loaded on websecure" and looked fine.
+        """
+        r = _runner()
+        with (
+            patch(
+                "ldm_core.diagnostics.doctor.run_command",
+                return_value=json.dumps(
+                    [
+                        *self.INTERNAL,
+                        {
+                            "name": "proj-main@docker",
+                            "status": "enabled",
+                            "provider": "docker",
+                            "entryPoints": ["websecure"],
+                        },
+                    ]
+                ),
+            ),
+        ):
+            r._expected_router_names = lambda _p: {"proj-main", "proj-ext-svc"}
+            r._check_traefik_routers(["docker"])
+
+        self.assertEqual("warn", _ok(r, "Traefik Routers"))
+        status = _status(r, "Traefik Routers")
+        self.assertIn("ABSENT", status)
+        self.assertIn("proj-ext-svc", status)
+
+    def test_the_hint_points_at_the_proxy_log_not_at_the_labels(self):
+        """The labels are correct in this failure mode, so 'check your labels'
+        is the wrong advice. One malformed traefik.* label makes Traefik drop
+        the WHOLE container's configuration, and only its log says so."""
+        r = _runner()
+        with (
+            patch(
+                "ldm_core.diagnostics.doctor.run_command",
+                return_value=json.dumps(self.INTERNAL),
+            ),
+        ):
+            r._expected_router_names = lambda _p: {"proj-ext-svc"}
+            r._check_traefik_routers(["docker"])
+        self.assertTrue(any("docker logs liferay-proxy-global" in h for h in r.hints))
 
     def test_a_router_that_loaded_but_is_not_enabled_is_named(self):
         r = self._run(

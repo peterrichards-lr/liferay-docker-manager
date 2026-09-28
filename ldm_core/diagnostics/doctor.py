@@ -85,6 +85,52 @@ class DoctorRunner:
         self.mount_type = "unknown"
         self.docker_version = None
 
+    @staticmethod
+    def _expected_router_names(docker_prefix):
+        """Router names LDM's own labels ASK the proxy to create.
+
+        LDM-#1989 (second pass): the check reported what LOADED and had no idea
+        what to expect, so a project whose client-extension router was never
+        produced read as healthy -- "Liferay plus two internal routers" looks
+        fine unless something knows a third was asked for.
+
+        Observed exactly that on a live deployment: a client extension running
+        on the right network with `traefik.enable=true`, a correct
+        `rule=Host(...)` and a `loadbalancer.server.port`, and NO router and no
+        service in the runtime table. Not bound to the wrong entrypoint --
+        absent. The first pass of this check would have called that healthy.
+
+        Read from the containers' own labels rather than from the generated
+        compose: what matters is what the proxy can see right now, and a
+        compose file on disk may have been regenerated since the stack started.
+        """
+        import re
+
+        listed = run_command(
+            [*docker_prefix, "ps", "--filter", "label=traefik.enable=true", "-q"],
+            check=False,
+        )
+        if not listed:
+            return set()
+
+        expected = set()
+        for cid in listed.split():
+            labels = run_command(
+                [*docker_prefix, "inspect", "-f", "{{json .Config.Labels}}", cid],
+                check=False,
+            )
+            if not labels:
+                continue
+            try:
+                parsed = json.loads(labels)
+            except (ValueError, TypeError):
+                continue
+            for key in parsed or {}:
+                match = re.match(r"^traefik\.http\.routers\.([^.]+)\.", str(key))
+                if match:
+                    expected.add(match.group(1))
+        return expected
+
     def _check_traefik_routers(self, docker_prefix):
         """LDM-#1989: LDM writes Traefik routers and never checked they loaded.
 
@@ -169,17 +215,47 @@ class DoctorRunner:
             )
             return
 
-        if not ours:
-            # No project routers at all. Legitimate when nothing is running, and
-            # the exact state a client-extension 404 presents -- so name both
-            # readings rather than implying either.
+        # LDM-#1989: compare against what the labels ASKED for, BEFORE any
+        # early return. A router the provider never produced is invisible to a
+        # count of what loaded, and if the only missing one is a client
+        # extension the count still reads as healthy.
+        #
+        # Observed live: an extension running on the right network with
+        # `traefik.enable=true`, a correct `rule=Host(...)` and a
+        # `loadbalancer.server.port`, and NO router and no service in the
+        # runtime table. Not bound to the wrong entrypoint -- absent.
+        loaded_names = {
+            str(r.get("name", "")).split("@")[0] for r in ours if r.get("name")
+        }
+        missing = sorted(self._expected_router_names(docker_prefix) - loaded_names)
+        if missing:
             self.results.append(
                 (
                     "Traefik Routers",
-                    "No project routers loaded (nothing running, or labels not seen)",
+                    f"{len(ours)} loaded, {len(missing)} asked for but ABSENT: "
+                    f"{', '.join(missing[:3])}",
                     "warn",
                 )
             )
+            # The labels are CORRECT in this failure mode, so "check your
+            # labels" is the wrong advice. One malformed traefik.* label makes
+            # Traefik drop the whole container's configuration rather than that
+            # label, and only the proxy's own log says which and why.
+            self.add_hint(
+                "Traefik Routers: a container carries routing labels the proxy "
+                "produced no router from, so its hostname returns 404 while "
+                "every label looks correct. The proxy's log names why it "
+                "skipped a container -- 'docker logs liferay-proxy-global'. "
+                "One malformed traefik.* label drops the WHOLE container's "
+                "configuration, not just that label."
+            )
+            return
+
+        if not ours:
+            # Nothing asked for and nothing loaded. Legitimate when no project
+            # is running; the comparison above has already ruled out the case
+            # where something WAS asked for.
+            self.results.append(("Traefik Routers", "No project routers loaded", True))
             return
 
         # The entrypoints are reported because they are the one thing a labels
