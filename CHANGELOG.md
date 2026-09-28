@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.0-pre.8] - 2026-09-28
+
+### Fixed
+
+- **A client extension could be given routing instructions the proxy silently threw away** (LDM-#1996). If its `LCP.json` declared a port entry marked external but gave no port number — or set `targetPort` explicitly to null — LDM wrote a routing label containing the literal text `None`. **Traefik cannot read that, and it discards the whole container's routing configuration rather than the one bad line.** The extension then runs, looks correctly configured, and its address returns 404 with nothing anywhere saying why. The port is now resolved so that a declaration missing its value falls through to the next one rather than being taken as the answer.
+
+  This is the same mistake as v2.26.0-pre.1's, one line above the comment describing it: a default that does not apply because the value is present and empty rather than absent.
+
+### Changed
+
+- **`ldm system doctor` now reports routing rules the proxy never acted on** (LDM-#2001). It previously listed what the proxy had loaded, which cannot show you the thing most worth knowing: a client extension whose routing was requested and never created. That reads as a healthy proxy — Liferay plus its own internal entries — unless something knows another was expected. The check now compares what LDM asked for against what exists and names the difference, and when something is missing it points at the proxy's log rather than at the labels, because in that situation the labels are correct and the proxy is the only thing that knows why it skipped them.
+
+  Raised by the deployment whose run produced exactly that: a running extension, on the right network, with correct labels, and no routing rule at all.
+
 ## [v2.26.0-pre.7] - 2026-09-27
 
 ### Added
