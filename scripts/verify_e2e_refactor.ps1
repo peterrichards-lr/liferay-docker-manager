@@ -2976,6 +2976,74 @@ zf.close()
     }
     Write-Verdict "[SUCCESS] Restored search settings stripped from both cascade layers; publisher properties kept."
 
+    # LDM-#2009: parity with verify_e2e_refactor.sh's "Share Refuses a
+    # Stopped Project" section. A tunnel to a project that is not running used
+    # to be started in full and then fail in the gateway's vocabulary, after a
+    # domain had been resolved, a binary ensured, a token fetched and a
+    # subdomain leased. The refusal is now local and arrives before any of
+    # that -- which is what makes it assertable here with no client, no token
+    # and no network.
+    #
+    # -cmatch throughout, not -match: PowerShell's -match is
+    # case-INSENSITIVE, so the two halves would otherwise disagree about
+    # identical correct output.
+    Write-Host ">> Verifying Share Refuses a Stopped Project..."
+    $shareStoppedDir = Join-Path $env:LDM_WORKSPACE "share-stopped-$TEST_PORT"
+    $shareStoppedHome = Join-Path $shareStoppedDir "home"
+    $shareStoppedProj = Join-Path $shareStoppedDir "share-stopped"
+    Remove-Item -Recurse -Force $shareStoppedDir -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path $shareStoppedHome -Force | Out-Null
+    New-Item -ItemType Directory -Path $shareStoppedProj -Force | Out-Null
+    # A container name that cannot collide with anything on the runner, so
+    # "unknown" means "does not exist" rather than "someone else's".
+    $shareStoppedMeta = '{"container_name": "share-stopped-never-started-' + $TEST_PORT + '", "project_name": "share-stopped", "host_name": "localhost", "port": 8080, "db_type": "postgresql"}'
+    Set-Content -Path (Join-Path $shareStoppedProj "meta") -Value $shareStoppedMeta -Encoding ASCII
+    Set-Content -Path (Join-Path $shareStoppedProj ".liferay-docker") -Value "" -Encoding ASCII
+
+    $shareStoppedFailed = $false
+    $shareStoppedOriginalHome = $env:LDM_HOME
+    $shareStoppedOriginalLocation = Get-Location
+    try {
+        $env:LDM_HOME = $shareStoppedHome
+        Set-Location $shareStoppedProj
+        $shareStoppedOut = & $LDM_CMD share start -y --no-color --subdomain e2e-stopped --domain lfr-demo.se 2>&1 | Out-String
+        $shareStoppedCode = $LASTEXITCODE
+    } finally {
+        Set-Location $shareStoppedOriginalLocation
+        $env:LDM_HOME = $shareStoppedOriginalHome
+    }
+
+    if ($shareStoppedCode -ne 3) {
+        Write-Verdict "[ERROR] ERROR: 'share start' against a stopped project exited $shareStoppedCode, expected 3 (infrastructure)."
+        Write-Verdict "        Output was: $shareStoppedOut"
+        $shareStoppedFailed = $true
+    }
+    if (-not ($shareStoppedOut -cmatch "is not running")) {
+        Write-Verdict "[ERROR] ERROR: 'share start' against a stopped project did not say the project is not running."
+        Write-Verdict "        Output was: $shareStoppedOut"
+        $shareStoppedFailed = $true
+    }
+    if (-not ($shareStoppedOut -cmatch "ldm start share-stopped")) {
+        Write-Verdict "[ERROR] ERROR: the refusal did not name the command that fixes it."
+        Write-Verdict "        Output was: $shareStoppedOut"
+        $shareStoppedFailed = $true
+    }
+    # Both markers below appear only once a tunnel has actually been started.
+    # Matched instead of the obvious "Downstream Offline", because the
+    # refusal's own wording quotes that phrase to explain what it pre-empts --
+    # the first version of this check matched LDM's explanation of the symptom
+    # and failed against correct output.
+    if ($shareStoppedOut -cmatch "Tunnel healthcheck failed|Starting lfr-tunnel in the background") {
+        Write-Verdict "[ERROR] ERROR: the refusal came after the tunnel was started instead of before it."
+        Write-Verdict "        Output was: $shareStoppedOut"
+        $shareStoppedFailed = $true
+    }
+
+    if ($shareStoppedFailed) {
+        throw "Share did not refuse a stopped project (LDM-#2009)."
+    }
+    Write-Verdict "[SUCCESS] Share refuses a stopped project locally, before any client, token or gateway work."
+
     Write-Host ">> Verifying Legacy Command Translation..."
     $legacyDoc = & $LDM_CMD doctor --help 2>&1
     $legacySetup = & $LDM_CMD infra-setup --help 2>&1

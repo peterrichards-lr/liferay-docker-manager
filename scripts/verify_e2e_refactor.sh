@@ -3212,6 +3212,62 @@ else
     echo "❌ ERROR: Legacy command translation failed." && exit 1
 fi
 
+# LDM-#2009: a tunnel to a project that is not running used to be started in
+# full and then fail in the gateway's vocabulary -- "Downstream Offline: Local
+# target port 8080 is not responsive" -- after a domain had been resolved, a
+# binary ensured, its version checked against the gateway, a token fetched and
+# a subdomain leased. The refusal is now local and arrives before any of that,
+# which is also what makes it assertable here: no client, no token, no
+# gateway, no network.
+echo ">> Verifying Share Refuses a Stopped Project..."
+SHARE_STOPPED_DIR="${LDM_WORKSPACE}/share-stopped-${TEST_PORT}"
+SHARE_STOPPED_HOME="${SHARE_STOPPED_DIR}/home"
+SHARE_STOPPED_PROJ="${SHARE_STOPPED_DIR}/share-stopped"
+rm -rf "$SHARE_STOPPED_DIR"
+mkdir -p "$SHARE_STOPPED_HOME" "$SHARE_STOPPED_PROJ"
+# A container name that cannot collide with anything on the runner, so
+# "unknown" here means "does not exist" rather than "someone else's".
+printf '%s\n' "{\"container_name\": \"share-stopped-never-started-${TEST_PORT}\", \"project_name\": \"share-stopped\", \"host_name\": \"localhost\", \"port\": 8080, \"db_type\": \"postgresql\"}" > "${SHARE_STOPPED_PROJ}/meta"
+: > "${SHARE_STOPPED_PROJ}/.liferay-docker"
+
+SHARE_STOPPED_OUT=$(cd "$SHARE_STOPPED_PROJ" && LDM_HOME="$SHARE_STOPPED_HOME" "$LDM_CMD" \
+    share start -y --no-color --subdomain e2e-stopped --domain lfr-demo.se 2>&1) && SHARE_STOPPED_RC=0 || SHARE_STOPPED_RC=$?
+SHARE_STOPPED_FAILED=false
+
+if [ "$SHARE_STOPPED_RC" -ne 3 ]; then
+    echo "❌ ERROR: 'share start' against a stopped project exited ${SHARE_STOPPED_RC}, expected 3 (infrastructure)." | tee -a "$RESULTS_FILE_TMP"
+    echo "$SHARE_STOPPED_OUT" | tee -a "$RESULTS_FILE_TMP"
+    SHARE_STOPPED_FAILED=true
+fi
+if ! echo "$SHARE_STOPPED_OUT" | grep -q "is not running"; then
+    echo "❌ ERROR: 'share start' against a stopped project did not say the project is not running." | tee -a "$RESULTS_FILE_TMP"
+    echo "$SHARE_STOPPED_OUT" | tee -a "$RESULTS_FILE_TMP"
+    SHARE_STOPPED_FAILED=true
+fi
+if ! echo "$SHARE_STOPPED_OUT" | grep -q "ldm start share-stopped"; then
+    echo "❌ ERROR: the refusal did not name the command that fixes it." | tee -a "$RESULTS_FILE_TMP"
+    echo "$SHARE_STOPPED_OUT" | tee -a "$RESULTS_FILE_TMP"
+    SHARE_STOPPED_FAILED=true
+fi
+# The whole point of the placement: nothing was acquired on the way to the
+# refusal. Both markers below are emitted only once a tunnel has actually
+# been started, so neither can appear in a refusal.
+#
+# They are matched instead of the obvious "Downstream Offline", because the
+# refusal's own wording QUOTES that phrase to explain what it is pre-empting
+# -- the first version of this check matched LDM's explanation of the symptom
+# and failed against correct output.
+if echo "$SHARE_STOPPED_OUT" | grep -qE "Tunnel healthcheck failed|Starting lfr-tunnel in the background"; then
+    echo "❌ ERROR: the refusal came after the tunnel was started instead of before it." | tee -a "$RESULTS_FILE_TMP"
+    echo "$SHARE_STOPPED_OUT" | tee -a "$RESULTS_FILE_TMP"
+    SHARE_STOPPED_FAILED=true
+fi
+
+if [ "$SHARE_STOPPED_FAILED" = true ]; then
+    exit 1
+fi
+report_ok "✅ Share refuses a stopped project locally, before any client, token or gateway work."
+
 echo ">> Verifying Share Command Layout..."
 if "$LDM_CMD" share --help >/dev/null && \
    "$LDM_CMD" share start --help >/dev/null && \
