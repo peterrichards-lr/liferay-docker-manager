@@ -211,9 +211,14 @@ class OrchestrationService(BaseHandler):
         """Starts project containers.
 
         `share_options` (LDM-#2010) is the `--share*` flags as a dict, or None
-        when sharing was not asked for. Its keys are `ShareService.cmd_start()`
-        parameter names and are splatted into it once the containers are up --
-        the same entry point `ldm share start` uses, so the two cannot drift.
+        when sharing was not asked for. Sharing here is **auxiliary**: the
+        project starts, and then it is shared. `ldm start --share` is
+        `ldm start` followed by `ldm share start`, and saves the second
+        command rather than changing what either one does.
+
+        Its keys are `ShareService.cmd_start()` parameter names and are
+        splatted into it once the containers are up, so the two signatures
+        cannot drift apart silently the way hand-copied arguments would.
         """
         # LDM-#2010: refused up front, not after the work. A tunnel leases one
         # subdomain and forwards to one target, so there is no reading of

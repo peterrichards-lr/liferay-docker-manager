@@ -165,11 +165,13 @@ same share flags:
 ldm start my-project --share --share-url https://peters.lfr-demo.se
 ```
 
-The tunnel starts only after every container has started, and the flags are
-handed to the same code path `ldm share start` uses, so the two resolve a
-subdomain and a domain identically. `--share` cannot be combined with
-`--all`: a tunnel leases one subdomain and forwards to one target, and the
-refusal arrives before anything is started.
+Sharing is auxiliary to the start: the project comes up, and then it is
+shared. `ldm start --share` is `ldm start` followed by `ldm share start` --
+it saves the second command rather than changing what either one does, and
+the tunnel opens only once every container has started.
+
+`--share` cannot be combined with `--all`: a tunnel leases one subdomain and
+forwards to one target, and the refusal arrives before anything is started.
 
 ### Default Subdomain
 

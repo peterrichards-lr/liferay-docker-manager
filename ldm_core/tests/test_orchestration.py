@@ -435,9 +435,10 @@ class TestOrchestration(unittest.TestCase):
         someone sharing an already-configured project does not want, and in
         the reported case the reconfigure is what failed.
 
-        The options are splatted into `ShareService.cmd_start()` by its own
-        parameter names, so the two paths cannot resolve a subdomain or a
-        domain differently.
+        Sharing is auxiliary here: the project starts, then it is shared.
+        What this pins is that the second half is the ordinary `share start`
+        entry point receiving the flags under its own parameter names -- not
+        a third implementation of resolving one.
         """
         self._start_with_share(
             {
