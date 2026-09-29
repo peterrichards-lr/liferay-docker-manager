@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.0-pre.11] - 2026-09-29
+
+### Fixed
+
+- **The verification bundle omitted a helper the verify scripts shell out to** (LDM-#2017), so a verification run performed the correct way -- from the published release assets -- failed on `check_cx_fixture_realism.py` not existing. Both `v2.26.0-pre.9` and `-pre.10` are unverifiable for this reason and neither can be promoted.
+
+  `verify_e2e_refactor.sh` resolves the helper as `${E2E_SCRIPT_DIR}/check_cx_fixture_realism.py` and the PowerShell half as `Join-Path $PSScriptRoot "check_cx_fixture_realism.py"` -- beside the verify script, in both cases. `build_verification_bundle.py` shipped only the two verify scripts, so in a repository checkout all three sit in `scripts/` together and the reference resolves, while from an unzipped bundle the helper is simply absent. It has been missing since LDM-#1975 moved the client-extension realism checks into a shared file.
+
+  **No CI run could have caught it.** Every workflow invokes the verify script from the repository, so the packaged layout is exercised only by a person running from the release assets -- which is what found it. All five `-pre.10` tag workflows passed, Release E2E and both Platform Verifications included.
+
+  The requirement is now **derived rather than maintained**: a test parses both verify scripts for the helpers they invoke and asserts each is a bundle member. A hand-written list drifts the moment someone adds a helper, which is exactly what happened here. It carries its own guard-the-guard assertion, because a reference pattern that stopped matching would let the check pass while verifying nothing.
+
 ## [v2.26.0-pre.10] - 2026-09-29
 
 ### Changed
