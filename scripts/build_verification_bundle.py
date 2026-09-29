@@ -57,6 +57,21 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 REQUIRED_FILES = (
     "scripts/verify_e2e_refactor.sh",
     "scripts/verify_e2e_refactor.ps1",
+    # LDM-#2017: a HELPER the verify scripts shell out to, not a script a
+    # verifier runs. Both halves resolve it beside themselves --
+    # `${E2E_SCRIPT_DIR}/check_cx_fixture_realism.py` and
+    # `Join-Path $PSScriptRoot "check_cx_fixture_realism.py"` -- which is
+    # satisfied in a checkout, where all three sit in `scripts/`, and not
+    # from an unzipped bundle, where only what is listed here exists.
+    #
+    # Omitted since LDM-#1975 moved the realism checks into a shared file,
+    # and invisible to CI throughout: CI runs the verify script from the
+    # repository, so only a from-assets run -- the one a verifier actually
+    # performs -- reaches the packaged layout.
+    #
+    # `test_every_helper_the_verify_scripts_invoke_is_bundled` derives this
+    # requirement from the scripts rather than trusting this tuple.
+    "scripts/check_cx_fixture_realism.py",
 )
 REQUIRED_DIRS = ("common",)
 OPTIONAL_FILES = ("scripts/fragment_override_harness.py",)
