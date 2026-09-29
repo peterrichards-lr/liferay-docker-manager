@@ -24,16 +24,14 @@ what most of this file pins.
 """
 
 import importlib.util
+import re
 import unittest
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-_BUILDER = (
-    Path(__file__).resolve().parent.parent.parent
-    / "scripts"
-    / "build_verification_bundle.py"
-)
+_REPO = Path(__file__).resolve().parent.parent.parent
+_BUILDER = _REPO / "scripts" / "build_verification_bundle.py"
 
 
 def _load():
@@ -44,11 +42,21 @@ def _load():
     return module
 
 
-def _fake_repo(root: Path, *, with_common=True, with_ps1=True, with_harness=True):
+def _fake_repo(
+    root: Path,
+    *,
+    with_common=True,
+    with_ps1=True,
+    with_harness=True,
+    with_realism=True,
+):
     (root / "scripts").mkdir(parents=True, exist_ok=True)
     (root / "scripts" / "verify_e2e_refactor.sh").write_text("#!/bin/bash\n")
     if with_ps1:
         (root / "scripts" / "verify_e2e_refactor.ps1").write_text("# ps1\n")
+    if with_realism:
+        # LDM-#2017: required, because both verify scripts shell out to it.
+        (root / "scripts" / "check_cx_fixture_realism.py").write_text("# realism\n")
     if with_harness:
         (root / "scripts" / "fragment_override_harness.py").write_text("# harness\n")
     if with_common:
@@ -268,6 +276,71 @@ class TheRealRepositoryBuilds(unittest.TestCase):
             has_key,
             "NOT INCLUDED: the DXP activation key" not in text,
             "the manifest and the bundle contents disagree about the key",
+        )
+
+
+class EveryHelperTheScriptsInvokeIsBundled(unittest.TestCase):
+    """The bundle must carry what the verify scripts SHELL OUT TO (LDM-#2017).
+
+    `REQUIRED_FILES` listed the two verify scripts and nothing else, so when
+    LDM-#1975 moved the client-extension realism checks into a shared
+    `scripts/check_cx_fixture_realism.py`, the bundle stopped being
+    self-contained and nothing said so.
+
+    In a checkout all three files sit in `scripts/`, so
+    `${E2E_SCRIPT_DIR}/check_cx_fixture_realism.py` resolves. From an
+    unzipped bundle only the listed members exist, and it does not. CI could
+    never catch it -- CI runs the verify script from the repository, and only
+    a from-assets run, which is what a verifier actually does, reaches the
+    packaged layout. `v2.26.0-pre.9` and `-pre.10` both shipped unverifiable.
+
+    So this derives the requirement from the scripts rather than trusting the
+    tuple. A hand-maintained list drifts the moment someone adds a helper --
+    that is precisely what happened -- and a derived one cannot.
+    """
+
+    #: How each half names a sibling helper.
+    #:   bash: "${E2E_SCRIPT_DIR}/name.py" or "$E2E_SCRIPT_DIR/name.py"
+    #:   ps1:  (Join-Path $PSScriptRoot "name.py")
+    _PATTERNS = (
+        re.compile(r"\$\{?E2E_SCRIPT_DIR\}?/([A-Za-z0-9_]+\.py)"),
+        re.compile(r"Join-Path\s+\$PSScriptRoot\s+[\"']([A-Za-z0-9_]+\.py)[\"']"),
+    )
+
+    def _referenced_helpers(self):
+        found = set()
+        for name in ("verify_e2e_refactor.sh", "verify_e2e_refactor.ps1"):
+            text = (_REPO / "scripts" / name).read_text(encoding="utf-8")
+            for pattern in self._PATTERNS:
+                found.update(pattern.findall(text))
+        return found
+
+    def test_the_scripts_do_reference_at_least_one_helper(self):
+        """Guards the guard: a regex that matches nothing passes vacuously.
+
+        If both patterns stopped matching -- a rename, a change of idiom --
+        the assertion below would hold against an empty set and report that
+        every helper is bundled while checking none.
+        """
+        self.assertTrue(
+            self._referenced_helpers(),
+            "no helper references were found in either verify script; the "
+            "patterns have drifted and the bundling check is now vacuous",
+        )
+
+    def test_every_helper_the_verify_scripts_invoke_is_bundled(self):
+        mod = _load()
+        with TemporaryDirectory() as tmp:
+            with zipfile.ZipFile(mod.build("v0.0.0-test", Path(tmp))) as archive:
+                names = set(archive.namelist())
+
+        missing = sorted(h for h in self._referenced_helpers() if h not in names)
+        self.assertEqual(
+            missing,
+            [],
+            f"the verify scripts shell out to {missing}, which the bundle does "
+            "not carry -- a from-assets run will fail on a missing file while "
+            "CI, running from a checkout, passes",
         )
 
 
