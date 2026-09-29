@@ -1790,6 +1790,207 @@ class TestShareTunnelTopology(unittest.TestCase):
         self.assertEqual(env["LFR_TUNNEL_TOKEN"], "my-token")
 
 
+class TestShareHostClassification(unittest.TestCase):
+    """One field, three kinds of value (LDM-#2008).
+
+    `share_domain` carries a gateway base domain, a host ON one, or a custom
+    vanity domain, and LDM told them apart with a bare membership test. The
+    middle case -- the host a user is actually handed -- was therefore read as
+    a vanity domain, which doubled the label in the public URL, fired the
+    portal-registration warning for a host that needs no registration, and
+    declined to pin a gateway it should have recognised.
+    """
+
+    def setUp(self):
+        self.mock_manager = MockManager()
+        self.mock_manager.args = MagicMock()
+        self.mock_manager.args.share_domain = None
+        self.mock_manager.args.domain = None
+        self.mock_manager.args.share_provider = None
+        self.mock_manager.args.provider = None
+        self.service = ShareService(self.mock_manager)
+
+    # --- the classifier itself -------------------------------------------
+
+    def test_a_known_base_domain_carries_no_subdomain(self):
+        self.assertEqual(
+            self.service.split_share_host("lfr-demo.se"), (None, "lfr-demo.se")
+        )
+
+    def test_a_host_on_a_known_base_is_split(self):
+        self.assertEqual(
+            self.service.split_share_host("peters.lfr-demo.se"),
+            ("peters", "lfr-demo.se"),
+        )
+
+    def test_a_vanity_domain_is_left_whole(self):
+        self.assertEqual(
+            self.service.split_share_host("dev.solaramoto.com"),
+            (None, "dev.solaramoto.com"),
+        )
+
+    def test_a_pasted_url_is_reduced_to_its_host(self):
+        """The form the value actually arrives in."""
+        for value in (
+            "https://peters.lfr-demo.se/",
+            "http://peters.lfr-demo.se",
+            "peters.lfr-demo.se:443/whatever",
+            "  peters.lfr-demo.se.  ",
+            "Peters.LFR-Demo.SE",
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    self.service.split_share_host(value), ("peters", "lfr-demo.se")
+                )
+
+    def test_a_multi_label_prefix_stays_whole(self):
+        """The gateway owns that namespace; LDM does not get to guess."""
+        self.assertEqual(
+            self.service.split_share_host("a.b.lfr-demo.online"),
+            ("a.b", "lfr-demo.online"),
+        )
+
+    def test_nothing_is_invented_from_an_empty_value(self):
+        for value in (None, "", "   "):
+            with self.subTest(value=value):
+                self.assertEqual(self.service.split_share_host(value), (None, value))
+
+    # --- what the classification changes ----------------------------------
+
+    @patch("ldm_core.handlers.share.UI")
+    def test_a_host_on_a_known_base_resolves_to_that_base(self, mock_ui):
+        _, domain = self.service.resolve_share_config(
+            provider="lfr-tunnel", domain="peters.lfr-demo.se"
+        )
+        self.assertEqual(domain, "lfr-demo.se")
+        self.assertEqual(self.service._derived_share_subdomain, "peters")
+
+    @patch("ldm_core.handlers.share.UI")
+    def test_a_host_on_a_known_base_is_not_called_a_custom_domain(self, mock_ui):
+        """The portal-registration advice is wrong for a leased subdomain."""
+        self.service.resolve_share_config(
+            provider="lfr-tunnel", domain="peters.lfr-demo.se"
+        )
+        notes = [str(call[0][0]) for call in mock_ui.info.call_args_list]
+        self.assertFalse(
+            [n for n in notes if "Custom domains must be registered" in n],
+            f"a host on a known base was reported as a vanity domain: {notes}",
+        )
+
+    @patch("ldm_core.handlers.share.UI")
+    def test_the_split_is_announced_once_not_per_call(self, mock_ui):
+        # LDM-#1075: resolve_share_config() runs several times per invocation.
+        for _ in range(3):
+            self.service.resolve_share_config(
+                provider="lfr-tunnel", domain="peters.lfr-demo.se"
+            )
+        splits = [
+            call
+            for call in mock_ui.info.call_args_list
+            if "as subdomain" in str(call[0][0])
+        ]
+        self.assertEqual(len(splits), 1)
+
+    def test_a_host_on_a_known_base_still_pins_the_gateway(self):
+        """_explicit_gateway_domain() compared before classifying."""
+        self.mock_manager.args.domain = "peters.lfr-demo.se"
+        self.assertEqual(self.service._explicit_gateway_domain(), "lfr-demo.se")
+
+    def test_a_vanity_domain_still_pins_nothing(self):
+        self.mock_manager.args.domain = "dev.solaramoto.com"
+        self.assertIsNone(self.service._explicit_gateway_domain())
+
+    def test_the_public_url_does_not_double_the_label(self):
+        """The measured symptom: https://peters.peters.lfr-demo.se."""
+        self.service.resolve_public_tunnel_urls = MagicMock(return_value=[])  # type: ignore[method-assign]
+        url = self.service.resolve_public_tunnel_url("peters")
+        self.assertNotIn("peters.peters", url)
+
+    # --- which subdomain gets leased --------------------------------------
+
+    def test_an_explicit_subdomain_is_used(self):
+        self.assertEqual(
+            self.service._resolve_subdomain("peters", "someproject"), "peters"
+        )
+
+    def test_the_derived_subdomain_is_used_when_none_was_asked_for(self):
+        self.service._derived_share_subdomain = "peters"
+        self.assertEqual(self.service._resolve_subdomain(None, "someproject"), "peters")
+
+    def test_the_project_name_remains_the_last_resort(self):
+        self.assertEqual(
+            self.service._resolve_subdomain(None, "Some Project"), "some-project"
+        )
+
+    @patch("ldm_core.handlers.share.UI.die", side_effect=SystemExit(1))
+    def test_two_disagreeing_subdomains_are_refused_not_guessed(self, mock_die):
+        self.service._derived_share_subdomain = "peters"
+        with self.assertRaises(SystemExit):
+            self.service._resolve_subdomain("other", "someproject")
+        self.assertIn("Conflicting subdomains", mock_die.call_args[0][0])
+
+
+class TestDryRunNeedsNoClientOrToken(unittest.TestCase):
+    """`--dry-run` resolves; it does not acquire (LDM-#2008).
+
+    The short-circuit used to sit below `_ensure_binary()`,
+    `_verify_compatibility()` and `_get_auth_token()`, so a dry run demanded an
+    installed client and a gateway token. That made the one code path CI could
+    have exercised the one path it could not -- which is why the classification
+    bug above reached a user rather than a test.
+    """
+
+    def setUp(self):
+        self.mock_manager = MockManager()
+        self.mock_manager.dry_run = True  # type: ignore[attr-defined]
+        self.mock_manager.args = MagicMock()
+        self.mock_manager.args.share_domain = None
+        self.mock_manager.args.domain = None
+        self.mock_manager.args.share_provider = None
+        self.mock_manager.args.provider = None
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/lfr-e2e-share")
+        )
+        self.mock_manager.read_meta = MagicMock(return_value={})  # type: ignore[method-assign]
+        self.mock_manager.write_meta = MagicMock()  # type: ignore[method-assign]
+        self.service = ShareService(self.mock_manager)
+
+    def _start(self, **kwargs):
+        boom = MagicMock(side_effect=AssertionError("acquired in a dry run"))
+        self.service._ensure_binary = boom  # type: ignore[method-assign]
+        self.service._get_auth_token = boom  # type: ignore[method-assign]
+        self.service._verify_compatibility = boom  # type: ignore[method-assign]
+        with patch("ldm_core.handlers.share.UI") as mock_ui:
+            self.service.cmd_start(provider="lfr-tunnel", **kwargs)
+        return [str(call[0][0]) for call in mock_ui.info.call_args_list]
+
+    def test_no_binary_version_check_or_token_is_needed(self):
+        self._start(subdomain="peters", domain="lfr-demo.se")
+
+    def _planned_url_line(self, notes):
+        """The "Public URL" note, with UI's mocked colour constants removed."""
+        lines = [n for n in notes if "Public URL" in n]
+        self.assertEqual(len(lines), 1, f"expected one planned-URL line: {notes}")
+        return lines[0]
+
+    def test_the_planned_url_is_stated(self):
+        line = self._planned_url_line(
+            self._start(subdomain="peters", domain="lfr-demo.se")
+        )
+        self.assertIn("https://peters.lfr-demo.se", line)
+        self.assertNotIn("peters.peters", line)
+
+    def test_a_pasted_url_reaches_the_same_address(self):
+        line = self._planned_url_line(self._start(url="https://peters.lfr-demo.se/"))
+        self.assertIn("https://peters.lfr-demo.se", line)
+        self.assertNotIn("peters.peters", line)
+
+    def test_a_dry_run_does_not_write_the_project_meta(self):
+        """It did, which made --dry-run a way to pin a project's domain."""
+        self._start(subdomain="peters", domain="lfr-demo.se")
+        self.mock_manager.write_meta.assert_not_called()  # type: ignore[attr-defined]
+
+
 class TestRefusesATunnelToAStoppedProject(unittest.TestCase):
     """LDM-#2009: establish locally what the gateway would tell you late.
 

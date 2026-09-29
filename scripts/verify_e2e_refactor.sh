@@ -3278,6 +3278,105 @@ else
     echo "❌ ERROR: Share command layout verification failed." && exit 1
 fi
 
+# LDM-#2008: the block above proves only that four subcommands parse. Every
+# decision the reported failure turned on -- which subdomain, which base
+# domain, which public URL, which gateway -- is taken before the client is
+# invoked, and `--dry-run` reaches all of it with no binary, no token, no
+# gateway and no DNS.
+#
+# Deliberately NOT a live tunnel. That would import five dependencies this
+# script cannot control (the gateway, DNS, a token, a leasable subdomain and a
+# client version the gateway may refuse), and a release verification that can
+# go red for reasons unrelated to the release is worse than no check. Gating
+# such a test on `lfr-tunnel` being on PATH would be worse still: it would
+# skip on every CI runner, for ever, and report green.
+echo ">> Verifying Share Dry-Run Resolution..."
+SHARE_DRYRUN_DIR="${LDM_WORKSPACE}/share-dryrun-${TEST_PORT}"
+SHARE_DRYRUN_HOME="${SHARE_DRYRUN_DIR}/home"
+SHARE_DRYRUN_PROJ="${SHARE_DRYRUN_DIR}/share-dryrun"
+rm -rf "$SHARE_DRYRUN_DIR"
+mkdir -p "$SHARE_DRYRUN_HOME" "$SHARE_DRYRUN_PROJ"
+printf '%s\n' '{"container_name": "share-dryrun", "project_name": "share-dryrun", "host_name": "localhost", "port": 8080, "db_type": "postgresql"}' > "${SHARE_DRYRUN_PROJ}/meta"
+: > "${SHARE_DRYRUN_PROJ}/.liferay-docker"
+
+SHARE_DRYRUN_FAILED=false
+
+share_dry_run() {
+    (cd "$SHARE_DRYRUN_PROJ" && LDM_HOME="$SHARE_DRYRUN_HOME" "$LDM_CMD" \
+        share start --dry-run -y --no-color "$@" 2>&1)
+}
+
+share_dryrun_fail() {
+    echo "❌ ERROR: $1" | tee -a "$RESULTS_FILE_TMP"
+    echo "$2" | tee -a "$RESULTS_FILE_TMP"
+    SHARE_DRYRUN_FAILED=true
+}
+
+# 1. A bare base domain: the two values combine exactly as supplied.
+SHARE_OUT=$(share_dry_run --subdomain peters --domain lfr-demo.se) || true
+if ! echo "$SHARE_OUT" | grep -q "https://peters.lfr-demo.se"; then
+    share_dryrun_fail "'share start --subdomain peters --domain lfr-demo.se' did not resolve to https://peters.lfr-demo.se." "$SHARE_OUT"
+fi
+
+# 2. A host ON a known base domain. This is what a user pastes, and it used to
+#    be classified as a vanity domain -- doubling the label into
+#    peters.peters.lfr-demo.se and printing portal-registration advice that
+#    does not apply to a subdomain the gateway leases.
+SHARE_OUT=$(share_dry_run --domain peters.lfr-demo.se) || true
+if ! echo "$SHARE_OUT" | grep -q "https://peters.lfr-demo.se"; then
+    share_dryrun_fail "'--domain peters.lfr-demo.se' did not resolve to https://peters.lfr-demo.se." "$SHARE_OUT"
+fi
+if echo "$SHARE_OUT" | grep -q "Custom domains must be registered"; then
+    share_dryrun_fail "a host on a known tunnel base domain was reported as a custom vanity domain." "$SHARE_OUT"
+fi
+
+# 2b. The same host WITH the matching --subdomain. Two things at once: the
+#     pair agrees so it must not be refused as a conflict, and this is the
+#     shape in which the doubled label is actually observable -- without
+#     --subdomain the fallback supplies the project name and the symptom
+#     reads as share-dryrun.peters.lfr-demo.se instead, which the assertion
+#     below would miss.
+SHARE_OUT=$(share_dry_run --subdomain peters --domain peters.lfr-demo.se) && SHARE_RC=0 || SHARE_RC=$?
+if [ "$SHARE_RC" -ne 0 ]; then
+    share_dryrun_fail "a --subdomain matching the share domain's own subdomain was refused as a conflict." "$SHARE_OUT"
+fi
+if echo "$SHARE_OUT" | grep -q "peters\.peters"; then
+    share_dryrun_fail "'--domain peters.lfr-demo.se' doubled the subdomain label (LDM-#2008)." "$SHARE_OUT"
+fi
+
+# 3. The same value in the form it is actually handed over in.
+SHARE_OUT=$(share_dry_run --url https://peters.lfr-demo.se/) || true
+if ! echo "$SHARE_OUT" | grep -q "https://peters.lfr-demo.se"; then
+    share_dryrun_fail "'--url https://peters.lfr-demo.se/' did not resolve to https://peters.lfr-demo.se." "$SHARE_OUT"
+fi
+
+# 4. A genuine vanity domain must still be called one (LDM-#1038).
+SHARE_OUT=$(share_dry_run --subdomain peters --domain dev.example.invalid) || true
+if ! echo "$SHARE_OUT" | grep -q "Custom domains must be registered"; then
+    share_dryrun_fail "a custom vanity domain no longer warns about portal registration (LDM-#1038)." "$SHARE_OUT"
+fi
+
+# 5. Two subdomains that disagree are refused, not silently resolved: picking
+#    one is how a tunnel comes up on an address nobody asked for.
+SHARE_OUT=$(share_dry_run --subdomain other --domain peters.lfr-demo.se) && SHARE_RC=0 || SHARE_RC=$?
+if [ "$SHARE_RC" -eq 0 ]; then
+    share_dryrun_fail "a conflicting --subdomain and share domain exited 0 instead of refusing." "$SHARE_OUT"
+fi
+if ! echo "$SHARE_OUT" | grep -q "Conflicting subdomains"; then
+    share_dryrun_fail "a conflicting --subdomain and share domain did not say so." "$SHARE_OUT"
+fi
+
+# 6. A dry run resolves; it must not write. This wrote share_domain into the
+#    project meta, which made --dry-run a way to pin a project's domain.
+if grep -q "share_domain" "${SHARE_DRYRUN_PROJ}/meta"; then
+    share_dryrun_fail "'share start --dry-run' wrote share_domain into the project meta." "$(cat "${SHARE_DRYRUN_PROJ}/meta")"
+fi
+
+if [ "$SHARE_DRYRUN_FAILED" = true ]; then
+    exit 1
+fi
+report_ok "✅ Share dry-run resolution verified (base domain, host-on-base, --url, vanity domain, conflict refusal, no meta write)."
+
 # UX & Scaling
 echo ">> Verifying Cascading Defaults..."
 "$LDM_CMD" config defaults test_key test_value >/dev/null
