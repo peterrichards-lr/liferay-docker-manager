@@ -97,6 +97,11 @@ fi
 #
 # A typo must not silently verify nothing, so an unknown name is refused rather
 # than treated as "matches no section".
+# Where this script lives, resolved before anything cds into a workspace.
+# The suite spends most of its life inside a temporary project directory, so a
+# relative path to a sibling helper stops resolving after the first cd.
+E2E_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 LDM_E2E_SECTIONS="${LDM_E2E_SECTIONS:-all}"
 IFS=',' read -r -a _REQUESTED_SECTIONS <<< "$LDM_E2E_SECTIONS"
 for _requested in "${_REQUESTED_SECTIONS[@]}"; do
@@ -120,6 +125,27 @@ section_enabled() {
         *) return 1 ;;
     esac
 }
+
+# LDM-#1942: record the uid this suite runs as.
+#
+# The snapshot reclaim chowns trees to uid 1000. On a runner that IS uid 1000
+# that call changes nothing, so any assertion about it passes whether the code
+# works or not -- the same false-pass shape as `& 0o044` against `umask 0027`.
+#
+# So the uid is a PRECONDITION for verifying LDM-#1942 at all, and until now it
+# was never recorded: nothing in this suite printed it, and nobody could say
+# from an artifact whether a reclaim assertion had meant anything.
+#
+# Printed unconditionally rather than asserted, because the correct uid is
+# whatever the host happens to use. The point is that a reader can tell.
+E2E_RUN_UID="$(id -u)"
+E2E_RUN_GID="$(id -g)"
+echo "ℹ  Running as uid=${E2E_RUN_UID} gid=${E2E_RUN_GID} ($(id -un))"
+if [ "$E2E_RUN_UID" = "1000" ]; then
+    echo "⚠  This host runs as uid 1000, the same uid the snapshot reclaim"
+    echo "   chowns to. Any assertion about that reclaim is UNVERIFIABLE here"
+    echo "   -- it would pass whether or not the code works (LDM-#1942)."
+fi
 
 echo "⚡ Starting Standalone Binary Verification on Port ${TEST_PORT}..."
 if [ "$LDM_E2E_SECTIONS" != "all" ]; then
@@ -589,6 +615,36 @@ log_and_run() {
 # Failure paths already tee; it was only success that was invisible.
 report_ok() {
     echo "$1" | tee -a "$RESULTS_FILE_TMP"
+}
+
+# LDM-#1975: assert a client-extension fixture has the shape real ones have.
+#
+# The invariants, why each one exists, and the measurements behind them live in
+# scripts/check_cx_fixture_realism.py. That logic is a file rather than a
+# heredoc for two reasons: this suite and its PowerShell twin both build CX
+# fixtures and must apply the SAME check -- the two have already drifted once,
+# when a .ps1 edit silently dropped a check the .sh kept (LDM-#1982) -- and a
+# real module is covered by ruff and mypy, which a heredoc never is.
+#
+# The short version: a fixture that is unrealistic in the right way disarms
+# every assertion downstream of it while still passing, which is how LDM-#1944
+# survived 74 green port assertions.
+assert_cx_fixture_realistic() {
+    local label="$1"
+    local fixture_dir="$2"
+
+    # Captured rather than piped: `if cmd | tee` reports tee's exit status, so
+    # the guard would pass unconditionally. On success there is no output.
+    local realism_output=""
+    if realism_output="$("$VENV_PYTHON" \
+            "${E2E_SCRIPT_DIR}/check_cx_fixture_realism.py" \
+            "$label" "$fixture_dir" 2>&1)"; then
+        return 0
+    fi
+    printf '%s\n' "$realism_output" | tee -a "$RESULTS_FILE_TMP"
+
+    echo "❌ ERROR: the '${label}' CX fixture does not hold the invariants every real client extension holds, so the assertions that follow it prove less than they appear to (LDM-#1975)." | tee -a "$RESULTS_FILE_TMP"
+    return 1
 }
 
 # LDM-#1428: name what is holding a port when a port check cannot proceed.
@@ -3156,6 +3212,62 @@ else
     echo "❌ ERROR: Legacy command translation failed." && exit 1
 fi
 
+# LDM-#2009: a tunnel to a project that is not running used to be started in
+# full and then fail in the gateway's vocabulary -- "Downstream Offline: Local
+# target port 8080 is not responsive" -- after a domain had been resolved, a
+# binary ensured, its version checked against the gateway, a token fetched and
+# a subdomain leased. The refusal is now local and arrives before any of that,
+# which is also what makes it assertable here: no client, no token, no
+# gateway, no network.
+echo ">> Verifying Share Refuses a Stopped Project..."
+SHARE_STOPPED_DIR="${LDM_WORKSPACE}/share-stopped-${TEST_PORT}"
+SHARE_STOPPED_HOME="${SHARE_STOPPED_DIR}/home"
+SHARE_STOPPED_PROJ="${SHARE_STOPPED_DIR}/share-stopped"
+rm -rf "$SHARE_STOPPED_DIR"
+mkdir -p "$SHARE_STOPPED_HOME" "$SHARE_STOPPED_PROJ"
+# A container name that cannot collide with anything on the runner, so
+# "unknown" here means "does not exist" rather than "someone else's".
+printf '%s\n' "{\"container_name\": \"share-stopped-never-started-${TEST_PORT}\", \"project_name\": \"share-stopped\", \"host_name\": \"localhost\", \"port\": 8080, \"db_type\": \"postgresql\"}" > "${SHARE_STOPPED_PROJ}/meta"
+: > "${SHARE_STOPPED_PROJ}/.liferay-docker"
+
+SHARE_STOPPED_OUT=$(cd "$SHARE_STOPPED_PROJ" && LDM_HOME="$SHARE_STOPPED_HOME" "$LDM_CMD" \
+    share start -y --no-color --subdomain e2e-stopped --domain lfr-demo.se 2>&1) && SHARE_STOPPED_RC=0 || SHARE_STOPPED_RC=$?
+SHARE_STOPPED_FAILED=false
+
+if [ "$SHARE_STOPPED_RC" -ne 3 ]; then
+    echo "❌ ERROR: 'share start' against a stopped project exited ${SHARE_STOPPED_RC}, expected 3 (infrastructure)." | tee -a "$RESULTS_FILE_TMP"
+    echo "$SHARE_STOPPED_OUT" | tee -a "$RESULTS_FILE_TMP"
+    SHARE_STOPPED_FAILED=true
+fi
+if ! echo "$SHARE_STOPPED_OUT" | grep -q "is not running"; then
+    echo "❌ ERROR: 'share start' against a stopped project did not say the project is not running." | tee -a "$RESULTS_FILE_TMP"
+    echo "$SHARE_STOPPED_OUT" | tee -a "$RESULTS_FILE_TMP"
+    SHARE_STOPPED_FAILED=true
+fi
+if ! echo "$SHARE_STOPPED_OUT" | grep -q "ldm start share-stopped"; then
+    echo "❌ ERROR: the refusal did not name the command that fixes it." | tee -a "$RESULTS_FILE_TMP"
+    echo "$SHARE_STOPPED_OUT" | tee -a "$RESULTS_FILE_TMP"
+    SHARE_STOPPED_FAILED=true
+fi
+# The whole point of the placement: nothing was acquired on the way to the
+# refusal. Both markers below are emitted only once a tunnel has actually
+# been started, so neither can appear in a refusal.
+#
+# They are matched instead of the obvious "Downstream Offline", because the
+# refusal's own wording QUOTES that phrase to explain what it is pre-empting
+# -- the first version of this check matched LDM's explanation of the symptom
+# and failed against correct output.
+if echo "$SHARE_STOPPED_OUT" | grep -qE "Tunnel healthcheck failed|Starting lfr-tunnel in the background"; then
+    echo "❌ ERROR: the refusal came after the tunnel was started instead of before it." | tee -a "$RESULTS_FILE_TMP"
+    echo "$SHARE_STOPPED_OUT" | tee -a "$RESULTS_FILE_TMP"
+    SHARE_STOPPED_FAILED=true
+fi
+
+if [ "$SHARE_STOPPED_FAILED" = true ]; then
+    exit 1
+fi
+report_ok "✅ Share refuses a stopped project locally, before any client, token or gateway work."
+
 echo ">> Verifying Share Command Layout..."
 if "$LDM_CMD" share --help >/dev/null && \
    "$LDM_CMD" share start --help >/dev/null && \
@@ -3165,6 +3277,149 @@ if "$LDM_CMD" share --help >/dev/null && \
 else
     echo "❌ ERROR: Share command layout verification failed." && exit 1
 fi
+
+# LDM-#2008: the block above proves only that four subcommands parse. Every
+# decision the reported failure turned on -- which subdomain, which base
+# domain, which public URL, which gateway -- is taken before the client is
+# invoked, and `--dry-run` reaches all of it with no binary, no token, no
+# gateway and no DNS.
+#
+# Deliberately NOT a live tunnel. That would import five dependencies this
+# script cannot control (the gateway, DNS, a token, a leasable subdomain and a
+# client version the gateway may refuse), and a release verification that can
+# go red for reasons unrelated to the release is worse than no check. Gating
+# such a test on `lfr-tunnel` being on PATH would be worse still: it would
+# skip on every CI runner, for ever, and report green.
+echo ">> Verifying Share Dry-Run Resolution..."
+SHARE_DRYRUN_DIR="${LDM_WORKSPACE}/share-dryrun-${TEST_PORT}"
+SHARE_DRYRUN_HOME="${SHARE_DRYRUN_DIR}/home"
+SHARE_DRYRUN_PROJ="${SHARE_DRYRUN_DIR}/share-dryrun"
+rm -rf "$SHARE_DRYRUN_DIR"
+mkdir -p "$SHARE_DRYRUN_HOME" "$SHARE_DRYRUN_PROJ"
+printf '%s\n' '{"container_name": "share-dryrun", "project_name": "share-dryrun", "host_name": "localhost", "port": 8080, "db_type": "postgresql"}' > "${SHARE_DRYRUN_PROJ}/meta"
+: > "${SHARE_DRYRUN_PROJ}/.liferay-docker"
+
+SHARE_DRYRUN_FAILED=false
+
+share_dry_run() {
+    (cd "$SHARE_DRYRUN_PROJ" && LDM_HOME="$SHARE_DRYRUN_HOME" "$LDM_CMD" \
+        share start --dry-run -y --no-color "$@" 2>&1)
+}
+
+share_dryrun_fail() {
+    echo "❌ ERROR: $1" | tee -a "$RESULTS_FILE_TMP"
+    echo "$2" | tee -a "$RESULTS_FILE_TMP"
+    SHARE_DRYRUN_FAILED=true
+}
+
+# 1. A bare base domain: the two values combine exactly as supplied.
+SHARE_OUT=$(share_dry_run --subdomain peters --domain lfr-demo.se) || true
+if ! echo "$SHARE_OUT" | grep -q "https://peters.lfr-demo.se"; then
+    share_dryrun_fail "'share start --subdomain peters --domain lfr-demo.se' did not resolve to https://peters.lfr-demo.se." "$SHARE_OUT"
+fi
+
+# 2. A host ON a known base domain. This is what a user pastes, and it used to
+#    be classified as a vanity domain -- doubling the label into
+#    peters.peters.lfr-demo.se and printing portal-registration advice that
+#    does not apply to a subdomain the gateway leases.
+SHARE_OUT=$(share_dry_run --domain peters.lfr-demo.se) || true
+if ! echo "$SHARE_OUT" | grep -q "https://peters.lfr-demo.se"; then
+    share_dryrun_fail "'--domain peters.lfr-demo.se' did not resolve to https://peters.lfr-demo.se." "$SHARE_OUT"
+fi
+if echo "$SHARE_OUT" | grep -q "Custom domains must be registered"; then
+    share_dryrun_fail "a host on a known tunnel base domain was reported as a custom vanity domain." "$SHARE_OUT"
+fi
+
+# 2b. The same host WITH the matching --subdomain. Two things at once: the
+#     pair agrees so it must not be refused as a conflict, and this is the
+#     shape in which the doubled label is actually observable -- without
+#     --subdomain the fallback supplies the project name and the symptom
+#     reads as share-dryrun.peters.lfr-demo.se instead, which the assertion
+#     below would miss.
+SHARE_OUT=$(share_dry_run --subdomain peters --domain peters.lfr-demo.se) && SHARE_RC=0 || SHARE_RC=$?
+if [ "$SHARE_RC" -ne 0 ]; then
+    share_dryrun_fail "a --subdomain matching the share domain's own subdomain was refused as a conflict." "$SHARE_OUT"
+fi
+if echo "$SHARE_OUT" | grep -q "peters\.peters"; then
+    share_dryrun_fail "'--domain peters.lfr-demo.se' doubled the subdomain label (LDM-#2008)." "$SHARE_OUT"
+fi
+
+# 3. The same value in the form it is actually handed over in.
+SHARE_OUT=$(share_dry_run --url https://peters.lfr-demo.se/) || true
+if ! echo "$SHARE_OUT" | grep -q "https://peters.lfr-demo.se"; then
+    share_dryrun_fail "'--url https://peters.lfr-demo.se/' did not resolve to https://peters.lfr-demo.se." "$SHARE_OUT"
+fi
+
+# 4. A genuine vanity domain must still be called one (LDM-#1038).
+SHARE_OUT=$(share_dry_run --subdomain peters --domain dev.example.invalid) || true
+if ! echo "$SHARE_OUT" | grep -q "Custom domains must be registered"; then
+    share_dryrun_fail "a custom vanity domain no longer warns about portal registration (LDM-#1038)." "$SHARE_OUT"
+fi
+
+# 5. Two subdomains that disagree are refused, not silently resolved: picking
+#    one is how a tunnel comes up on an address nobody asked for.
+SHARE_OUT=$(share_dry_run --subdomain other --domain peters.lfr-demo.se) && SHARE_RC=0 || SHARE_RC=$?
+if [ "$SHARE_RC" -eq 0 ]; then
+    share_dryrun_fail "a conflicting --subdomain and share domain exited 0 instead of refusing." "$SHARE_OUT"
+fi
+if ! echo "$SHARE_OUT" | grep -q "Conflicting subdomains"; then
+    share_dryrun_fail "a conflicting --subdomain and share domain did not say so." "$SHARE_OUT"
+fi
+
+# 6. A dry run resolves; it must not write. This wrote share_domain into the
+#    project meta, which made --dry-run a way to pin a project's domain.
+if grep -q "share_domain" "${SHARE_DRYRUN_PROJ}/meta"; then
+    share_dryrun_fail "'share start --dry-run' wrote share_domain into the project meta." "$(cat "${SHARE_DRYRUN_PROJ}/meta")"
+fi
+
+if [ "$SHARE_DRYRUN_FAILED" = true ]; then
+    exit 1
+fi
+report_ok "✅ Share dry-run resolution verified (base domain, host-on-base, --url, vanity domain, conflict refusal, no meta write)."
+
+# LDM-#2010: `ldm start --share --share-subdomain peters` was "unrecognized
+# arguments" -- the flags existed on `run` only, and `run` RECONFIGURES, which
+# is what someone sharing an already-configured project does not want.
+#
+# Both checks below are free: the first reads --help, the second exercises a
+# refusal that happens before any project is touched.
+echo ">> Verifying Share Flags on 'ldm start'..."
+SHARE_START_FAILED=false
+
+SHARE_START_HELP=$("$LDM_CMD" start --help 2>&1)
+for _flag in --share --share-subdomain --share-domain --share-url --share-provider; do
+    if ! echo "$SHARE_START_HELP" | grep -q -- "$_flag"; then
+        echo "❌ ERROR: 'ldm start --help' does not offer ${_flag} (LDM-#2010)." | tee -a "$RESULTS_FILE_TMP"
+        SHARE_START_FAILED=true
+    fi
+done
+
+# A tunnel leases one subdomain and forwards to one target, so this
+# combination is refused -- up front, before any project is started.
+SHARE_ALL_OUT=$("$LDM_CMD" start --all --share --share-subdomain e2e-all -y --no-color 2>&1) && SHARE_ALL_RC=0 || SHARE_ALL_RC=$?
+if [ "$SHARE_ALL_RC" -eq 0 ]; then
+    echo "❌ ERROR: 'ldm start --all --share' exited 0 instead of refusing." | tee -a "$RESULTS_FILE_TMP"
+    echo "$SHARE_ALL_OUT" | tee -a "$RESULTS_FILE_TMP"
+    SHARE_START_FAILED=true
+fi
+if ! echo "$SHARE_ALL_OUT" | grep -q -- "--share cannot be combined with --all"; then
+    echo "❌ ERROR: 'ldm start --all --share' did not explain why it refused." | tee -a "$RESULTS_FILE_TMP"
+    echo "$SHARE_ALL_OUT" | tee -a "$RESULTS_FILE_TMP"
+    SHARE_START_FAILED=true
+fi
+# argparse rejects an unknown option with this exact wording, which is what
+# the flags not being declared looked like. Asserted explicitly so a
+# regression reads as itself rather than as one of the checks above.
+if echo "$SHARE_ALL_OUT" | grep -q "unrecognized arguments"; then
+    echo "❌ ERROR: 'ldm start' still does not declare the share flags (LDM-#2010)." | tee -a "$RESULTS_FILE_TMP"
+    echo "$SHARE_ALL_OUT" | tee -a "$RESULTS_FILE_TMP"
+    SHARE_START_FAILED=true
+fi
+
+if [ "$SHARE_START_FAILED" = true ]; then
+    exit 1
+fi
+report_ok "✅ 'ldm start' accepts the share flags and refuses --share with --all."
 
 # UX & Scaling
 echo ">> Verifying Cascading Defaults..."
@@ -3478,6 +3733,27 @@ rm -rf "cx-build"
 # boot: they are all compose-generation facts, which is exactly what was lost.
 echo ">> Verifying a client-extension SERVICE is generated correctly (LDM-#1918)..."
 CXSVC_NAME="synthetic-svc"
+# LDM-#1975: the identifiers and the port below are drawn from the real corpus
+# rather than invented. Measured across all 16 samples in ldm-cx-samples:
+#
+#   * the LCP.json id differs from the directory name in 16 of 16 -- it is the
+#     directory with the hyphens dropped. ZERO samples have the two equal.
+#   * each of the four services declares its own container port (3001, 3002,
+#     3003, 3004). NONE of them uses 8080.
+#
+# This fixture used to do the opposite of both, and each was load-bearing for
+# a defect that reached a release:
+#
+#   * id == directory is one of the two conditions under which LDM-#1944
+#     cannot manifest, because it makes "mount the id" and "mount the
+#     projectName" produce the same string.
+#   * 8080 is exactly `_resolve_container_port`'s fallback, so a fixture on
+#     8080 cannot distinguish "read the declared port" from "failed to read
+#     it and returned the default" -- which is what LDM-#1996 was.
+#
+# `assert_cx_fixture_realistic` enforces both against every CX fixture here.
+CXSVC_ID="syntheticsvc"
+CXSVC_PORT="3001"
 CXSVC_OK=true
 rm -rf "cxsvc-build" "${CXSVC_NAME}.zip"
 
@@ -3553,7 +3829,8 @@ fi
 mkdir -p "cxsvc-build/${CXSVC_NAME}"
 cat > "cxsvc-build/${CXSVC_NAME}/client-extension.yaml" <<CXSVCEOF
 ${CXSVC_NAME}:
-    .serviceAddress: ${CXSVC_NAME}:8080
+    .serviceAddress: localhost:${CXSVC_PORT}
+    .serviceScheme: http
     name: Synthetic CX Service
     type: microservice
 ${CXSVC_NAME}-oauth:
@@ -3580,17 +3857,26 @@ CXSVCEOF
 # landed, which is the guard doing its job on our own unrealistic test data.
 cat > "cxsvc-build/${CXSVC_NAME}/LCP.json" <<CXSVCLCP
 {
-    "id": "${CXSVC_NAME}",
+    "id": "${CXSVC_ID}",
     "memory": 512,
-    "kind": "Deployment"
+    "kind": "Deployment",
+    "loadBalancer": {
+        "targetPort": ${CXSVC_PORT}
+    },
+    "ports": [
+        {
+            "external": true,
+            "port": ${CXSVC_PORT}
+        }
+    ]
 }
 CXSVCLCP
 cat > "cxsvc-build/${CXSVC_NAME}/${CXSVC_NAME}.client-extension-config.json" <<CXSVCCFG
 {
     "com.liferay.oauth2.provider.configuration.OAuth2ProviderApplicationHeadlessServerConfiguration~${CXSVC_NAME}": {
-        "projectId": "${CXSVC_NAME}",
+        "projectId": "${CXSVC_ID}",
         "projectName": "${CXSVC_NAME}",
-        ".serviceAddress": "${CXSVC_NAME}:8080",
+        ".serviceAddress": "localhost:${CXSVC_PORT}",
         ".serviceScheme": "http"
     }
 }
@@ -3609,6 +3895,11 @@ RUN mkdir -p /opt/liferay/routes
 RUN printf 'module.exports = () => "alive";\n' > /opt/liferay/routes/app.cjs
 CMD ["sleep", "3600"]
 CXSVC_DOCKERFILE
+# The fixture is checked BEFORE it is zipped: every assertion after this
+# point is only as good as the data it runs against (LDM-#1975).
+if ! assert_cx_fixture_realistic "$CXSVC_NAME" "cxsvc-build/${CXSVC_NAME}"; then
+    CXSVC_OK=false
+fi
 "$VENV_PYTHON" -c "
 import shutil, sys
 shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])
@@ -3649,14 +3940,21 @@ if [ "$ROUTES_OK" = true ]; then
 fi
 
 
-if ! "$VENV_PYTHON" - "$CXSVC_NAME" <<'CXSVC_PY'
+if ! "$VENV_PYTHON" - "$CXSVC_NAME" "$CXSVC_ID" <<'CXSVC_PY'
 import sys, pathlib, yaml
 name = sys.argv[1]
+# LDM-#1975: the compose service is named from the LCP.json id, while the
+# routes tree is named from projectName. Now that the fixture declares the two
+# differently -- as all 16 real samples do -- this lookup has to say which one
+# it means. It matched on `name` for as long as the fixture made them equal,
+# which is precisely why that equality hid LDM-#1944.
+ext_id = sys.argv[2]
 compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text())
 services = compose.get("services") or {}
-svc = next((v for k, v in services.items() if k.endswith(name)), None)
+svc = next((v for k, v in services.items() if k.endswith(ext_id)), None)
 if svc is None:
-    print(f"ERROR: no compose service for the '{name}' client extension.")
+    print(f"ERROR: no compose service for the '{name}' client extension "
+          f"(looked for a service ending '{ext_id}').")
     print("  services present: " + ", ".join(services))
     sys.exit(1)
 
@@ -3788,16 +4086,18 @@ fi
 # anchored routes mount the file is visible; against the pre-#1925
 # /opt/liferay/routes mount it is not.
 if [ "$CXSVC_OK" = true ]; then
-    CXSVC_SERVICE=$("$VENV_PYTHON" - "$CXSVC_NAME" <<'CXSVC_SVCNAME_PY'
+    CXSVC_SERVICE=$("$VENV_PYTHON" - "$CXSVC_ID" <<'CXSVC_SVCNAME_PY'
 import pathlib
 import sys
 
 import yaml
 
-name = sys.argv[1]
+# LDM-#1975: keyed on the LCP.json id, not the directory name -- see the note
+# on the compose lookup above.
+ext_id = sys.argv[1]
 compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text())
 services = compose.get("services") or {}
-print(next((k for k in services if k.endswith(name)), ""))
+print(next((k for k in services if k.endswith(ext_id)), ""))
 CXSVC_SVCNAME_PY
 )
     if [ -z "$CXSVC_SERVICE" ]; then
@@ -4042,6 +4342,9 @@ CXDERIV_NAME="derived-svc"
 # directory Liferay never writes to. Declaring them differently here is what
 # makes the assertion below able to tell the two apart at all.
 CXDERIV_ID="derivedsvc"
+# LDM-#1975: a distinct port from synthetic-svc, and not 8080 -- see
+# assert_cx_fixture_realistic. The real services run on 3001-3004.
+CXDERIV_PORT="3002"
 CXDERIV_OK=true
 CXDERIV_DXP="/opt/custom/lxc/dxp-tree"
 CXDERIV_EXT="/opt/custom/lxc/ext-tree"
@@ -4066,6 +4369,15 @@ cat > "cxderiv-build/${CXDERIV_NAME}/LCP.json" <<CXDERIVLCP
 {
     "id": "${CXDERIV_ID}",
     "memory": 512,
+    "loadBalancer": {
+        "targetPort": ${CXDERIV_PORT}
+    },
+    "ports": [
+        {
+            "external": true,
+            "port": ${CXDERIV_PORT}
+        }
+    ],
     "env": {
         "LIFERAY_ROUTES_DXP": "${CXDERIV_DXP}",
         "LIFERAY_ROUTES_CLIENT_EXTENSION": "${CXDERIV_EXT}"
@@ -4088,6 +4400,9 @@ cat > "cxderiv-build/${CXDERIV_NAME}/Dockerfile" <<'CXDERIV_DOCKERFILE'
 FROM alpine
 CMD ["sleep", "3600"]
 CXDERIV_DOCKERFILE
+if ! assert_cx_fixture_realistic "$CXDERIV_NAME" "cxderiv-build/${CXDERIV_NAME}"; then
+    CXDERIV_OK=false
+fi
 "$VENV_PYTHON" -c "
 import shutil, sys
 shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])

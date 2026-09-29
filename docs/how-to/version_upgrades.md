@@ -93,6 +93,19 @@ Downgrading Liferay versions on an existing database will corrupt schemas. By de
 ldm run --tag 2026.q2.4-lts --force-downgrade
 ```
 
+The same guard covers the database engine: LDM records the PostgreSQL / MySQL
+version each run used and refuses a later run that would move it backwards.
+Those versions come from the **dependency compatibility matrix**
+(`compatibility.json`), which LDM refreshes from `master` once a day and caches
+under `~/.ldm/cache/`.
+
+When that matrix cannot be loaded, LDM has no version to compare and **skips
+the database downgrade check** rather than comparing against a placeholder. If
+you ever see a downgrade reported between two versions that look equivalent —
+`'16.2'` to `'16'`, say — treat it as a symptom, not a real change, and check
+the lines above it for a failed matrix refresh. `--force-downgrade` would
+suppress the message without addressing the cause.
+
 ---
 
 ## Post-Upgrade Verification & Validation
@@ -142,4 +155,4 @@ While LDM allows you to restore the pre-upgrade snapshot at any time, doing so c
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-09-29* | *Last Reviewed: 2026-09-29*

@@ -32,6 +32,14 @@ class MockManager:
     def setup_paths(self, root):
         return {"root": Path(root)}
 
+    def get_container_status(self, container_name, target_name=None):
+        # LDM-#2009: cmd_start() now refuses a tunnel to a project that is not
+        # running, so every test exercising it needs an answer here. "running"
+        # is the default because these tests are about what a share does, not
+        # about the precondition -- TestRefusesATunnelToAStoppedProject drives
+        # the other states.
+        return "running"
+
 
 class TestShareService(unittest.TestCase):
     def setUp(self):
@@ -1780,3 +1788,304 @@ class TestShareTunnelTopology(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("-target-host") + 1], "custom.domain.local")
         self.assertEqual(env["LFT_CLIENT_TOKEN"], "my-token")
         self.assertEqual(env["LFR_TUNNEL_TOKEN"], "my-token")
+
+
+class TestShareHostClassification(unittest.TestCase):
+    """One field, three kinds of value (LDM-#2008).
+
+    `share_domain` carries a gateway base domain, a host ON one, or a custom
+    vanity domain, and LDM told them apart with a bare membership test. The
+    middle case -- the host a user is actually handed -- was therefore read as
+    a vanity domain, which doubled the label in the public URL, fired the
+    portal-registration warning for a host that needs no registration, and
+    declined to pin a gateway it should have recognised.
+    """
+
+    def setUp(self):
+        self.mock_manager = MockManager()
+        self.mock_manager.args = MagicMock()
+        self.mock_manager.args.share_domain = None
+        self.mock_manager.args.domain = None
+        self.mock_manager.args.share_provider = None
+        self.mock_manager.args.provider = None
+        self.service = ShareService(self.mock_manager)
+
+    # --- the classifier itself -------------------------------------------
+
+    def test_a_known_base_domain_carries_no_subdomain(self):
+        self.assertEqual(
+            self.service.split_share_host("lfr-demo.se"), (None, "lfr-demo.se")
+        )
+
+    def test_a_host_on_a_known_base_is_split(self):
+        self.assertEqual(
+            self.service.split_share_host("peters.lfr-demo.se"),
+            ("peters", "lfr-demo.se"),
+        )
+
+    def test_a_vanity_domain_is_left_whole(self):
+        self.assertEqual(
+            self.service.split_share_host("dev.solaramoto.com"),
+            (None, "dev.solaramoto.com"),
+        )
+
+    def test_a_pasted_url_is_reduced_to_its_host(self):
+        """The form the value actually arrives in."""
+        for value in (
+            "https://peters.lfr-demo.se/",
+            "http://peters.lfr-demo.se",
+            "peters.lfr-demo.se:443/whatever",
+            "  peters.lfr-demo.se.  ",
+            "Peters.LFR-Demo.SE",
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    self.service.split_share_host(value), ("peters", "lfr-demo.se")
+                )
+
+    def test_a_multi_label_prefix_stays_whole(self):
+        """The gateway owns that namespace; LDM does not get to guess."""
+        self.assertEqual(
+            self.service.split_share_host("a.b.lfr-demo.online"),
+            ("a.b", "lfr-demo.online"),
+        )
+
+    def test_nothing_is_invented_from_an_empty_value(self):
+        for value in (None, "", "   "):
+            with self.subTest(value=value):
+                self.assertEqual(self.service.split_share_host(value), (None, value))
+
+    # --- what the classification changes ----------------------------------
+
+    @patch("ldm_core.handlers.share.UI")
+    def test_a_host_on_a_known_base_resolves_to_that_base(self, mock_ui):
+        _, domain = self.service.resolve_share_config(
+            provider="lfr-tunnel", domain="peters.lfr-demo.se"
+        )
+        self.assertEqual(domain, "lfr-demo.se")
+        self.assertEqual(self.service._derived_share_subdomain, "peters")
+
+    @patch("ldm_core.handlers.share.UI")
+    def test_a_host_on_a_known_base_is_not_called_a_custom_domain(self, mock_ui):
+        """The portal-registration advice is wrong for a leased subdomain."""
+        self.service.resolve_share_config(
+            provider="lfr-tunnel", domain="peters.lfr-demo.se"
+        )
+        notes = [str(call[0][0]) for call in mock_ui.info.call_args_list]
+        self.assertFalse(
+            [n for n in notes if "Custom domains must be registered" in n],
+            f"a host on a known base was reported as a vanity domain: {notes}",
+        )
+
+    @patch("ldm_core.handlers.share.UI")
+    def test_the_split_is_announced_once_not_per_call(self, mock_ui):
+        # LDM-#1075: resolve_share_config() runs several times per invocation.
+        for _ in range(3):
+            self.service.resolve_share_config(
+                provider="lfr-tunnel", domain="peters.lfr-demo.se"
+            )
+        splits = [
+            call
+            for call in mock_ui.info.call_args_list
+            if "as subdomain" in str(call[0][0])
+        ]
+        self.assertEqual(len(splits), 1)
+
+    def test_a_host_on_a_known_base_still_pins_the_gateway(self):
+        """_explicit_gateway_domain() compared before classifying."""
+        self.mock_manager.args.domain = "peters.lfr-demo.se"
+        self.assertEqual(self.service._explicit_gateway_domain(), "lfr-demo.se")
+
+    def test_a_vanity_domain_still_pins_nothing(self):
+        self.mock_manager.args.domain = "dev.solaramoto.com"
+        self.assertIsNone(self.service._explicit_gateway_domain())
+
+    def test_the_public_url_does_not_double_the_label(self):
+        """The measured symptom: https://peters.peters.lfr-demo.se."""
+        self.service.resolve_public_tunnel_urls = MagicMock(return_value=[])  # type: ignore[method-assign]
+        url = self.service.resolve_public_tunnel_url("peters")
+        self.assertNotIn("peters.peters", url)
+
+    # --- which subdomain gets leased --------------------------------------
+
+    def test_an_explicit_subdomain_is_used(self):
+        self.assertEqual(
+            self.service._resolve_subdomain("peters", "someproject"), "peters"
+        )
+
+    def test_the_derived_subdomain_is_used_when_none_was_asked_for(self):
+        self.service._derived_share_subdomain = "peters"
+        self.assertEqual(self.service._resolve_subdomain(None, "someproject"), "peters")
+
+    def test_the_project_name_remains_the_last_resort(self):
+        self.assertEqual(
+            self.service._resolve_subdomain(None, "Some Project"), "some-project"
+        )
+
+    @patch("ldm_core.handlers.share.UI.die", side_effect=SystemExit(1))
+    def test_two_disagreeing_subdomains_are_refused_not_guessed(self, mock_die):
+        self.service._derived_share_subdomain = "peters"
+        with self.assertRaises(SystemExit):
+            self.service._resolve_subdomain("other", "someproject")
+        self.assertIn("Conflicting subdomains", mock_die.call_args[0][0])
+
+
+class TestDryRunNeedsNoClientOrToken(unittest.TestCase):
+    """`--dry-run` resolves; it does not acquire (LDM-#2008).
+
+    The short-circuit used to sit below `_ensure_binary()`,
+    `_verify_compatibility()` and `_get_auth_token()`, so a dry run demanded an
+    installed client and a gateway token. That made the one code path CI could
+    have exercised the one path it could not -- which is why the classification
+    bug above reached a user rather than a test.
+    """
+
+    def setUp(self):
+        self.mock_manager = MockManager()
+        self.mock_manager.dry_run = True  # type: ignore[attr-defined]
+        self.mock_manager.args = MagicMock()
+        self.mock_manager.args.share_domain = None
+        self.mock_manager.args.domain = None
+        self.mock_manager.args.share_provider = None
+        self.mock_manager.args.provider = None
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/lfr-e2e-share")
+        )
+        self.mock_manager.read_meta = MagicMock(return_value={})  # type: ignore[method-assign]
+        self.mock_manager.write_meta = MagicMock()  # type: ignore[method-assign]
+        self.service = ShareService(self.mock_manager)
+
+    def _start(self, **kwargs):
+        boom = MagicMock(side_effect=AssertionError("acquired in a dry run"))
+        self.service._ensure_binary = boom  # type: ignore[method-assign]
+        self.service._get_auth_token = boom  # type: ignore[method-assign]
+        self.service._verify_compatibility = boom  # type: ignore[method-assign]
+        with patch("ldm_core.handlers.share.UI") as mock_ui:
+            self.service.cmd_start(provider="lfr-tunnel", **kwargs)
+        return [str(call[0][0]) for call in mock_ui.info.call_args_list]
+
+    def test_no_binary_version_check_or_token_is_needed(self):
+        self._start(subdomain="peters", domain="lfr-demo.se")
+
+    def _planned_url_line(self, notes):
+        """The "Public URL" note, with UI's mocked colour constants removed."""
+        lines = [n for n in notes if "Public URL" in n]
+        self.assertEqual(len(lines), 1, f"expected one planned-URL line: {notes}")
+        return lines[0]
+
+    def test_the_planned_url_is_stated(self):
+        line = self._planned_url_line(
+            self._start(subdomain="peters", domain="lfr-demo.se")
+        )
+        self.assertIn("https://peters.lfr-demo.se", line)
+        self.assertNotIn("peters.peters", line)
+
+    def test_a_pasted_url_reaches_the_same_address(self):
+        line = self._planned_url_line(self._start(url="https://peters.lfr-demo.se/"))
+        self.assertIn("https://peters.lfr-demo.se", line)
+        self.assertNotIn("peters.peters", line)
+
+    def test_a_dry_run_does_not_write_the_project_meta(self):
+        """It did, which made --dry-run a way to pin a project's domain."""
+        self._start(subdomain="peters", domain="lfr-demo.se")
+        self.mock_manager.write_meta.assert_not_called()  # type: ignore[attr-defined]
+
+
+class TestRefusesATunnelToAStoppedProject(unittest.TestCase):
+    """LDM-#2009: establish locally what the gateway would tell you late.
+
+    The reported run resolved a domain, ensured a binary, checked its version
+    against the gateway, fetched a token, leased a subdomain and started a
+    background process -- and only then learned, from the gateway, that
+    nothing was listening on 8080. The project had no containers at all.
+    """
+
+    def setUp(self):
+        self.mock_manager = MockManager()
+        self.mock_manager.args = MagicMock()
+        self.mock_manager.args.share_domain = None
+        self.mock_manager.args.domain = None
+        self.mock_manager.args.share_provider = None
+        self.mock_manager.args.provider = None
+        self.service = ShareService(self.mock_manager)
+
+    def _assert_with_status(self, status):
+        self.mock_manager.get_container_status = MagicMock(  # type: ignore[method-assign]
+            return_value=status
+        )
+        self.service._assert_target_is_running(
+            "lfr-tunnel", {"container_name": "demo"}, "demo"
+        )
+
+    @patch("ldm_core.handlers.share.UI.die", side_effect=SystemExit(3))
+    def test_a_project_with_no_containers_is_refused(self, mock_die):
+        """'unknown' is what get_container_status() reports for a missing one."""
+        with self.assertRaises(SystemExit):
+            self._assert_with_status("unknown")
+        self.assertIn("is not running", mock_die.call_args[0][0])
+        self.assertIn("no containers", mock_die.call_args.kwargs["details"])
+
+    @patch("ldm_core.handlers.share.UI.die", side_effect=SystemExit(3))
+    def test_the_refusal_names_the_command_that_fixes_it(self, mock_die):
+        with self.assertRaises(SystemExit):
+            self._assert_with_status("exited")
+        self.assertIn("ldm start demo", mock_die.call_args.kwargs["tip"])
+        self.assertEqual(mock_die.call_args.kwargs["exit_code"], 3)
+
+    @patch("ldm_core.handlers.share.UI.die", side_effect=SystemExit(3))
+    def test_a_stopped_container_reports_its_own_state(self, mock_die):
+        with self.assertRaises(SystemExit):
+            self._assert_with_status("exited")
+        self.assertIn("'exited'", mock_die.call_args.kwargs["details"])
+
+    @patch("ldm_core.handlers.share.UI.die", side_effect=SystemExit(3))
+    def test_a_running_project_is_allowed(self, mock_die):
+        for status in ("running", "healthy", "starting", "unhealthy", "restarting"):
+            with self.subTest(status=status):
+                self._assert_with_status(status)
+        mock_die.assert_not_called()
+
+    @patch("ldm_core.handlers.share.UI.die", side_effect=SystemExit(3))
+    def test_the_docker_provider_is_not_subject_to_this(self, mock_die):
+        """It creates its sidecar through the project's own compose run, so a
+        stopped project is a normal starting point rather than an error."""
+        self.mock_manager.get_container_status = MagicMock(return_value="unknown")  # type: ignore[method-assign]
+        self.service._assert_target_is_running(
+            "lfr-tunnel-docker", {"container_name": "demo"}, "demo"
+        )
+        mock_die.assert_not_called()
+
+    @patch("ldm_core.handlers.share.UI.die", side_effect=SystemExit(3))
+    def test_a_dry_run_is_not_subject_to_this(self, mock_die):
+        """A dry run never connects, so nothing can be downstream of it -- and
+        the E2E section that exercises --dry-run must not need containers."""
+        self.mock_manager.dry_run = True  # type: ignore[attr-defined]
+        self.mock_manager.get_container_status = MagicMock(return_value="unknown")  # type: ignore[method-assign]
+        self.service._assert_target_is_running(
+            "lfr-tunnel", {"container_name": "demo"}, "demo"
+        )
+        mock_die.assert_not_called()
+
+    @patch("ldm_core.handlers.share.UI.die", side_effect=SystemExit(3))
+    def test_the_check_runs_before_any_binary_or_token(self, mock_die):
+        """Placement is the point: the refusal must cost nothing.
+
+        Anything acquired before this check is work done for a tunnel that was
+        never going to serve -- and on a machine with no client installed, the
+        user would meet a missing-binary error instead of the real reason.
+        """
+        boom = MagicMock(side_effect=AssertionError("acquired before the check"))
+        self.service._ensure_binary = boom  # type: ignore[method-assign]
+        self.service._get_auth_token = boom  # type: ignore[method-assign]
+        self.service._verify_compatibility = boom  # type: ignore[method-assign]
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/demo")
+        )
+        self.mock_manager.read_meta = MagicMock(  # type: ignore[method-assign]
+            return_value={"container_name": "demo", "share_provider": "lfr-tunnel"}
+        )
+        self.mock_manager.get_container_status = MagicMock(return_value="unknown")  # type: ignore[method-assign]
+
+        with self.assertRaises(SystemExit):
+            self.service.cmd_start(project_id="demo", provider="lfr-tunnel")
+        boom.assert_not_called()

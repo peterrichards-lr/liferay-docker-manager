@@ -1,3 +1,4 @@
+import ast
 import importlib
 import inspect
 import os
@@ -355,6 +356,81 @@ class TestArchitecturalContracts(unittest.TestCase):
                                         subcmds_val,
                                         f"Subcommand '{sub_choice}' under namespace '{choice}' is missing from the subcmds bypass list in preprocess_args!",
                                     )
+
+    def test_no_attribute_reference_leaked_into_user_facing_text(self):
+        """Contract: a string LDM prints must not contain `self.<attr>`.
+
+        LDM-#1993 follow-up. `ldm doctor` told users, on every run that warned
+        or failed:
+
+            Run 'ldm doctor --detailed' for troubleshooting self.hints and fixes.
+
+        and, when Compose was missing:
+
+            Please install it via your Docker self.provider settings.
+
+        Four occurrences, introduced 2026-07-10 by the modular-packages
+        refactor and present in 259 tags since -- a rename of `hints` to
+        `self.hints` and `provider` to `self.provider` that also rewrote the
+        string literals beside them. The giveaway is the line above the first:
+        `if self.hints and not detailed_mode`, correct code sitting next to
+        prose that copied its shape.
+
+        Nothing caught it. It is not a syntax error, not a type error, and not
+        a test failure -- the text is simply wrong, and only a human reading
+        the output would notice. That is why this is a contract rather than a
+        review habit.
+
+        Docstrings are exempt: they discuss `self.x` legitimately and are not
+        printed. The word "itself." is excluded by the lookbehind.
+        """
+        pattern = re.compile(r"(?<![A-Za-z])self\.[a-z_][a-z0-9_]*")
+        root = Path(__file__).resolve().parents[1]
+        offenders = []
+
+        for path in sorted(root.rglob("*.py")):
+            if "tests" in path.parts:
+                continue
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+            except SyntaxError:  # pragma: no cover - not our concern here
+                continue
+
+            # Every docstring node in the file, by identity, so they can be
+            # skipped without skipping ordinary strings that happen to match.
+            docstrings = set()
+            for node in ast.walk(tree):
+                if isinstance(
+                    node,
+                    (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef),
+                ):
+                    body = getattr(node, "body", None)
+                    if (
+                        body
+                        and isinstance(body[0], ast.Expr)
+                        and isinstance(body[0].value, ast.Constant)
+                        and isinstance(body[0].value.value, str)
+                    ):
+                        docstrings.add(id(body[0].value))
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Constant):
+                    continue
+                if not isinstance(node.value, str) or id(node) in docstrings:
+                    continue
+                found = pattern.search(node.value)
+                if found:
+                    offenders.append(
+                        f"{path.relative_to(root)}:{node.lineno} "
+                        f"contains {found.group(0)!r}: {node.value.strip()[:70]!r}"
+                    )
+
+        self.assertEqual(
+            [],
+            offenders,
+            "attribute reference leaked into a string LDM prints:\n  "
+            + "\n  ".join(offenders),
+        )
 
     def test_release_announcements_contract(self):
         """Mandate: RELEASE_ANNOUNCEMENTS must contain a valid, non-empty entry for the current VERSION's minor series."""

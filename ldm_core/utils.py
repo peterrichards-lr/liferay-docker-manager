@@ -3580,38 +3580,95 @@ def calculate_sha256(file_path):
     return sha.hexdigest()
 
 
+def packaged_compatibility_path():
+    """Where the baseline dependency matrix ships (LDM-#2007).
+
+    `ldm_core/resources` is the one directory both packagers already carry --
+    `pyproject.toml`'s `package-data` and `ldm-macos.spec`'s `datas`. This used
+    to read `Path(__file__).parent.parent / "compatibility.json"`, the copy at
+    the repository ROOT, which neither ships: an installed build had no
+    baseline at all, so the fallback existed only for developers running from a
+    checkout.
+
+    The root copy stays where it is -- `master/compatibility.json` is the URL
+    every released client fetches and a published release asset -- so the two
+    are kept identical by
+    `test_compatibility_matrix.py::test_the_packaged_copy_matches_the_published_root_copy`.
+    """
+    return Path(__file__).parent / "resources" / "compatibility.json"
+
+
+def _read_compatibility_matrix(path):
+    """A usable matrix from `path`, or None.
+
+    "Usable" means it parses AND carries mappings, because that is what
+    `resolve_dependency_version()` requires. A file that parses to something
+    without them is no more useful than a missing one, and treating it as a
+    successful read is what would let an empty answer stop the fallback chain.
+    """
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) and data.get("mappings") else None
+
+
 def fetch_compatibility_metadata(force=False):
-    """Fetches and caches the project compatibility matrix from GitHub."""
+    """Fetches and caches the project compatibility matrix from GitHub.
+
+    Four sources, in order: a fresh cache, a refresh from master, a **stale**
+    cache, and the packaged baseline.
+
+    LDM-#2007: the third step did not exist. Past 24h the cache was skipped
+    outright, so a failed refresh discarded a perfectly valid copy sitting on
+    disk and returned the baseline -- which, per
+    `packaged_compatibility_path()`, no installed build had. Every dependency
+    then fell back to its hardcoded literal in the callers, and
+    `pipelines/run.py`'s `"16"` reads as a PostgreSQL downgrade from any
+    genuine `16.x` pin: a project whose version had not changed refused to
+    start.
+
+    A stale matrix is old, not wrong. It pins dependency versions per Liferay
+    tag range, and yesterday's answer for a tag that already exists does not
+    change -- so preferring it over no answer at all is not a trade.
+    """
     cache_dir = get_actual_home() / ".ldm" / "cache"
     cache_file = cache_dir / "compatibility.json"
     cache_duration = 86400  # 24 hours
 
-    # 1. Load bundled version as baseline
-    bundled_file = Path(__file__).parent.parent / "compatibility.json"
-    baseline = {}
-    if bundled_file.exists():
-        with contextlib.suppress(Exception):
-            baseline = json.loads(bundled_file.read_text())
+    # 1. A fresh cache answers without touching the network.
+    if (
+        not force
+        and cache_file.exists()
+        and time.time() - cache_file.stat().st_mtime < cache_duration
+    ):
+        fresh = _read_compatibility_matrix(cache_file)
+        if fresh:
+            return fresh
 
-    # 2. Check cache
-    if not force and cache_file.exists():
-        # Check file age
-        if time.time() - cache_file.stat().st_mtime < cache_duration:
-            try:
-                return json.loads(cache_file.read_text())
-            except Exception:
-                pass
-
-    # 3. Fetch from Master (Evergreen source)
+    # 2. Refresh from master (evergreen source).
     url = "https://raw.githubusercontent.com/peterrichards-lr/liferay-docker-manager/master/compatibility.json"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     if download_file(url, cache_file):
-        try:
-            return json.loads(cache_file.read_text())
-        except Exception:
-            return baseline
-    return baseline
+        fetched = _read_compatibility_matrix(cache_file)
+        if fetched:
+            return fetched
+
+    # 3. The refresh failed, or landed something unusable. Say so once -- the
+    #    only other output is download_file()'s error, which reports the
+    #    failure without saying what it costs.
+    stale = _read_compatibility_matrix(cache_file)
+    if stale:
+        UI.detail("Using the cached compatibility matrix; the refresh failed.")
+        return stale
+
+    # 4. Last resort: the matrix shipped inside the package.
+    baseline = _read_compatibility_matrix(packaged_compatibility_path())
+    if baseline:
+        UI.detail("Using the bundled compatibility matrix; the refresh failed.")
+        return baseline
+    return {}
 
 
 def resolve_dependency_version(liferay_tag, dependency_name):

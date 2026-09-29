@@ -170,7 +170,19 @@ function Test-SectionEnabled {
     return ($requested -contains "all") -or ($requested -contains $Name)
 }
 
+# LDM-#1942: no uid probe here, and that is deliberate rather than an omission.
+#
+# verify_e2e_refactor.sh prints the uid it runs as, because the snapshot reclaim
+# chowns trees to uid 1000 and a runner that IS uid 1000 makes every assertion
+# about that reclaim pass whether the code works or not.
+#
+# Windows has no POSIX uid, and Docker Desktop presents bind-mounted files as
+# the host user regardless of ownership -- so the reclaim is not observable on
+# this platform at all, with or without a probe. Recorded here rather than left
+# silent: a check missing from one script and present in the other is how
+# LDM-#1982 removed a whole test without anyone noticing.
 Write-Host "* Starting Standalone Binary Verification (Windows Native)..."
+Write-Host "i  No uid probe on Windows: bind-mount ownership is not observable here (LDM-#1942)."
 if ($LDM_E2E_SECTIONS -ne "all") {
     Write-Host "[WARNING] PARTIAL RUN: sections $LDM_E2E_SECTIONS. This is not a full verification."
 }
@@ -2964,6 +2976,74 @@ zf.close()
     }
     Write-Verdict "[SUCCESS] Restored search settings stripped from both cascade layers; publisher properties kept."
 
+    # LDM-#2009: parity with verify_e2e_refactor.sh's "Share Refuses a
+    # Stopped Project" section. A tunnel to a project that is not running used
+    # to be started in full and then fail in the gateway's vocabulary, after a
+    # domain had been resolved, a binary ensured, a token fetched and a
+    # subdomain leased. The refusal is now local and arrives before any of
+    # that -- which is what makes it assertable here with no client, no token
+    # and no network.
+    #
+    # -cmatch throughout, not -match: PowerShell's -match is
+    # case-INSENSITIVE, so the two halves would otherwise disagree about
+    # identical correct output.
+    Write-Host ">> Verifying Share Refuses a Stopped Project..."
+    $shareStoppedDir = Join-Path $env:LDM_WORKSPACE "share-stopped-$TEST_PORT"
+    $shareStoppedHome = Join-Path $shareStoppedDir "home"
+    $shareStoppedProj = Join-Path $shareStoppedDir "share-stopped"
+    Remove-Item -Recurse -Force $shareStoppedDir -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path $shareStoppedHome -Force | Out-Null
+    New-Item -ItemType Directory -Path $shareStoppedProj -Force | Out-Null
+    # A container name that cannot collide with anything on the runner, so
+    # "unknown" means "does not exist" rather than "someone else's".
+    $shareStoppedMeta = '{"container_name": "share-stopped-never-started-' + $TEST_PORT + '", "project_name": "share-stopped", "host_name": "localhost", "port": 8080, "db_type": "postgresql"}'
+    Set-Content -Path (Join-Path $shareStoppedProj "meta") -Value $shareStoppedMeta -Encoding ASCII
+    Set-Content -Path (Join-Path $shareStoppedProj ".liferay-docker") -Value "" -Encoding ASCII
+
+    $shareStoppedFailed = $false
+    $shareStoppedOriginalHome = $env:LDM_HOME
+    $shareStoppedOriginalLocation = Get-Location
+    try {
+        $env:LDM_HOME = $shareStoppedHome
+        Set-Location $shareStoppedProj
+        $shareStoppedOut = & $LDM_CMD share start -y --no-color --subdomain e2e-stopped --domain lfr-demo.se 2>&1 | Out-String
+        $shareStoppedCode = $LASTEXITCODE
+    } finally {
+        Set-Location $shareStoppedOriginalLocation
+        $env:LDM_HOME = $shareStoppedOriginalHome
+    }
+
+    if ($shareStoppedCode -ne 3) {
+        Write-Verdict "[ERROR] ERROR: 'share start' against a stopped project exited $shareStoppedCode, expected 3 (infrastructure)."
+        Write-Verdict "        Output was: $shareStoppedOut"
+        $shareStoppedFailed = $true
+    }
+    if (-not ($shareStoppedOut -cmatch "is not running")) {
+        Write-Verdict "[ERROR] ERROR: 'share start' against a stopped project did not say the project is not running."
+        Write-Verdict "        Output was: $shareStoppedOut"
+        $shareStoppedFailed = $true
+    }
+    if (-not ($shareStoppedOut -cmatch "ldm start share-stopped")) {
+        Write-Verdict "[ERROR] ERROR: the refusal did not name the command that fixes it."
+        Write-Verdict "        Output was: $shareStoppedOut"
+        $shareStoppedFailed = $true
+    }
+    # Both markers below appear only once a tunnel has actually been started.
+    # Matched instead of the obvious "Downstream Offline", because the
+    # refusal's own wording quotes that phrase to explain what it pre-empts --
+    # the first version of this check matched LDM's explanation of the symptom
+    # and failed against correct output.
+    if ($shareStoppedOut -cmatch "Tunnel healthcheck failed|Starting lfr-tunnel in the background") {
+        Write-Verdict "[ERROR] ERROR: the refusal came after the tunnel was started instead of before it."
+        Write-Verdict "        Output was: $shareStoppedOut"
+        $shareStoppedFailed = $true
+    }
+
+    if ($shareStoppedFailed) {
+        throw "Share did not refuse a stopped project (LDM-#2009)."
+    }
+    Write-Verdict "[SUCCESS] Share refuses a stopped project locally, before any client, token or gateway work."
+
     Write-Host ">> Verifying Legacy Command Translation..."
     $legacyDoc = & $LDM_CMD doctor --help 2>&1
     $legacySetup = & $LDM_CMD infra-setup --help 2>&1
@@ -2972,6 +3052,167 @@ zf.close()
     } else {
         throw "Legacy command translation failed."
     }
+
+    # LDM-#2008: parity with verify_e2e_refactor.sh's Share Dry-Run
+    # Resolution section. Every decision the reported failure turned on --
+    # which subdomain, which base domain, which public URL -- is taken before
+    # the tunnel client is invoked, and --dry-run reaches all of it with no
+    # binary, no token, no gateway and no DNS.
+    #
+    # Deliberately NOT a live tunnel, and deliberately not gated on
+    # lfr-tunnel being on PATH: such a check would skip on every CI runner,
+    # for ever, and report green.
+    #
+    # -cmatch throughout, not -match: PowerShell's -match is
+    # case-INSENSITIVE, so the two halves of this suite would otherwise
+    # disagree about identical correct output.
+    Write-Host ">> Verifying Share Dry-Run Resolution..."
+    $shareDryRunDir = Join-Path $env:LDM_WORKSPACE "share-dryrun-$TEST_PORT"
+    $shareDryRunHome = Join-Path $shareDryRunDir "home"
+    $shareDryRunProj = Join-Path $shareDryRunDir "share-dryrun"
+    Remove-Item -Recurse -Force $shareDryRunDir -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path $shareDryRunHome -Force | Out-Null
+    New-Item -ItemType Directory -Path $shareDryRunProj -Force | Out-Null
+    $shareMetaJson = '{"container_name": "share-dryrun", "project_name": "share-dryrun", "host_name": "localhost", "port": 8080, "db_type": "postgresql"}'
+    Set-Content -Path (Join-Path $shareDryRunProj "meta") -Value $shareMetaJson -Encoding ASCII
+    Set-Content -Path (Join-Path $shareDryRunProj ".liferay-docker") -Value "" -Encoding ASCII
+
+    $shareDryRunFailed = $false
+    $shareOriginalHome = $env:LDM_HOME
+    $shareOriginalLocation = Get-Location
+
+    function Invoke-ShareDryRun {
+        param([string[]]$ShareArgs)
+        $out = & $LDM_CMD share start --dry-run -y --no-color @ShareArgs 2>&1 | Out-String
+        return @{ Output = $out; Code = $LASTEXITCODE }
+    }
+
+    function Add-ShareDryRunFailure {
+        param([string]$Message, [string]$Output)
+        Write-Verdict "[ERROR] ERROR: $Message"
+        Write-Verdict "        Output was: $Output"
+        $script:shareDryRunFailed = $true
+    }
+
+    try {
+        $env:LDM_HOME = $shareDryRunHome
+        Set-Location $shareDryRunProj
+
+        # 1. A bare base domain: the two values combine exactly as supplied.
+        $r = Invoke-ShareDryRun @("--subdomain", "peters", "--domain", "lfr-demo.se")
+        if (-not ($r.Output -cmatch "https://peters\.lfr-demo\.se")) {
+            Add-ShareDryRunFailure "'share start --subdomain peters --domain lfr-demo.se' did not resolve to https://peters.lfr-demo.se." $r.Output
+        }
+
+        # 2. A host ON a known base domain -- what a user pastes. This was
+        #    classified as a vanity domain, doubling the label and printing
+        #    portal-registration advice that does not apply to a leased
+        #    subdomain.
+        $r = Invoke-ShareDryRun @("--domain", "peters.lfr-demo.se")
+        if (-not ($r.Output -cmatch "https://peters\.lfr-demo\.se")) {
+            Add-ShareDryRunFailure "'--domain peters.lfr-demo.se' did not resolve to https://peters.lfr-demo.se." $r.Output
+        }
+        if ($r.Output -cmatch "Custom domains must be registered") {
+            Add-ShareDryRunFailure "a host on a known tunnel base domain was reported as a custom vanity domain." $r.Output
+        }
+
+        # 2b. The same host WITH the matching --subdomain. The pair agrees so
+        #     it must not be refused, and this is the shape in which the
+        #     doubled label is observable -- without --subdomain the fallback
+        #     supplies the project name and the symptom reads as
+        #     share-dryrun.peters.lfr-demo.se instead.
+        $r = Invoke-ShareDryRun @("--subdomain", "peters", "--domain", "peters.lfr-demo.se")
+        if ($r.Code -ne 0) {
+            Add-ShareDryRunFailure "a --subdomain matching the share domain's own subdomain was refused as a conflict." $r.Output
+        }
+        if ($r.Output -cmatch "peters\.peters") {
+            Add-ShareDryRunFailure "'--domain peters.lfr-demo.se' doubled the subdomain label (LDM-#2008)." $r.Output
+        }
+
+        # 3. The same value in the form it is actually handed over in.
+        $r = Invoke-ShareDryRun @("--url", "https://peters.lfr-demo.se/")
+        if (-not ($r.Output -cmatch "https://peters\.lfr-demo\.se")) {
+            Add-ShareDryRunFailure "'--url https://peters.lfr-demo.se/' did not resolve to https://peters.lfr-demo.se." $r.Output
+        }
+
+        # 4. A genuine vanity domain must still be called one (LDM-#1038).
+        $r = Invoke-ShareDryRun @("--subdomain", "peters", "--domain", "dev.example.invalid")
+        if (-not ($r.Output -cmatch "Custom domains must be registered")) {
+            Add-ShareDryRunFailure "a custom vanity domain no longer warns about portal registration (LDM-#1038)." $r.Output
+        }
+
+        # 5. Two subdomains that disagree are refused, not silently resolved.
+        $r = Invoke-ShareDryRun @("--subdomain", "other", "--domain", "peters.lfr-demo.se")
+        if ($r.Code -eq 0) {
+            Add-ShareDryRunFailure "a conflicting --subdomain and share domain exited 0 instead of refusing." $r.Output
+        }
+        if (-not ($r.Output -cmatch "Conflicting subdomains")) {
+            Add-ShareDryRunFailure "a conflicting --subdomain and share domain did not say so." $r.Output
+        }
+    } finally {
+        Set-Location $shareOriginalLocation
+        $env:LDM_HOME = $shareOriginalHome
+    }
+
+    # 6. A dry run resolves; it must not write. This wrote share_domain into
+    #    the project meta, which made --dry-run a way to pin a project domain.
+    $shareMetaAfter = Get-Content -Raw (Join-Path $shareDryRunProj "meta")
+    if ($shareMetaAfter -cmatch "share_domain") {
+        Add-ShareDryRunFailure "'share start --dry-run' wrote share_domain into the project meta." $shareMetaAfter
+    }
+
+    if ($shareDryRunFailed) {
+        throw "Share dry-run resolution failed (LDM-#2008)."
+    }
+    Write-Verdict "[SUCCESS] Share dry-run resolution verified (base domain, host-on-base, --url, vanity domain, conflict refusal, no meta write)."
+
+    # LDM-#2010: parity with verify_e2e_refactor.sh's "Share Flags on 'ldm
+    # start'" section. `ldm start --share --share-subdomain peters` was
+    # "unrecognized arguments" -- the flags existed on `run` only, and `run`
+    # RECONFIGURES, which is what someone sharing an already-configured
+    # project does not want.
+    #
+    # -cmatch throughout, not -match: PowerShell's -match is
+    # case-INSENSITIVE, so the two halves would otherwise disagree about
+    # identical correct output.
+    Write-Host ">> Verifying Share Flags on 'ldm start'..."
+    $shareStartFailed = $false
+
+    $shareStartHelp = & $LDM_CMD start --help 2>&1 | Out-String
+    foreach ($shareFlag in @("--share", "--share-subdomain", "--share-domain", "--share-url", "--share-provider")) {
+        if (-not ($shareStartHelp -cmatch [regex]::Escape($shareFlag))) {
+            Write-Verdict "[ERROR] ERROR: 'ldm start --help' does not offer $shareFlag (LDM-#2010)."
+            $shareStartFailed = $true
+        }
+    }
+
+    # A tunnel leases one subdomain and forwards to one target, so this
+    # combination is refused -- up front, before any project is started.
+    $shareAllOut = & $LDM_CMD start --all --share --share-subdomain e2e-all -y --no-color 2>&1 | Out-String
+    $shareAllCode = $LASTEXITCODE
+    if ($shareAllCode -eq 0) {
+        Write-Verdict "[ERROR] ERROR: 'ldm start --all --share' exited 0 instead of refusing."
+        Write-Verdict "        Output was: $shareAllOut"
+        $shareStartFailed = $true
+    }
+    if (-not ($shareAllOut -cmatch [regex]::Escape("--share cannot be combined with --all"))) {
+        Write-Verdict "[ERROR] ERROR: 'ldm start --all --share' did not explain why it refused."
+        Write-Verdict "        Output was: $shareAllOut"
+        $shareStartFailed = $true
+    }
+    # argparse rejects an unknown option with this exact wording, which is
+    # what the flags not being declared looked like. Asserted explicitly so a
+    # regression reads as itself rather than as one of the checks above.
+    if ($shareAllOut -cmatch "unrecognized arguments") {
+        Write-Verdict "[ERROR] ERROR: 'ldm start' still does not declare the share flags (LDM-#2010)."
+        Write-Verdict "        Output was: $shareAllOut"
+        $shareStartFailed = $true
+    }
+
+    if ($shareStartFailed) {
+        throw "'ldm start' does not accept the share flags (LDM-#2010)."
+    }
+    Write-Verdict "[SUCCESS] 'ldm start' accepts the share flags and refuses --share with --all."
 
     # UX & Defaults & Scaling
     Write-Host ">> Verifying Cascading Defaults..."
@@ -3337,11 +3578,24 @@ zf.close()
     # Compose-generation facts only; no boot required.
     Write-Host ">> Verifying a client-extension SERVICE is generated correctly (LDM-#1918)..."
     $cxSvcName = "synthetic-svc"
+    # LDM-#1975: drawn from the real corpus, not invented. Across the 16 client
+    # extensions in ldm-cx-samples the LCP.json id differs from the directory
+    # name in 16 of 16 (it is the directory with the hyphens dropped), and each
+    # of the four services declares its own port in the 3001-3004 range. ZERO
+    # have id == directory, and none uses 8080.
+    #
+    # Both mattered. id == directory is one of the two conditions under which
+    # LDM-#1944 cannot manifest, and 8080 is _resolve_container_port's
+    # fallback, so a fixture on it cannot tell a successful read from a failed
+    # one (LDM-#1996). scripts/check_cx_fixture_realism.py enforces both.
+    $cxSvcId = "syntheticsvc"
+    $cxSvcPort = "3001"
     Remove-Item -Recurse -Force "cxsvc-build", "$cxSvcName.zip" -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Path "cxsvc-build/$cxSvcName" -Force | Out-Null
     @"
 ${cxSvcName}:
-    .serviceAddress: ${cxSvcName}:8080
+    .serviceAddress: localhost:${cxSvcPort}
+    .serviceScheme: http
     name: Synthetic CX Service
     type: microservice
 "@ | Out-File -FilePath "cxsvc-build/$cxSvcName/client-extension.yaml" -Encoding ascii
@@ -3361,9 +3615,9 @@ ${cxSvcName}-oauth:
     @"
 {
     "com.liferay.oauth2.provider.configuration.OAuth2ProviderApplicationHeadlessServerConfiguration~${cxSvcName}": {
-        "projectId": "${cxSvcName}",
+        "projectId": "${cxSvcId}",
         "projectName": "${cxSvcName}",
-        ".serviceAddress": "${cxSvcName}:8080",
+        ".serviceAddress": "localhost:${cxSvcPort}",
         ".serviceScheme": "http"
     }
 }
@@ -3374,9 +3628,18 @@ ${cxSvcName}-oauth:
     # fixture on the first master run after the fix landed.
     @"
 {
-    "id": "${cxSvcName}",
+    "id": "${cxSvcId}",
     "memory": 512,
-    "kind": "Deployment"
+    "kind": "Deployment",
+    "loadBalancer": {
+        "targetPort": ${cxSvcPort}
+    },
+    "ports": [
+        {
+            "external": true,
+            "port": ${cxSvcPort}
+        }
+    ]
 }
 "@ | Out-File -FilePath "cxsvc-build/$cxSvcName/LCP.json" -Encoding ascii
 
@@ -3395,6 +3658,14 @@ RUN printf 'module.exports = () => "alive";\n' > /opt/liferay/routes/app.cjs
 CMD ["sleep", "3600"]
 '@ | Out-File -FilePath "cxsvc-build/$cxSvcName/Dockerfile" -Encoding ascii
 
+    # The fixture is checked BEFORE it is zipped: every assertion after this
+    # point is only as good as the data it runs against (LDM-#1975). The check
+    # itself is shared with verify_e2e_refactor.sh so the two suites cannot
+    # drift apart on it, which they have done before (LDM-#1982).
+    & $VENV_PYTHON (Join-Path $PSScriptRoot "check_cx_fixture_realism.py") $cxSvcName "cxsvc-build/$cxSvcName"
+    if ($LASTEXITCODE -ne 0) {
+        throw "The '$cxSvcName' CX fixture does not hold the invariants every real client extension holds, so every assertion after it proves less than it appears to (LDM-#1975)."
+    }
     & $VENV_PYTHON -c "import shutil, sys; shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])" $cxSvcName "cxsvc-build/$cxSvcName"
     Invoke-LoggedCommand "Deploying CX service" $LDM_CMD @("-y", "deploy", ".", "$cxSvcName.zip")
     & $LDM_CMD -y run . --no-up --no-seed 2>&1 | Out-Null
@@ -3402,11 +3673,18 @@ CMD ["sleep", "3600"]
     $cxSvcCheck = @'
 import sys, pathlib, yaml
 name = sys.argv[1]
+# LDM-#1975: the compose service is named from the LCP.json id, while the
+# routes tree is named from projectName. The fixture now declares the two
+# differently, as all 16 real samples do, so this lookup has to say which one
+# it means. It matched on `name` for as long as the fixture made them equal --
+# which is exactly why that equality hid LDM-#1944.
+ext_id = sys.argv[2]
 compose = yaml.safe_load(pathlib.Path("docker-compose.yml").read_text())
 services = compose.get("services") or {}
-svc = next((v for k, v in services.items() if k.endswith(name)), None)
+svc = next((v for k, v in services.items() if k.endswith(ext_id)), None)
 if svc is None:
-    print("ERROR: no compose service for the '%s' client extension." % name)
+    print("ERROR: no compose service for the '%s' client extension "
+          "(looked for a service ending '%s')." % (name, ext_id))
     print("  services present: " + ", ".join(services))
     sys.exit(1)
 
@@ -3502,7 +3780,7 @@ for f in fails:
 sys.exit(1 if fails else 0)
 '@
     $cxSvcCheck | Out-File -FilePath "cxsvc-check.py" -Encoding ascii
-    & $VENV_PYTHON "cxsvc-check.py" $cxSvcName
+    & $VENV_PYTHON "cxsvc-check.py" $cxSvcName $cxSvcId
     if ($LASTEXITCODE -ne 0) {
         throw "Client-extension service definition is wrong (LDM-#1918)."
     }
@@ -3516,7 +3794,7 @@ sys.exit(1 if fails else 0)
     # So look inside the container. One build, one run, no Liferay boot and no
     # dependencies: if any mount hides the extension's own code, its app.cjs is
     # gone. Measured both ways before being committed.
-    $cxSvcService = & $VENV_PYTHON -c "import pathlib, sys, yaml; c = yaml.safe_load(pathlib.Path('docker-compose.yml').read_text()); s = c.get('services') or {}; print(next((k for k in s if k.endswith(sys.argv[1])), ''))" $cxSvcName
+    $cxSvcService = & $VENV_PYTHON -c "import pathlib, sys, yaml; c = yaml.safe_load(pathlib.Path('docker-compose.yml').read_text()); s = c.get('services') or {}; print(next((k for k in s if k.endswith(sys.argv[1])), ''))" $cxSvcId
     if ([string]::IsNullOrWhiteSpace($cxSvcService)) {
         throw "Could not resolve the client-extension service name from docker-compose.yml (LDM-#1911)."
     }

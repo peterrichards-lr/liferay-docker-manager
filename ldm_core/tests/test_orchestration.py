@@ -410,6 +410,67 @@ class TestOrchestration(unittest.TestCase):
         self.assertIn(str(proj_ok), start_call_cwds)
         self.assertNotIn(str(proj_absent), start_call_cwds)
 
+    def _start_with_share(self, share_options, project="test", all_projects=False):
+        """Drives cmd_start with sharing requested, mocking only the boot."""
+        with (
+            patch.object(self.handler.manager, "read_meta", return_value={}),
+            patch.object(BaseHandler, "run_command", return_value="fake-container-id"),
+            patch("ldm_core.runtime.mac_pin.configured_mac", return_value=None),
+        ):
+            self.handler.handler.orchestration.cmd_start(
+                None if all_projects else project,
+                all_projects=all_projects,
+                share_options=share_options,
+            )
+
+    def test_start_without_share_never_touches_the_tunnel(self) -> None:
+        """LDM-#2010: the flags are opt-in; every other start is unchanged."""
+        self._start_with_share(None)
+        self.handler.manager.share.cmd_start.assert_not_called()  # type: ignore[attr-defined]
+
+    def test_start_with_share_uses_the_same_entry_point_as_share_start(self) -> None:
+        """LDM-#2010: `ldm start --share` was 'unrecognized arguments'.
+
+        `ldm run` carried the flags, but `run` reconfigures -- which is what
+        someone sharing an already-configured project does not want, and in
+        the reported case the reconfigure is what failed.
+
+        Sharing is auxiliary here: the project starts, then it is shared.
+        What this pins is that the second half is the ordinary `share start`
+        entry point receiving the flags under its own parameter names -- not
+        a third implementation of resolving one.
+        """
+        self._start_with_share(
+            {
+                "subdomain": "peters",
+                "domain": "lfr-demo.se",
+                "url": None,
+                "provider": None,
+                "image": None,
+                "inspector": False,
+            }
+        )
+        self.handler.manager.share.cmd_start.assert_called_once_with(  # type: ignore[attr-defined]
+            # detect_project_path is stubbed to the temp root, so the project
+            # id the tunnel is opened for is that directory's name -- the same
+            # value cmd_start() prints as started.
+            project_id=self.tmp_dir.name,
+            subdomain="peters",
+            domain="lfr-demo.se",
+            url=None,
+            provider=None,
+            image=None,
+            inspector=False,
+        )
+
+    @patch("ldm_core.runtime.orchestration.UI.die", side_effect=SystemExit(1))
+    def test_share_with_all_projects_is_refused(self, mock_die) -> None:
+        """A tunnel leases one subdomain and forwards to one target."""
+        with self.assertRaises(SystemExit):
+            self._start_with_share({"subdomain": "peters"}, all_projects=True)
+        self.assertIn("--share cannot be combined with --all", mock_die.call_args[0][0])
+        self.handler.manager.share.cmd_start.assert_not_called()  # type: ignore[attr-defined]
+
     def _start_stdout(self, project="test") -> str:
         """Drives a successful `cmd_start` and returns what it really printed.
 

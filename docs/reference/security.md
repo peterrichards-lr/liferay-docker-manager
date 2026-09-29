@@ -73,11 +73,32 @@ virtiofs/gRPC-FUSE mounts present files as the host user regardless of mode --
 which is why LDM-#599 shipped before anyone noticed.
 
 **Scope**: the widening is confined to per-project and per-infrastructure
-directories under the project root and `~/.ldm/infra` -- data, state, logs,
-deploy, osgi, files, configs, and the Elasticsearch data and snapshot
-repositories. It is never applied to LDM's own configuration or credentials:
-`~/.ldm/config` is `700` and the files inside it, including target tokens, are
-`600`.
+directories under the project root and `~/.ldm/infra`, plus the Elasticsearch
+data and snapshot repositories. It is never applied to LDM's own configuration
+or credentials: `~/.ldm/config` is `700` and the files inside it, including
+target tokens, are `600`.
+
+The per-directory detail differs by code path and this paragraph used to gloss
+it as "data, state, logs, deploy, osgi, files, configs", which read as a
+specification of behaviour that does not hold (LDM-#1942):
+
+| tree | pre-boot | snapshot reclaim |
+|---|---|---|
+| `deploy`, `files`, `configs`, `logs`, `modules` | widened | uid 1000, `777` |
+| `marketplace` | not widened | uid 1000, `777` (since LDM-#1941) |
+| `data`, `state` | widened | **host uid, `755`** -- deliberately not `777`, because LDM-388 showed `777` broke Elasticsearch on restore |
+| `routes` | widened | **not reclaimed** |
+| `scripts` | not widened | not reclaimed |
+| `osgi/client-extensions` (`cx`), `client-extensions` (`ce_dir`) | `cx` widened | **neither reclaimed** |
+
+`osgi` in the old wording was a gloss over three different answers:
+`osgi/state` takes the host-uid `755` treatment, `osgi/marketplace` joined the
+`777` set only with LDM-#1941, and `osgi/client-extensions` is not reclaimed at
+all.
+
+Whether the two client-extension trees *should* be reclaimed is open on
+LDM-#1942 and is deliberately not guessed at: one of them is the developer's own
+git-managed source, which this code would chown away.
 
 **Mitigation**: `750` remains the default of `reclaim_volume_permissions()`, so
 any future caller with no container on the other side of the mount gets least

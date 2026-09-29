@@ -634,7 +634,7 @@ ldm tray --uninstall-autostart  # Remove launch-on-login autostart
 - **`--tui`**: Launch interactive terminal configuration menu.
 - **`--uninstall-autostart`**: Remove System Tray launch-on-login autostart.
 - **`--up`**: Automatically start project after reseeding.
-- **`--url`**: Remote packages download URL.
+- **`--url`**: Remote packages download URL; for `share start`, the public tunnel URL to claim (shorthand for `--subdomain` plus `--domain`).
 - **`--user`**: SSH user name for target compute node connection.
 - **`--version`**: Target specific version of LDM.
 - **`--wait-for-bundles`**: Comma-separated list of expected OSGi bundle symbolic names.
@@ -760,4 +760,4 @@ ldm target migrate win-wsl aws-1
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-20* | *Last Reviewed: 2026-09-20*
+*Last Updated: 2026-09-29* | *Last Reviewed: 2026-09-29*

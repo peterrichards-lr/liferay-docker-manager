@@ -133,6 +133,111 @@ Two habits follow:
 
 A related trap in the same issue: the first fix targeted exactly the right volume names and silently did nothing, because a container in `Created` state still referenced them (`volume is in use`). Verify a fix by observing the effect disappear, not by confirming the code looks right.
 
+### Corollary: a test that has never failed has not been shown to test anything
+
+**Break the behaviour deliberately, leaving every message and symbol in place,
+and confirm the test fails.** Then restore it. This is the only technique that
+distinguishes a test which observes a behaviour from one which merely runs
+beside it.
+
+It is cheap and it works. Recent catches, all tests that passed against the bug
+they were written for:
+
+- an assertion searching backwards for `UI.` landed on `{UI.CYAN}` inside an
+  f-string, so three of five sites were false-passing
+- redaction tests exercised the helper directly and never checked that the
+  caller used it, so reverting the caller to the broken function left them green
+- 74 port assertions passed while the resolved value never reached the composer
+  at all (LDM-#1987)
+
+**The last one names the general shape: a test can bracket a seam without
+crossing it.** One test drives the producer, another drives the consumer, and
+nothing exercises the join. Both pass; the join is broken. When probing, ask
+which seam the test crosses, not merely whether it fails.
+
+**Your own reproduction inherits your own blind spot.** A repro built from your
+theory will agree with your theory. LDM-#1987's first reproduction wired two
+components to the same dict by hand -- the one thing the real pipeline does not
+do -- so it reported "no collision" while CI collided. Where practical, drive the
+real wiring rather than a model of it.
+
+### Corollary: an unrealistic fixture disarms every assertion downstream of it
+
+A test can be well written, well targeted, and still prove nothing, because the
+DATA it runs against is the one shape the defect cannot appear in. This is not
+the same failure as a weak assertion, and probing the assertion will not find
+it -- the assertion is fine.
+
+LDM-#1944 is the case to remember. The E2E's client-extension fixture gave its
+`LCP.json` an id EQUAL to its directory name. Liferay names the routes
+directory from `projectName` and LDM was mounting the id, so the bug was live
+for roughly 25 releases -- but in that fixture both strings were
+`synthetic-svc`, which makes the right answer and the wrong answer identical.
+74 port assertions and a full routes-pairing check were green throughout.
+
+**Derive fixtures from the real corpus, and measure rather than imagine it.**
+Across the 16 client extensions in `ldm-cx-samples`, the id differs from the
+directory in 16 of 16 and no service uses port 8080. The fixture did the
+opposite of both, and each was independently load-bearing: 8080 is
+`_resolve_container_port`'s fallback, so a fixture on it returns the right
+answer whether the declared port was read or the read failed (LDM-#1996).
+
+`scripts/check_cx_fixture_realism.py` now enforces those invariants against
+every CX fixture in both E2E suites, and it is a shared file rather than a copy
+in each because the two suites had already drifted apart once (LDM-#1982).
+
+Two questions worth asking of any fixture:
+
+- **Which of its values are equal that would differ in reality?** Every such
+  coincidence collapses a distinction some assertion depends on.
+- **Does any of its values equal a default or fallback in the code under
+  test?** If so, that code can fail completely and still look correct.
+
+### Corollary: a measurement can match prose describing the thing it measures
+
+A grep over a log counts what the pattern matches, not what happened. If the
+log also carries **documentation** of the symptom -- a comment explaining the
+bug, a step name, an echoed script source -- the measurement matches that too,
+and reports a plausible number that is wrong.
+
+Observed in the field (2026-09-28): a collaborator counting SSH drops per CI
+run got exactly 1 on every run, including runs that were visibly clean. Their
+workflow had gained a comment quoting `client_loop: send disconnect: Broken
+pipe`, and CI echoes step source into the log. The count was matching their own
+prose.
+
+**This is worse than a guard satisfied by a comment**, which is the same family.
+A broken guard fails loudly the moment someone probes it. A wrong count just
+reports a number, and a plausible number is not questioned -- theirs was
+consistent across runs, which made it look reliable rather than broken.
+
+Two defences, both cheap:
+
+- **Anchor the pattern to the log's own structure**, not to the message text --
+  a timestamp prefix, a stream name, a log level. Prose in a comment does not
+  carry them.
+- **Check the measurement against a case whose answer you already know.** A
+  count that returns the same non-zero figure for a known-clean run has been
+  falsified, and that is the cheapest possible probe.
+
+**The same error inverts, and the inverted form is harder to see.** A NEGATIVE
+result only means what you think if the probe could have fired at all. Same
+investigation, hours later: `grep -E 'Invalid user|Failed password'` over an
+sshd journal returned **0**, which reads as "no unwanted traffic, this is all
+our own". It was wrong. Those connections never reached authentication, because
+`MaxStartups` had already dropped them -- the throttle fires *upstream* of the
+thing being grepped for. A true fact supported a false conclusion.
+
+Before trusting a zero, ask what would have had to happen for the pattern to
+appear, and confirm that path is reachable.
+
+Four surfaces of one defect have now been seen in a single week: test data too
+simple to fail (LDM-#1944), test data too broad to be meaningful (probing ids
+for extensions that never become containers), a measurement matching
+documentation of the symptom, and a negative result from a probe that could not
+have fired. The common question is **"what is this actually reading, and could
+it produce this answer if nothing were wrong?"**
+
 ### Corollary: read every failing run, not the first one
 
 A release tag fires three to four workflows. Reporting "the" failure after reading one is how a transient infrastructure error gets mistaken for a code defect, and vice versa. On `v2.15.33-pre.2`, two workflows failed on a genuine defect while `LDM CI & Release` failed independently on `HttpError: other side closed` from `softprops/action-gh-release` -- rerunnable via `gh run rerun --failed`, needing no new tag. Enumerate every non-passing run before diagnosing.
@@ -233,4 +338,4 @@ A release tag fires three to four workflows. Reporting "the" failure after readi
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-22* | *Last Reviewed: 2026-09-22*
+*Last Updated: 2026-09-28* | *Last Reviewed: 2026-09-28*

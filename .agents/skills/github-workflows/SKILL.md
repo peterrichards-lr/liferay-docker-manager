@@ -17,6 +17,34 @@ To prevent unnecessary code churn, sweeping reformatting, and out-of-scope chang
 
 - **MANDATORY REQUIREMENT, CI-enforced**: the `issue-link-check` workflow (`.github/workflows/issue-link-check.yml`) fails any PR missing a `Closes/Fixes/Resolves #N` reference in its title or body. If a change is genuinely too trivial to warrant a tracked issue, add the `no-issue-needed` label instead of skipping the link -- do not just omit it and hope the check doesn't run.
 
+- **`Closes` only when this PR actually closes it. Otherwise `no-issue-needed`.**
+  The label answers one question -- *does THIS pull request close an issue?* --
+  and not *is this work tracked?*
+
+  | this PR | link |
+  |---|---|
+  | fully resolves a tracked issue | `Closes #N` |
+  | advances one without resolving it | `no-issue-needed` label, plus `Refs #N` in the body for context |
+  | genuinely too small to track | `no-issue-needed` label |
+
+  `Refs #N` is useful prose and **does not satisfy the gate** -- the workflow
+  matches `Closes/Fixes/Resolves` only.
+
+  **Do not file a new issue merely to have something to close.** That was done
+  three times in one day (LDM-#1992, #1995, #2001) to satisfy the gate on PRs
+  that advanced closed or partly-done work. It manufactures backlog, and it
+  buries the real reason the gate fired.
+
+  This resolves an apparent conflict between the two rules above and below: the
+  first permits the label only for work "too trivial to warrant a tracked
+  issue", the second forbids it "when implementing tracked issues", and neither
+  covers the common middle case of a partial contribution. Ruling by
+  @peterrichards, 2026-09-28.
+
+  The `Closes` half matters just as much in the other direction. PR #1957
+  carried `Closes` for two issues it had only partly addressed, closing both;
+  they had to be reopened. If any part of an issue remains, do not close it.
+
 ## Pull Request & Review Feedback Loop
 
 - **PR Creation**: After pushing a feature, fix or roadmap branch, confirm the `gh` CLI is available and authenticated, then open the PR against the base branch (usually `master`) with `gh pr create --title "<summary>" --body "<details>"`. The title or body MUST carry the `Closes #N` reference the `issue-link-check` gate requires (see above).
@@ -38,4 +66,4 @@ Because release-tracking PRs stay open across multiple `--bump beta` iterations 
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-27* | *Last Reviewed: 2026-08-27*
+*Last Updated: 2026-09-28* | *Last Reviewed: 2026-09-28*

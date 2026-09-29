@@ -182,6 +182,13 @@ class _ShareManager:
     def setup_paths(self, root):
         return {"root": Path(root)}
 
+    def get_container_status(self, container_name, target_name=None):
+        # LDM-#2009: cmd_start() refuses a tunnel to a project that is not
+        # running. These cases are about what happens once a tunnel is
+        # attempted -- the binary failing, the gateway refusing -- so the
+        # project has to be up for them to reach the code under test.
+        return "running"
+
 
 class _ShareCase(unittest.TestCase):
     def _service(self, meta=None):
