@@ -1394,6 +1394,50 @@ def get_parser():  # noqa: PLR0915
                 help="Remove project entries from hosts file",
             )
         elif cmd == "start":
+            # LDM-#2010: `ldm run` has carried these since sharing existed,
+            # but `run` RECONFIGURES -- which is exactly what someone sharing
+            # an already-configured project does not want, and in the reported
+            # case the reconfigure is what failed. `start` is the command that
+            # boots without reconfiguring, so it is where asking for a tunnel
+            # belongs. The names keep `run`'s `share_` prefix so the two
+            # commands read the same.
+            p.add_argument(
+                "--share",
+                action="store_true",
+                help="Start a secure tunnel (lfr-tunnel) once the containers are up",
+            )
+            p.add_argument(
+                "--share-subdomain",
+                help="Custom subdomain to use when sharing the instance",
+            )
+            p.add_argument(
+                "--share-domain",
+                help=(
+                    "Tunnel base domain (e.g. lfr-demo.se), a host on one "
+                    "(e.g. peters.lfr-demo.se), or a custom vanity domain"
+                ),
+            )
+            p.add_argument(
+                "--share-url",
+                help=(
+                    "The public URL to claim, e.g. https://peters.lfr-demo.se "
+                    "-- shorthand for --share-subdomain and --share-domain"
+                ),
+            )
+            p.add_argument(
+                "--share-provider",
+                choices=["lfr-tunnel", "lfr-tunnel-docker", "ngrok"],
+                help="Sharing provider to use (defaults to lfr-tunnel)",
+            )
+            p.add_argument(
+                "--share-image",
+                help="Custom Docker image to use for the sharing tunnel sidecar",
+            )
+            p.add_argument(
+                "--share-inspector",
+                action="store_true",
+                help="Expose the lfr-tunnel local inspector dashboard on port 4040",
+            )
             p.add_argument(
                 "--force-recreate",
                 action="store_true",
@@ -3159,6 +3203,29 @@ def _get_docker_required_commands():
     ]
 
 
+def _share_options_from_args(args):
+    """The share flags `ldm start` hands to ShareService, or None (LDM-#2010).
+
+    A dict rather than seven more keyword arguments on `cmd_start()`: the keys
+    are `ShareService.cmd_start()`'s own parameter names and are splatted
+    straight into it, so the two signatures cannot drift apart silently the
+    way seven hand-copied arguments would.
+
+    None when `--share` was not asked for, which is what keeps every other
+    `ldm start` untouched.
+    """
+    if not getattr(args, "share", False):
+        return None
+    return {
+        "subdomain": getattr(args, "share_subdomain", None),
+        "domain": getattr(args, "share_domain", None),
+        "url": getattr(args, "share_url", None),
+        "provider": getattr(args, "share_provider", None),
+        "image": getattr(args, "share_image", None),
+        "inspector": getattr(args, "share_inspector", False),
+    }
+
+
 def _build_command_map(args, manager):
     from collections.abc import Callable
     from typing import Any
@@ -3228,6 +3295,7 @@ def _build_command_map(args, manager):
             getattr(args, "service", None),
             all_projects=args.all,
             force_recreate=getattr(args, "force_recreate", False),
+            share_options=_share_options_from_args(args),
         ),
         ("stop", None): lambda: manager.runtime.cmd_stop(
             getattr(args, "project", None),

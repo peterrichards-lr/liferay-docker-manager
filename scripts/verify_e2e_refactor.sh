@@ -3377,6 +3377,50 @@ if [ "$SHARE_DRYRUN_FAILED" = true ]; then
 fi
 report_ok "✅ Share dry-run resolution verified (base domain, host-on-base, --url, vanity domain, conflict refusal, no meta write)."
 
+# LDM-#2010: `ldm start --share --share-subdomain peters` was "unrecognized
+# arguments" -- the flags existed on `run` only, and `run` RECONFIGURES, which
+# is what someone sharing an already-configured project does not want.
+#
+# Both checks below are free: the first reads --help, the second exercises a
+# refusal that happens before any project is touched.
+echo ">> Verifying Share Flags on 'ldm start'..."
+SHARE_START_FAILED=false
+
+SHARE_START_HELP=$("$LDM_CMD" start --help 2>&1)
+for _flag in --share --share-subdomain --share-domain --share-url --share-provider; do
+    if ! echo "$SHARE_START_HELP" | grep -q -- "$_flag"; then
+        echo "❌ ERROR: 'ldm start --help' does not offer ${_flag} (LDM-#2010)." | tee -a "$RESULTS_FILE_TMP"
+        SHARE_START_FAILED=true
+    fi
+done
+
+# A tunnel leases one subdomain and forwards to one target, so this
+# combination is refused -- up front, before any project is started.
+SHARE_ALL_OUT=$("$LDM_CMD" start --all --share --share-subdomain e2e-all -y --no-color 2>&1) && SHARE_ALL_RC=0 || SHARE_ALL_RC=$?
+if [ "$SHARE_ALL_RC" -eq 0 ]; then
+    echo "❌ ERROR: 'ldm start --all --share' exited 0 instead of refusing." | tee -a "$RESULTS_FILE_TMP"
+    echo "$SHARE_ALL_OUT" | tee -a "$RESULTS_FILE_TMP"
+    SHARE_START_FAILED=true
+fi
+if ! echo "$SHARE_ALL_OUT" | grep -q -- "--share cannot be combined with --all"; then
+    echo "❌ ERROR: 'ldm start --all --share' did not explain why it refused." | tee -a "$RESULTS_FILE_TMP"
+    echo "$SHARE_ALL_OUT" | tee -a "$RESULTS_FILE_TMP"
+    SHARE_START_FAILED=true
+fi
+# argparse rejects an unknown option with this exact wording, which is what
+# the flags not being declared looked like. Asserted explicitly so a
+# regression reads as itself rather than as one of the checks above.
+if echo "$SHARE_ALL_OUT" | grep -q "unrecognized arguments"; then
+    echo "❌ ERROR: 'ldm start' still does not declare the share flags (LDM-#2010)." | tee -a "$RESULTS_FILE_TMP"
+    echo "$SHARE_ALL_OUT" | tee -a "$RESULTS_FILE_TMP"
+    SHARE_START_FAILED=true
+fi
+
+if [ "$SHARE_START_FAILED" = true ]; then
+    exit 1
+fi
+report_ok "✅ 'ldm start' accepts the share flags and refuses --share with --all."
+
 # UX & Scaling
 echo ">> Verifying Cascading Defaults..."
 "$LDM_CMD" config defaults test_key test_value >/dev/null

@@ -150,6 +150,29 @@ Instead of starting the tunnel manually, you can tell LDM to automatically boot 
 ldm run my-project --share --share-subdomain custom-sub --share-provider lfr-tunnel
 ```
 
+### Sharing without reconfiguring (`ldm start --share`)
+
+`ldm run` reconfigures the project before booting it -- it regenerates the
+compose file, re-resolves dependency versions and re-applies configuration.
+For a project that is already configured and simply needs to be up and shared,
+that is more than you asked for, and anything that fails in the reconfigure
+stops you sharing at all.
+
+`ldm start` boots the existing containers without reconfiguring, and takes the
+same share flags:
+
+```bash
+ldm start my-project --share --share-url https://peters.lfr-demo.se
+```
+
+Sharing is auxiliary to the start: the project comes up, and then it is
+shared. `ldm start --share` is `ldm start` followed by `ldm share start` --
+it saves the second command rather than changing what either one does, and
+the tunnel opens only once every container has started.
+
+`--share` cannot be combined with `--all`: a tunnel leases one subdomain and
+forwards to one target, and the refusal arrives before anything is started.
+
 ### Default Subdomain
 
 Without `--share-subdomain`, LDM derives one from the project name. A DNS label may contain only lowercase ASCII letters, digits and hyphens, so the derived value is normalised accordingly -- it is not simply the project name:
