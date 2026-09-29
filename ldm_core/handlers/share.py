@@ -74,6 +74,18 @@ class ShareService:
     # user latency-based gateway selection *and* survival of a scheduled
     # gateway stop. If the user set one of these themselves that's their
     # call -- LDM must neither override it nor add one of its own.
+    # LDM-#2009: container states that mean the project is up enough to be
+    # worth tunnelling to. `starting` and `unhealthy` are deliberately in:
+    # a Liferay still booting, or one failing its own healthcheck, is a
+    # legitimate thing to point a tunnel at, and refusing either would replace
+    # a useful error with an unhelpful one. Everything else -- `exited`,
+    # `created`, `dead`, `paused`, and the `unknown` that
+    # `get_container_status()` returns for a container that does not exist --
+    # means there is nothing listening.
+    RUNNING_CONTAINER_STATES: ClassVar[frozenset[str]] = frozenset(
+        {"running", "healthy", "starting", "unhealthy", "restarting"}
+    )
+
     GATEWAY_PIN_ENV_VARS: ClassVar[tuple[str, ...]] = (
         "LFT_SERVER_URL",
         "LFT_CLIENT_SERVER",
@@ -625,6 +637,72 @@ class ShareService:
             exit_code=3,
         )
 
+    def _assert_target_is_running(self, provider, project_meta, project_id):
+        """Refuse a tunnel to a project that is not running (LDM-#2009).
+
+        Reported as an eight-word gateway message after a full start sequence::
+
+            Tunnel healthcheck failed: Downstream Offline: Local target port
+            8080 is not responsive.
+
+        That is accurate and close to useless. The project had no containers at
+        all, which LDM could have established locally before resolving a
+        domain, ensuring a binary, checking its version against the gateway,
+        fetching a token, leasing a subdomain and starting a background
+        process -- all of which happened first, so the answer arrived last and
+        in the vocabulary of the tunnel rather than of the project.
+
+        Refused rather than warned, for the reason
+        `_assert_provider_can_reach_target()` gives: a warning prints alongside
+        a public URL that will not work.
+
+        Native provider only, matching that sibling. `lfr-tunnel-docker`
+        creates its sidecar through the project's own compose run, so a
+        stopped project is a normal starting point there, not an error.
+        """
+        if provider != "lfr-tunnel":
+            return
+        # A dry run resolves and prints; it never connects, so there is
+        # nothing for a downstream to be offline for.
+        if getattr(self.manager, "dry_run", False):
+            return
+
+        meta = project_meta or {}
+        container = (
+            meta.get("liferay_container_name")
+            or meta.get("container_name")
+            or project_id
+        )
+        if not container:
+            return
+
+        status = self.manager.get_container_status(
+            container, target_name=meta.get("target")
+        )
+        if status in self.RUNNING_CONTAINER_STATES:
+            return
+
+        # "unknown" is what a missing container reports, and it is also what a
+        # docker that cannot be reached reports. Both mean the same thing for
+        # this decision -- nothing is serving on the port -- so they share a
+        # refusal rather than being teased apart into two.
+        seen = (
+            "it has no containers"
+            if status == "unknown"
+            else f"container '{container}' reports '{status}'"
+        )
+        UI.die(
+            f"Project '{project_id}' is not running, so there is nothing to share.",
+            details=(
+                f"Checked before starting a tunnel: {seen}. A tunnel would "
+                "come up, publish a URL and fail every request -- which the "
+                "gateway reports as 'Downstream Offline', describing the "
+                "symptom rather than the cause."
+            ),
+            tip=f"Start it first:\n    ldm start {project_id}",
+            exit_code=3,
+        )
+
     def resolve_share_config(self, project_meta=None, provider=None, domain=None):  # noqa: C901, PLR0912
         """Resolves share provider and share domain, prompting the user if not configured."""
         # 1. Resolve provider
@@ -843,6 +921,9 @@ class ShareService:
         # any binary download, version check or tunnel start -- so the refusal
         # arrives instead of a working-looking tunnel, not after one.
         self._assert_provider_can_reach_target(provider, project_meta, project_id)
+        # LDM-#2009: and for the same reason -- before any binary, version
+        # check, token or gateway round trip.
+        self._assert_target_is_running(provider, project_meta, project_id)
 
         if root and share_domain:
             project_meta["share_domain"] = share_domain

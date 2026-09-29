@@ -458,6 +458,31 @@ This occurs when the shared IP address hits the GitHub unauthenticated REST API 
 
 ---
 
+## 🌍 Sharing & Tunnels
+
+### **Issue: "Downstream Offline: Local target port 8080 is not responsive"**
+
+The tunnel reached the gateway and leased its subdomain; what it could not
+find was anything to forward to. The message describes the gateway's view of
+your machine, not a problem with the tunnel.
+
+Almost always this means **the project is not running**. Since LDM-#2009
+`ldm share start` checks that locally first and refuses with exit code `3`
+before contacting anything:
+
+```text
+Project 'my-project' is not running, so there is nothing to share.
+  Start it first:
+      ldm start my-project
+```
+
+If the project *is* running and you still see the gateway message, the tunnel
+is pointed at the wrong port. Check the project's `port` in its `meta`, and
+pass `--ports` explicitly if the service you want exposed is not the one LDM
+would auto-discover.
+
+---
+
 ## 🛡️ EDR / SentinelOne Quarantine (lfr-tunnel)
 
 ### **Issue: "Failed to verify lfr-tunnel installation after download"**
@@ -541,4 +566,4 @@ Projects are discovered from the current folder, its parent, `~/ldm`, the LDM in
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-24* | *Last Reviewed: 2026-09-24*
+*Last Updated: 2026-09-29* | *Last Reviewed: 2026-09-29*

@@ -32,6 +32,14 @@ class MockManager:
     def setup_paths(self, root):
         return {"root": Path(root)}
 
+    def get_container_status(self, container_name, target_name=None):
+        # LDM-#2009: cmd_start() now refuses a tunnel to a project that is not
+        # running, so every test exercising it needs an answer here. "running"
+        # is the default because these tests are about what a share does, not
+        # about the precondition -- TestRefusesATunnelToAStoppedProject drives
+        # the other states.
+        return "running"
+
 
 class TestShareService(unittest.TestCase):
     def setUp(self):
@@ -1780,3 +1788,103 @@ class TestShareTunnelTopology(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("-target-host") + 1], "custom.domain.local")
         self.assertEqual(env["LFT_CLIENT_TOKEN"], "my-token")
         self.assertEqual(env["LFR_TUNNEL_TOKEN"], "my-token")
+
+
+class TestRefusesATunnelToAStoppedProject(unittest.TestCase):
+    """LDM-#2009: establish locally what the gateway would tell you late.
+
+    The reported run resolved a domain, ensured a binary, checked its version
+    against the gateway, fetched a token, leased a subdomain and started a
+    background process -- and only then learned, from the gateway, that
+    nothing was listening on 8080. The project had no containers at all.
+    """
+
+    def setUp(self):
+        self.mock_manager = MockManager()
+        self.mock_manager.args = MagicMock()
+        self.mock_manager.args.share_domain = None
+        self.mock_manager.args.domain = None
+        self.mock_manager.args.share_provider = None
+        self.mock_manager.args.provider = None
+        self.service = ShareService(self.mock_manager)
+
+    def _assert_with_status(self, status):
+        self.mock_manager.get_container_status = MagicMock(  # type: ignore[method-assign]
+            return_value=status
+        )
+        self.service._assert_target_is_running(
+            "lfr-tunnel", {"container_name": "demo"}, "demo"
+        )
+
+    @patch("ldm_core.handlers.share.UI.die", side_effect=SystemExit(3))
+    def test_a_project_with_no_containers_is_refused(self, mock_die):
+        """'unknown' is what get_container_status() reports for a missing one."""
+        with self.assertRaises(SystemExit):
+            self._assert_with_status("unknown")
+        self.assertIn("is not running", mock_die.call_args[0][0])
+        self.assertIn("no containers", mock_die.call_args.kwargs["details"])
+
+    @patch("ldm_core.handlers.share.UI.die", side_effect=SystemExit(3))
+    def test_the_refusal_names_the_command_that_fixes_it(self, mock_die):
+        with self.assertRaises(SystemExit):
+            self._assert_with_status("exited")
+        self.assertIn("ldm start demo", mock_die.call_args.kwargs["tip"])
+        self.assertEqual(mock_die.call_args.kwargs["exit_code"], 3)
+
+    @patch("ldm_core.handlers.share.UI.die", side_effect=SystemExit(3))
+    def test_a_stopped_container_reports_its_own_state(self, mock_die):
+        with self.assertRaises(SystemExit):
+            self._assert_with_status("exited")
+        self.assertIn("'exited'", mock_die.call_args.kwargs["details"])
+
+    @patch("ldm_core.handlers.share.UI.die", side_effect=SystemExit(3))
+    def test_a_running_project_is_allowed(self, mock_die):
+        for status in ("running", "healthy", "starting", "unhealthy", "restarting"):
+            with self.subTest(status=status):
+                self._assert_with_status(status)
+        mock_die.assert_not_called()
+
+    @patch("ldm_core.handlers.share.UI.die", side_effect=SystemExit(3))
+    def test_the_docker_provider_is_not_subject_to_this(self, mock_die):
+        """It creates its sidecar through the project's own compose run, so a
+        stopped project is a normal starting point rather than an error."""
+        self.mock_manager.get_container_status = MagicMock(return_value="unknown")  # type: ignore[method-assign]
+        self.service._assert_target_is_running(
+            "lfr-tunnel-docker", {"container_name": "demo"}, "demo"
+        )
+        mock_die.assert_not_called()
+
+    @patch("ldm_core.handlers.share.UI.die", side_effect=SystemExit(3))
+    def test_a_dry_run_is_not_subject_to_this(self, mock_die):
+        """A dry run never connects, so nothing can be downstream of it -- and
+        the E2E section that exercises --dry-run must not need containers."""
+        self.mock_manager.dry_run = True  # type: ignore[attr-defined]
+        self.mock_manager.get_container_status = MagicMock(return_value="unknown")  # type: ignore[method-assign]
+        self.service._assert_target_is_running(
+            "lfr-tunnel", {"container_name": "demo"}, "demo"
+        )
+        mock_die.assert_not_called()
+
+    @patch("ldm_core.handlers.share.UI.die", side_effect=SystemExit(3))
+    def test_the_check_runs_before_any_binary_or_token(self, mock_die):
+        """Placement is the point: the refusal must cost nothing.
+
+        Anything acquired before this check is work done for a tunnel that was
+        never going to serve -- and on a machine with no client installed, the
+        user would meet a missing-binary error instead of the real reason.
+        """
+        boom = MagicMock(side_effect=AssertionError("acquired before the check"))
+        self.service._ensure_binary = boom  # type: ignore[method-assign]
+        self.service._get_auth_token = boom  # type: ignore[method-assign]
+        self.service._verify_compatibility = boom  # type: ignore[method-assign]
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/demo")
+        )
+        self.mock_manager.read_meta = MagicMock(  # type: ignore[method-assign]
+            return_value={"container_name": "demo", "share_provider": "lfr-tunnel"}
+        )
+        self.mock_manager.get_container_status = MagicMock(return_value="unknown")  # type: ignore[method-assign]
+
+        with self.assertRaises(SystemExit):
+            self.service.cmd_start(project_id="demo", provider="lfr-tunnel")
+        boom.assert_not_called()
