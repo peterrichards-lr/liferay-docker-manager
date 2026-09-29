@@ -2985,6 +2985,119 @@ zf.close()
         throw "Legacy command translation failed."
     }
 
+    # LDM-#2008: parity with verify_e2e_refactor.sh's Share Dry-Run
+    # Resolution section. Every decision the reported failure turned on --
+    # which subdomain, which base domain, which public URL -- is taken before
+    # the tunnel client is invoked, and --dry-run reaches all of it with no
+    # binary, no token, no gateway and no DNS.
+    #
+    # Deliberately NOT a live tunnel, and deliberately not gated on
+    # lfr-tunnel being on PATH: such a check would skip on every CI runner,
+    # for ever, and report green.
+    #
+    # -cmatch throughout, not -match: PowerShell's -match is
+    # case-INSENSITIVE, so the two halves of this suite would otherwise
+    # disagree about identical correct output.
+    Write-Host ">> Verifying Share Dry-Run Resolution..."
+    $shareDryRunDir = Join-Path $env:LDM_WORKSPACE "share-dryrun-$TEST_PORT"
+    $shareDryRunHome = Join-Path $shareDryRunDir "home"
+    $shareDryRunProj = Join-Path $shareDryRunDir "share-dryrun"
+    Remove-Item -Recurse -Force $shareDryRunDir -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path $shareDryRunHome -Force | Out-Null
+    New-Item -ItemType Directory -Path $shareDryRunProj -Force | Out-Null
+    $shareMetaJson = '{"container_name": "share-dryrun", "project_name": "share-dryrun", "host_name": "localhost", "port": 8080, "db_type": "postgresql"}'
+    Set-Content -Path (Join-Path $shareDryRunProj "meta") -Value $shareMetaJson -Encoding ASCII
+    Set-Content -Path (Join-Path $shareDryRunProj ".liferay-docker") -Value "" -Encoding ASCII
+
+    $shareDryRunFailed = $false
+    $shareOriginalHome = $env:LDM_HOME
+    $shareOriginalLocation = Get-Location
+
+    function Invoke-ShareDryRun {
+        param([string[]]$ShareArgs)
+        $out = & $LDM_CMD share start --dry-run -y --no-color @ShareArgs 2>&1 | Out-String
+        return @{ Output = $out; Code = $LASTEXITCODE }
+    }
+
+    function Add-ShareDryRunFailure {
+        param([string]$Message, [string]$Output)
+        Write-Verdict "[ERROR] ERROR: $Message"
+        Write-Verdict "        Output was: $Output"
+        $script:shareDryRunFailed = $true
+    }
+
+    try {
+        $env:LDM_HOME = $shareDryRunHome
+        Set-Location $shareDryRunProj
+
+        # 1. A bare base domain: the two values combine exactly as supplied.
+        $r = Invoke-ShareDryRun @("--subdomain", "peters", "--domain", "lfr-demo.se")
+        if (-not ($r.Output -cmatch "https://peters\.lfr-demo\.se")) {
+            Add-ShareDryRunFailure "'share start --subdomain peters --domain lfr-demo.se' did not resolve to https://peters.lfr-demo.se." $r.Output
+        }
+
+        # 2. A host ON a known base domain -- what a user pastes. This was
+        #    classified as a vanity domain, doubling the label and printing
+        #    portal-registration advice that does not apply to a leased
+        #    subdomain.
+        $r = Invoke-ShareDryRun @("--domain", "peters.lfr-demo.se")
+        if (-not ($r.Output -cmatch "https://peters\.lfr-demo\.se")) {
+            Add-ShareDryRunFailure "'--domain peters.lfr-demo.se' did not resolve to https://peters.lfr-demo.se." $r.Output
+        }
+        if ($r.Output -cmatch "Custom domains must be registered") {
+            Add-ShareDryRunFailure "a host on a known tunnel base domain was reported as a custom vanity domain." $r.Output
+        }
+
+        # 2b. The same host WITH the matching --subdomain. The pair agrees so
+        #     it must not be refused, and this is the shape in which the
+        #     doubled label is observable -- without --subdomain the fallback
+        #     supplies the project name and the symptom reads as
+        #     share-dryrun.peters.lfr-demo.se instead.
+        $r = Invoke-ShareDryRun @("--subdomain", "peters", "--domain", "peters.lfr-demo.se")
+        if ($r.Code -ne 0) {
+            Add-ShareDryRunFailure "a --subdomain matching the share domain's own subdomain was refused as a conflict." $r.Output
+        }
+        if ($r.Output -cmatch "peters\.peters") {
+            Add-ShareDryRunFailure "'--domain peters.lfr-demo.se' doubled the subdomain label (LDM-#2008)." $r.Output
+        }
+
+        # 3. The same value in the form it is actually handed over in.
+        $r = Invoke-ShareDryRun @("--url", "https://peters.lfr-demo.se/")
+        if (-not ($r.Output -cmatch "https://peters\.lfr-demo\.se")) {
+            Add-ShareDryRunFailure "'--url https://peters.lfr-demo.se/' did not resolve to https://peters.lfr-demo.se." $r.Output
+        }
+
+        # 4. A genuine vanity domain must still be called one (LDM-#1038).
+        $r = Invoke-ShareDryRun @("--subdomain", "peters", "--domain", "dev.example.invalid")
+        if (-not ($r.Output -cmatch "Custom domains must be registered")) {
+            Add-ShareDryRunFailure "a custom vanity domain no longer warns about portal registration (LDM-#1038)." $r.Output
+        }
+
+        # 5. Two subdomains that disagree are refused, not silently resolved.
+        $r = Invoke-ShareDryRun @("--subdomain", "other", "--domain", "peters.lfr-demo.se")
+        if ($r.Code -eq 0) {
+            Add-ShareDryRunFailure "a conflicting --subdomain and share domain exited 0 instead of refusing." $r.Output
+        }
+        if (-not ($r.Output -cmatch "Conflicting subdomains")) {
+            Add-ShareDryRunFailure "a conflicting --subdomain and share domain did not say so." $r.Output
+        }
+    } finally {
+        Set-Location $shareOriginalLocation
+        $env:LDM_HOME = $shareOriginalHome
+    }
+
+    # 6. A dry run resolves; it must not write. This wrote share_domain into
+    #    the project meta, which made --dry-run a way to pin a project domain.
+    $shareMetaAfter = Get-Content -Raw (Join-Path $shareDryRunProj "meta")
+    if ($shareMetaAfter -cmatch "share_domain") {
+        Add-ShareDryRunFailure "'share start --dry-run' wrote share_domain into the project meta." $shareMetaAfter
+    }
+
+    if ($shareDryRunFailed) {
+        throw "Share dry-run resolution failed (LDM-#2008)."
+    }
+    Write-Verdict "[SUCCESS] Share dry-run resolution verified (base domain, host-on-base, --url, vanity domain, conflict refusal, no meta write)."
+
     # UX & Defaults & Scaling
     Write-Host ">> Verifying Cascading Defaults..."
     & $LDM_CMD config defaults test_key test_value > $null 2>&1

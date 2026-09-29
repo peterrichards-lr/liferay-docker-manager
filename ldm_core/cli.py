@@ -2074,7 +2074,17 @@ def get_parser():  # noqa: PLR0915
     )
     share_start.add_argument(
         "--domain",
-        help="Custom domain prefix (e.g. lfr-demo.online, lfr-demo.se)",
+        help=(
+            "Tunnel base domain (e.g. lfr-demo.online, lfr-demo.se), or a host "
+            "on one (e.g. peters.lfr-demo.se), or a custom vanity domain"
+        ),
+    )
+    share_start.add_argument(
+        "--url",
+        help=(
+            "The public URL to claim, e.g. https://peters.lfr-demo.se -- "
+            "shorthand for --subdomain and --domain together"
+        ),
     )
     share_start.add_argument(
         "--auto-install-lfr-tunnel",
@@ -3354,6 +3364,12 @@ def _build_command_map(args, manager):
             provider=getattr(args, "provider", None),
             image=getattr(args, "image", None),
             inspector=getattr(args, "inspector", False),
+            # LDM-#2008: passed explicitly rather than sniffed off
+            # `manager.args` inside resolve_share_config(). That indirection
+            # worked, but it meant `--domain` reached the resolver by a route
+            # no reader of this dispatch could see.
+            domain=getattr(args, "domain", None),
+            url=getattr(args, "url", None),
         ),
         ("share", "inspector"): lambda: manager.share.cmd_inspector(
             project_id=getattr(args, "project", None)

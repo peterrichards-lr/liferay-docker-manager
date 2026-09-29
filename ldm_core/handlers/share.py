@@ -20,6 +20,35 @@ from ldm_core.utils import (
 )
 
 
+def share_host_from_url(value):
+    """The bare host from whatever the user pasted (LDM-#2008).
+
+    `https://peters.lfr-demo.se/` is the form a tunnel URL is handed over in --
+    in chat, in a ticket, in the portal -- so it is the form that gets pasted
+    into `--domain`, and previously it was taken literally as a domain name.
+    Strips a scheme, any credentials, a port, a path, a trailing dot and
+    surrounding whitespace; lowercases, because DNS labels are
+    case-insensitive and `Peters.LFR-Demo.se` must classify as the same host.
+
+    Returns the input stripped when it holds no host at all, so a caller can
+    never be handed an empty string where it expected a domain.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return text
+    if "//" in text:
+        text = text.split("//", 1)[1]
+    for separator in ("/", "?", "#"):
+        text = text.split(separator, 1)[0]
+    if "@" in text:
+        text = text.rsplit("@", 1)[1]
+    # A bracketed IPv6 literal is not a tunnel host, but splitting it on ":"
+    # would silently mangle it into something that looks like one.
+    if not text.startswith("[") and ":" in text:
+        text = text.split(":", 1)[0]
+    return text.rstrip(".").lower() or str(value).strip()
+
+
 def is_min_version_failure(stderr, stdout=""):
     """Whether the client refused to connect because it is below the floor.
 
@@ -67,6 +96,16 @@ class ShareService:
         # note explaining that a remembered gateway domain is no longer
         # pinned.
         self._unpinned_gateway_note_shown = False
+        # LDM-#2008: and again for the note saying a configured host was read
+        # as subdomain + base domain.
+        self._split_host_note_shown = False
+        # LDM-#2008: the subdomain recovered from a configured host such as
+        # `peters.lfr-demo.se`. resolve_share_config() returns a (provider,
+        # domain) PAIR and four call sites plus a dozen test doubles depend on
+        # that arity, so the third value it now derives is parked here rather
+        # than widening the signature. cmd_start() reads it immediately after
+        # calling resolve_share_config(); nothing else should.
+        self._derived_share_subdomain = None
 
     # LDM-#1569: every name the lfr-tunnel client reads as an explicit
     # gateway pin. Both region election and failover are gated on
@@ -103,7 +142,12 @@ class ShareService:
             # argparse gives None when unset; non-strings are guarded the
             # same way resolve_share_config() guards them.
             if isinstance(value, str) and value:
-                return value if value in self.get_known_tunnel_base_domains() else None
+                # LDM-#2008: classify before comparing. `peters.lfr-demo.se`
+                # names a known gateway just as surely as `lfr-demo.se` does,
+                # and the bare membership test said otherwise -- so a user who
+                # pasted their own host got no pin, silently.
+                _, base = self.split_share_host(value)
+                return base if base in self.get_known_tunnel_base_domains() else None
         return None
 
     def _apply_gateway_pin(self, env):
@@ -176,6 +220,50 @@ class ShareService:
         if isinstance(override, list) and override:
             return [str(d) for d in override]
         return list(self.DEFAULT_TUNNEL_BASE_DOMAINS)
+
+    def split_share_host(self, value):
+        """A configured share host as `(subdomain, base_domain)` (LDM-#2008).
+
+        `share_domain` has always had to carry two different kinds of value --
+        a gateway base domain and a custom vanity domain -- and LDM told them
+        apart with a bare `value in get_known_tunnel_base_domains()`. That test
+        has no answer for the most natural thing a user can supply: the host
+        they were actually given.
+
+        Measured on `--domain peters.lfr-demo.se`, it failed three ways at
+        once. The public URL came out `https://peters.peters.lfr-demo.se`;
+        the "custom domains must be registered and approved in the portal"
+        note fired for a host that needs no registration; and
+        `_explicit_gateway_domain()` declined to pin a gateway it should have
+        recognised, so the client elected its own and the printed URL diverged
+        from the leased one.
+
+        Three cases, not two::
+
+            lfr-demo.se         -> (None,     "lfr-demo.se")      a known base
+            peters.lfr-demo.se  -> ("peters", "lfr-demo.se")      a host ON one
+            dev.example.com     -> (None,     "dev.example.com")  a vanity domain
+
+        A multi-label prefix (`a.b.lfr-demo.se`) keeps the whole prefix as the
+        subdomain. The gateway owns that namespace and decides what it will
+        lease; splitting further here would be inventing a rule LDM has no
+        standing to invent.
+
+        A scheme, a port, a path or a trailing dot are tolerated, because the
+        thing being pasted is usually a URL -- see `share_host_from_url()`.
+        """
+        if not isinstance(value, str) or not value.strip():
+            return None, value
+        host = share_host_from_url(value)
+        for base in self.get_known_tunnel_base_domains():
+            if host == base:
+                return None, base
+            suffix = f".{base}"
+            if host.endswith(suffix):
+                label = host[: -len(suffix)]
+                if label:
+                    return label, base
+        return None, host
 
     def get_default_tunnel_domain(self):
         """The domain to fall back to when nothing else is configured --
@@ -678,6 +766,21 @@ class ShareService:
             else:
                 domain = ""
 
+        # LDM-#2008: one field, three kinds of value. Normalise here, at the
+        # single point every source (flag, project meta, ~/.ldmrc, prompt)
+        # funnels through, so a host on a known base cannot be mistaken for a
+        # vanity domain by the note below, by the gateway pin, or by the URL
+        # the caller goes on to build.
+        derived_subdomain, domain = self.split_share_host(domain)
+        if derived_subdomain:
+            self._derived_share_subdomain = derived_subdomain
+            if not self._split_host_note_shown:
+                self._split_host_note_shown = True
+                UI.info(
+                    f"Read '{derived_subdomain}.{domain}' as subdomain "
+                    f"'{derived_subdomain}' on '{domain}'."
+                )
+
         # LDM-#1038: a custom vanity domain silently "just works" from LDM's
         # side (LFT_SERVER_URL is built from whatever string was typed in),
         # but the gateway will only route it once it's been registered and
@@ -790,7 +893,45 @@ class ShareService:
         if not domain:
             domain = self.get_default_tunnel_domain()
 
+        # LDM-#2008: the meta and the .env above are read directly, bypassing
+        # resolve_share_config()'s normalisation -- so a stored
+        # `peters.lfr-demo.se` produced `peters.peters.lfr-demo.se` here even
+        # once the rest of the resolution had been fixed.
+        _, domain = self.split_share_host(domain)
+
         return f"https://{subdomain}.{domain}"
+
+    def _resolve_subdomain(self, requested, project_id):
+        """The subdomain to lease (LDM-#1356, LDM-#2008).
+
+        Three sources, in order: what was asked for, what the configured share
+        host implies (`peters.lfr-demo.se` -> `peters`), and the project name.
+
+        A disagreement between the first two is refused rather than resolved.
+        Either value is plausibly the intended one, and picking silently is how
+        a tunnel comes up on an address the user did not expect -- which is the
+        failure LDM-#2008 exists to stop, not one to relocate.
+
+        `dns_label()` is the last resort and is stricter than `sanitize_id()`:
+        it lowercases and rejects "_" and ".", both legal in a Docker name and
+        illegal in a DNS label. `project_id` is the project DIRECTORY name,
+        unsanitized -- a project called "Saarbrücken" asked the gateway for a
+        label no DNS label may hold, and on macOS the name arrives
+        NFD-decomposed, so it was not even stable across platforms.
+        """
+        derived = self._derived_share_subdomain
+        if requested and derived and requested != derived:
+            UI.die(
+                f"Conflicting subdomains: --subdomain says '{requested}', but "
+                f"the configured share domain resolves to '{derived}'.",
+                details=(
+                    "A share domain naming a host on a known tunnel base "
+                    "domain already carries a subdomain."
+                ),
+                tip=f"Pass one or the other: --subdomain {requested} with a "
+                f"bare base domain, or --domain {derived}.<base> on its own.",
+            )
+        return requested or derived or dns_label(project_id)
 
     def cmd_start(  # noqa: C901, PLR0912, PLR0915
         self,
@@ -800,8 +941,22 @@ class ShareService:
         provider=None,
         image=None,
         inspector=False,
+        domain=None,
+        url=None,
     ):
         """Starts the active sharing tunnel (lfr-tunnel or ngrok)."""
+        # LDM-#2008: `--url` is not a second mechanism, it is the form the
+        # value actually arrives in. A tunnel address is handed over as
+        # `https://peters.lfr-demo.se/` -- in chat, in a ticket, in the portal
+        # -- and split_share_host() already reduces that to a base domain plus
+        # a subdomain, so the flag only has to route it to the same place.
+        if url:
+            if domain:
+                UI.die(
+                    "Pass --url or --domain, not both.",
+                    tip=f"--url {url} already carries the domain.",
+                )
+            domain = url
         root = self.manager.detect_project_path(project_id)
         project_id = root.name if root else None
         project_meta = self.manager.read_meta(root) if root else {}
@@ -837,34 +992,45 @@ class ShareService:
 
         # Resolve provider and domain
         provider, share_domain = self.resolve_share_config(
-            project_meta, provider=provider
+            project_meta, provider=provider, domain=domain
         )
         # LDM-#1338: checked here, as soon as the provider is known and before
         # any binary download, version check or tunnel start -- so the refusal
         # arrives instead of a working-looking tunnel, not after one.
         self._assert_provider_can_reach_target(provider, project_meta, project_id)
 
-        if root and share_domain:
+        dry_run = bool(getattr(self.manager, "dry_run", False))
+
+        # LDM-#2008: a dry run may not write the project meta. It did, which
+        # made `--dry-run` a way to silently pin a project's share domain --
+        # and would make the E2E section that exercises this path mutate the
+        # project it runs against.
+        if root and share_domain and not dry_run:
             project_meta["share_domain"] = share_domain
             if provider == "lfr-tunnel":
                 self.manager.write_meta(root, project_meta)
 
         if provider == "lfr-tunnel":
-            bin_path = self._ensure_binary()
-            installed_ver = self._get_installed_version(bin_path)
-            self._verify_compatibility([str(bin_path)], installed_ver)
+            subdomain = self._resolve_subdomain(subdomain, project_id)
 
-            token = self._get_auth_token()
+            # LDM-#2008: `share start` recorded the domain but not the
+            # subdomain, so a later `ldm run --share` on the same project fell
+            # back to the project name and came up on a different address.
+            # The lfr-tunnel-docker branch below has always persisted both.
+            if root and subdomain and not dry_run:
+                project_meta["share_subdomain"] = subdomain
+                self.manager.write_meta(root, project_meta)
 
-            # LDM-#1356: the default must be a valid DNS label. `project_id`
-            # is the project DIRECTORY name, unsanitized -- so a project called
-            # "Saarbrücken" asked the provider for a subdomain containing a
-            # character no DNS label may hold, and on macOS the name arrives
-            # NFD-decomposed, so it was not even stable across platforms.
-            #
-            # dns_label() is stricter than sanitize_id(): it lowercases and
-            # rejects "_" and ".", both legal in a Docker name and illegal here.
-            subdomain = subdomain or dns_label(project_id)
+            # LDM-#2008: a dry run must not need what a real run needs. This
+            # short-circuit used to sit BELOW the three calls guarded here, so
+            # `--dry-run` demanded an installed client and a gateway token --
+            # which meant the one path that could have been exercised in CI
+            # was the one path that could not.
+            bin_path = "lfr-tunnel"
+            if not dry_run:
+                bin_path = self._ensure_binary()
+                installed_ver = self._get_installed_version(bin_path)
+                self._verify_compatibility([str(bin_path)], installed_ver)
 
             # LDM-#1569: -ports only when the user (or lcp.json above) named
             # them. Left off, the client auto-discovers -- Docker containers
@@ -885,6 +1051,39 @@ class ShareService:
             if host_name and host_name != "localhost":
                 cmd += ["-target-host", host_name]
 
+            # LDM-#2008: say where this is going BEFORE going there. The
+            # reported failure printed a warning naming a domain the user had
+            # not asked for and never printed the address it was about to
+            # claim, so the one line that would have shown the subdomain was
+            # being honoured -- and the domain was not what they expected --
+            # did not exist.
+            #
+            # Composed rather than resolved: resolve_public_tunnel_url() asks
+            # the client for live status, which spawns the binary. That is
+            # right after the tunnel is up and wrong before it exists.
+            planned_url = (
+                f"https://{subdomain}.{share_domain}"
+                if share_domain
+                else self.resolve_public_tunnel_url(subdomain, project_id)
+            )
+            UI.info(f"Public URL: {UI.CYAN}{planned_url}{UI.COLOR_OFF}")
+
+            if dry_run:
+                UI.detail(
+                    f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(cmd)}"
+                )
+                UI.success("Tunnel started in the background.")
+                UI.success(
+                    f"🌍 Public Tunnel Active: {UI.CYAN}{planned_url}{UI.COLOR_OFF}"
+                )
+                return
+
+            # Fetched here rather than above so that nothing between this
+            # point and the dry-run return needs a token -- and so that the
+            # value reaching the environment below is unconditionally a
+            # string.
+            token = self._get_auth_token()
+
             env = os.environ.copy()
             env["LFT_CLIENT_TOKEN"] = token
             env["LFR_TUNNEL_TOKEN"] = token
@@ -897,17 +1096,6 @@ class ShareService:
             pinned_gateway = self._apply_gateway_pin(env)
             if not pinned_gateway:
                 self._note_unpinned_gateway(share_domain)
-
-            if getattr(self.manager, "dry_run", False):
-                UI.detail(
-                    f"{UI.BYELLOW}[DRY RUN] Would execute:{UI.COLOR_OFF} {' '.join(cmd)}"
-                )
-                UI.success("Tunnel started in the background.")
-                public_url = self.resolve_public_tunnel_url(subdomain, project_id)
-                UI.success(
-                    f"🌍 Public Tunnel Active: {UI.CYAN}{public_url}{UI.COLOR_OFF}"
-                )
-                return
 
             UI.detail("Starting lfr-tunnel in the background...")
             try:
@@ -1026,18 +1214,12 @@ class ShareService:
                     "lfr-tunnel-docker sharing requires a project context. Run from a project directory or specify -p <project>."
                 )
 
-            # Ensure tunnel auth token is set
-            token = self._get_auth_token()
+            # Ensure tunnel auth token is set. LDM-#2008: not under --dry-run,
+            # for the same reason as the native branch above -- a dry run that
+            # demands a gateway token is not a dry run.
+            token = None if dry_run else self._get_auth_token()
             ports = ports or "8080"
-            # LDM-#1356: the default must be a valid DNS label. `project_id`
-            # is the project DIRECTORY name, unsanitized -- so a project called
-            # "Saarbrücken" asked the provider for a subdomain containing a
-            # character no DNS label may hold, and on macOS the name arrives
-            # NFD-decomposed, so it was not even stable across platforms.
-            #
-            # dns_label() is stricter than sanitize_id(): it lowercases and
-            # rejects "_" and ".", both legal in a Docker name and illegal here.
-            subdomain = subdomain or dns_label(project_id)
+            subdomain = self._resolve_subdomain(subdomain, project_id)
 
             # Set metadata
             project_meta["share"] = "true"

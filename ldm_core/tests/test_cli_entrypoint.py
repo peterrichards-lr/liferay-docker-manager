@@ -156,6 +156,11 @@ class TestCLIEntrypoint(unittest.TestCase):
         mock_args.provider = "ngrok"
         mock_args.image = None
         mock_args.inspector = False
+        # LDM-#2008: the domain no longer reaches resolve_share_config() by
+        # being sniffed off `manager.args` -- it is forwarded here like every
+        # other flag, so this dispatch has to carry it.
+        mock_args.domain = "lfr-demo.se"
+        mock_args.url = None
         mock_args.verbose = False
         mock_args.non_interactive = True
         mock_parser.parse_args.return_value = mock_args
@@ -173,6 +178,8 @@ class TestCLIEntrypoint(unittest.TestCase):
                 "8082",
                 "--provider",
                 "ngrok",
+                "--domain",
+                "lfr-demo.se",
             ],
         ):
             main()
@@ -183,6 +190,8 @@ class TestCLIEntrypoint(unittest.TestCase):
             provider="ngrok",
             image=None,
             inspector=False,
+            domain="lfr-demo.se",
+            url=None,
         )
 
         # 2. Test 'share status'
