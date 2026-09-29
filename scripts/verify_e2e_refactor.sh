@@ -3384,6 +3384,103 @@ if [ "$SHARE_DRYRUN_FAILED" = true ]; then
 fi
 report_ok "✅ Share dry-run resolution verified (base domain, host-on-base, --url, vanity domain, conflict refusal, no meta write, no gateway fetch)."
 
+# LDM-#2015: the section above proves a dry run does NOT fetch. This one
+# proves the fetched list is actually consumed -- that a domain LDM was never
+# compiled with is learned from the gateway and classified as a base domain.
+#
+# The cache is seeded by hand rather than by reaching the network, so the
+# check is deterministic and runs offline. The cache key is a sha256 of the
+# gateway URL, mirroring _supported_domains_cache_path().
+echo ">> Verifying Gateway-Advertised Domains..."
+GW_DIR="${LDM_WORKSPACE}/share-gateway-${TEST_PORT}"
+GW_HOME="${GW_DIR}/home"
+GW_PROJ="${GW_DIR}/share-gateway"
+rm -rf "$GW_DIR"
+mkdir -p "${GW_HOME}/.ldm/cache" "$GW_PROJ"
+printf '%s\n' '{"container_name": "share-gateway", "project_name": "share-gateway", "host_name": "localhost", "port": 8080, "db_type": "postgresql"}' > "${GW_PROJ}/meta"
+: > "${GW_PROJ}/.liferay-docker"
+
+GW_FAILED=false
+GW_URL="https://tunnel.lfr-demo.online"
+GW_KEY=$(python3 -c "import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest()[:16])" "$GW_URL")
+GW_CACHE="${GW_HOME}/.ldm/cache/supported-domains-${GW_KEY}.json"
+
+gw_share() {
+    (cd "$GW_PROJ" && LDM_HOME="$GW_HOME" "$LDM_CMD" \
+        share start --dry-run -y --no-color --domain peters.lfr-demo.dev 2>&1)
+}
+
+# Negative control FIRST, with no cache present. Without it this section
+# could pass for the wrong reason -- if the assertion below never read the
+# cache at all, it would still need lfr-demo.dev to be unknown beforehand to
+# prove anything.
+GW_BEFORE=$(gw_share) || true
+if ! echo "$GW_BEFORE" | grep -q "Custom domains must be registered"; then
+    echo "❌ ERROR: control failed -- 'lfr-demo.dev' was already known before the cache was seeded, so the check below proves nothing." | tee -a "$RESULTS_FILE_TMP"
+    echo "$GW_BEFORE" | tee -a "$RESULTS_FILE_TMP"
+    GW_FAILED=true
+fi
+
+# Deliberately OMITS lfr-demo.se, which IS in the built-in seed. If the
+# advertised list replaced the seed rather than extending it, the seed-
+# survival assertion below would then fail -- with lfr-demo.se present here
+# it could not fail however the merge was implemented.
+printf '%s' '["lfr-demo.online", "lfr-demo.dev"]' > "$GW_CACHE"
+
+GW_AFTER=$(gw_share) || true
+if ! echo "$GW_AFTER" | grep -q "https://peters.lfr-demo.dev"; then
+    echo "❌ ERROR: an advertised domain was not used to classify a host on it (LDM-#2015)." | tee -a "$RESULTS_FILE_TMP"
+    echo "$GW_AFTER" | tee -a "$RESULTS_FILE_TMP"
+    GW_FAILED=true
+fi
+if echo "$GW_AFTER" | grep -q "Custom domains must be registered"; then
+    echo "❌ ERROR: a gateway-advertised domain was still reported as a custom vanity domain (LDM-#2015)." | tee -a "$RESULTS_FILE_TMP"
+    echo "$GW_AFTER" | tee -a "$RESULTS_FILE_TMP"
+    GW_FAILED=true
+fi
+# The seed must survive: the advertised list extends it, never replaces it.
+# Substituting would flip the default gateway, since the live gateways
+# advertise the seed pair in the opposite order.
+GW_SEED_OUT=$( (cd "$GW_PROJ" && LDM_HOME="$GW_HOME" "$LDM_CMD" share start --dry-run -y --no-color --domain peters.lfr-demo.se 2>&1) ) || true
+if ! echo "$GW_SEED_OUT" | grep -q "https://peters.lfr-demo.se"; then
+    echo "❌ ERROR: a seed domain stopped resolving once the gateway list was cached (LDM-#2015)." | tee -a "$RESULTS_FILE_TMP"
+    echo "$GW_SEED_OUT" | tee -a "$RESULTS_FILE_TMP"
+    GW_FAILED=true
+fi
+
+if [ "$GW_FAILED" = true ]; then
+    exit 1
+fi
+report_ok "✅ Gateway-advertised domains are consumed, extend the seed, and do not displace it."
+
+# LDM-#2015: a live, unauthenticated contract check. NON-FATAL by design.
+# LDM depends on this field, so its disappearance is worth knowing at once --
+# but LDM falls back to its seed and keeps working, so it is not a reason to
+# block a release. A gateway outage during release verification must not.
+echo ">> Checking the gateway still advertises supported_domains (non-fatal)..."
+GW_LIVE=$(python3 - <<'PYGW' 2>/dev/null || true
+import json, urllib.request
+try:
+    with urllib.request.urlopen(
+        "https://tunnel.lfr-demo.online/api/version", timeout=10
+    ) as r:
+        d = json.loads(r.read().decode())
+    v = d.get("supported_domains")
+    print(",".join(v) if isinstance(v, list) and v else "MISSING")
+except Exception:
+    print("UNREACHABLE")
+PYGW
+)
+if [ "$GW_LIVE" = "UNREACHABLE" ] || [ -z "$GW_LIVE" ]; then
+    echo "⚠️  Could not reach the gateway; supported_domains contract not checked."
+elif [ "$GW_LIVE" = "MISSING" ]; then
+    echo "⚠️  WARNING: the gateway no longer advertises 'supported_domains' (LDM-#2015)." | tee -a "$RESULTS_FILE_TMP"
+    echo "   LDM falls back to its built-in seed, so nothing is broken -- but the" | tee -a "$RESULTS_FILE_TMP"
+    echo "   list is correct by luck again. Check lfr-tunnel before relying on it." | tee -a "$RESULTS_FILE_TMP"
+else
+    report_ok "✅ Gateway still advertises supported_domains: ${GW_LIVE}"
+fi
+
 # LDM-#2010: `ldm start --share --share-subdomain peters` was "unrecognized
 # arguments" -- the flags existed on `run` only, and `run` RECONFIGURES, which
 # is what someone sharing an already-configured project does not want.
