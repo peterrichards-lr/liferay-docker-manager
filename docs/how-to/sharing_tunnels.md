@@ -113,9 +113,33 @@ ldm share start my-project --url https://peters.lfr-demo.se
 not both. If `--subdomain` and the subdomain implied by `--domain` disagree,
 LDM refuses rather than picking one for you.
 
-The known base domains default to `lfr-demo.online` and `lfr-demo.se`, and are
-replaced wholesale by a `tunnel_base_domains` JSON list in `~/.ldmrc` if you
-run a self-hosted Liferay Tunnel gateway.
+### Where the known base domains come from
+
+LDM ships with `lfr-demo.online` and `lfr-demo.se` as a **seed**, and extends
+it with whatever the gateway says it answers on. On a real `ldm share start`
+LDM reads `supported_domains` from the gateway's unauthenticated
+`/api/version` endpoint and caches it for 24 hours, so a domain added to the
+hosted gateways is picked up without an LDM release.
+
+Three properties are deliberate:
+
+- **The seed is extended, not replaced.** The advertised list is the set of
+  names a gateway answers on and carries no preference; the seed's *order*
+  decides which gateway LDM defaults to. The live gateways advertise the seed
+  pair in the opposite order, so substituting one for the other would quietly
+  change your default gateway.
+- **`--dry-run` never fetches.** The list is refreshed only on a real run, so
+  `ldm share start --dry-run` resolves a subdomain, a domain and a public URL
+  with no client, no token and no network.
+- **A gateway that advertises nothing changes nothing.** An older gateway, or
+  one whose operator has declined to publish the list, simply leaves the seed
+  in place.
+
+`tunnel_base_domains`, a JSON list in `~/.ldmrc`, still **replaces** the lot
+and suppresses the fetch entirely. That remains the mechanism for a
+self-hosted Liferay Tunnel gateway, whose names LDM has no way to discover --
+the fetch goes to the gateway the seed names, or to an explicitly pinned one
+(`LFT_SERVER_URL`).
 
 > [!NOTE]
 > Answering the interactive "Choose sharing domain" prompt stores your answer
