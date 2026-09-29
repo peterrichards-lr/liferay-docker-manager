@@ -78,11 +78,51 @@ ldm share start [project] --provider lfr-tunnel --subdomain my-subdomain --ports
   with `--domain` **pins** it, which disables both — useful when you need a
   specific region, but the tunnel will stay down for the duration if that
   gateway stops. LDM warns when a run is pinned.
-- If `--subdomain` is omitted, it defaults to the project name or your machine hostname.
+- If `--subdomain` is omitted, it defaults to the subdomain carried by
+  `--domain` (see *What `--domain` accepts* below), and failing that to the
+  project name.
+- LDM prints the address it is about to claim before it connects:
+  `Public URL: https://my-subdomain.lfr-demo.se`.
 - If `--ports` is omitted, the tunnel client auto-discovers what to expose:
   running Docker containers first, then common Liferay ports, then the
   client-extension ports declared by the workspace. Passing `--ports`
   narrows it to exactly what you name, so omit it unless you need that.
+
+### What `--domain` accepts
+
+`--domain` takes three different kinds of value, and LDM tells them apart
+rather than requiring you to know which is which:
+
+| You pass | LDM reads it as | Result |
+| :--- | :--- | :--- |
+| `lfr-demo.se` | a known gateway base domain | `<subdomain>.lfr-demo.se`, gateway pinned |
+| `peters.lfr-demo.se` | a host **on** a known base domain | subdomain `peters` on `lfr-demo.se`, gateway pinned |
+| `dev.example.com` | a custom vanity domain | `<subdomain>.dev.example.com`, no pin |
+
+A custom vanity domain only affects the **public URL**; the client always
+dials a real Liferay gateway, and the domain must be registered and approved
+in the Liferay Tunnel portal before it will resolve.
+
+If you already have the URL, pass it whole and let LDM take it apart:
+
+```bash
+ldm share start my-project --url https://peters.lfr-demo.se
+```
+
+`--url` is shorthand for `--subdomain` plus `--domain`; pass one or the other,
+not both. If `--subdomain` and the subdomain implied by `--domain` disagree,
+LDM refuses rather than picking one for you.
+
+The known base domains default to `lfr-demo.online` and `lfr-demo.se`, and are
+replaced wholesale by a `tunnel_base_domains` JSON list in `~/.ldmrc` if you
+run a self-hosted Liferay Tunnel gateway.
+
+> [!NOTE]
+> Answering the interactive "Choose sharing domain" prompt stores your answer
+> in `~/.ldmrc` as a **machine-wide** default, and `ldm share start` then
+> copies the resolved value into each project's `meta`. Resolution order is
+> the flag, then the project `meta`, then `~/.ldmrc` -- so clearing the global
+> value alone will not change a project that has already been shared once.
 
 ### Check Tunnel Status
 
@@ -392,6 +432,11 @@ When starting or running projects via LDM, you can configure the sharing behavio
 
 - **`--provider <lfr-tunnel | lfr-tunnel-docker | ngrok>`**: Explicitly selects the provider.
 - **`--subdomain <name>`**: Requests a specific subdomain.
+- **`--domain <domain>`**: A known gateway base domain, a host on one, or a
+  custom vanity domain -- see *What `--domain` accepts* above.
+- **`--url <url>`**: The public URL to claim, e.g.
+  `https://peters.lfr-demo.se`. Shorthand for `--subdomain` and `--domain`
+  together.
 - **`--ports <ports>`**: Overrides target downstream port mapping (e.g. `--ports 8080,3000`).
 - **`--image <image>`**: Overrides sidecar Docker image.
 - **`--inspector`**: Exposes the Web Inspector Dashboard on host port `4040`.
@@ -428,4 +473,4 @@ If you are running the `lfr-tunnel` Go executable directly or writing custom scr
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-02* | *Last Reviewed: 2026-09-02*
+*Last Updated: 2026-09-29* | *Last Reviewed: 2026-09-29*
