@@ -3161,10 +3161,22 @@ zf.close()
         Add-ShareDryRunFailure "'share start --dry-run' wrote share_domain into the project meta." $shareMetaAfter
     }
 
+    # 7. LDM-#2015: a dry run must not reach the gateway either. The
+    #    advertised domain list is fetched and cached only on a real run, so
+    #    a cache file under this isolated home would mean --dry-run had gone
+    #    to the network.
+    $shareDryRunCache = Join-Path $shareDryRunHome ".ldm/cache"
+    if (Test-Path $shareDryRunCache) {
+        $shareFetched = Get-ChildItem -Path $shareDryRunCache -Filter "supported-domains-*.json" -ErrorAction SilentlyContinue
+        if ($shareFetched) {
+            Add-ShareDryRunFailure "'share start --dry-run' fetched the gateway domain list (LDM-#2015)." ($shareFetched.Name -join ", ")
+        }
+    }
+
     if ($shareDryRunFailed) {
         throw "Share dry-run resolution failed (LDM-#2008)."
     }
-    Write-Verdict "[SUCCESS] Share dry-run resolution verified (base domain, host-on-base, --url, vanity domain, conflict refusal, no meta write)."
+    Write-Verdict "[SUCCESS] Share dry-run resolution verified (base domain, host-on-base, --url, vanity domain, conflict refusal, no meta write, no gateway fetch)."
 
     # LDM-#2010: parity with verify_e2e_refactor.sh's "Share Flags on 'ldm
     # start'" section. `ldm start --share --share-subdomain peters` was

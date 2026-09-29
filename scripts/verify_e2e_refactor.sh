@@ -3372,10 +3372,17 @@ if grep -q "share_domain" "${SHARE_DRYRUN_PROJ}/meta"; then
     share_dryrun_fail "'share start --dry-run' wrote share_domain into the project meta." "$(cat "${SHARE_DRYRUN_PROJ}/meta")"
 fi
 
+# 7. LDM-#2015: a dry run must not reach the gateway either. The advertised
+#    domain list is fetched and cached only on a real run, so a cache file
+#    under this isolated home would mean --dry-run had gone to the network.
+if ls "${SHARE_DRYRUN_HOME}/.ldm/cache/"supported-domains-*.json >/dev/null 2>&1; then
+    share_dryrun_fail "'share start --dry-run' fetched the gateway domain list (LDM-#2015)." "$(ls -1 "${SHARE_DRYRUN_HOME}/.ldm/cache/" 2>&1)"
+fi
+
 if [ "$SHARE_DRYRUN_FAILED" = true ]; then
     exit 1
 fi
-report_ok "✅ Share dry-run resolution verified (base domain, host-on-base, --url, vanity domain, conflict refusal, no meta write)."
+report_ok "✅ Share dry-run resolution verified (base domain, host-on-base, --url, vanity domain, conflict refusal, no meta write, no gateway fetch)."
 
 # LDM-#2010: `ldm start --share --share-subdomain peters` was "unrecognized
 # arguments" -- the flags existed on `run` only, and `run` RECONFIGURES, which

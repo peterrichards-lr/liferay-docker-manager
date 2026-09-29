@@ -5,6 +5,7 @@ import platform
 import re
 import shutil
 import subprocess
+import time
 import urllib.request
 from pathlib import Path
 from typing import ClassVar
@@ -218,20 +219,153 @@ class ShareService:
             f"this run to '{share_domain}' instead (which disables both)."
         )
 
+    def _supported_domains_cache_path(self, gateway_url):
+        """Where a gateway's advertised domain list is cached (LDM-#2015).
+
+        Keyed on the gateway URL actually fetched from, never on the domain
+        being classified: two gateways can share a seed domain, and keying on
+        the question rather than on the answerer would let them overwrite
+        each other's list.
+        """
+        import hashlib
+
+        digest = hashlib.sha256(str(gateway_url).encode("utf-8")).hexdigest()[:16]
+        return get_actual_home() / ".ldm" / "cache" / f"supported-domains-{digest}.json"
+
+    def _supported_domains_gateway_url(self):
+        """Which gateway to ask. An explicit pin wins over the seed default."""
+        env_pin = next(
+            (os.environ[v] for v in self.GATEWAY_PIN_ENV_VARS if os.environ.get(v)),
+            None,
+        )
+        if env_pin:
+            return env_pin.rstrip("/")
+        return f"https://tunnel.{self.DEFAULT_TUNNEL_BASE_DOMAINS[0]}"
+
+    def _fetch_supported_domains(self, gateway_url):
+        """The gateway's own `supported_domains`, or None (LDM-#2015).
+
+        `GET <gateway>/api/version` is unauthenticated and answerable before
+        any tunnel exists -- it is the call `lfr-tunnel -check-version`
+        already makes. Server side the field resolves to `tunnel_domains`
+        when that is set and to `Domains` otherwise.
+
+        **Read this field, never a raw `tunnel_domains` value.** The two look
+        interchangeable and are not: `tunnel_domains` alone is an
+        issuance-time restriction, empty on most deployments, so reading it
+        directly yields nothing or a narrowed set. `supported_domains` is
+        that value with the correct fallback already applied.
+
+        Returns None on any failure. Never raises.
+        """
+        try:
+            req = urllib.request.Request(
+                f"{str(gateway_url).rstrip('/')}/api/version",
+                headers={"User-Agent": "LDM-Client"},
+            )
+            with urllib.request.urlopen(req, timeout=3) as resp:  # nosec B310
+                if resp.status != 200:
+                    return None
+                data = json.loads(resp.read().decode("utf-8"))
+        except Exception:
+            return None
+
+        domains = data.get("supported_domains") if isinstance(data, dict) else None
+        if not isinstance(domains, list):
+            # LDM-#2015: an older gateway, or one whose operator has declined
+            # to advertise, returns no such key. Absent means "fall back",
+            # NEVER "this gateway serves nothing" -- the latter would
+            # classify every host as a vanity domain against every gateway
+            # that has not opted in.
+            return None
+        cleaned = [str(d).strip().lower() for d in domains if str(d).strip()]
+        return cleaned or None
+
+    def refresh_supported_domains(self):
+        """Refresh the cached gateway domain list. Network, and explicit.
+
+        LDM-#2015: deliberately NOT called from
+        `get_known_tunnel_base_domains()`. That accessor runs everywhere,
+        including inside `--dry-run` and throughout the test suite, and an
+        accessor that reaches the network implicitly is one that makes every
+        caller depend on the internet -- five existing tests started dialling
+        a live gateway the moment the fetch was put there.
+
+        Called once from `cmd_start()` on a real run, so the cache is warm
+        for the classification that follows and for every later invocation.
+        """
+        if getattr(self.manager, "dry_run", False):
+            return
+        override = self.manager.config.get_global_config().get("tunnel_base_domains")
+        if isinstance(override, list) and override:
+            # An explicit operator choice wins outright, so there is nothing
+            # a fetch could contribute.
+            return
+
+        gateway_url = self._supported_domains_gateway_url()
+        cache_file = self._supported_domains_cache_path(gateway_url)
+        with contextlib.suppress(Exception):
+            if (
+                cache_file.exists()
+                and time.time() - cache_file.stat().st_mtime < 86400  # 24 hours
+            ):
+                return
+
+        fetched = self._fetch_supported_domains(gateway_url)
+        if not fetched:
+            return
+        with contextlib.suppress(Exception):
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(json.dumps(fetched), encoding="utf-8")
+
+    def _advertised_base_domains(self):
+        """The cached gateway list. Reads the cache only -- never the network.
+
+        A stale entry is served rather than discarded: the set of names a
+        gateway answers on changes rarely, and an old answer beats none.
+        """
+        cache_file = self._supported_domains_cache_path(
+            self._supported_domains_gateway_url()
+        )
+        with contextlib.suppress(Exception):
+            cached = json.loads(cache_file.read_text(encoding="utf-8"))
+            if isinstance(cached, list):
+                return [str(d) for d in cached if str(d).strip()]
+        return []
+
     def get_known_tunnel_base_domains(self):
-        """LDM-#1077: the Liferay Tunnel gateway domain(s) considered
-        "known" -- i.e. real gateways the tunnel client can dial into
-        directly, as opposed to a custom vanity domain that's public-URL-only
-        (#1038). Overridable via ~/.ldmrc's "tunnel_base_domains" (a JSON
-        list), which *replaces* the default rather than adding to it -- a
-        self-hosted Liferay Tunnel deployment (both it and LDM are open
-        source) may run entirely different gateway domain(s) than Liferay's
-        own officially hosted ones.
+        """The gateway base domains LDM classifies against.
+
+        LDM-#1077: "known" means a real gateway the tunnel client can dial
+        into directly, as opposed to a custom vanity domain that is
+        public-URL-only (#1038).
+
+        1. `tunnel_base_domains` in ~/.ldmrc wins outright and REPLACES the
+           rest -- an explicit operator choice, and the mechanism for a
+           self-hosted gateway.
+        2. Otherwise the built-in seed, EXTENDED by anything the gateway
+           advertises that it does not already contain.
+        3. The seed cannot be deleted: a base domain is needed to build the
+           URL the fetch goes to, so one must be known in order to learn the
+           rest. What goes away is hardcoding the COMPLETE list.
+
+        **Extended, not replaced, and the order is load-bearing.**
+        `get_default_tunnel_domain()` returns element 0, so position encodes
+        which gateway LDM defaults to. The advertised list carries no such
+        preference -- it is the set of names the gateway answers on, and it
+        arrives in the gateway's own order. Measured: the seed is
+        `["lfr-demo.online", "lfr-demo.se"]` and the live gateways advertise
+        `["lfr-demo.se", "lfr-demo.online"]`, so substituting one for the
+        other would silently change LDM's default gateway. Membership is what
+        classification needs; order is not the gateway's to decide.
         """
         override = self.manager.config.get_global_config().get("tunnel_base_domains")
         if isinstance(override, list) and override:
             return [str(d) for d in override]
-        return list(self.DEFAULT_TUNNEL_BASE_DOMAINS)
+
+        known = list(self.DEFAULT_TUNNEL_BASE_DOMAINS)
+        known.extend(d for d in self._advertised_base_domains() if d not in known)
+        return known
 
     def split_share_host(self, value):
         """A configured share host as `(subdomain, base_domain)` (LDM-#2008).
@@ -1067,6 +1201,14 @@ class ShareService:
                             break
                     except Exception:
                         pass
+
+        # LDM-#2015: warm the gateway's advertised domain list before
+        # anything classifies against it. Explicit rather than lazy inside
+        # the accessor: that accessor runs everywhere, including under
+        # --dry-run and throughout the suite, and must never reach the
+        # network. No-op on a dry run, when an override is configured, and
+        # when the cache is fresh.
+        self.refresh_supported_domains()
 
         # Resolve provider and domain
         provider, share_domain = self.resolve_share_config(
