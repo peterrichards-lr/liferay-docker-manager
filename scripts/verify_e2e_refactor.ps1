@@ -3161,10 +3161,130 @@ zf.close()
         Add-ShareDryRunFailure "'share start --dry-run' wrote share_domain into the project meta." $shareMetaAfter
     }
 
+    # 7. LDM-#2015: a dry run must not reach the gateway either. The
+    #    advertised domain list is fetched and cached only on a real run, so
+    #    a cache file under this isolated home would mean --dry-run had gone
+    #    to the network.
+    $shareDryRunCache = Join-Path $shareDryRunHome ".ldm/cache"
+    if (Test-Path $shareDryRunCache) {
+        $shareFetched = Get-ChildItem -Path $shareDryRunCache -Filter "supported-domains-*.json" -ErrorAction SilentlyContinue
+        if ($shareFetched) {
+            Add-ShareDryRunFailure "'share start --dry-run' fetched the gateway domain list (LDM-#2015)." ($shareFetched.Name -join ", ")
+        }
+    }
+
     if ($shareDryRunFailed) {
         throw "Share dry-run resolution failed (LDM-#2008)."
     }
-    Write-Verdict "[SUCCESS] Share dry-run resolution verified (base domain, host-on-base, --url, vanity domain, conflict refusal, no meta write)."
+    Write-Verdict "[SUCCESS] Share dry-run resolution verified (base domain, host-on-base, --url, vanity domain, conflict refusal, no meta write, no gateway fetch)."
+
+    # LDM-#2015: parity with verify_e2e_refactor.sh's "Gateway-Advertised
+    # Domains" section. The section above proves a dry run does NOT fetch;
+    # this one proves the fetched list is consumed -- that a domain LDM was
+    # never compiled with is learned and classified as a base domain.
+    #
+    # The cache is seeded by hand rather than by reaching the network, so it
+    # is deterministic and offline. The key is a sha256 of the gateway URL,
+    # mirroring _supported_domains_cache_path().
+    #
+    # -cmatch throughout, not -match: PowerShell's -match is
+    # case-INSENSITIVE, so the two halves would otherwise disagree about
+    # identical correct output.
+    Write-Host ">> Verifying Gateway-Advertised Domains..."
+    $gwDir = Join-Path $env:LDM_WORKSPACE "share-gateway-$TEST_PORT"
+    $gwHome = Join-Path $gwDir "home"
+    $gwProj = Join-Path $gwDir "share-gateway"
+    Remove-Item -Recurse -Force $gwDir -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path (Join-Path $gwHome ".ldm/cache") -Force | Out-Null
+    New-Item -ItemType Directory -Path $gwProj -Force | Out-Null
+    $gwMeta = '{"container_name": "share-gateway", "project_name": "share-gateway", "host_name": "localhost", "port": 8080, "db_type": "postgresql"}'
+    Set-Content -Path (Join-Path $gwProj "meta") -Value $gwMeta -Encoding ASCII
+    Set-Content -Path (Join-Path $gwProj ".liferay-docker") -Value "" -Encoding ASCII
+
+    $gwFailed = $false
+    $gwUrl = "https://tunnel.lfr-demo.online"
+    $gwSha = [System.Security.Cryptography.SHA256]::Create()
+    $gwBytes = [System.Text.Encoding]::UTF8.GetBytes($gwUrl)
+    $gwHex = -join ($gwSha.ComputeHash($gwBytes) | ForEach-Object { $_.ToString("x2") })
+    $gwCache = Join-Path $gwHome ".ldm/cache/supported-domains-$($gwHex.Substring(0,16)).json"
+
+    $gwOriginalHome = $env:LDM_HOME
+    $gwOriginalLocation = Get-Location
+
+    function Invoke-GwShare {
+        param([string]$Domain)
+        return (& $LDM_CMD share start --dry-run -y --no-color --domain $Domain 2>&1 | Out-String)
+    }
+
+    try {
+        $env:LDM_HOME = $gwHome
+        Set-Location $gwProj
+
+        # Negative control FIRST, with no cache present. Without it this
+        # section could pass for the wrong reason: the assertion below needs
+        # lfr-demo.dev to be unknown beforehand to prove anything.
+        $gwBefore = Invoke-GwShare "peters.lfr-demo.dev"
+        if (-not ($gwBefore -cmatch "Custom domains must be registered")) {
+            Write-Verdict "[ERROR] ERROR: control failed -- 'lfr-demo.dev' was already known before the cache was seeded, so the check below proves nothing."
+            Write-Verdict "        Output was: $gwBefore"
+            $gwFailed = $true
+        }
+
+        # Deliberately OMITS lfr-demo.se, which IS in the built-in seed. If
+        # the advertised list replaced the seed rather than extending it, the
+        # survival assertion below would fail -- with lfr-demo.se present
+        # here it could not fail however the merge was implemented.
+        Set-Content -Path $gwCache -Value '["lfr-demo.online", "lfr-demo.dev"]' -Encoding ASCII
+
+        $gwAfter = Invoke-GwShare "peters.lfr-demo.dev"
+        if (-not ($gwAfter -cmatch "https://peters\.lfr-demo\.dev")) {
+            Write-Verdict "[ERROR] ERROR: an advertised domain was not used to classify a host on it (LDM-#2015)."
+            Write-Verdict "        Output was: $gwAfter"
+            $gwFailed = $true
+        }
+        if ($gwAfter -cmatch "Custom domains must be registered") {
+            Write-Verdict "[ERROR] ERROR: a gateway-advertised domain was still reported as a custom vanity domain (LDM-#2015)."
+            Write-Verdict "        Output was: $gwAfter"
+            $gwFailed = $true
+        }
+
+        $gwSeedOut = Invoke-GwShare "peters.lfr-demo.se"
+        if (-not ($gwSeedOut -cmatch "https://peters\.lfr-demo\.se")) {
+            Write-Verdict "[ERROR] ERROR: a seed domain stopped resolving once the gateway list was cached (LDM-#2015)."
+            Write-Verdict "        Output was: $gwSeedOut"
+            $gwFailed = $true
+        }
+    } finally {
+        Set-Location $gwOriginalLocation
+        $env:LDM_HOME = $gwOriginalHome
+    }
+
+    if ($gwFailed) {
+        throw "Gateway-advertised domains are not consumed correctly (LDM-#2015)."
+    }
+    Write-Verdict "[SUCCESS] Gateway-advertised domains are consumed, extend the seed, and do not displace it."
+
+    # LDM-#2015: a live, unauthenticated contract check. NON-FATAL by design.
+    # LDM depends on this field, so its disappearance is worth knowing at
+    # once -- but LDM falls back to its seed and keeps working, so it is not
+    # a reason to block a release, and a gateway outage during release
+    # verification must not.
+    Write-Host ">> Checking the gateway still advertises supported_domains (non-fatal)..."
+    $gwLive = $null
+    try {
+        $gwLive = Invoke-RestMethod -Uri "https://tunnel.lfr-demo.online/api/version" -TimeoutSec 10 -ErrorAction Stop
+    } catch {
+        $gwLive = $null
+    }
+    if ($null -eq $gwLive) {
+        Write-Host "[WARN] Could not reach the gateway; supported_domains contract not checked."
+    } elseif (-not $gwLive.supported_domains) {
+        Write-Verdict "[WARN] WARNING: the gateway no longer advertises 'supported_domains' (LDM-#2015)."
+        Write-Verdict "       LDM falls back to its built-in seed, so nothing is broken -- but the"
+        Write-Verdict "       list is correct by luck again. Check lfr-tunnel before relying on it."
+    } else {
+        Write-Verdict "[SUCCESS] Gateway still advertises supported_domains: $($gwLive.supported_domains -join ',')"
+    }
 
     # LDM-#2010: parity with verify_e2e_refactor.sh's "Share Flags on 'ldm
     # start'" section. `ldm start --share --share-subdomain peters` was

@@ -1,4 +1,7 @@
+import json
 import os
+import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -2089,3 +2092,190 @@ class TestRefusesATunnelToAStoppedProject(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.service.cmd_start(project_id="demo", provider="lfr-tunnel")
         boom.assert_not_called()
+
+
+class _FakeResponse:
+    """Minimal stand-in for urlopen's context manager."""
+
+    def __init__(self, payload, status=200):
+        self.status = status
+        self._payload = json.dumps(payload).encode("utf-8")
+
+    def read(self):
+        return self._payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+
+class TestGatewayAdvertisedDomains(unittest.TestCase):
+    """The base-domain list stops being correct by luck (LDM-#2015).
+
+    `get_known_tunnel_base_domains()` was a hardcoded pair. That pair is right
+    for today's hosted gateways and wrong for anything else, and a gateway
+    domain LDM has not been told about is read as a custom vanity domain --
+    never split, never pinned, and warned about as needing portal
+    registration it does not need.
+
+    The gateway already answers this, unauthenticated, on the `/api/version`
+    endpoint `-check-version` calls: `supported_domains`.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name)
+        self.mock_manager = MockManager()
+        self.mock_manager.args = MagicMock()
+        self.service = ShareService(self.mock_manager)
+        patcher = patch(
+            "ldm_core.handlers.share.get_actual_home", return_value=self.home
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _seed(self):
+        return list(ShareService.DEFAULT_TUNNEL_BASE_DOMAINS)
+
+    def _write_cache(self, domains, age_seconds=0):
+        url = self.service._supported_domains_gateway_url()
+        path = self.service._supported_domains_cache_path(url)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(domains), encoding="utf-8")
+        if age_seconds:
+            stamp = time.time() - age_seconds
+            os.utime(path, (stamp, stamp))
+        return path
+
+    # --- the property everything else depends on -------------------------
+
+    def test_the_accessor_never_reaches_the_network(self):
+        """It runs everywhere -- under --dry-run, and in every test.
+
+        An accessor that fetches implicitly makes every caller depend on the
+        internet. Putting the fetch inside it made five existing tests dial a
+        live gateway, which is why the refresh is a separate, explicit call.
+        """
+
+        # Asserted by observing the call, NOT by raising from a fake urlopen:
+        # _fetch_supported_domains catches bare Exception, so an exception
+        # raised there is swallowed and the test can never fail. The first
+        # version of this test did exactly that and was inert -- caught by
+        # deliberately moving the fetch into the accessor and watching it
+        # still pass.
+        with patch("ldm_core.handlers.share.urllib.request.urlopen") as spy:
+            self.assertEqual(self.service.get_known_tunnel_base_domains(), self._seed())
+        spy.assert_not_called()
+
+    def test_a_dry_run_never_refreshes(self):
+        """--dry-run resolves and prints; it must need no network at all."""
+        self.mock_manager.dry_run = True  # type: ignore[attr-defined]
+
+        with patch("ldm_core.handlers.share.urllib.request.urlopen") as spy:
+            self.service.refresh_supported_domains()
+        spy.assert_not_called()
+
+    # --- merging, not replacing ------------------------------------------
+
+    def test_the_seed_order_survives_a_gateway_that_disagrees(self):
+        """Measured: the live gateways advertise the seed's pair REVERSED.
+
+        `get_default_tunnel_domain()` returns element 0, so position encodes
+        which gateway LDM defaults to. The advertised list carries no such
+        preference. Substituting it would silently change the default
+        gateway from lfr-demo.online to lfr-demo.se.
+        """
+        self._write_cache(list(reversed(self._seed())))
+        self.assertEqual(
+            self.service.get_known_tunnel_base_domains()[0], self._seed()[0]
+        )
+        self.assertEqual(self.service.get_default_tunnel_domain(), self._seed()[0])
+
+    def test_an_advertised_domain_extends_the_seed(self):
+        self._write_cache([*self._seed(), "lfr-demo.dev"])
+        known = self.service.get_known_tunnel_base_domains()
+        self.assertIn("lfr-demo.dev", known)
+        self.assertEqual(known[: len(self._seed())], self._seed())
+
+    def test_a_host_on_an_advertised_domain_is_split(self):
+        """The point of the exercise: a domain LDM was never told about."""
+        self._write_cache([*self._seed(), "lfr-demo.dev"])
+        self.assertEqual(
+            self.service.split_share_host("peters.lfr-demo.dev"),
+            ("peters", "lfr-demo.dev"),
+        )
+
+    def test_an_unknown_domain_is_still_a_vanity_domain(self):
+        self._write_cache([*self._seed(), "lfr-demo.dev"])
+        self.assertEqual(
+            self.service.split_share_host("dev.example.com"),
+            (None, "dev.example.com"),
+        )
+
+    # --- the fallback that must not be got wrong -------------------------
+
+    def test_a_payload_without_supported_domains_falls_back(self):
+        """Absent means "fall back", never "this gateway serves nothing".
+
+        The latter would classify every host as a vanity domain against every
+        gateway that predates the field or has declined to advertise -- the
+        failure most likely to ship unnoticed, because it needs such a
+        gateway to reproduce.
+        """
+        older_gateway = {"latest_version": "1.49.1", "min_version": "1.40.0"}
+        with patch(
+            "ldm_core.handlers.share.urllib.request.urlopen",
+            return_value=_FakeResponse(older_gateway),
+        ):
+            self.assertIsNone(self.service._fetch_supported_domains("https://gw"))
+            self.service.refresh_supported_domains()
+        self.assertEqual(self.service.get_known_tunnel_base_domains(), self._seed())
+
+    def test_a_failed_fetch_leaves_the_seed_intact(self):
+        with patch(
+            "ldm_core.handlers.share.urllib.request.urlopen",
+            side_effect=OSError("no route to host"),
+        ):
+            self.service.refresh_supported_domains()
+        self.assertEqual(self.service.get_known_tunnel_base_domains(), self._seed())
+
+    def test_a_stale_cache_is_still_better_than_none(self):
+        self._write_cache([*self._seed(), "lfr-demo.dev"], age_seconds=90 * 86400)
+        self.assertIn("lfr-demo.dev", self.service.get_known_tunnel_base_domains())
+
+    # --- the operator's own choice ---------------------------------------
+
+    def test_an_override_wins_outright_and_suppresses_the_fetch(self):
+        """A self-hosted gateway's operator has said what the answer is."""
+        self.mock_manager.config.get_global_config = lambda: {  # type: ignore[method-assign]
+            "tunnel_base_domains": ["tunnel.internal.example"]
+        }
+        # Deliberately STALE. With a fresh cache the refresh short-circuits
+        # before it ever consults the override, so the assertion below could
+        # not fail however the override was handled -- the first version of
+        # this test had exactly that hole.
+        self._write_cache([*self._seed(), "lfr-demo.dev"], age_seconds=90 * 86400)
+
+        with patch("ldm_core.handlers.share.urllib.request.urlopen") as spy:
+            self.service.refresh_supported_domains()
+        spy.assert_not_called()
+        self.assertEqual(
+            self.service.get_known_tunnel_base_domains(), ["tunnel.internal.example"]
+        )
+
+    # --- cache identity ---------------------------------------------------
+
+    def test_the_cache_is_keyed_on_the_gateway_not_the_domain(self):
+        """Two gateways sharing a seed domain must not overwrite each other."""
+        a = self.service._supported_domains_cache_path("https://tunnel.a.example")
+        b = self.service._supported_domains_cache_path("https://tunnel.b.example")
+        self.assertNotEqual(a, b)
+
+    def test_an_explicit_gateway_pin_is_what_gets_asked(self):
+        with patch.dict(os.environ, {"LFT_SERVER_URL": "https://gw.internal/"}):
+            self.assertEqual(
+                self.service._supported_domains_gateway_url(), "https://gw.internal"
+            )
