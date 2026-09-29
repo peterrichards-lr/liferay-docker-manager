@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.0-pre.10] - 2026-09-29
+
+### Changed
+
+- **The tunnel base domains LDM classifies against are now learned from the gateway** (LDM-#2015), instead of being a hardcoded pair that was correct by luck. `split_share_host()` decides whether a share domain is a gateway base domain, a host **on** one, or a custom vanity domain -- and it decided that against `["lfr-demo.online", "lfr-demo.se"]` compiled into the binary. That is right for today's hosted gateways and wrong for anything else: a gateway domain LDM had not been told about was read as a vanity domain, so a host on it was never split, no gateway pin was applied, and the portal-registration warning fired for a name needing no registration.
+
+  No server change was required. `GET /api/version` -- the endpoint `lfr-tunnel -check-version` already calls -- is unauthenticated and has always carried `supported_domains`; it was simply undocumented, which is why two separate designs were drafted for a field that already existed (lfr-tunnel#2294, closed unbuilt; lfr-tunnel#2295 documents it).
+
+  **The advertised list extends the built-in seed; it does not replace it.** `get_default_tunnel_domain()` returns the first entry, so the seed's *order* decides which gateway LDM defaults to, while the advertised list is the set of names a gateway answers on and carries no preference. Measured: the live gateways advertise the seed's pair in the opposite order, so substituting one for the other would have silently changed the default gateway. `tunnel_base_domains` in `~/.ldmrc` still replaces the lot and suppresses the fetch, and remains the mechanism for a self-hosted gateway.
+
+  Nothing about this is visible if you use the hosted gateways, because they advertise exactly what was hardcoded. What changes is that a domain added to them is picked up without an LDM release, and that the list is no longer right by accident.
+
+- **`ldm share start --dry-run` still reaches nothing at all.** The fetch happens once per real run and is cached for 24 hours; a dry run uses the cache or the seed. An older gateway, a gateway whose operator declines to advertise, a failed fetch and a stale cache all fall back rather than reporting that the gateway serves no domains -- which would have classified every host as a vanity domain. Both verification suites assert a dry run leaves no cache file behind.
+
 ## [v2.26.0-pre.9] - 2026-09-29
 
 ### Added
