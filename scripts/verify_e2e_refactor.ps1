@@ -3098,6 +3098,54 @@ zf.close()
     }
     Write-Verdict "[SUCCESS] Share dry-run resolution verified (base domain, host-on-base, --url, vanity domain, conflict refusal, no meta write)."
 
+    # LDM-#2010: parity with verify_e2e_refactor.sh's "Share Flags on 'ldm
+    # start'" section. `ldm start --share --share-subdomain peters` was
+    # "unrecognized arguments" -- the flags existed on `run` only, and `run`
+    # RECONFIGURES, which is what someone sharing an already-configured
+    # project does not want.
+    #
+    # -cmatch throughout, not -match: PowerShell's -match is
+    # case-INSENSITIVE, so the two halves would otherwise disagree about
+    # identical correct output.
+    Write-Host ">> Verifying Share Flags on 'ldm start'..."
+    $shareStartFailed = $false
+
+    $shareStartHelp = & $LDM_CMD start --help 2>&1 | Out-String
+    foreach ($shareFlag in @("--share", "--share-subdomain", "--share-domain", "--share-url", "--share-provider")) {
+        if (-not ($shareStartHelp -cmatch [regex]::Escape($shareFlag))) {
+            Write-Verdict "[ERROR] ERROR: 'ldm start --help' does not offer $shareFlag (LDM-#2010)."
+            $shareStartFailed = $true
+        }
+    }
+
+    # A tunnel leases one subdomain and forwards to one target, so this
+    # combination is refused -- up front, before any project is started.
+    $shareAllOut = & $LDM_CMD start --all --share --share-subdomain e2e-all -y --no-color 2>&1 | Out-String
+    $shareAllCode = $LASTEXITCODE
+    if ($shareAllCode -eq 0) {
+        Write-Verdict "[ERROR] ERROR: 'ldm start --all --share' exited 0 instead of refusing."
+        Write-Verdict "        Output was: $shareAllOut"
+        $shareStartFailed = $true
+    }
+    if (-not ($shareAllOut -cmatch [regex]::Escape("--share cannot be combined with --all"))) {
+        Write-Verdict "[ERROR] ERROR: 'ldm start --all --share' did not explain why it refused."
+        Write-Verdict "        Output was: $shareAllOut"
+        $shareStartFailed = $true
+    }
+    # argparse rejects an unknown option with this exact wording, which is
+    # what the flags not being declared looked like. Asserted explicitly so a
+    # regression reads as itself rather than as one of the checks above.
+    if ($shareAllOut -cmatch "unrecognized arguments") {
+        Write-Verdict "[ERROR] ERROR: 'ldm start' still does not declare the share flags (LDM-#2010)."
+        Write-Verdict "        Output was: $shareAllOut"
+        $shareStartFailed = $true
+    }
+
+    if ($shareStartFailed) {
+        throw "'ldm start' does not accept the share flags (LDM-#2010)."
+    }
+    Write-Verdict "[SUCCESS] 'ldm start' accepts the share flags and refuses --share with --all."
+
     # UX & Defaults & Scaling
     Write-Host ">> Verifying Cascading Defaults..."
     & $LDM_CMD config defaults test_key test_value > $null 2>&1

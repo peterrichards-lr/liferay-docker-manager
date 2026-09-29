@@ -206,8 +206,29 @@ class OrchestrationService(BaseHandler):
         all_projects=False,
         clean_state=False,
         force_recreate=False,
+        share_options=None,
     ):
-        """Starts project containers."""
+        """Starts project containers.
+
+        `share_options` (LDM-#2010) is the `--share*` flags as a dict, or None
+        when sharing was not asked for. Its keys are `ShareService.cmd_start()`
+        parameter names and are splatted into it once the containers are up --
+        the same entry point `ldm share start` uses, so the two cannot drift.
+        """
+        # LDM-#2010: refused up front, not after the work. A tunnel leases one
+        # subdomain and forwards to one target, so there is no reading of
+        # `--share --all` that does what it says -- and finding that out after
+        # N projects had already been started would be worse than useless.
+        if share_options and all_projects:
+            UI.die(
+                "--share cannot be combined with --all.",
+                details=(
+                    "A tunnel leases one subdomain and forwards to one "
+                    "project; there is no sensible way to share several."
+                ),
+                tip="Name the project: ldm start <project> --share",
+            )
+
         targets = []
         if all_projects:
             targets = [r["path"] for r in self.manager.find_dxp_roots()]
@@ -360,6 +381,12 @@ class OrchestrationService(BaseHandler):
         # Mirrors cmd_stop: `_report_batch_failures` exits non-zero when any
         # project failed, so reaching here means every target started.
         self._report_batch_failures(failures, "start")
+
+        if share_options:
+            # Reached only once every target started, so the tunnel is never
+            # opened towards a project that failed to come up -- which is the
+            # refusal LDM-#2009 added on the other path.
+            self.manager.share.cmd_start(project_id=targets[0].name, **share_options)
         UI.hint(
             "Run 'ldm status' to view environment status, or 'ldm logs -f' to tail the logs."
         )

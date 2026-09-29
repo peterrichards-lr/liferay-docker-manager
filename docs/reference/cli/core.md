@@ -594,6 +594,8 @@ That hint previously named `ldm run`. `ldm run` remains the correct command when
 
 ### Options
 
+- **`--share`** (Only for `start` and `run`): Starts a secure tunnel once the containers are up. On `start` this is the point of the flag: `run` reconfigures the project before booting it, which is exactly what someone sharing an already-configured project does not want. Cannot be combined with `--all` -- a tunnel leases one subdomain and forwards to one target -- and the refusal arrives before any project is started. ![Added in v2.26.0](https://img.shields.io/badge/Added%20in-v2.26.0-blue)
+- **`--share-subdomain`**, **`--share-domain`**, **`--share-url`**, **`--share-provider`**, **`--share-image`**, **`--share-inspector`** (Only for `start` and `run`): As for `ldm share start`'s `--subdomain`, `--domain`, `--url`, `--provider`, `--image` and `--inspector`; see [Sharing & Tunnels](../../how-to/sharing_tunnels.md). `ldm start --share` hands them to the same code path `ldm share start` uses, so the two resolve a subdomain and a domain identically. ![Added in v2.26.0](https://img.shields.io/badge/Added%20in-v2.26.0-blue)
 - **`--clean-state`** (Only for `start` and `run`): Explicitly wipes the contents of the OSGi state volume before starting the container to remove any stale bundle locks. ![Added in v2.15.22](https://img.shields.io/badge/Added%20in-v2.15.22-blue)
 - **`--fix-permissions`** (Only for `start` and `run`): Forces root permission reclamation on bind-mounted host directories. Useful for resolving Liferay lock crashes when running macOS/Windows Docker Desktop against external drives or network shares. ![Added in v2.15.22](https://img.shields.io/badge/Added%20in-v2.15.22-blue)
 - **`--force-recreate`** (For `run`, `start`, and `restart`): Recreates containers even if their configuration and image haven't changed. **Note:** Since native Docker `start` doesn't support recreation, passing this to `ldm start` or `ldm restart` will smoothly intercept and route to `up -d --force-recreate` under the hood. ![Added in v2.15.23](https://img.shields.io/badge/Added%20in-v2.15.23-blue)
@@ -783,4 +785,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-23* | *Last Reviewed: 2026-09-23*
+*Last Updated: 2026-09-29* | *Last Reviewed: 2026-09-29*
