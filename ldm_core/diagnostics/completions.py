@@ -207,7 +207,14 @@ def run_man(handler):
     _refresh_man_symlink(handler)
     man_path = get_resource_path("ldm.1")
     if not man_path:
-        UI.die("Manual page 'ldm.1' not found in resources.")
+        UI.die(
+            "Manual page 'ldm.1' not found in resources.",
+            tip=(
+                "The installation looks incomplete -- the man page ships "
+                "inside the binary. Try 'ldm upgrade --repair', or use "
+                "'ldm --help' in the meantime."
+            ),
+        )
 
     # On macOS/Linux, we can use 'man -l' to view a local file
     # Fallback to 'less' if 'man' is not found or fails
@@ -340,7 +347,15 @@ def run_setup_completion(handler, target_shell=None):  # noqa: C901, PLR0912, PL
                 )
 
     if not profile_path:
-        UI.die(f"Could not determine the profile path for shell: {shell}")
+        UI.die(
+            f"Could not determine the profile path for shell: {shell}",
+            tip=(
+                "Supported shells are bash, zsh, fish and PowerShell. If you "
+                "use one of those, your profile is in a non-standard location "
+                "-- print the script with 'ldm system completion <shell>' and "
+                "source it from your profile by hand."
+            ),
+        )
         return
 
     # 4. Generate Autocomplete Content Block
@@ -395,4 +410,11 @@ def run_setup_completion(handler, target_shell=None):  # noqa: C901, PLR0912, PL
         UI.info(f"Source your profile or restart your terminal: source {profile_path}")
 
     except Exception as e:
-        UI.die(f"Failed to setup completion in {profile_path}: {e}")
+        UI.die(
+            f"Failed to setup completion in {profile_path}: {e}",
+            tip=(
+                "Usually the profile is read-only or owned by another user. "
+                "Check permissions on that file, or print the script with "
+                "'ldm system completion <shell>' and add it yourself."
+            ),
+        )

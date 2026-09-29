@@ -1212,9 +1212,14 @@ class TestDiagnostics(unittest.TestCase):
         mock_updates.assert_called_once_with(
             mock_updates.call_args[0][0], force=True, tag="v2.11.99"
         )
-        mock_die.assert_called_once_with(
-            "Version 'v2.11.99' not found on GitHub Releases."
+        # The message still names the version the user typed, and now also
+        # says where the real list is -- a rejected version with no pointer
+        # left the user guessing at valid tags.
+        self.assertEqual(
+            mock_die.call_args[0][0],
+            "Version 'v2.11.99' not found on GitHub Releases.",
         )
+        self.assertIn("releases", mock_die.call_args.kwargs.get("tip", ""))
 
     @patch("ldm_core.diagnostics.upgrade.check_for_updates")
     @patch("ldm_core.diagnostics.upgrade.UI.die", side_effect=SystemExit)
@@ -1231,9 +1236,12 @@ class TestDiagnostics(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.manager.diagnostics.cmd_upgrade()
 
-        mock_die.assert_called_once_with(
-            "Downgrade aborted: --force is required in non-interactive mode."
+        self.assertEqual(
+            mock_die.call_args[0][0],
+            "Downgrade aborted: --force is required in non-interactive mode.",
         )
+        # Naming the concept is not naming the action: the tip gives the flag.
+        self.assertIn("-f", mock_die.call_args.kwargs.get("tip", ""))
 
     @patch("sys.argv", ["liferay_docker.py"])
     @patch("ldm_core.diagnostics.upgrade.check_for_updates")
