@@ -92,6 +92,52 @@ class TestDowngradePrevention(unittest.TestCase):
         return_value=["docker", "compose"],
     )
     @patch("ldm_core.runtime.orchestration.UI.die", side_effect=SystemExit(1))
+    def test_an_unavailable_matrix_does_not_invent_a_postgres_downgrade(
+        self, mock_die, mock_compose_cmd
+    ):
+        """LDM-#2007: no matrix is not the same fact as "PostgreSQL 16".
+
+        `resolve_dependency_version()` returns None when the compatibility
+        matrix could not be loaded. That used to become the literal "16", which
+        compares as a downgrade from the "16.2" the matrix itself pins -- so a
+        failed refresh refused to start a project whose PostgreSQL version had
+        not changed. Reported against `postgres:16.2` with a `meta` recording
+        exactly the version the matrix specifies.
+        """
+        project_meta = {
+            "container_name": "test-project",
+            "tag": "2026.q3.4",
+            "db_type": "postgresql",
+            "last_run_liferay_version": "2026.q3.4",
+            "last_run_postgres_version": "16.2",
+        }
+        self.manager.args.force_downgrade = False
+
+        with patch("ldm_core.utils.resolve_dependency_version", return_value=None):
+            self.manager.runtime.cmd_run(
+                project_id="test-project",
+                no_up=True,
+                show_summary=False,
+                paths=self.paths,
+                project_meta=project_meta,
+            )
+
+        downgrades = [
+            call
+            for call in mock_die.call_args_list
+            if call[0] and "Downgrade detected" in str(call[0][0])
+        ]
+        self.assertEqual(
+            downgrades,
+            [],
+            "an unresolvable dependency version was compared as if it were a real one",
+        )
+
+    @patch(
+        "ldm_core.runtime.orchestration.get_compose_cmd",
+        return_value=["docker", "compose"],
+    )
+    @patch("ldm_core.runtime.orchestration.UI.die", side_effect=SystemExit(1))
     def test_postgres_downgrade_fails(self, mock_die, mock_compose_cmd):
         project_meta = {
             "container_name": "test-project",

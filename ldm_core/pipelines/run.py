@@ -412,16 +412,22 @@ class RuntimeValidationStage(PipelineStage):
         db_type = project_meta.get("db_type", "postgresql")
         from ldm_core.utils import resolve_dependency_version
 
+        # LDM-#2007: no `or "16"` here. An unresolved dependency means the
+        # compatibility matrix was unavailable, not that the project wants
+        # PostgreSQL 16 -- and "16" compares as a DOWNGRADE from any genuine
+        # 16.x pin, so the placeholder refused to start projects whose version
+        # had not changed. The guards below already skip a None, which is the
+        # honest answer: with no matrix there is nothing to compare against.
         current_pg_ver = None
         if db_type in ["postgresql", "postgres"]:
-            current_pg_ver = resolve_dependency_version(tag, "postgresql") or "16"
+            current_pg_ver = resolve_dependency_version(tag, "postgresql")
 
         current_mysql_ver = None
         if db_type in ["mysql", "mariadb"]:
             if db_type == "mysql":
-                current_mysql_ver = resolve_dependency_version(tag, "mysql") or "5.7"
+                current_mysql_ver = resolve_dependency_version(tag, "mysql")
             else:
-                current_mysql_ver = resolve_dependency_version(tag, "mariadb") or "10.6"
+                current_mysql_ver = resolve_dependency_version(tag, "mariadb")
 
         current_es_major = "8"
         if tag:
@@ -2549,15 +2555,20 @@ class ExecutionStage(PipelineStage):
             if db_type_val in ["postgresql", "postgres"]:
                 from ldm_core.utils import resolve_dependency_version
 
-                current_pg = resolve_dependency_version(tag_val, "postgresql") or "16"
-                project_meta["last_run_postgres_version"] = current_pg
+                # LDM-#2007: record only what the matrix actually resolved.
+                # The placeholder used to be written into the meta, so an
+                # offline run overwrote a real "16.2" with "16" and the value
+                # every later downgrade check reads was corrupted by a run
+                # that simply could not reach the matrix.
+                current_pg = resolve_dependency_version(tag_val, "postgresql")
+                if current_pg:
+                    project_meta["last_run_postgres_version"] = current_pg
             if db_type_val in ["mysql", "mariadb"]:
                 from ldm_core.utils import resolve_dependency_version
 
-                current_mysql = resolve_dependency_version(tag_val, "mysql") or (
-                    "5.7" if db_type_val == "mysql" else "10.6"
-                )
-                project_meta["last_run_mysql_version"] = current_mysql
+                current_mysql = resolve_dependency_version(tag_val, "mysql")
+                if current_mysql:
+                    project_meta["last_run_mysql_version"] = current_mysql
             current_es = (
                 "7"
                 if tag_val and any(v in tag_val for v in ["7.3", "7.2", "7.1", "7.0"])
