@@ -3173,10 +3173,43 @@ zf.close()
         }
     }
 
+    # 8. LDM-#2019: the address is not enough -- say where each half came
+    #    from. Printing only what it resolved to leaves "why that one?" to a
+    #    code read, which is what the original report cost.
+    $shareOriginalLocation = Get-Location
+    $shareOriginalHome = $env:LDM_HOME
+    try {
+        $env:LDM_HOME = $shareDryRunHome
+        Set-Location $shareDryRunProj
+        $r = Invoke-ShareDryRun @("--subdomain", "peters", "--domain", "lfr-demo.se")
+        if (-not ($r.Output -cmatch "subdomain 'peters' from the command line")) {
+            Add-ShareDryRunFailure "the resolved subdomain's source was not named (LDM-#2019)." $r.Output
+        }
+        if (-not ($r.Output -cmatch [regex]::Escape("domain 'lfr-demo.se' from --domain"))) {
+            Add-ShareDryRunFailure "the resolved domain's source was not named (LDM-#2019)." $r.Output
+        }
+
+        # 9. The reported case end to end: a domain nobody typed, arriving
+        #    from a machine-wide pin. A SEPARATE home, so the stored value
+        #    cannot leak into the checks above.
+        $sharePinHome = Join-Path $shareDryRunDir "pinned-home"
+        Remove-Item -Recurse -Force $sharePinHome -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Path $sharePinHome -Force | Out-Null
+        Set-Content -Path (Join-Path $sharePinHome ".ldmrc") -Value '{"share_domain": "dev.example.invalid"}' -Encoding ASCII
+        $env:LDM_HOME = $sharePinHome
+        $rPin = Invoke-ShareDryRun @("--subdomain", "peters")
+        if (-not ($rPin.Output -cmatch [regex]::Escape("domain 'dev.example.invalid' from ~/.ldmrc"))) {
+            Add-ShareDryRunFailure "a domain taken from ~/.ldmrc did not say so -- the exact confusion LDM-#2019 exists to remove." $rPin.Output
+        }
+    } finally {
+        Set-Location $shareOriginalLocation
+        $env:LDM_HOME = $shareOriginalHome
+    }
+
     if ($shareDryRunFailed) {
         throw "Share dry-run resolution failed (LDM-#2008)."
     }
-    Write-Verdict "[SUCCESS] Share dry-run resolution verified (base domain, host-on-base, --url, vanity domain, conflict refusal, no meta write, no gateway fetch)."
+    Write-Verdict "[SUCCESS] Share dry-run resolution verified (base domain, host-on-base, --url, vanity domain, conflict refusal, no meta write, no gateway fetch, address provenance)."
 
     # LDM-#2015: parity with verify_e2e_refactor.sh's "Gateway-Advertised
     # Domains" section. The section above proves a dry run does NOT fetch;
