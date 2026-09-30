@@ -33,6 +33,27 @@ class DockerService:
         """
         target = get_active_target(target_name)
         if target.name != "local" and not is_local_host(target.host):
+            # LDM-#1993: one SSH connection per run instead of one per
+            # command. Docker's ssh connection helper opens a fresh
+            # connection for every `--context` invocation -- measured at 478
+            # `Accepted publickey` in 30 hours on one node, against sshd's
+            # default `MaxStartups 10:30:100`, which then sheds connections
+            # and surfaces as `Docker not accessible`.
+            #
+            # `--host` rather than a process-wide `DOCKER_HOST`: explicit per
+            # command, and still correct if a run touches two nodes, which a
+            # single environment variable would silently get wrong.
+            #
+            # Opening it here is safe despite being a lazy side effect in
+            # what reads like an accessor: this function is only ever called
+            # to build a Docker command, so one is about to run regardless.
+            # Off unless LDM_DOCKER_TUNNEL is set, so nothing changes for
+            # anyone who has not asked.
+            from ldm_core.docker_tunnel import active_tunnel
+
+            tunnel = active_tunnel(target)
+            if tunnel is not None and tunnel.docker_host:
+                return ["docker", "--host", tunnel.docker_host]
             return ["docker", "--context", target.name]
         return ["docker"]
 

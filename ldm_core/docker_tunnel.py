@@ -59,6 +59,8 @@ past `MaxStartups` in three hours with zero successful authentications. Port
 exposure and `MaxStartups` sizing are the node operator's to fix.
 """
 
+import atexit
+import os
 import socket
 import subprocess  # nosec B404 - fixed argv, no shell
 import time
@@ -283,3 +285,122 @@ class DockerSshTunnel:
 
     def __exit__(self, *_exc: object) -> None:
         self.stop()
+
+
+# --- the run-scoped registry (LDM-#1993) ---------------------------------
+#
+# `DockerSshTunnel` shipped in #2004 with no way to reach it: there was no
+# switch and no call site, so the feature was unreachable from the CLI and
+# the rollout recorded on LDM-#1993 could never have happened. This is the
+# wiring.
+
+#: Opt-in, default off. An environment variable rather than a flag or an
+#: `~/.ldmrc` key because the consumers who need it drive LDM from CI, where
+#: a variable costs nothing and a config file must be written into an
+#: ephemeral runner.
+TUNNEL_ENV_VAR = "LDM_DOCKER_TUNNEL"
+
+_TUNNELS: dict[str, "DockerSshTunnel"] = {}
+_DEAD_REPORTED: set[str] = set()
+
+
+def tunnelling_enabled() -> bool:
+    return os.environ.get(TUNNEL_ENV_VAR, "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _report_tunnel_died(name: str, tunnel: "DockerSshTunnel") -> None:
+    """Say the TUNNEL died, not that a port refused (LDM-#1993).
+
+    Without this the next Docker command fails against a loopback port that
+    nothing is listening on, and the user is told `Docker not accessible` --
+    a symptom naming the wrong subject, which is the class of failure that
+    cost the reporting deployment five occurrences.
+
+    Reported once per node: every subsequent command would repeat it.
+
+    **"Detected at" and not "died at".** Nothing watches the ssh process; its
+    death is noticed the next time a Docker command needs the tunnel, which
+    may be well after the fact. Saying when we noticed is honest; saying when
+    it died would not be.
+    """
+    if name in _DEAD_REPORTED:
+        return
+    _DEAD_REPORTED.add(name)
+
+    stderr = ""
+    proc = tunnel._proc
+    if proc is not None and proc.stderr is not None:
+        try:
+            stderr = (proc.stderr.read() or b"").decode("utf-8", "replace").strip()
+        except Exception:  # nosec B110 - diagnosis is best-effort
+            stderr = ""
+
+    detected = time.strftime("%H:%M:%S")
+    UI.error(
+        f"The SSH tunnel to compute node '{name}' has closed; the Docker "
+        f"socket forward is gone (detected at {detected})."
+    )
+    # An empty reason and an unread one are different facts, so say which.
+    if stderr:
+        UI.detail(f"  ssh said: {stderr}")
+    else:
+        UI.detail("  ssh wrote nothing before exiting.")
+    UI.detail(
+        f"  This is an established tunnel that died, not one that never "
+        f"opened. Re-run, or unset {TUNNEL_ENV_VAR} to fall back to one "
+        f"Docker connection per command."
+    )
+
+
+def active_tunnel(target: Any) -> "DockerSshTunnel | None":
+    """The live tunnel for `target`, opening one on first use, or None.
+
+    None whenever tunnelling is off, so every caller keeps its existing
+    behaviour unless the switch is set.
+    """
+    if not tunnelling_enabled():
+        return None
+
+    name = getattr(target, "name", None)
+    if not name:
+        return None
+
+    existing = _TUNNELS.get(name)
+    if existing is not None:
+        if existing.is_alive():
+            return existing
+        # Established, then died. Say so, drop it, and fall back to
+        # `--context` rather than pointing commands at a dead port.
+        _report_tunnel_died(name, existing)
+        _TUNNELS.pop(name, None)
+        return None
+
+    tunnel = DockerSshTunnel(target)
+    try:
+        tunnel.start()
+    except DockerTunnelError:
+        # `start()` has already diagnosed the "never established" half. Fall
+        # back to per-command connections rather than failing the run: the
+        # tunnel is an optimisation, and a slower run beats no run.
+        raise
+    _TUNNELS[name] = tunnel
+    return tunnel
+
+
+def close_all_tunnels() -> None:
+    """Close every tunnel this process opened."""
+    for tunnel in list(_TUNNELS.values()):
+        try:
+            tunnel.stop()
+        except Exception:  # nosec B110 - already tearing down
+            pass
+    _TUNNELS.clear()
+    _DEAD_REPORTED.clear()
+
+
+atexit.register(close_all_tunnels)
