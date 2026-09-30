@@ -409,6 +409,76 @@ duplicate address is on the physical segment, where it will cause the problems
 duplicate MACs normally cause. The same option is reachable in those setups, so
 the safety here is a property of bridge networking -- not of the option.
 
+## 7a. One SSH connection per run (`LDM_DOCKER_TUNNEL`)
+
+Every remote Docker command is a separate `docker --context <node>` process,
+and Docker's SSH connection helper opens a **fresh SSH connection for each
+one**. With ~86 call sites that is hundreds of connections in a single run.
+
+Measured on an affected node: **478 `Accepted publickey` in 30 hours**, against
+sshd's default `MaxStartups 10:30:100`, producing 714 log lines of
+
+```text
+sshd: error: beginning MaxStartups throttling
+sshd: drop connection #10 from [...] past MaxStartups
+```
+
+A shed connection surfaces as **`Docker not accessible`**, naming neither SSH
+nor the node -- which is why it cost the reporting deployment four runs and a
+wrong diagnosis before the mechanism was found.
+
+Setting `LDM_DOCKER_TUNNEL` opens **one** SSH port-forward to the node's Docker
+socket for the life of the run, and every command addresses it through
+`docker --host tcp://127.0.0.1:<port>`:
+
+```bash
+LDM_DOCKER_TUNNEL=1 ldm run my-project
+```
+
+Off by default. An environment variable rather than a flag or an `~/.ldmrc`
+key, because the consumers who need it drive LDM from CI, where a variable
+costs nothing and a config file has to be written into an ephemeral runner.
+
+`--host` rather than a process-wide `DOCKER_HOST` deliberately: it is explicit
+per command and stays correct if a run touches two nodes, which one
+environment variable would silently get wrong.
+
+### What it does not fix
+
+**A keepalive was the original proposal and it was wrong.** The premise was
+that `DOCKER_HOST=ssh://` holds one persistent connection going idle; there is
+no such connection, and keepalives applied independently changed nothing --
+exactly what that premise predicts. The irony is load-bearing rather than
+decorative: a keepalive is the wrong fix for connection-per-command and the
+right companion to the tunnel, because a single long-lived forward is the
+first thing LDM has ever held that can genuinely go idle. Hence
+`ServerAliveInterval` on the tunnel's own ssh invocation.
+
+### When the tunnel dies mid-run
+
+An established tunnel that closes would otherwise surface as a connection
+refused against a loopback port -- a symptom naming the wrong subject. The
+next Docker command reports it as itself instead, distinguishes **"established
+then died"** from **"never established"**, and falls back to per-command
+connections rather than failing the run: a slower run beats no run.
+
+The report says **detected at**, not *died at*. Nothing watches the ssh
+process; its death is noticed the next time a command needs the tunnel, which
+may be well after the fact.
+
+### Verifying it
+
+Absence of `Docker not accessible` proves nothing on a node whose
+`MaxStartups` has been raised -- that node cannot shed connections regardless.
+The measurement that means something is the **accept count**:
+
+```bash
+ssh <node> 'journalctl -u sshd --since -5m | grep -c "Accepted publickey"'
+```
+
+Hundreds per run means connection-per-command. Roughly one means the tunnel is
+carrying the run.
+
 ## 8. A target's SSH user lives in two places
 
 A remote target is described twice, and only one of the two is LDM's:
@@ -506,4 +576,4 @@ remote add, and in the drift repair above `~/.ldmrc` was right all along:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-23* | *Last Reviewed: 2026-09-23*
+*Last Updated: 2026-09-30* | *Last Reviewed: 2026-09-30*
