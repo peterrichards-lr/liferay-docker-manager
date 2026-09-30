@@ -1327,3 +1327,81 @@ class TestTheClientExtensionFixtureCanActuallyBeShadowed(unittest.TestCase):
                     "which is exactly what #1919 satisfied while breaking a "
                     "real container (LDM-#1911).",
                 )
+
+
+def _multiline_native_args(text):
+    """Native-command arguments whose literal payload spans lines.
+
+    A `-c` (or `-Command`) followed by a quote that is the last thing on its
+    line opens a literal argument that continues onto the following lines.
+    Returns `(line_number, opening_line)` for each.
+    """
+    found = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        if re.search(r"-(?:c|Command)\s+['\"][ \t]*$", line):
+            found.append((number, line.strip()))
+    return found
+
+
+class TestNoMultiLineNativeCommandArguments(unittest.TestCase):
+    """LDM-#2026: the defect that failed a verification run at the last mile.
+
+    `verify_e2e_refactor.ps1` handed `docker` a multi-line `sh -c '...'`
+    payload containing double quotes. Windows PowerShell 5.1 does not escape
+    those quotes when building the command line for a native process, so
+    docker.exe's own argument parser re-split the script at them; `sh` was
+    handed a truncated `-c` payload and the trailing words became positional
+    parameters:
+
+        for: line 6: syntax error: unexpected end of file (expecting "}")
+
+    pwsh 7 passes the argument intact, and the only CI job that runs Windows
+    PowerShell 5.1 exercises this file's *helper functions* rather than the
+    file, so nothing in the pipeline could observe it. This static guard is
+    what stands in for the end-to-end 5.1 run that CI does not have.
+
+    The fix is to build the payload in a variable and hand the container
+    something inert -- base64 -- rather than to quote more carefully. Quoting
+    correctly across 5.1, pwsh 7 and docker.exe's parser is not a thing this
+    repository should be trying to get right twice.
+
+    Only the `.ps1` is scanned. bash receives a multi-line single-quoted
+    argument as one argument, so the same construct in `verify_e2e_refactor.sh`
+    is correct and is left alone.
+    """
+
+    def test_the_powershell_script_has_no_multi_line_native_argument(self):
+        text = PS1_SCRIPT.read_text(encoding="utf-8")
+        offenders = _multiline_native_args(text)
+        self.assertEqual(
+            offenders,
+            [],
+            "a native-command argument spans lines, which Windows PowerShell "
+            "5.1 mangles (LDM-#2026). Put the payload in a here-string, "
+            "base64-encode it, and pass a single inert token:\n  "
+            + "\n  ".join(f"line {n}: {line}" for n, line in offenders),
+        )
+
+    def test_the_guard_catches_the_construct_it_exists_for(self):
+        """The guard, proven against the exact text that failed.
+
+        Without this, a guard that matches nothing passes forever and says
+        nothing about the script -- which is how the original shipped green.
+        """
+        offenders = _multiline_native_args(
+            '    $x = & docker run --rm -v "${r}:/w" alpine sh -c \'\n'
+            "probe=/w/.p\n"
+            '[ "$back" != "640" ] && { echo "NOHONOUR $back"; exit 0; }\n'
+            "' 2>&1 | Out-String\n"
+        )
+        self.assertEqual(len(offenders), 1, offenders)
+        self.assertEqual(offenders[0][0], 1)
+
+    def test_the_guard_does_not_flag_the_fixed_form(self):
+        offenders = _multiline_native_args(
+            "    $b64 = [Convert]::ToBase64String("
+            "[Text.Encoding]::UTF8.GetBytes($probe))\n"
+            "    $x = & docker run --rm alpine sh -c "
+            '"echo $b64 | base64 -d | sh" 2>&1 | Out-String\n'
+        )
+        self.assertEqual(offenders, [])
