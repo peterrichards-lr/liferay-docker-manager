@@ -2279,3 +2279,227 @@ class TestGatewayAdvertisedDomains(unittest.TestCase):
             self.assertEqual(
                 self.service._supported_domains_gateway_url(), "https://gw.internal"
             )
+
+
+class TestAddressProvenance(unittest.TestCase):
+    """Say where each half of the address came from (LDM-#2019).
+
+    The reported symptom was "share start is ignoring my subdomain". It was
+    not: the subdomain was honoured and the DOMAIN came from `~/.ldmrc`, which
+    nothing said. Establishing that took a read across `resolve_share_config`,
+    the project meta and the global config.
+
+    LDM-#2008 added the resolved address, which answers "what" and leaves
+    "why that one?" unanswered. This answers it.
+    """
+
+    def setUp(self):
+        self.mock_manager = MockManager()
+        self.mock_manager.args = MagicMock()
+        self.mock_manager.args.share_domain = None
+        self.mock_manager.args.domain = None
+        self.mock_manager.args.share_provider = None
+        self.mock_manager.args.provider = None
+        self.service = ShareService(self.mock_manager)
+
+    def _resolve(self, **kwargs):
+        with patch("ldm_core.handlers.share.UI"):
+            return self.service.resolve_share_config(provider="lfr-tunnel", **kwargs)
+
+    # --- where the domain came from ---------------------------------------
+
+    def test_a_domain_flag_is_named_as_the_flag(self):
+        self._resolve(domain="lfr-demo.se", domain_source="--domain")
+        self.assertEqual(self.service._share_domain_source, "--domain")
+
+    def test_a_url_flag_is_distinguished_from_a_domain_flag(self):
+        """Different answers to "why this address?", so not both "a flag"."""
+        self._resolve(domain="https://peters.lfr-demo.se", domain_source="--url")
+        self.assertEqual(self.service._share_domain_source, "--url")
+
+    def test_a_domain_from_the_project_meta_says_so(self):
+        self._resolve(project_meta={"share_domain": "lfr-demo.se"})
+        self.assertEqual(self.service._share_domain_source, "this project's meta")
+
+    def test_a_domain_from_the_global_config_says_so(self):
+        """The reported case: a machine-wide pin nobody remembered setting."""
+        self.mock_manager.config.get_global_config = lambda: {  # type: ignore[method-assign]
+            "share_domain": "dev.solaramoto.com"
+        }
+        _, domain = self._resolve()
+        self.assertEqual(domain, "dev.solaramoto.com")
+        self.assertEqual(self.service._share_domain_source, "~/.ldmrc")
+
+    def test_the_built_in_default_says_so(self):
+        _, domain = self._resolve()
+        self.assertEqual(domain, ShareService.DEFAULT_TUNNEL_BASE_DOMAINS[0])
+        self.assertEqual(self.service._share_domain_source, "LDM's default")
+
+    # --- where the subdomain came from ------------------------------------
+
+    def test_an_explicit_subdomain_is_named_as_the_command_line(self):
+        self._resolve(domain="lfr-demo.se", domain_source="--domain")
+        self.service._resolve_subdomain("peters", "someproject")
+        self.assertEqual(self.service._subdomain_source, "the command line")
+
+    def test_a_subdomain_split_from_a_flag_names_that_flag(self):
+        """'from --url' beats 'from the share domain, from --url'."""
+        self._resolve(domain="https://peters.lfr-demo.se", domain_source="--url")
+        self.service._resolve_subdomain(None, "someproject")
+        self.assertEqual(self.service._subdomain_source, "--url")
+
+    def test_a_subdomain_split_from_stored_config_names_where_it_is_stored(self):
+        """A stored value is what surprises people, so it is the visible part."""
+        self.mock_manager.config.get_global_config = lambda: {  # type: ignore[method-assign]
+            "share_domain": "peters.lfr-demo.se"
+        }
+        self._resolve()
+        self.service._resolve_subdomain(None, "someproject")
+        self.assertEqual(self.service._subdomain_source, "the share domain in ~/.ldmrc")
+
+    def test_a_fallback_subdomain_names_the_project(self):
+        self._resolve(domain="lfr-demo.se", domain_source="--domain")
+        self.service._resolve_subdomain(None, "someproject")
+        self.assertEqual(self.service._subdomain_source, "the project name")
+
+    # --- the line itself ---------------------------------------------------
+
+    def test_the_line_names_both_halves_and_both_sources(self):
+        self.mock_manager.config.get_global_config = lambda: {  # type: ignore[method-assign]
+            "share_domain": "dev.solaramoto.com"
+        }
+        _, domain = self._resolve()
+        self.service._resolve_subdomain("peters", "someproject")
+        line = self.service._describe_address_sources("peters", domain)
+        self.assertIn("subdomain 'peters' from the command line", line)
+        self.assertIn("domain 'dev.solaramoto.com' from ~/.ldmrc", line)
+
+    def test_nothing_is_emitted_when_no_source_is_known(self):
+        """So a caller can print it unconditionally without a bare fragment."""
+        self.assertEqual(
+            self.service._describe_address_sources("peters", "x.example"), ""
+        )
+
+    def _dry_start_notes(self, **kwargs):
+        self.mock_manager.dry_run = True  # type: ignore[attr-defined]
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/lfr-prov")
+        )
+        self.mock_manager.read_meta = MagicMock(return_value={})  # type: ignore[method-assign]
+        self.mock_manager.write_meta = MagicMock()  # type: ignore[method-assign]
+        with patch("ldm_core.handlers.share.UI") as mock_ui:
+            self.service.cmd_start(provider="lfr-tunnel", **kwargs)
+        return "\n".join(str(c[0][0]) for c in mock_ui.info.call_args_list)
+
+    def test_cmd_start_decides_between_url_and_domain_itself(self):
+        """Crosses the seam the two tests above only bracket.
+
+        Those pass `domain_source` in ready-made, so they pin the recording
+        and never the code that DERIVES it. Collapsing cmd_start's
+        `"--url" if url else "--domain"` into a single label left all of them
+        green -- which is what this exists to stop.
+        """
+        notes = self._dry_start_notes(url="https://peters.lfr-demo.se")
+        self.assertIn("from --url", notes)
+        self.assertNotIn("from --domain", notes)
+
+    def test_cmd_start_prints_it_beside_the_public_url(self):
+        self.mock_manager.dry_run = True  # type: ignore[attr-defined]
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/lfr-prov")
+        )
+        self.mock_manager.read_meta = MagicMock(return_value={})  # type: ignore[method-assign]
+        self.mock_manager.write_meta = MagicMock()  # type: ignore[method-assign]
+        with patch("ldm_core.handlers.share.UI") as mock_ui:
+            self.service.cmd_start(
+                provider="lfr-tunnel", subdomain="peters", domain="lfr-demo.se"
+            )
+        notes = "\n".join(str(c[0][0]) for c in mock_ui.info.call_args_list)
+        self.assertIn("Public URL", notes)
+        self.assertIn("subdomain 'peters' from the command line", notes)
+        self.assertIn("domain 'lfr-demo.se' from --domain", notes)
+
+
+class TestStatusSaysWhereTheAddressCameFrom(unittest.TestCase):
+    """LDM-#2019, the half `share start` did not cover.
+
+    `share status` is where someone looks when an address has already
+    surprised them, so reporting one without its origin leaves exactly the
+    gap the issue was raised about.
+
+    It cannot reuse `resolve_share_config()`: that prompts when nothing is
+    configured, and persists the answer machine-wide. A read-only status
+    command must do neither.
+    """
+
+    def setUp(self):
+        self.mock_manager = MockManager()
+        self.mock_manager.args = MagicMock()
+        self.mock_manager.args.share_domain = None
+        self.mock_manager.args.domain = None
+        self.service = ShareService(self.mock_manager)
+
+    def test_a_domain_from_the_project_meta_is_named(self):
+        domain, source = self.service.configured_domain_source(
+            {"share_domain": "lfr-demo.se"}
+        )
+        self.assertEqual((domain, source), ("lfr-demo.se", "this project's meta"))
+
+    def test_a_domain_from_the_global_config_is_named(self):
+        """The reported case -- a machine-wide pin nobody remembers setting."""
+        self.mock_manager.config.get_global_config = lambda: {  # type: ignore[method-assign]
+            "share_domain": "dev.solaramoto.com"
+        }
+        domain, source = self.service.configured_domain_source({})
+        self.assertEqual((domain, source), ("dev.solaramoto.com", "~/.ldmrc"))
+
+    def test_the_project_meta_beats_the_global_config(self):
+        """Same precedence as resolution, so status cannot disagree with it."""
+        self.mock_manager.config.get_global_config = lambda: {  # type: ignore[method-assign]
+            "share_domain": "dev.solaramoto.com"
+        }
+        domain, source = self.service.configured_domain_source(
+            {"share_domain": "lfr-demo.se"}
+        )
+        self.assertEqual((domain, source), ("lfr-demo.se", "this project's meta"))
+
+    def test_a_stored_host_is_reduced_to_its_base(self):
+        domain, _ = self.service.configured_domain_source(
+            {"share_domain": "peters.lfr-demo.se"}
+        )
+        self.assertEqual(domain, "lfr-demo.se")
+
+    def test_nothing_configured_names_the_default_without_choosing_it(self):
+        domain, source = self.service.configured_domain_source({})
+        self.assertEqual(domain, ShareService.DEFAULT_TUNNEL_BASE_DOMAINS[0])
+        self.assertEqual(source, "LDM's default")
+
+    def test_it_never_prompts(self):
+        """A status command that asks a question is worse than one that says
+        less -- and `resolve_share_config()` also writes the answer to
+        ~/.ldmrc for every project on the machine."""
+        self.mock_manager.non_interactive = False
+        with (
+            patch("ldm_core.handlers.share.UI.ask") as ask,
+            # create=True: the double does not define it, which is itself
+            # evidence the method is unreachable here -- but an explicit
+            # assertion beats an incidental AttributeError, which a richer
+            # double would silently remove.
+            patch.object(
+                self.mock_manager.config, "set_global_config", create=True
+            ) as persisted,
+        ):
+            self.service.configured_domain_source({})
+        ask.assert_not_called()
+        persisted.assert_not_called()
+
+    def test_the_line_names_both_halves(self):
+        line = self.service.describe_status_sources(
+            {"share_domain": "lfr-demo.se"}, "peters", "the live tunnel"
+        )
+        self.assertIn("subdomain 'peters' from the live tunnel", line)
+        self.assertIn("domain 'lfr-demo.se' from this project's meta", line)
+
+    def test_nothing_is_emitted_without_a_subdomain(self):
+        line = self.service.describe_status_sources({}, None, None)
+        self.assertNotIn("subdomain", line)

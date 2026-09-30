@@ -2,6 +2,7 @@ import errno
 import json
 import os
 import tarfile
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from ldm_core.ui import UI
@@ -26,41 +27,94 @@ CLIENT_EXTENSION_SOURCES = (
     ("client-extensions", "*/dist/*.zip"),
 )
 
-# LDM-#1942: the reclaim loop and the archive loop take strings from TWO
-# DIFFERENT NAMESPACES, and the strings look alike.
+# LDM-#1942: ONE declaration, in ONE vocabulary.
 #
-# `_RECLAIM_PATH_KEYS` are keys into `setup_paths` -- `paths.get(key)`.
-# `_ARCHIVE_DIR_NAMES` are directory names under the project root --
-# `paths["root"] / name`.
+# There used to be two hand-maintained tuples here -- `_RECLAIM_PATH_KEYS`,
+# holding keys into `setup_paths`, and `_ARCHIVE_DIR_NAMES`, holding directory
+# names under the project root. The strings looked alike and were not:
+# `client-extensions` is a valid DIRECTORY NAME and an invalid PATH KEY (the
+# two client-extension trees are keyed `cx` and `ce_dir`), so the same string
+# was correct in one list and a silent miss in the other. `paths.get(key)`
+# returns None for a wrong key and for an absent directory alike, so the miss
+# had no warning, no error and no log line -- it simply never fired.
 #
-# `client-extensions` used to sit in the reclaim list. It is a valid DIRECTORY
-# NAME and not a valid PATH KEY -- the two client-extension trees are keyed `cx`
-# (`osgi/client-extensions`) and `ce_dir` (`client-extensions`) -- so the same
-# string was correct in the archive list below and a silent miss above, with
-# nothing distinguishing the two namespaces.
+# Two changes remove the class of bug rather than guarding it:
 #
-# `paths.get(key)` treats a missing key and a missing directory identically, so
-# a wrong key degrades to a no-op with no warning, no error and no log line.
-# `test_snapshot_reclaim_keys.py` now fails if a key is not real.
+#   * Every tree is named by its `setup_paths` KEY and nothing else. There is
+#     no second vocabulary to get wrong.
+#   * The archive name is DERIVED -- `paths[key].relative_to(paths["root"])` --
+#     so it cannot disagree with the path it names. `ce_dir` yields
+#     `client-extensions`, `cx` yields `osgi/client-extensions`.
 #
-# **The dead entry is removed, and that is a no-op**: it resolved to None on
-# every run, so nothing it would have done was ever done. What is NOT decided
-# here is whether a live key should take its place. Adding `cx` would newly
-# reclaim a tree; adding `ce_dir` would chown the DEVELOPER'S OWN SOURCE to uid
-# 1000 at mode 777. That is a scope decision rather than a typo, and it cannot
-# be observed except on native Linux running as a uid that is not 1000 --
-# otherwise `chown 1000` changes nothing and every assertion passes either way.
-# Tracked on LDM-#1942.
-_RECLAIM_PATH_KEYS = (
-    "deploy",
-    "files",
-    "logs",
-    "configs",
-    "modules",
-    "marketplace",
+# What this deliberately does NOT remove is the POLICY: whether a tree is
+# archived, and whether it is reclaimed for the container (uid 1000, `777`) or
+# for the host (the invoking uid, `755`). No code can derive "should this be
+# chowned". The registry makes that choice impossible to state against a tree
+# that does not exist, which is the defect -- not impossible to make.
+#
+# `test_snapshot_reclaim_keys.py` fails if any key here is absent from
+# `setup_paths`, and indexing is `paths[key]`, never `paths.get(key)`: a wrong
+# key must raise rather than quietly do nothing.
+
+
+#: Reclaim for the CONTAINER -- uid 1000, mode 777. LDM-#1134: the container
+#: writes here as uid 1000 and the host must read it back; `755` would make
+#: the host's own `deploy/` read-only to it afterwards.
+RECLAIM_CONTAINER = "container"
+
+#: Reclaim for the HOST -- the invoking uid, mode 755. LDM-388: these back the
+#: named volumes, staged on the host and hydrated on restore, and `777` broke
+#: Elasticsearch on restore.
+RECLAIM_HOST = "host"
+
+
+@dataclass(frozen=True)
+class ProjectTree:
+    """One tree under the project root, declared once.
+
+    `key` is a `setup_paths` key. It is the only identifier -- the archive
+    name is derived from the resolved path, so there is no second string.
+    """
+
+    key: str
+    reclaim: str | None = None
+
+
+PROJECT_TREES: tuple[ProjectTree, ...] = (
+    ProjectTree("files", reclaim=RECLAIM_CONTAINER),
+    ProjectTree("deploy", reclaim=RECLAIM_CONTAINER),
+    ProjectTree("configs", reclaim=RECLAIM_CONTAINER),
+    ProjectTree("data", reclaim=RECLAIM_HOST),
+    ProjectTree("logs", reclaim=RECLAIM_CONTAINER),
+    ProjectTree("modules", reclaim=RECLAIM_CONTAINER),
+    # LDM-#1941: `marketplace` joined late. It was not a bind mount until
+    # LDM-#1918 restored it, so nothing containerised had ever written there.
+    # Once mounted, Liferay creates `osgi/marketplace/override` as uid 1000 and
+    # the archive -- which adds the whole `osgi` tree as one entry -- failed
+    # that entry outright, so `ldm snapshot` produced no backup at all on
+    # native Linux. Pre-creating the directory does not help: `override` is
+    # created by the container at runtime, not by Docker at mount time.
+    ProjectTree("marketplace", reclaim=RECLAIM_CONTAINER),
+    ProjectTree("state", reclaim=RECLAIM_HOST),
 )
 
-_ARCHIVE_DIR_NAMES = (
+# The archive list stays DIRECTORY NAMES and is deliberately NOT derived from
+# the registry above. Measured, the two vocabularies do not merely contain
+# different strings -- they contain the SAME string meaning different places:
+#
+#     archive entry "configs"  ->  <root>/configs
+#     path key      "configs"  ->  <root>/osgi/configs
+#
+# Deriving the archive from path keys would therefore have archived
+# `osgi/configs` (already inside the `osgi` entry) and silently stopped
+# archiving `<root>/configs` -- a backup quietly losing a directory, which is
+# the worst possible outcome for this file. `.ldm` has no path key at all.
+#
+# So this is two lists on purpose. What made LDM-#1942 a bug was not their
+# existence, it was that a wrong entry in the reclaim list failed SILENTLY;
+# that is fixed above by indexing rather than `.get()`. Anyone tempted to
+# harmonise these should read `test_snapshot_reclaim_keys.py` first.
+_ARCHIVE_DIR_NAMES: tuple[str, ...] = (
     "files",
     "scripts",
     "osgi",
@@ -71,6 +125,35 @@ _ARCHIVE_DIR_NAMES = (
     "configs",
     ".ldm",
 )
+
+
+def trees_to_reclaim(policy: str) -> tuple["ProjectTree", ...]:
+    """Every tree declared for one reclaim policy."""
+    return tuple(t for t in PROJECT_TREES if t.reclaim == policy)
+
+
+def _resolve_tree(paths, tree: "ProjectTree"):
+    """The tree's path, or None with a WARNING saying the key is not real.
+
+    LDM-#1942 was a reclaim entry that never fired because `paths.get(key)`
+    cannot tell a wrong key from an absent directory. The obvious remedy --
+    index with `paths[key]` so a bad key raises -- was tried and is WRONG
+    here: this loop runs inside a broad `except Exception`, so the raise is
+    swallowed and aborts the whole loop, silently reclaiming NOTHING. That
+    trades one quiet entry for every quiet entry.
+
+    The defect was the silence, not the tolerance. So the lookup stays
+    tolerant and stops being silent, and `test_snapshot_reclaim_keys.py`
+    fails the build if a declared key is not real.
+    """
+    target = paths.get(tree.key)
+    if target is None:
+        UI.warning(
+            f"Permission reclaim skipped: '{tree.key}' is not a project path "
+            f"key, so nothing was reclaimed for it (LDM-#1942)."
+        )
+    return target
+
 
 OSGI_MODULE_SOURCES = (
     ("osgi/modules", "*.jar"),
@@ -176,10 +259,11 @@ class ArchiveSnapshotService:
             # Pre-creating the directory (the LDM-#1134 remedy for `logs`
             # and `routes`) does not help: `override` is created by the
             # container at runtime, not by Docker at mount time.
-            for d in _RECLAIM_PATH_KEYS:
-                if paths.get(d) and paths[d].exists():
+            for tree in trees_to_reclaim(RECLAIM_CONTAINER):
+                target = _resolve_tree(paths, tree)
+                if target is not None and target.exists():
                     reclaim_volume_permissions(
-                        paths[d], uid="1000", gid="1000", chmod_val="777"
+                        target, uid="1000", gid="1000", chmod_val="777"
                     )
             # LDM-388: host uid and `755`, deliberately *not* `777`. These are
             # the trees that back the named volumes (`data`, `state`) -- staged
@@ -193,10 +277,11 @@ class ArchiveSnapshotService:
             # re-widen them before the next boot, which is why this has never
             # surfaced. Not changed here: LDM-388's restore failure is the
             # better-evidenced of the two.
-            for d in ["data", "state"]:
-                if paths.get(d) and paths[d].exists():
+            for tree in trees_to_reclaim(RECLAIM_HOST):
+                target = _resolve_tree(paths, tree)
+                if target is not None and target.exists():
                     reclaim_volume_permissions(
-                        paths[d],
+                        target,
                         uid=str(os.getuid()),
                         gid=str(os.getgid()),
                         chmod_val="755",

@@ -100,6 +100,13 @@ class ShareService:
         # LDM-#2008: and again for the note saying a configured host was read
         # as subdomain + base domain.
         self._split_host_note_shown = False
+        # LDM-#2019: where the resolved domain and subdomain each came from,
+        # as a human-readable phrase. Recorded on the service for the same
+        # reason as _derived_share_subdomain below -- resolve_share_config()
+        # returns a (provider, domain) pair that four call sites and a dozen
+        # test doubles depend on.
+        self._share_domain_source = None
+        self._subdomain_source = None
         # LDM-#2008: the subdomain recovered from a configured host such as
         # `peters.lfr-demo.se`. resolve_share_config() returns a (provider,
         # domain) PAIR and four call sites plus a dozen test doubles depend on
@@ -107,6 +114,8 @@ class ShareService:
         # than widening the signature. cmd_start() reads it immediately after
         # calling resolve_share_config(); nothing else should.
         self._derived_share_subdomain = None
+        #: Which source the derived subdomain's host came from (LDM-#2019).
+        self._derived_subdomain_from = None
 
     # LDM-#1569: every name the lfr-tunnel client reads as an explicit
     # gateway pin. Both region election and failover are gated on
@@ -925,7 +934,9 @@ class ShareService:
             exit_code=3,
         )
 
-    def resolve_share_config(self, project_meta=None, provider=None, domain=None):  # noqa: C901, PLR0912
+    def resolve_share_config(  # noqa: C901, PLR0912
+        self, project_meta=None, provider=None, domain=None, domain_source=None
+    ):
         """Resolves share provider and share domain, prompting the user if not configured."""
         # 1. Resolve provider
         if not provider:
@@ -951,30 +962,46 @@ class ShareService:
                     provider = "lfr-tunnel"
                 self.manager.config.set_global_config("share_provider", provider)
 
-        # 2. Resolve domain
+        # 2. Resolve domain. LDM-#2019: each branch also records WHERE the
+        # value came from. The reported confusion was not a wrong domain --
+        # it was a correct one arriving from stored state with nothing saying
+        # so, and the resolution order below is invisible from the outside.
+        self._share_domain_source = domain_source if domain else None
         if not domain:
             domain = getattr(self.manager.args, "share_domain", None) or getattr(
                 self.manager.args, "domain", None
             )
             if domain and not isinstance(domain, str):
                 domain = None
+            if domain:
+                self._share_domain_source = "the command line"
         if not domain and project_meta:
             domain = project_meta.get("share_domain")
+            if domain:
+                self._share_domain_source = "this project's meta"
         if not domain:
             global_config = self.manager.config.get_global_config()
             domain = global_config.get("share_domain")
+            if domain:
+                self._share_domain_source = "~/.ldmrc"
         if not domain:
             if provider in ["lfr-tunnel", "lfr-tunnel-docker"]:
                 known_domains = self.get_known_tunnel_base_domains()
                 default_domain = known_domains[0]
                 if self.manager.non_interactive:
                     domain = default_domain
+                    self._share_domain_source = "LDM's default"
                 else:
                     domain = UI.ask(
                         f"Choose sharing domain ({', '.join(known_domains)})",
                         default_domain,
                     )
                     self.manager.config.set_global_config("share_domain", domain)
+                    # Worth naming explicitly: this answer has just been saved
+                    # to ~/.ldmrc for EVERY project on this machine.
+                    self._share_domain_source = (
+                        "your prompt answer, now saved to ~/.ldmrc"
+                    )
             else:
                 domain = ""
 
@@ -986,6 +1013,7 @@ class ShareService:
         derived_subdomain, domain = self.split_share_host(domain)
         if derived_subdomain:
             self._derived_share_subdomain = derived_subdomain
+            self._derived_subdomain_from = self._share_domain_source
             if not self._split_host_note_shown:
                 self._split_host_note_shown = True
                 UI.info(
@@ -1113,6 +1141,56 @@ class ShareService:
 
         return f"https://{subdomain}.{domain}"
 
+    def configured_domain_source(self, project_meta=None):
+        """`(domain, source)` as CONFIGURED, resolving nothing (LDM-#2019).
+
+        `resolve_share_config()` cannot be used from `share status`: it
+        prompts when nothing is configured, and a status command that asks a
+        question is worse than one that says less. It also persists a prompt
+        answer machine-wide, which a read-only command must never do.
+
+        So this walks the same precedence -- flag, project meta, `~/.ldmrc`
+        -- read-only, and reports `LDM's default` when none of them answered
+        rather than picking the default itself.
+        """
+        for attr in ("share_domain", "domain"):
+            value = getattr(getattr(self.manager, "args", None), attr, None)
+            if isinstance(value, str) and value:
+                _, base = self.split_share_host(value)
+                return base, "the command line"
+        stored = (project_meta or {}).get("share_domain")
+        if stored:
+            _, base = self.split_share_host(stored)
+            return base, "this project's meta"
+        stored = self.manager.config.get_global_config().get("share_domain")
+        if stored:
+            _, base = self.split_share_host(stored)
+            return base, "~/.ldmrc"
+        return self.get_default_tunnel_domain(), "LDM's default"
+
+    def describe_status_sources(self, project_meta, subdomain, subdomain_source):
+        """The provenance line for `share status`, or "" when nothing is known."""
+        domain, domain_source = self.configured_domain_source(project_meta)
+        parts = []
+        if subdomain and subdomain_source:
+            parts.append(f"subdomain '{subdomain}' from {subdomain_source}")
+        if domain and domain_source:
+            parts.append(f"domain '{domain}' from {domain_source}")
+        return ", ".join(parts)
+
+    def _describe_address_sources(self, subdomain, domain):
+        """Where each half of the public address came from (LDM-#2019).
+
+        Returns an empty string when neither source is known, so a caller can
+        print it unconditionally without emitting a bare fragment.
+        """
+        parts = []
+        if subdomain and self._subdomain_source:
+            parts.append(f"subdomain '{subdomain}' from {self._subdomain_source}")
+        if domain and self._share_domain_source:
+            parts.append(f"domain '{domain}' from {self._share_domain_source}")
+        return ", ".join(parts)
+
     def _resolve_subdomain(self, requested, project_id):
         """The subdomain to lease (LDM-#1356, LDM-#2008).
 
@@ -1132,6 +1210,23 @@ class ShareService:
         NFD-decomposed, so it was not even stable across platforms.
         """
         derived = self._derived_share_subdomain
+        if requested:
+            self._subdomain_source = "the command line"
+        elif derived:
+            # The subdomain was split out of the share domain, so its source
+            # is that domain's source. Named directly when that was a flag --
+            # "from --url" beats "from the share domain, from --url" -- and
+            # otherwise phrased so the stored location is the visible part,
+            # since a stored value is what surprises people.
+            origin = self._derived_subdomain_from
+            if origin and origin.startswith("--"):
+                self._subdomain_source = origin
+            elif origin:
+                self._subdomain_source = f"the share domain in {origin}"
+            else:
+                self._subdomain_source = "the share domain"
+        else:
+            self._subdomain_source = "the project name"
         if requested and derived and requested != derived:
             UI.die(
                 f"Conflicting subdomains: --subdomain says '{requested}', but "
@@ -1169,6 +1264,9 @@ class ShareService:
                     tip=f"--url {url} already carries the domain.",
                 )
             domain = url
+        # LDM-#2019: which flag, not merely "a flag" -- `--url` and `--domain`
+        # are different answers to "why this address?".
+        domain_source = "--url" if url else ("--domain" if domain else None)
         root = self.manager.detect_project_path(project_id)
         project_id = root.name if root else None
         project_meta = self.manager.read_meta(root) if root else {}
@@ -1212,7 +1310,7 @@ class ShareService:
 
         # Resolve provider and domain
         provider, share_domain = self.resolve_share_config(
-            project_meta, provider=provider, domain=domain
+            project_meta, provider=provider, domain=domain, domain_source=domain_source
         )
         # LDM-#1338: checked here, as soon as the provider is known and before
         # any binary download, version check or tunnel start -- so the refusal
@@ -1290,6 +1388,15 @@ class ShareService:
                 else self.resolve_public_tunnel_url(subdomain, project_id)
             )
             UI.info(f"Public URL: {UI.CYAN}{planned_url}{UI.COLOR_OFF}")
+            # LDM-#2019: and say where each half came from. Printing only the
+            # resolved address answers "what" and leaves "why that one?" to a
+            # code read -- which is what the reported confusion cost. The
+            # resolution order (flag -> project meta -> ~/.ldmrc -> prompt ->
+            # default) is invisible from outside, and two of those sources are
+            # written by LDM itself.
+            provenance = self._describe_address_sources(subdomain, share_domain)
+            if provenance:
+                UI.info(f"  {provenance}")
 
             if dry_run:
                 UI.detail(
@@ -1657,13 +1764,18 @@ class ShareService:
             info = api_data.get("info", {})
             state = api_data.get("state", {})
 
-            subdomain = (
-                state.get("subdomain")
-                or info.get("subdomain", {}).get("name")
-                or project_meta.get("share_subdomain")
-                or project_id
-                or (root.name if root else "tunnel")
-            )
+            # LDM-#2019: track WHICH of these answered. `share status` is
+            # where someone looks when they are already puzzled by an
+            # address, so reporting one without its origin is the same gap
+            # `share start` had.
+            subdomain_source = "the live tunnel"
+            subdomain = state.get("subdomain") or info.get("subdomain", {}).get("name")
+            if not subdomain:
+                subdomain = project_meta.get("share_subdomain")
+                subdomain_source = "this project's meta"
+            if not subdomain:
+                subdomain = project_id or (root.name if root else "tunnel")
+                subdomain_source = "the project name"
             status = info.get("status") or (
                 "healthy" if state.get("connected") else "disconnected"
             )
@@ -1676,6 +1788,11 @@ class ShareService:
 
             UI.heading("Liferay Tunnel Status")
             UI.raw(f"  ● {UI.WHITE}Subdomain: {UI.CYAN}{subdomain}{UI.COLOR_OFF}")
+            sources = self.describe_status_sources(
+                project_meta, subdomain, subdomain_source
+            )
+            if sources:
+                UI.raw(f"  ● {UI.WHITE}Address from: {UI.COLOR_OFF}{sources}")
             status_color = (
                 UI.GREEN if status == "healthy" or state.get("connected") else UI.RED
             )

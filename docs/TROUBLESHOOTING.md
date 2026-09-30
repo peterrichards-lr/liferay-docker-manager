@@ -483,6 +483,102 @@ would auto-discover.
 
 ---
 
+## 🚦 The Global Proxy (Traefik)
+
+### **Issue: `docker logs liferay-proxy-global` prints nothing**
+
+Almost certainly working as configured. **Traefik's own default log level is
+`ERROR`**, and LDM sets no `--log.*` flag, so the proxy is silent unless
+something fails.
+
+An empty log and an unreadable one are different facts, and they are easy to
+tell apart: an unreadable logging driver exits **non-zero** with
+`configured logging driver does not support reading`. **Exit 0 with no output
+means the driver is fine and Traefik has genuinely written nothing.**
+
+### **Issue: a container has correct labels and gets no route**
+
+The symptom is a container that is running, on `liferay-net`, with
+well-formed `traefik.*` labels, for which Traefik loads no router -- and an
+empty proxy log, because Traefik does not consider any of the likely causes
+an error.
+
+LDM runs the proxy with `--providers.docker.exposedbydefault=false`, so a
+container is routed only if the **provider** sees `traefik.enable=true`.
+
+**Raising the level buys nothing for error-shaped causes, and everything for
+the rest** -- `ERROR` is already on, so anything Traefik considers an error is
+already in a log you have read. Measured against `traefik:v3.6.1` with LDM's
+production flag set:
+
+| cause | logs at | router appears? |
+| :--- | :--- | :--- |
+| a malformed `traefik.*` label | `ERR` | no |
+| `traefik.docker.network` naming a network the container is not on | `WRN` | **yes**, defaulted |
+| the provider filtering the container out | **`DBG` only** | no |
+
+So a container with correct labels and no route points at the last row, which
+is invisible at every level you have been running:
+
+```text
+DBG Filtering disabled container container=<name>-<id>
+```
+
+```bash
+LDM_PROXY_LOG_LEVEL=DEBUG ldm infra restart-proxy
+```
+
+`INFO` also exists, but `DEBUG` is the level to reach for -- reaching for
+`INFO` to chase a label problem finds exactly what `ERROR` already showed.
+
+> [!WARNING]
+> **`DEBUG` is voluminous, and it will break a capture sized for a silent
+> proxy.** Over a long run it produces many thousands of lines, and the
+> events worth reading are at **stack bring-up**, not teardown -- so
+> `docker logs --tail N` takes the wrong end. Measured on a 45-minute CI run,
+> a 120-line tail covered the final few seconds. Select on content rather than
+> tailing -- but see the warning below about how.
+
+<!-- markdownlint-disable-next-line MD028 -->
+
+> [!WARNING]
+> **The obvious grep matches nothing.** Traefik's default `common` format
+> writes ANSI colour escapes *between* key and value:
+>
+> ```text
+> ESC[36mrouterName=ESC[0mmy-service-svc
+> ```
+>
+> So `grep 'routerName=my-service-svc'` finds nothing while grepping the bare
+> container name works. Either strip ANSI first, or -- better for anything
+> machine-read -- ask for structured output:
+>
+> ```bash
+> LDM_PROXY_LOG_LEVEL=DEBUG LDM_PROXY_LOG_FORMAT=json ldm infra restart-proxy
+> ```
+
+Set these only for the run you are diagnosing. The defaults are `ERROR` and
+`common` for everyone else.
+
+### **Issue: a route exists but reaches the wrong backend**
+
+The middle row of the table above deserves its own mention, because it fails
+in the least helpful direction. A `traefik.docker.network` label naming a
+network the container is **not** attached to does not stop routing:
+
+```text
+WRN Could not find network named "X" for container "/Y". Maybe you're missing the project's prefix in the label?
+WRN Defaulting to first available network (...) for container ...
+```
+
+Traefik warns and routes it anyway, to a defaulted IP. At the default level
+both lines are invisible, so the symptom is a route that exists and serves
+**possibly the wrong backend** -- worse than an absent route, which at least
+fails where you can see it. Most likely after adding a second network to a
+project. `LDM_PROXY_LOG_LEVEL=WARN` is enough to surface it.
+
+---
+
 ## 🛡️ EDR / SentinelOne Quarantine (lfr-tunnel)
 
 ### **Issue: "Failed to verify lfr-tunnel installation after download"**
@@ -566,4 +662,4 @@ Projects are discovered from the current folder, its parent, `~/ldm`, the LDM in
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-29* | *Last Reviewed: 2026-09-29*
+*Last Updated: 2026-09-30* | *Last Reviewed: 2026-09-30*

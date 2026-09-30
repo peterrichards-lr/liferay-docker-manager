@@ -81,8 +81,24 @@ ldm share start [project] --provider lfr-tunnel --subdomain my-subdomain --ports
 - If `--subdomain` is omitted, it defaults to the subdomain carried by
   `--domain` (see *What `--domain` accepts* below), and failing that to the
   project name.
-- LDM prints the address it is about to claim before it connects:
-  `Public URL: https://my-subdomain.lfr-demo.se`.
+- LDM prints the address it is about to claim before it connects, **and where
+  each half of it came from**:
+
+  ```text
+  ℹ  Public URL: https://peters.lfr-demo.se
+  ℹ    subdomain 'peters' from the command line, domain 'lfr-demo.se' from --domain
+  ```
+
+  The second line matters more than it looks. The resolution order is a flag,
+  then the project's `meta`, then `~/.ldmrc`, then a prompt, then LDM's
+  default -- and two of those are written by LDM itself, so a value can be in
+  play that nobody remembers choosing. A domain arriving from a machine-wide
+  pin now says so:
+
+  ```text
+  ℹ    subdomain 'peters' from the command line, domain 'dev.example.com' from ~/.ldmrc
+  ```
+
 - If `--ports` is omitted, the tunnel client auto-discovers what to expose:
   running Docker containers first, then common Liferay ports, then the
   client-extension ports declared by the workspace. Passing `--ports`
@@ -147,6 +163,8 @@ the fetch goes to the gateway the seed names, or to an explicitly pinned one
 > copies the resolved value into each project's `meta`. Resolution order is
 > the flag, then the project `meta`, then `~/.ldmrc` -- so clearing the global
 > value alone will not change a project that has already been shared once.
+> The provenance line printed beside the public URL names whichever of these
+> answered, so you do not have to work it out.
 
 ### Check Tunnel Status
 
@@ -155,6 +173,22 @@ To inspect the active tunnel and retrieve its public URL:
 ```bash
 ldm share status [project]
 ```
+
+`ldm share status` reports the same provenance as `ldm share start`, because
+it is where you look when an address has already surprised you:
+
+```text
+  ● Subdomain: peters
+  ● Address from: subdomain 'peters' from the live tunnel, domain 'lfr-demo.se' from ~/.ldmrc
+```
+
+The subdomain is attributed to whichever answered -- the live tunnel, the
+project's `meta`, or the project name -- and the domain to the first of the
+flag, the project's `meta` or `~/.ldmrc` that holds one.
+
+`status` resolves nothing and writes nothing. It will not prompt for a domain
+the way `share start` does, and will not persist one to `~/.ldmrc`, so reading
+the status can never change what the next share does.
 
 ### Stop a Tunnel
 

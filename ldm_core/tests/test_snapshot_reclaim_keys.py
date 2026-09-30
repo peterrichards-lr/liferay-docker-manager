@@ -1,29 +1,37 @@
-"""LDM-#1942: a reclaim key that is not a real path key is a silent no-op.
+"""LDM-#1942: one vocabulary for reclaim, and two lists that must stay two.
 
-`ldm_core/snapshot/archive.py` reclaims permissions on a hand-maintained list of
-`setup_paths` KEYS:
+`ldm_core/snapshot/archive.py` holds two sets of strings that look alike and
+are not:
 
-    for d in _RECLAIM_PATH_KEYS:
-        if paths.get(d) and paths[d].exists():
-            reclaim_volume_permissions(paths[d], uid="1000", gid="1000", chmod_val="777")
+* `PROJECT_TREES` -- **`setup_paths` KEYS**, carrying each tree's reclaim
+  policy. Indexed as `paths[key]`.
+* `_ARCHIVE_DIR_NAMES` -- **DIRECTORY NAMES** under the project root, joined
+  as `paths["root"] / name`.
 
-**`paths.get(d)` treats a missing key and a missing directory identically**, so a
-wrong key degrades to a no-op with no warning, no error and no log line. That is
-how `client-extensions` sat in the list without ever firing: the client-extension
-trees are keyed `cx` (`osgi/client-extensions`) and `ce_dir`
-(`client-extensions`), and `client-extensions` is not a key at all.
+`client-extensions` sat in the reclaim list for its whole life without ever
+firing: the client-extension trees are keyed `cx` and `ce_dir`, and
+`client-extensions` is not a key at all. `paths.get(key)` returns None for a
+wrong key and for an absent directory alike, so it was a no-op with no
+warning, no error and no log line -- while the same string was *correct* two
+loops down in the archive list.
 
-What made it invisible is that the SAME STRING is correct in the archive list two
-loops down, which iterates directory NAMES under the project root
-(`paths["root"] / name`). Two namespaces, strings that look alike, and nothing
-distinguishing them.
+Two things fix that, and this module pins both.
 
-This module asserts the reclaim list is made of real keys. It would have caught
-that entry on the day it was introduced.
+**The reclaim policy is now one declaration, keyed only by path keys, and
+indexed rather than `.get()`** -- a wrong key raises instead of silently
+reclaiming nothing.
 
-**It deliberately does NOT assert the archive list against `setup_paths`** --
-those are directory names, and requiring them to be path keys would be the same
-category error in the other direction.
+**The archive list is NOT derived from it, deliberately.** The obvious
+de-duplication -- derive the archive name as
+`paths[key].relative_to(paths["root"])` -- was tried and measured, and it
+silently changes what a backup contains:
+
+    archive entry "configs"  ->  <root>/configs
+    path key      "configs"  ->  <root>/osgi/configs
+
+It would archive `osgi/configs`, already inside the `osgi` entry, and stop
+archiving `<root>/configs` altogether. `TestTheTwoListsAreNotInterchangeable`
+below is what stands between the next person and that change.
 """
 
 import tempfile
@@ -31,7 +39,13 @@ import unittest
 from pathlib import Path
 
 from ldm_core.handlers.base import BaseHandler
-from ldm_core.snapshot.archive import _ARCHIVE_DIR_NAMES, _RECLAIM_PATH_KEYS
+from ldm_core.snapshot.archive import (
+    _ARCHIVE_DIR_NAMES,
+    PROJECT_TREES,
+    RECLAIM_CONTAINER,
+    RECLAIM_HOST,
+    trees_to_reclaim,
+)
 
 
 def _real_path_keys():
@@ -41,58 +55,136 @@ def _real_path_keys():
         return set(handler.setup_paths(Path(tmp)))
 
 
+def _real_paths(root):
+    handler = BaseHandler.__new__(BaseHandler)
+    return handler.setup_paths(root)
+
+
 class TestEveryReclaimKeyIsReal(unittest.TestCase):
-    def test_no_reclaim_key_is_a_silent_no_op(self):
+    def test_no_declared_tree_is_a_silent_no_op(self):
         keys = _real_path_keys()
-        for key in _RECLAIM_PATH_KEYS:
-            with self.subTest(key=key):
+        for tree in PROJECT_TREES:
+            with self.subTest(key=tree.key):
                 self.assertIn(
-                    key,
+                    tree.key,
                     keys,
-                    f"'{key}' is not a setup_paths key, so `paths.get('{key}')` "
-                    f"is always None and this entry never reclaims anything -- "
-                    f"silently, because a missing key and a missing directory "
-                    f"are indistinguishable there (LDM-#1942)",
+                    f"'{tree.key}' is not a setup_paths key, so this entry "
+                    f"reclaims nothing (LDM-#1942)",
                 )
 
-    def test_the_dead_entry_is_gone(self):
-        """`client-extensions` is out of the reclaim list.
+    def test_a_wrong_key_raises_rather_than_doing_nothing_quietly(self):
+        """The mechanism that hid the original bug, pinned.
 
-        Removing it was a **no-op**: it resolved to None on every run, so
-        nothing it would have done was ever done. Whether a live key should
-        replace it is a separate decision, tracked on LDM-#1942 -- adding `cx`
-        would newly reclaim a tree, and adding `ce_dir` would chown the
-        developer's own source to uid 1000 at mode 777.
+        `paths.get(key)` cannot distinguish a wrong key from an absent
+        directory. Indexing can, and must.
         """
-        self.assertNotIn("client-extensions", _RECLAIM_PATH_KEYS)
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = _real_paths(Path(tmp))
+            with self.assertRaises(KeyError):
+                _ = paths["client-extensions"]
+
+    def test_an_unreal_key_warns_instead_of_passing_silently(self):
+        """The defect was the SILENCE, not the tolerance.
+
+        Indexing (`paths[key]`) was tried so a bad key would raise. It is
+        wrong here: the loop runs inside a broad `except Exception`, so the
+        raise is swallowed and aborts the whole loop -- trading one quiet
+        entry for every quiet entry. The lookup stays tolerant and says so.
+        """
+        from unittest.mock import patch
+
+        from ldm_core.snapshot.archive import ProjectTree, _resolve_tree
+
+        bogus = ProjectTree("client-extensions", reclaim=RECLAIM_CONTAINER)
+        with patch("ldm_core.snapshot.archive.UI.warning") as warn:
+            resolved = _resolve_tree({"root": Path("/tmp")}, bogus)
+
+        self.assertIsNone(resolved)
+        warn.assert_called_once()
+        self.assertIn("client-extensions", warn.call_args[0][0])
+
+    def test_a_real_key_resolves_without_complaint(self):
+        from unittest.mock import patch
+
+        from ldm_core.snapshot.archive import ProjectTree, _resolve_tree
+
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = _real_paths(Path(tmp))
+            tree = ProjectTree("deploy", reclaim=RECLAIM_CONTAINER)
+            with patch("ldm_core.snapshot.archive.UI.warning") as warn:
+                resolved = _resolve_tree(paths, tree)
+        self.assertEqual(resolved, paths["deploy"])
+        warn.assert_not_called()
+
+    def test_the_dead_entry_is_gone(self):
+        declared = {t.key for t in PROJECT_TREES}
+        self.assertNotIn("client-extensions", declared)
 
     def test_the_real_keys_exist_for_when_that_decision_is_taken(self):
-        """So whoever actions LDM-#1942 does not have to re-derive them."""
+        """Whether `cx` or `ce_dir` should be reclaimed is still open on
+        LDM-#1942 -- `ce_dir` would chown the developer's own source."""
         keys = _real_path_keys()
         self.assertIn("cx", keys, "osgi/client-extensions")
         self.assertIn("ce_dir", keys, "the developer's own client-extensions")
         self.assertNotIn("client-extensions", keys)
 
 
+class TestThePolicyIsUnchanged(unittest.TestCase):
+    """This was a refactor. Pinned so it stays one.
+
+    Changing what is reclaimed is a scope decision needing a native-Linux run
+    (macOS cannot observe `chown 1000` at all), so a silent change here would
+    be both a behaviour change and an unverifiable one.
+    """
+
+    def test_the_container_reclaim_set_is_what_it_always_was(self):
+        self.assertEqual(
+            {t.key for t in trees_to_reclaim(RECLAIM_CONTAINER)},
+            {"deploy", "files", "logs", "configs", "modules", "marketplace"},
+        )
+
+    def test_the_host_reclaim_set_is_what_it_always_was(self):
+        self.assertEqual(
+            {t.key for t in trees_to_reclaim(RECLAIM_HOST)}, {"data", "state"}
+        )
+
+    def test_every_tree_declares_a_policy(self):
+        """A tree in the registry with no policy does nothing, which is the
+        shape of the original defect wearing different clothes."""
+        for tree in PROJECT_TREES:
+            with self.subTest(key=tree.key):
+                self.assertIn(tree.reclaim, (RECLAIM_CONTAINER, RECLAIM_HOST))
+
+
 class TestTheTwoListsAreNotInterchangeable(unittest.TestCase):
-    """The trap, pinned. Someone 'harmonising' these would reintroduce #1942."""
+    """The trap, measured. Someone 'harmonising' these would lose a directory."""
 
     def test_the_archive_list_holds_directory_names_not_path_keys(self):
-        """`.ldm` and `osgi` are directory names; `.ldm` is no key at all."""
         self.assertIn(".ldm", _ARCHIVE_DIR_NAMES)
         self.assertNotIn(".ldm", _real_path_keys())
 
-    def test_the_two_lists_are_genuinely_different_sets(self):
-        """If they ever become equal, one of them is wrong -- they answer
-        different questions."""
-        self.assertNotEqual(set(_RECLAIM_PATH_KEYS), set(_ARCHIVE_DIR_NAMES))
+    def test_a_shared_string_means_two_different_places(self):
+        """`configs` is the counter-example that makes derivation unsafe.
+
+        It is valid in BOTH vocabularies and resolves differently in each, so
+        deriving the archive from path keys would archive `osgi/configs` --
+        already inside the `osgi` entry -- and silently stop archiving
+        `<root>/configs`.
+        """
+        self.assertIn("configs", _ARCHIVE_DIR_NAMES)
+        self.assertIn("configs", {t.key for t in PROJECT_TREES})
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = _real_paths(Path(tmp))
+            as_archive_name = paths["root"] / "configs"
+            as_path_key = paths["configs"]
+        self.assertNotEqual(
+            as_archive_name,
+            as_path_key,
+            "if these ever agree, re-measure before deriving one from the "
+            "other -- this test is the reason that derivation was backed out",
+        )
 
     def test_every_archive_name_resolves_under_the_project_root(self):
-        """The archive list's real contract: a name joinable to the root.
-
-        Asserted as a shape rather than by existence -- a project legitimately
-        may not have every one of these directories.
-        """
         for name in _ARCHIVE_DIR_NAMES:
             with self.subTest(name=name):
                 self.assertFalse(Path(name).is_absolute())

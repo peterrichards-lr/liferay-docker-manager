@@ -25,12 +25,14 @@ sshd; `test_it_exits_when_its_stdin_closes` keeps the half of that contract
 which needs no sshd.
 """
 
+import os
 import socket
 import subprocess  # nosec B404 - fixed argv, no shell
 import sys
 import time
 import unittest
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from ldm_core.docker_tunnel import (
     DockerSshTunnel,
@@ -157,3 +159,178 @@ class LifecycleTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TunnelIsReachableFromTheCLI(unittest.TestCase):
+    """LDM-#1993: the wiring, which #2004 shipped without.
+
+    `DockerSshTunnel` landed with no switch and no call site, so it was
+    unreachable from the CLI. Anyone setting the variable would have measured
+    a feature that never ran and read the unchanged accept count as the
+    tunnel having failed.
+    """
+
+    def setUp(self):
+        from ldm_core import docker_tunnel
+
+        docker_tunnel._TUNNELS.clear()
+        docker_tunnel._DEAD_REPORTED.clear()
+        self.addCleanup(docker_tunnel._TUNNELS.clear)
+        self.addCleanup(docker_tunnel._DEAD_REPORTED.clear)
+
+        # No test here may spawn a real ssh. One did, briefly, through a
+        # target-name mismatch: the registry entry was keyed on a different
+        # name, so the lookup missed and `active_tunnel` opened a genuine
+        # tunnel and sat out the 25s readiness timeout. A guard is cheaper
+        # than noticing a slow suite.
+        def _never(*_a, **_k):
+            raise AssertionError(
+                "a test tried to open a real SSH tunnel -- check the target "
+                "name matches the registry key"
+            )
+
+        starter = patch.object(DockerSshTunnel, "start", _never)
+        starter.start()
+        self.addCleanup(starter.stop)
+
+    def test_it_is_off_unless_the_variable_is_set(self):
+        from ldm_core.docker_tunnel import active_tunnel, tunnelling_enabled
+
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(tunnelling_enabled())
+            self.assertIsNone(active_tunnel(_target(name="aws-1")))
+
+    def test_the_variable_is_read_tolerantly(self):
+        from ldm_core.docker_tunnel import tunnelling_enabled
+
+        for value in ("1", "true", "TRUE", " yes ", "on"):
+            with (
+                self.subTest(value=value),
+                patch.dict(os.environ, {"LDM_DOCKER_TUNNEL": value}),
+            ):
+                self.assertTrue(tunnelling_enabled())
+        for value in ("", "0", "false", "no"):
+            with (
+                self.subTest(value=value),
+                patch.dict(os.environ, {"LDM_DOCKER_TUNNEL": value}),
+            ):
+                self.assertFalse(tunnelling_enabled())
+
+    def test_a_remote_target_routes_through_the_tunnel_when_enabled(self):
+        """The whole point: `--host`, not `--context`, so one connection."""
+        from ldm_core.docker_service import DockerService
+
+        fake = MagicMock()
+        fake.docker_host = "tcp://127.0.0.1:54321"
+        with (
+            patch.dict(os.environ, {"LDM_DOCKER_TUNNEL": "1"}),
+            patch(
+                "ldm_core.docker_service.get_active_target",
+                return_value=_target(name="aws-1"),
+            ),
+            patch("ldm_core.docker_tunnel.active_tunnel", return_value=fake),
+        ):
+            cmd = DockerService.get_docker_cmd_prefix("aws-1")
+        self.assertEqual(cmd, ["docker", "--host", "tcp://127.0.0.1:54321"])
+        self.assertNotIn("--context", cmd)
+
+    def test_without_the_variable_the_context_path_is_untouched(self):
+        from ldm_core.docker_service import DockerService
+
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch(
+                "ldm_core.docker_service.get_active_target",
+                return_value=_target(name="aws-1"),
+            ),
+        ):
+            cmd = DockerService.get_docker_cmd_prefix("aws-1")
+        self.assertEqual(cmd, ["docker", "--context", "aws-1"])
+
+    def test_a_tunnel_is_opened_once_and_reused(self):
+        """N connections become 1 -- reuse is the entire mechanism."""
+        from ldm_core import docker_tunnel
+
+        started = []
+
+        class _Fake:
+            docker_host = "tcp://127.0.0.1:1"
+
+            def start(self):
+                started.append(1)
+                return self.docker_host
+
+            def is_alive(self):
+                return True
+
+        with (
+            patch.dict(os.environ, {"LDM_DOCKER_TUNNEL": "1"}),
+            patch.object(docker_tunnel, "DockerSshTunnel", lambda *_a, **_k: _Fake()),
+        ):
+            for _ in range(5):
+                docker_tunnel.active_tunnel(_target(name="aws-1"))
+        self.assertEqual(len(started), 1, "a tunnel was opened per call")
+
+    def test_a_tunnel_that_dies_is_reported_as_a_tunnel(self):
+        """Requirement 4: "established then died", named as itself.
+
+        Otherwise the next command fails against a loopback port nothing is
+        listening on and the user is told `Docker not accessible` -- a
+        symptom naming the wrong subject.
+        """
+        from ldm_core import docker_tunnel
+
+        dead = MagicMock()
+        dead.is_alive.return_value = False
+        dead._proc = None
+        docker_tunnel._TUNNELS["aws-1"] = dead
+
+        with (
+            patch.dict(os.environ, {"LDM_DOCKER_TUNNEL": "1"}),
+            patch("ldm_core.docker_tunnel.UI.error") as err,
+            patch("ldm_core.docker_tunnel.UI.detail") as detail,
+        ):
+            result = docker_tunnel.active_tunnel(_target(name="aws-1"))
+
+        self.assertIsNone(result, "a dead tunnel must not be handed out")
+        err.assert_called_once()
+        message = err.call_args[0][0]
+        self.assertIn("SSH tunnel", message)
+        self.assertIn("aws-1", message)
+        self.assertIn(
+            "detected at", message, "we know when we noticed, not when it died"
+        )
+        notes = " ".join(str(c[0][0]) for c in detail.call_args_list)
+        self.assertIn("established tunnel that died", notes)
+
+    def test_the_death_is_reported_once_not_per_command(self):
+        from ldm_core import docker_tunnel
+
+        dead = MagicMock()
+        dead.is_alive.return_value = False
+        dead._proc = None
+
+        with (
+            patch.dict(os.environ, {"LDM_DOCKER_TUNNEL": "1"}),
+            patch("ldm_core.docker_tunnel.UI.error") as err,
+            patch("ldm_core.docker_tunnel.UI.detail"),
+        ):
+            for _ in range(3):
+                docker_tunnel._TUNNELS["aws-1"] = dead
+                docker_tunnel.active_tunnel(_target(name="aws-1"))
+        err.assert_called_once()
+
+    def test_a_dead_tunnel_falls_back_rather_than_failing_the_run(self):
+        """A slower run beats no run."""
+        from ldm_core.docker_service import DockerService
+
+        with (
+            patch.dict(os.environ, {"LDM_DOCKER_TUNNEL": "1"}),
+            patch(
+                "ldm_core.docker_service.get_active_target",
+                return_value=_target(name="aws-1"),
+            ),
+            patch("ldm_core.docker_tunnel.active_tunnel", return_value=None),
+        ):
+            cmd = DockerService.get_docker_cmd_prefix("aws-1")
+        self.assertEqual(cmd, ["docker", "--context", "aws-1"])

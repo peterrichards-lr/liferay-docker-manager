@@ -3379,10 +3379,34 @@ if ls "${SHARE_DRYRUN_HOME}/.ldm/cache/"supported-domains-*.json >/dev/null 2>&1
     share_dryrun_fail "'share start --dry-run' fetched the gateway domain list (LDM-#2015)." "$(ls -1 "${SHARE_DRYRUN_HOME}/.ldm/cache/" 2>&1)"
 fi
 
+# 8. LDM-#2019: the address is not enough -- say where each half came from.
+#    Printing only what it resolved to leaves "why that one?" to a code read,
+#    which is what the original report cost.
+SHARE_OUT=$(share_dry_run --subdomain peters --domain lfr-demo.se) || true
+if ! echo "$SHARE_OUT" | grep -q "subdomain 'peters' from the command line"; then
+    share_dryrun_fail "the resolved subdomain's source was not named (LDM-#2019)." "$SHARE_OUT"
+fi
+if ! echo "$SHARE_OUT" | grep -q "domain 'lfr-demo.se' from --domain"; then
+    share_dryrun_fail "the resolved domain's source was not named (LDM-#2019)." "$SHARE_OUT"
+fi
+
+# 9. The reported case, end to end: a domain nobody typed on the command
+#    line, arriving from a machine-wide pin. A SEPARATE home, so the stored
+#    value cannot leak into the checks above.
+SHARE_PIN_HOME="${SHARE_DRYRUN_DIR}/pinned-home"
+rm -rf "$SHARE_PIN_HOME"
+mkdir -p "$SHARE_PIN_HOME"
+printf '%s' '{"share_domain": "dev.example.invalid"}' > "${SHARE_PIN_HOME}/.ldmrc"
+SHARE_OUT=$( (cd "$SHARE_DRYRUN_PROJ" && LDM_HOME="$SHARE_PIN_HOME" "$LDM_CMD" \
+    share start --dry-run -y --no-color --subdomain peters 2>&1) ) || true
+if ! echo "$SHARE_OUT" | grep -q "domain 'dev.example.invalid' from ~/.ldmrc"; then
+    share_dryrun_fail "a domain taken from ~/.ldmrc did not say so -- the exact confusion LDM-#2019 exists to remove." "$SHARE_OUT"
+fi
+
 if [ "$SHARE_DRYRUN_FAILED" = true ]; then
     exit 1
 fi
-report_ok "✅ Share dry-run resolution verified (base domain, host-on-base, --url, vanity domain, conflict refusal, no meta write, no gateway fetch)."
+report_ok "✅ Share dry-run resolution verified (base domain, host-on-base, --url, vanity domain, conflict refusal, no meta write, no gateway fetch, address provenance)."
 
 # LDM-#2015: the section above proves a dry run does NOT fetch. This one
 # proves the fetched list is actually consumed -- that a domain LDM was never
