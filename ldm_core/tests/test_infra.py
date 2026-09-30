@@ -785,6 +785,17 @@ class TestTheProxyLogLevelIsReachable(unittest.TestCase):
         self.assertNotIn("--log.level=DEBUG", text)
         self.assertNotIn("--log.level=INFO", text)
 
+    def test_the_format_is_settable_and_defaults_to_traefiks_own(self):
+        """`common` writes ANSI escapes BETWEEN key and value, so the obvious
+        `grep 'routerName=<name>'` matches nothing. `json` is what a capture
+        wants; the default is unchanged."""
+        text = self._compose_text()
+        self.assertIn(
+            "--log.format=${LDM_PROXY_LOG_FORMAT:-common}",
+            text,
+        )
+        self.assertNotIn("--log.format=json", text)
+
     def test_the_proxy_still_sets_no_log_file(self):
         """A file would capture the same nothing.
 
