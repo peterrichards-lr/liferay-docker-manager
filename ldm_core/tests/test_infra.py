@@ -741,3 +741,56 @@ class TestGlobalServiceDockerCallsAreBounded(unittest.TestCase):
             infra_mod._INFRA_PROBE_TIMEOUT,
             "creating a service may pull an image; a probe may not",
         )
+
+
+class TestTheProxyLogLevelIsReachable(unittest.TestCase):
+    """LDM-#2005: the global proxy is silent by configuration, not by fault.
+
+    `docker logs liferay-proxy-global` returning nothing at **exit 0** was
+    reported as a possible broken logging driver. It is not: an unreadable
+    driver exits non-zero with "configured logging driver does not support
+    reading". The log is empty because Traefik's own default level is ERROR
+    and LDM sets no `--log.*` flag at all.
+
+    That matters because it hides the class of problem where Traefik declines
+    to route a container and does not consider it an error -- a provider that
+    never saw it, a constraint excluding it, a reload discarding an entry.
+    With `--providers.docker.exposedbydefault=false` a container is routed
+    only if the PROVIDER sees `traefik.enable=true`, and every way it might
+    not is a DEBUG-level event, invisible at the level that is on.
+    """
+
+    @staticmethod
+    def _compose_text():
+        from pathlib import Path
+
+        import ldm_core
+
+        return (
+            Path(ldm_core.__file__).parent / "resources" / "infra-compose.yml"
+        ).read_text(encoding="utf-8")
+
+    def test_the_level_is_settable_by_environment_variable(self):
+        self.assertIn("--log.level=${LDM_PROXY_LOG_LEVEL:-ERROR}", self._compose_text())
+
+    def test_the_default_is_unchanged(self):
+        """ERROR stays the default deliberately.
+
+        Flipping the global default to INFO would have prevented the reported
+        investigation, and would change log volume for every LDM user to fix
+        one case. That is a separate decision, not one to smuggle in here.
+        """
+        text = self._compose_text()
+        self.assertIn(":-ERROR}", text)
+        self.assertNotIn("--log.level=DEBUG", text)
+        self.assertNotIn("--log.level=INFO", text)
+
+    def test_the_proxy_still_sets_no_log_file(self):
+        """A file would capture the same nothing.
+
+        `--log.filePath` was considered and rejected: it redirects Traefik
+        away from stdout, so `docker logs` would become permanently empty for
+        every user, and at ERROR it would faithfully record silence anyway.
+        The level is the lever, not the destination.
+        """
+        self.assertNotIn("--log.filePath", self._compose_text())

@@ -11,6 +11,21 @@ services:
       - "--entrypoints.websecure.address=:443"
       - "--providers.file.directory=/etc/traefik/certs"
       - "--providers.file.watch=true"
+      # LDM-#2005: Traefik's own default log level is ERROR, so the proxy is
+      # silent unless something fails -- `docker logs liferay-proxy-global`
+      # returning nothing at exit 0 is the container working as configured,
+      # not a broken logging driver.
+      #
+      # That silence hides the class of problem where Traefik declines to
+      # route a container and does not consider it an error: a provider that
+      # never saw it, a constraint excluding it, a reload discarding an
+      # entry. With `exposedbydefault=false` a container is routed only if
+      # the PROVIDER sees `traefik.enable=true`, and every way it might not
+      # is a DEBUG-level event.
+      #
+      # Default unchanged. Raise it for one restart with:
+      #   LDM_PROXY_LOG_LEVEL=DEBUG ldm infra restart-proxy
+      - "--log.level=${LDM_PROXY_LOG_LEVEL:-ERROR}"
     ports:
       - "${LDM_HTTP_PORT:-80}:80"
       - "${LDM_SSL_PORT:-443}:443"

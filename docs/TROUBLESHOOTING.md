@@ -483,6 +483,54 @@ would auto-discover.
 
 ---
 
+## 🚦 The Global Proxy (Traefik)
+
+### **Issue: `docker logs liferay-proxy-global` prints nothing**
+
+Almost certainly working as configured. **Traefik's own default log level is
+`ERROR`**, and LDM sets no `--log.*` flag, so the proxy is silent unless
+something fails.
+
+An empty log and an unreadable one are different facts, and they are easy to
+tell apart: an unreadable logging driver exits **non-zero** with
+`configured logging driver does not support reading`. **Exit 0 with no output
+means the driver is fine and Traefik has genuinely written nothing.**
+
+### **Issue: a container has correct labels and gets no route**
+
+The symptom is a container that is running, on `liferay-net`, with
+well-formed `traefik.*` labels, for which Traefik loads no router -- and an
+empty proxy log, because Traefik does not consider any of the likely causes
+an error.
+
+LDM runs the proxy with `--providers.docker.exposedbydefault=false`, so a
+container is routed only if the **provider** sees `traefik.enable=true`.
+Every way the provider might not see it -- a constraint excluding it, a
+configuration reload discarding an entry, the container never being observed
+at all -- is a `DEBUG`-level event. Raising the level is what makes those
+visible:
+
+```bash
+LDM_PROXY_LOG_LEVEL=DEBUG ldm infra restart-proxy
+```
+
+`INFO` also exists, but `DEBUG` is the level to reach for: the causes that
+log at `ERROR` are already covered by the level that is on, so the remaining
+space is precisely what Traefik does not treat as an error.
+
+> [!WARNING]
+> **`DEBUG` is voluminous, and it will break a capture sized for a silent
+> proxy.** Over a long run it produces many thousands of lines, and the
+> events worth reading are at **stack bring-up**, not teardown -- so
+> `docker logs --tail N` takes the wrong end. Measured on a 45-minute CI run,
+> a 120-line tail covered the final few seconds. Select on content -- the
+> container's name, or Traefik's own provider messages -- rather than tailing.
+
+Set the variable only for the run you are diagnosing. The default is `ERROR`
+for everyone else.
+
+---
+
 ## 🛡️ EDR / SentinelOne Quarantine (lfr-tunnel)
 
 ### **Issue: "Failed to verify lfr-tunnel installation after download"**
@@ -566,4 +614,4 @@ Projects are discovered from the current folder, its parent, `~/ldm`, the LDM in
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-29* | *Last Reviewed: 2026-09-29*
+*Last Updated: 2026-09-30* | *Last Reviewed: 2026-09-30*
