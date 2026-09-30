@@ -3844,7 +3844,7 @@ CMD ["sleep", "3600"]
         throw "The '$cxSvcName' CX fixture does not hold the invariants every real client extension holds, so every assertion after it proves less than it appears to (LDM-#1975)."
     }
     & $VENV_PYTHON -c "import shutil, sys; shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])" $cxSvcName "cxsvc-build/$cxSvcName"
-    Invoke-LoggedCommand "Deploying CX service" $LDM_CMD @("-y", "deploy", ".", "$cxSvcName.zip")
+    Log-AndRun "Deploying CX service" $LDM_CMD "-y deploy . $cxSvcName.zip"
     & $LDM_CMD -y run . --no-up --no-seed 2>&1 | Out-Null
 
     $cxSvcCheck = @'
@@ -4186,7 +4186,7 @@ CMD ["sleep", "3600"]
 '@ | Out-File -FilePath "cxderiv-build/$cxDerivName/Dockerfile" -Encoding ascii
 
     & $VENV_PYTHON -c "import shutil, sys; shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])" $cxDerivName "cxderiv-build/$cxDerivName"
-    Invoke-LoggedCommand "Deploying derived-routes CX" $LDM_CMD @("-y", "deploy", ".", "$cxDerivName.zip")
+    Log-AndRun "Deploying derived-routes CX" $LDM_CMD "-y deploy . $cxDerivName.zip"
     & $LDM_CMD -y run . --no-up --no-seed 2>&1 | Out-Null
 
     @'
