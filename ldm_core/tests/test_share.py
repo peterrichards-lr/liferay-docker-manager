@@ -2418,3 +2418,88 @@ class TestAddressProvenance(unittest.TestCase):
         self.assertIn("Public URL", notes)
         self.assertIn("subdomain 'peters' from the command line", notes)
         self.assertIn("domain 'lfr-demo.se' from --domain", notes)
+
+
+class TestStatusSaysWhereTheAddressCameFrom(unittest.TestCase):
+    """LDM-#2019, the half `share start` did not cover.
+
+    `share status` is where someone looks when an address has already
+    surprised them, so reporting one without its origin leaves exactly the
+    gap the issue was raised about.
+
+    It cannot reuse `resolve_share_config()`: that prompts when nothing is
+    configured, and persists the answer machine-wide. A read-only status
+    command must do neither.
+    """
+
+    def setUp(self):
+        self.mock_manager = MockManager()
+        self.mock_manager.args = MagicMock()
+        self.mock_manager.args.share_domain = None
+        self.mock_manager.args.domain = None
+        self.service = ShareService(self.mock_manager)
+
+    def test_a_domain_from_the_project_meta_is_named(self):
+        domain, source = self.service.configured_domain_source(
+            {"share_domain": "lfr-demo.se"}
+        )
+        self.assertEqual((domain, source), ("lfr-demo.se", "this project's meta"))
+
+    def test_a_domain_from_the_global_config_is_named(self):
+        """The reported case -- a machine-wide pin nobody remembers setting."""
+        self.mock_manager.config.get_global_config = lambda: {  # type: ignore[method-assign]
+            "share_domain": "dev.solaramoto.com"
+        }
+        domain, source = self.service.configured_domain_source({})
+        self.assertEqual((domain, source), ("dev.solaramoto.com", "~/.ldmrc"))
+
+    def test_the_project_meta_beats_the_global_config(self):
+        """Same precedence as resolution, so status cannot disagree with it."""
+        self.mock_manager.config.get_global_config = lambda: {  # type: ignore[method-assign]
+            "share_domain": "dev.solaramoto.com"
+        }
+        domain, source = self.service.configured_domain_source(
+            {"share_domain": "lfr-demo.se"}
+        )
+        self.assertEqual((domain, source), ("lfr-demo.se", "this project's meta"))
+
+    def test_a_stored_host_is_reduced_to_its_base(self):
+        domain, _ = self.service.configured_domain_source(
+            {"share_domain": "peters.lfr-demo.se"}
+        )
+        self.assertEqual(domain, "lfr-demo.se")
+
+    def test_nothing_configured_names_the_default_without_choosing_it(self):
+        domain, source = self.service.configured_domain_source({})
+        self.assertEqual(domain, ShareService.DEFAULT_TUNNEL_BASE_DOMAINS[0])
+        self.assertEqual(source, "LDM's default")
+
+    def test_it_never_prompts(self):
+        """A status command that asks a question is worse than one that says
+        less -- and `resolve_share_config()` also writes the answer to
+        ~/.ldmrc for every project on the machine."""
+        self.mock_manager.non_interactive = False
+        with (
+            patch("ldm_core.handlers.share.UI.ask") as ask,
+            # create=True: the double does not define it, which is itself
+            # evidence the method is unreachable here -- but an explicit
+            # assertion beats an incidental AttributeError, which a richer
+            # double would silently remove.
+            patch.object(
+                self.mock_manager.config, "set_global_config", create=True
+            ) as persisted,
+        ):
+            self.service.configured_domain_source({})
+        ask.assert_not_called()
+        persisted.assert_not_called()
+
+    def test_the_line_names_both_halves(self):
+        line = self.service.describe_status_sources(
+            {"share_domain": "lfr-demo.se"}, "peters", "the live tunnel"
+        )
+        self.assertIn("subdomain 'peters' from the live tunnel", line)
+        self.assertIn("domain 'lfr-demo.se' from this project's meta", line)
+
+    def test_nothing_is_emitted_without_a_subdomain(self):
+        line = self.service.describe_status_sources({}, None, None)
+        self.assertNotIn("subdomain", line)

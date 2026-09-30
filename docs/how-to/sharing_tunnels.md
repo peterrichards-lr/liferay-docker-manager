@@ -174,6 +174,22 @@ To inspect the active tunnel and retrieve its public URL:
 ldm share status [project]
 ```
 
+`ldm share status` reports the same provenance as `ldm share start`, because
+it is where you look when an address has already surprised you:
+
+```text
+  ● Subdomain: peters
+  ● Address from: subdomain 'peters' from the live tunnel, domain 'lfr-demo.se' from ~/.ldmrc
+```
+
+The subdomain is attributed to whichever answered -- the live tunnel, the
+project's `meta`, or the project name -- and the domain to the first of the
+flag, the project's `meta` or `~/.ldmrc` that holds one.
+
+`status` resolves nothing and writes nothing. It will not prompt for a domain
+the way `share start` does, and will not persist one to `~/.ldmrc`, so reading
+the status can never change what the next share does.
+
 ### Stop a Tunnel
 
 To terminate the active sharing session:
