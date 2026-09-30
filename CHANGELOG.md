@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.0-pre.12] - 2026-09-30
+
+### Added
+
+- **`ldm share start` says where the address came from, not just what it resolved to** (LDM-#2019). A run that printed `Using custom domain 'dev.example.com'` for a domain the user had never typed was reported as "it is ignoring my subdomain". It was not -- the subdomain was honoured and the *domain* came from `~/.ldmrc` -- but establishing that took a read across three resolution sources. The public URL line now carries the provenance of each half: `subdomain 'peters' from the command line, domain 'dev.example.com' from ~/.ldmrc`. Sources named include `--url` and `--domain` distinctly, the project's `meta`, `~/.ldmrc`, and -- worth spelling out, because it is how a machine acquires a pin nobody remembers setting -- `your prompt answer, now saved to ~/.ldmrc`.
+
+- **`ldm share status` reports the same provenance** (LDM-#2019), because it is where you look when an address has already surprised you: `Address from: subdomain 'peters' from the live tunnel, domain 'lfr-demo.se' from ~/.ldmrc`. It resolves nothing and writes nothing -- unlike `share start` it will not prompt for a domain, and will not persist one to `~/.ldmrc`, so reading the status can never change what the next share does.
+
+- **The global proxy's log level and format are reachable** (LDM-#2005). `docker logs liferay-proxy-global` returning nothing at exit 0 was reported as a possible broken logging driver. It is not: LDM sets no logging configuration at all, and **Traefik's own default level is `ERROR`**, so the proxy is silent unless something fails. An unreadable driver exits *non-zero*; exit 0 with no output means the log is genuinely empty.
+
+  ```bash
+  LDM_PROXY_LOG_LEVEL=DEBUG LDM_PROXY_LOG_FORMAT=json ldm infra restart-proxy
+  ```
+
+  Both default to Traefik's own defaults, so nothing changes for anyone who does not ask. The point is not that `DEBUG` shows more -- it is that `ERROR` is **already on**, so raising the level adds nothing for error-shaped causes and everything for the class Traefik does not treat as an error. Measured against `traefik:v3.6.1` with LDM's production flags: a malformed `traefik.*` label logs at `ERR`; a `traefik.docker.network` naming a network the container is not on logs at `WRN` **and routes anyway, to a defaulted IP**; only the provider filtering a container out is `DEBUG`-only. The middle case has its own troubleshooting entry, because a route that exists and serves possibly the wrong backend is a worse shape than an absent one.
+
+- **`LDM_DOCKER_TUNNEL` opens one SSH connection per run instead of one per Docker command** (LDM-#1993), for projects on a remote compute node. Docker's SSH connection helper opens a fresh connection for every `docker --context` invocation, and LDM has ~86 such call sites plus 13 for compose. Measured on an affected node: 478 `Accepted publickey` in 30 hours against sshd's default `MaxStartups 10:30:100`, with 714 lines of throttling -- surfacing to the user as `Docker not accessible`, which names neither SSH nor the node.
+
+  Measured on `aws-1` with this change, 20 identical commands: **21 SSH authentications without the tunnel, 1 with it**, and 21.9s against 4.0s. A full verb sequence -- compose up with an image pull, `ps`, `exec`, streaming `logs -f`, `cp`, `compose down -v` -- completes on **2** authentications total. Off by default.
+
+  **What this does not prove**, stated because the issue has had to retract twice: the reported drops are not verified as fixed. The affected node's `MaxStartups` has since been raised to `100:30:200`, so it cannot shed connections whatever LDM does. The mechanism is measured; the outcome's conditions no longer exist.
+
+### Fixed
+
+- **A tunnel that dies mid-run is now reported as a tunnel** (LDM-#1993), rather than surfacing as a connection refused against a loopback port -- a symptom naming the wrong subject. It distinguishes "established then died" from "never established", says what ssh said or that it said nothing, reports once per node rather than per command, and falls back to per-command connections rather than failing the run. It says *detected at*, not *died at*: nothing watches the ssh process, so the death is noticed when a command next needs the tunnel.
+
+### Changed
+
+- **The snapshot reclaim policy is one declaration instead of two drifting lists** (LDM-#1942). A `client-extensions` entry sat in the reclaim loop for its whole life without ever firing: it is a valid directory *name* and an invalid path *key*, and `paths.get(key)` cannot tell a wrong key from an absent directory. The policy is now declared once, keyed only by `setup_paths` keys, and **a key that is not real says so** instead of silently reclaiming nothing.
+
+  Two tempting fixes were tried and rejected, both by measurement. **Deriving the archive list from path keys** would have silently stopped archiving `<root>/configs` -- `configs` is valid in both vocabularies and resolves to *different directories* in each, so the archive would have gained `osgi/configs`, already inside the `osgi` entry, and lost the real one. **Indexing with `paths[key]` so a bad key raises** is wrong too: the loop runs inside a broad `except Exception`, so the raise is swallowed and aborts the *whole* loop -- trading one quiet entry for every quiet entry. Behaviour is otherwise unchanged and pinned by tests; what is reclaimed did not move.
+
 ## [v2.26.0-pre.11] - 2026-09-29
 
 ### Fixed
