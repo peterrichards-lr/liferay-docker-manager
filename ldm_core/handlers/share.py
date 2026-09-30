@@ -1141,6 +1141,43 @@ class ShareService:
 
         return f"https://{subdomain}.{domain}"
 
+    def configured_domain_source(self, project_meta=None):
+        """`(domain, source)` as CONFIGURED, resolving nothing (LDM-#2019).
+
+        `resolve_share_config()` cannot be used from `share status`: it
+        prompts when nothing is configured, and a status command that asks a
+        question is worse than one that says less. It also persists a prompt
+        answer machine-wide, which a read-only command must never do.
+
+        So this walks the same precedence -- flag, project meta, `~/.ldmrc`
+        -- read-only, and reports `LDM's default` when none of them answered
+        rather than picking the default itself.
+        """
+        for attr in ("share_domain", "domain"):
+            value = getattr(getattr(self.manager, "args", None), attr, None)
+            if isinstance(value, str) and value:
+                _, base = self.split_share_host(value)
+                return base, "the command line"
+        stored = (project_meta or {}).get("share_domain")
+        if stored:
+            _, base = self.split_share_host(stored)
+            return base, "this project's meta"
+        stored = self.manager.config.get_global_config().get("share_domain")
+        if stored:
+            _, base = self.split_share_host(stored)
+            return base, "~/.ldmrc"
+        return self.get_default_tunnel_domain(), "LDM's default"
+
+    def describe_status_sources(self, project_meta, subdomain, subdomain_source):
+        """The provenance line for `share status`, or "" when nothing is known."""
+        domain, domain_source = self.configured_domain_source(project_meta)
+        parts = []
+        if subdomain and subdomain_source:
+            parts.append(f"subdomain '{subdomain}' from {subdomain_source}")
+        if domain and domain_source:
+            parts.append(f"domain '{domain}' from {domain_source}")
+        return ", ".join(parts)
+
     def _describe_address_sources(self, subdomain, domain):
         """Where each half of the public address came from (LDM-#2019).
 
@@ -1727,13 +1764,18 @@ class ShareService:
             info = api_data.get("info", {})
             state = api_data.get("state", {})
 
-            subdomain = (
-                state.get("subdomain")
-                or info.get("subdomain", {}).get("name")
-                or project_meta.get("share_subdomain")
-                or project_id
-                or (root.name if root else "tunnel")
-            )
+            # LDM-#2019: track WHICH of these answered. `share status` is
+            # where someone looks when they are already puzzled by an
+            # address, so reporting one without its origin is the same gap
+            # `share start` had.
+            subdomain_source = "the live tunnel"
+            subdomain = state.get("subdomain") or info.get("subdomain", {}).get("name")
+            if not subdomain:
+                subdomain = project_meta.get("share_subdomain")
+                subdomain_source = "this project's meta"
+            if not subdomain:
+                subdomain = project_id or (root.name if root else "tunnel")
+                subdomain_source = "the project name"
             status = info.get("status") or (
                 "healthy" if state.get("connected") else "disconnected"
             )
@@ -1746,6 +1788,11 @@ class ShareService:
 
             UI.heading("Liferay Tunnel Status")
             UI.raw(f"  ● {UI.WHITE}Subdomain: {UI.CYAN}{subdomain}{UI.COLOR_OFF}")
+            sources = self.describe_status_sources(
+                project_meta, subdomain, subdomain_source
+            )
+            if sources:
+                UI.raw(f"  ● {UI.WHITE}Address from: {UI.COLOR_OFF}{sources}")
             status_color = (
                 UI.GREEN if status == "healthy" or state.get("connected") else UI.RED
             )
