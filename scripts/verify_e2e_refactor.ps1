@@ -2780,7 +2780,27 @@ exit 1
     # Parity with the LDM-#1944/#1946 block in verify_e2e_refactor.sh.
     Write-Host ">> Verifying the published config trees are readable on disk (LDM-#1944/#1946)..."
     $fsPermRoutes = Join-Path (Join-Path $LDM_WORKSPACE $PROJECT_NAME) "routes"
-    $fsPermStat = & docker run --rm -v "${fsPermRoutes}:/w" alpine sh -c '
+    # LDM-#2026: the probe goes to the container base64-encoded, not as a
+    # literal `sh -c '...'` argument.
+    #
+    # Windows PowerShell 5.1 does not escape the double quotes inside an
+    # argument bound for a native command, so docker.exe's own parser
+    # re-split this script at its quote boundaries and `sh` got a truncated
+    # `-c` payload -- the trailing words becoming positional parameters,
+    # which is why $0 was `for`:
+    #
+    #   for: line 6: syntax error: unexpected end of file (expecting "}")
+    #
+    # pwsh 7 passes it intact, and CI's one PowerShell 5.1 job runs this
+    # file's helper unit tests rather than this file, so the pipeline was
+    # green throughout. Base64 removes the class rather than this instance:
+    # the argument reaching docker.exe carries no quote, newline, `$` or `&`
+    # for any parser to act on.
+    #
+    # The `r strip is load-bearing. A CRLF checkout would otherwise decode to
+    # a script `sh` rejects, failing in a way indistinguishable from the bug
+    # above.
+    $fsPermProbe = @'
 probe=/w/.ldm-mode-probe
 : > "$probe" 2>/dev/null || exit 3
 chmod 640 "$probe" 2>/dev/null
@@ -2795,7 +2815,11 @@ for f in $(find /w -type f 2>/dev/null); do
     [ "$((0$m & 0004))" -eq 0 ] && bad="$bad $m:$f"
 done
 echo "SEEN $seen BAD$bad"
-' 2>&1 | Out-String
+'@
+    $fsPermB64 = [Convert]::ToBase64String(
+        [Text.Encoding]::UTF8.GetBytes(($fsPermProbe -replace "`r", ""))
+    )
+    $fsPermStat = & docker run --rm -v "${fsPermRoutes}:/w" alpine sh -c "echo $fsPermB64 | base64 -d | sh" 2>&1 | Out-String
 
     # The probe runs inside a container so the mode semantics are the mount's
     # own, not Windows'. It is the same question either way: does a chmod here
