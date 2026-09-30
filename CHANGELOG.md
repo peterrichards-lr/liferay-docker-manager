@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.0-pre.13] - 2026-09-30
+
+### Fixed
+
+- **`verify_e2e_refactor.ps1` no longer dies halfway through on Windows PowerShell 5.1** (LDM-#2026). The LDM-#1944/#1946 config-tree readability probe handed `docker` a multi-line `sh -c '...'` payload containing double quotes. Windows PowerShell 5.1 does not escape those when building the command line for a native process, so `docker.exe`'s own argument parser re-split the script at them; `sh` received a truncated `-c` payload and the trailing words became positional parameters, reporting `for: line 6: syntax error: unexpected end of file`. pwsh 7 passes the argument intact, which is why it reproduced nowhere else.
+
+  It aborted the run at line 2783 of 5674. **29 sections had passed; 35 never ran**, including every Share assertion this cycle added -- so a Windows-native run had never exercised them. The `.sh` half is unaffected: bash receives the payload as one argument, and macOS and Fedora runs of pre.12 covered those sections and passed.
+
+  The probe is now handed to the container base64-encoded, so the argument reaching `docker.exe` carries no quote, newline, `$` or `&` for any parser to act on -- removing the class rather than tuning quoting that would have to be right across 5.1, pwsh 7 and `docker.exe` simultaneously. The `\r` strip before encoding is load-bearing: a CRLF checkout would otherwise decode to a script `sh` rejects, failing in a way indistinguishable from the bug.
+
+  **Broken since pre.2**, when the probe was added -- `git tag --contains` puts that commit in no stable tag. The last native PowerShell 5.1 verification on record is `2.25.0-pre.3`, which predates the probe entirely, so it has never passed on 5.1 and was on course to ship in v2.26.0.
+
+  A static guard now fails when any native-command argument in the `.ps1` spans lines. It stands in for a test CI cannot run: `ci.yml`'s only PowerShell 5.1 job exercises this script's *helper functions*, not the script, so nothing in the pipeline observes this class at all.
+
 ## [v2.26.0-pre.12] - 2026-09-30
 
 ### Added
