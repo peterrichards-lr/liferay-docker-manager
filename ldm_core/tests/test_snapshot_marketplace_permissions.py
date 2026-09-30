@@ -49,11 +49,21 @@ class TestMarketplaceIsReclaimedBeforeArchiving(unittest.TestCase):
         (self.root / "osgi" / "marketplace" / "a.lpkg").write_text("x")
         (self.root / "deploy").mkdir()
 
+        # LDM-#1942: every key the reclaim registry declares. A partial dict
+        # here is not a smaller fixture, it is a different one -- the loop
+        # warns and skips for a key it cannot find, so a fixture missing keys
+        # would exercise the skip path while appearing to exercise the
+        # reclaim path.
         self.paths = {
             "root": self.root,
             "state": None,
             "deploy": self.root / "deploy",
             "marketplace": self.root / "osgi" / "marketplace",
+            "files": self.root / "files",
+            "logs": self.root / "logs",
+            "configs": self.root / "osgi" / "configs",
+            "modules": self.root / "osgi" / "modules",
+            "data": self.root / "data",
         }
 
         facade = MagicMock()
