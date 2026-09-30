@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.0-pre.14] - 2026-09-30
+
+### Fixed
+
+- **`verify_e2e_refactor.ps1` no longer calls a function that does not exist** (LDM-#2028). `Invoke-LoggedCommand` was invoked at lines 3847 and 4189 and defined nowhere in the repository, so the client-extension service section threw `The term 'Invoke-LoggedCommand' is not recognized` the moment it was reached. The real helper is `Log-AndRun`, which takes its arguments as a space-separated **string** -- it does `$args_list.Split(' ')` -- so both sites had the wrong name *and* the wrong argument shape. The `.sh` half is correct at both places; this was a PowerShell-side transcription error.
+
+  **Neither line had ever executed.** Both arrived during this cycle (#1919 and #1953, `v2.26.0-pre.1` onward, no stable tag), and every Windows-native run died earlier at the LDM-#2026 quoting defect. Fixing that unmasked this -- which is the general hazard worth naming: a suite that aborts halfway hides every defect after the abort, and fixing them one reported line at a time costs a pre-release number each. Line 4189 was never reached even on the pre.13 run, so a fix aimed only at the reported line would have burnt another number to find it.
+
+  The remedy is therefore a whole-file check rather than a patch. A new guard walks the PowerShell AST and reports every `Verb-Noun` command the script invokes that is neither defined in it nor resolvable as a cmdlet; externals such as `python`, `docker` and `chcp.com` are not `Verb-Noun` shaped and are skipped, and the one Windows-only cmdlet is allowlisted so it stays portable. Run over the whole script, `Invoke-LoggedCommand` is the **only** genuine phantom -- so the class is exhausted, not sampled. Against the script as published in `v2.26.0-pre.13` it reports exactly lines 3847 and 4189, and clean against the fix.
+
+  PowerShell resolves a function name only when the line runs, so neither the parser nor PSScriptAnalyzer objected: the file parses fine and the name is a valid command reference right up until it is evaluated. No CI job runs this script end-to-end under Windows PowerShell 5.1, so nothing in the pipeline could see it either.
+
 ## [v2.26.0-pre.13] - 2026-09-30
 
 ### Fixed
