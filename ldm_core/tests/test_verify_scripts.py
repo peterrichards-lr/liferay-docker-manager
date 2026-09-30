@@ -1405,3 +1405,111 @@ class TestNoMultiLineNativeCommandArguments(unittest.TestCase):
             '"echo $b64 | base64 -d | sh" 2>&1 | Out-String\n'
         )
         self.assertEqual(offenders, [])
+
+
+# Verb-Noun cmdlets the script calls that exist only on Windows, so they do not
+# resolve when this runs on Linux or macOS. Externals (python, docker, chcp.com)
+# are not Verb-Noun shaped and are skipped by the check itself.
+_WINDOWS_ONLY_CMDLETS = frozenset({"Get-NetTCPConnection"})
+
+_UNDEFINED_COMMAND_PROBE = r"""
+$ErrorActionPreference = 'Stop'
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($args[0], [ref]$null, [ref]$null)
+$defined = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) |
+    ForEach-Object { $_.Name }
+$ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object {
+    $name = $_.GetCommandName()
+    # Verb-Noun only: anything else is an external program, whose presence is
+    # the host's business rather than this script's.
+    if ($name -and $name -match '^[A-Za-z]+-[A-Za-z]' -and $name -notmatch '\.') {
+        if ($defined -notcontains $name -and -not (Get-Command $name -ErrorAction SilentlyContinue)) {
+            "{0}:{1}" -f $name, $_.Extent.StartLineNumber
+        }
+    }
+}
+"""
+
+
+def _undefined_commands(binary, script_path):
+    """Verb-Noun commands the script calls that are neither defined in it nor
+    resolvable as a cmdlet. Returns a sorted list of "Name:line" strings."""
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".ps1", delete=False, encoding="utf-8"
+    ) as fh:
+        fh.write(_UNDEFINED_COMMAND_PROBE)
+        probe = fh.name
+    try:
+        res = subprocess.run(
+            [binary, "-NoProfile", "-File", probe, str(script_path)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    finally:
+        os.unlink(probe)
+    if res.returncode != 0:
+        raise AssertionError(f"probe failed: {res.stderr.strip()}")
+    out = []
+    for line in res.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.split(":", 1)[0] in _WINDOWS_ONLY_CMDLETS:
+            continue
+        out.append(line)
+    return sorted(out)
+
+
+@unittest.skipUnless(_powershell_binaries(), "no PowerShell available")
+class TestEveryCommandTheScriptCallsExists(unittest.TestCase):
+    """LDM-#2028: `Invoke-LoggedCommand` was called twice and defined nowhere.
+
+    The real helper is `Log-AndRun`, and it takes its arguments as a
+    space-separated **string** (it does `$args_list.Split(' ')`), not as an
+    array -- so the two bad call sites had the wrong name *and* the wrong
+    argument shape.
+
+    Both were introduced during the v2.26.0 cycle (#1919 and #1953) and neither
+    had ever executed: every Windows-native run died earlier, at the LDM-#2026
+    quoting defect on line 2783. Fixing that unmasked this, which is the
+    general hazard -- a suite that aborts halfway hides every defect after the
+    abort, and each fix reveals the next one at the cost of a burnt
+    pre-release number.
+
+    So this checks the whole file at once rather than the line that happened to
+    fail. PowerShell resolves an undefined function only when the line runs,
+    which is why neither CI nor PSScriptAnalyzer objected: the parse is valid
+    and the name is a perfectly good command reference until it isn't.
+
+    Verb-Noun names only. `python`, `docker` and `chcp.com` are external
+    programs whose presence is the host's business, and the one Windows-only
+    cmdlet the script uses is allowlisted above so this stays portable.
+    """
+
+    def test_no_command_is_called_that_nothing_defines(self):
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                offenders = _undefined_commands(binary, PS1_SCRIPT)
+                self.assertEqual(
+                    offenders,
+                    [],
+                    "these are called but neither defined in the script nor "
+                    "resolvable as a cmdlet, so the line throws the moment it "
+                    f"is reached (LDM-#2028): {offenders}",
+                )
+
+    def test_the_guard_catches_an_undefined_call(self):
+        """Neuter probe: without this, a guard that matches nothing passes
+        forever and says nothing about the script."""
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "fake.ps1"
+            fake.write_text(
+                "function Log-AndRun { param($m) }\n"
+                'Log-AndRun "fine"\n'
+                'Invoke-LoggedCommand "boom" $x @("-y")\n',
+                encoding="utf-8",
+            )
+            name, binary = _powershell_binaries()[0]
+            offenders = _undefined_commands(binary, fake)
+        self.assertEqual(len(offenders), 1, offenders)
+        self.assertTrue(offenders[0].startswith("Invoke-LoggedCommand:"), offenders)
