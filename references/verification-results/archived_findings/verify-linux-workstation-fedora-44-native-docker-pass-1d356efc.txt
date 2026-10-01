@@ -1,0 +1,13 @@
+=== LDM BINARY VERIFICATION REPORT ===
+Timestamp:    Thu  1 Oct 11:36:16 BST 2026
+Hostname:     fedora
+Platform:     Fedora Linux 44 (Workstation Edition)
+Run Context:  workstation
+Binary:       /usr/local/bin/ldm
+Version:      ldm 2.26.0-pre.15
+Script Ver:   2.26.0-pre.15
+Docker:    29.8.1
+Compose:   5.5.1
+
+
+🎯 ALL E2E VERIFICATIONS PASSED!
