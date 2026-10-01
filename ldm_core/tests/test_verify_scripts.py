@@ -1679,3 +1679,69 @@ class TestInstallerRunInstructionWorksOnADefaultPolicy(unittest.TestCase):
         """`powershell` and `pwsh` are different binaries; printing the wrong
         one hands the user a command their machine may not have."""
         self.assertIn("PSEdition", self._text())
+
+
+class TestTheConfigTreeProbeRunsAfterTheDeploys(unittest.TestCase):
+    """LDM-#2042: assert on the tree only once the thing that creates it has run.
+
+    Liferay publishes `routes/default/dxp` when a client extension is
+    **deployed**, not when the portal starts serving pages. The probe sat
+    beside the umask check, immediately after the health wait, announcing
+    "Expected the dxp tree once the healthcheck curled /c/portal/layout".
+
+    Measured on Windows: LDM scaffolds `routes/default/dxp` at 18:36 and
+    Liferay writes the four `com.liferay.lxc.dxp.*` files into it at 18:52 --
+    three minutes after the synthetic extension was deployed, in the same
+    minute as the derived-routes one.
+
+    So the check skipped on every Windows run, and that skip was investigated
+    three times as a platform defect. Linux and macOS passed throughout, which
+    was luck: equally misplaced, and they happened to find a published tree.
+
+    Ordering is the property worth pinning. A wait alone would not fix it --
+    in the old position it would have been waiting sixteen minutes on elapsed
+    time rather than on the event that matters.
+    """
+
+    # A tuple, not a dict: RUF012 forbids a mutable class attribute, and this
+    # is a fixed table rather than something a test should be able to edit.
+    MARKERS = (
+        (
+            BASH_SCRIPT,
+            'log_and_run "Deploying derived-routes CX"',
+            ">> Verifying the published config trees are readable on disk",
+        ),
+        (
+            PS1_SCRIPT,
+            'Log-AndRun "Deploying derived-routes CX"',
+            ">> Verifying the published config trees are readable on disk",
+        ),
+    )
+
+    def test_the_probe_follows_every_client_extension_deploy(self):
+        for script, deploy, probe in self.MARKERS:
+            with self.subTest(script=script.name):
+                text = script.read_text(encoding="utf-8")
+                self.assertIn(deploy, text)
+                self.assertIn(probe, text)
+                self.assertLess(
+                    text.index(deploy),
+                    text.index(probe),
+                    f"{script.name}: the config-tree probe runs before the last "
+                    "client-extension deploy, so it asserts on a tree Liferay "
+                    "has not published yet (LDM-#2042)",
+                )
+
+    def test_neither_half_still_blames_the_healthcheck(self):
+        """That sentence sent three investigations the wrong way."""
+        for script in (BASH_SCRIPT, PS1_SCRIPT):
+            with self.subTest(script=script.name):
+                for line in script.read_text(encoding="utf-8").split("\n"):
+                    if line.lstrip().startswith(("#", "//")):
+                        continue  # the explanatory comment quotes it deliberately
+                    self.assertNotIn(
+                        "healthcheck curled /c/portal/layout",
+                        line,
+                        "a skip message still names the healthcheck as the "
+                        "trigger for publication (LDM-#2042)",
+                    )

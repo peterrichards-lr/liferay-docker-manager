@@ -2768,117 +2768,6 @@ exit 1
     }
     Write-Verdict "[SUCCESS] The portal runs with umask ${umaskVal}, so the config trees it publishes are readable by a client extension (LDM-#1944)."
 
-    # LDM-#1946 / LDM-#1944: the modes that actually landed on disk.
-    #
-    # Third and last layer of the LDM-#1944 assertion, and the only one that
-    # looks at a real file:
-    #
-    #   1. a unit test asserts LDM emits a umask granting other-read
-    #   2. the /proc check above asserts Tomcat HONOURED it
-    #   3. this asserts the resulting files are actually readable
-    #
-    # Layers 1 and 2 can both pass while the filesystem quietly discards the
-    # mode, which is the whole of LDM-#1946.
-    #
-    # Whether this runs on Windows is decided by the probe, not asserted here.
-    # NTFS ACLs are not POSIX modes, so it very likely skips -- but that has
-    # not been measured, and the sh half's equivalent assumption turned out to
-    # be wrong for macOS: Docker Desktop rewrites OWNERSHIP, not the mode bits,
-    # so a container writing at umask 0027 really does leave 640 on an APFS
-    # host. Let the probe answer it.
-    #
-    # A skip is announced, never counted as a pass -- reporting a pass here
-    # would relocate LDM-#1946's defect into this script.
-    #
-    # Parity with the LDM-#1944/#1946 block in verify_e2e_refactor.sh.
-    Write-Host ">> Verifying the published config trees are readable on disk (LDM-#1944/#1946)..."
-    $fsPermRoutes = Join-Path (Join-Path $LDM_WORKSPACE $PROJECT_NAME) "routes"
-    # LDM-#2026: the probe goes to the container base64-encoded, not as a
-    # literal `sh -c '...'` argument.
-    #
-    # Windows PowerShell 5.1 does not escape the double quotes inside an
-    # argument bound for a native command, so docker.exe's own parser
-    # re-split this script at its quote boundaries and `sh` got a truncated
-    # `-c` payload -- the trailing words becoming positional parameters,
-    # which is why $0 was `for`:
-    #
-    #   for: line 6: syntax error: unexpected end of file (expecting "}")
-    #
-    # pwsh 7 passes it intact, and CI's one PowerShell 5.1 job runs this
-    # file's helper unit tests rather than this file, so the pipeline was
-    # green throughout. Base64 removes the class rather than this instance:
-    # the argument reaching docker.exe carries no quote, newline, `$` or `&`
-    # for any parser to act on.
-    #
-    # The `r strip is load-bearing. A CRLF checkout would otherwise decode to
-    # a script `sh` rejects, failing in a way indistinguishable from the bug
-    # above.
-    $fsPermProbe = @'
-probe=/w/.ldm-mode-probe
-: > "$probe" 2>/dev/null || exit 3
-chmod 640 "$probe" 2>/dev/null
-back=$(stat -c "%a" "$probe" 2>/dev/null)
-rm -f "$probe"
-[ "$back" != "640" ] && { echo "NOHONOUR $back"; exit 0; }
-bad=""
-seen=0
-for f in $(find /w -type f 2>/dev/null); do
-    seen=$((seen + 1))
-    m=$(stat -c "%a" "$f" 2>/dev/null)
-    [ "$((0$m & 0004))" -eq 0 ] && bad="$bad $m:$f"
-done
-echo "SEEN $seen BAD$bad"
-'@
-    $fsPermB64 = [Convert]::ToBase64String(
-        [Text.Encoding]::UTF8.GetBytes(($fsPermProbe -replace "`r", ""))
-    )
-    $fsPermStat = & docker run --rm -v "${fsPermRoutes}:/w" alpine sh -c "echo $fsPermB64 | base64 -d | sh" 2>&1 | Out-String
-
-    # The probe runs inside a container so the mode semantics are the mount's
-    # own, not Windows'. It is the same question either way: does a chmod here
-    # survive a read-back.
-    if ($fsPermStat -cmatch 'NOHONOUR\s+(\S*)') {
-        Write-Verdict "[WARNING] SKIPPED (not run): this filesystem does not honour chmod -- probed 640, read back '$($Matches[1])'."
-        Write-Verdict "[WARNING] exFAT/FAT32 mounted 'noowners' behave this way, as does NTFS in general. The LDM-#1944 file-mode assertion was NOT evaluated on this run."
-    }
-    elseif ($fsPermStat -cmatch 'SEEN\s+(\d+)\s+BAD(.*)') {
-        $fsPermSeen = [int]$Matches[1]
-        $fsPermBad = $Matches[2].Trim()
-        if ($fsPermBad) {
-            throw ("Liferay published config files a client extension cannot read (LDM-#1944): $fsPermBad. catalina.sh defaults UMASK to 0027 (files 640); LDM sets UMASK=0022 so these land 644 -- if they are 640 the override did not take.")
-        }
-        if ($fsPermSeen -eq 0) {
-            # LDM-#2042: a bare "no files" skip has now happened on three
-            # consecutive Windows runs while Linux and macOS report four
-            # published files, and it does not say WHICH of two very
-            # different things is true:
-            #
-            #   the probe cannot see them -- it looks through a SECOND
-            #   container, and on Docker Desktop a Windows-filesystem bind
-            #   mount need not surface one container's writes to another
-            #   promptly. That is a defect in this check.
-            #
-            #   they are not there -- Liferay's writes are not reaching the
-            #   host at all. That is a defect in the product, and it means a
-            #   client extension on Windows cannot read the OAuth credentials
-            #   Liferay generates for it.
-            #
-            # Counting from the host directly separates them, costs nothing,
-            # and records the answer in the report rather than requiring
-            # someone to stage a boot by hand afterwards.
-            $fsPermHostSeen = @(Get-ChildItem -Recurse -File -LiteralPath $fsPermRoutes -ErrorAction SilentlyContinue).Count
-            if ($fsPermHostSeen -gt 0) {
-                Write-Verdict "[WARNING] SKIPPED (not run): the container probe found no files under routes/, but the host has $fsPermHostSeen. The files exist; this check cannot see them through a second container's bind mount (LDM-#2042). The LDM-#1944 file-mode assertion was NOT evaluated -- the defect is in this check, not in LDM."
-            } else {
-                Write-Verdict "[WARNING] SKIPPED (not run): no files under routes/ after the health wait, from inside a container OR on the host. Expected the dxp tree once the healthcheck curled /c/portal/layout. Liferay's published config is not reaching the host here, so a client extension could not read it either (LDM-#2042)."
-            }
-        } else {
-            Write-Verdict "[SUCCESS] All $fsPermSeen published config file(s) under routes/ are readable by a client extension (LDM-#1944/#1946)."
-        }
-    }
-    else {
-        throw "Could not probe the routes filesystem for LDM-#1944/#1946. Output was: $fsPermStat"
-    }
     } # LDM-#1975 end section: boundary (1 of 2)
 
     # LDM-#1975 section: project -- the remaining assertions against the booted
@@ -4476,6 +4365,146 @@ assert sys.argv[2] in lst, 'client_extensions is %r and omits %r' % (lst, sys.ar
         throw "Snapshot manifest claims client extensions it does not list (LDM-#1573). Manifest: $($snapMeta.FullName)"
     }
     Write-Verdict "[SUCCESS] Snapshot manifest lists the client extension it claims (LDM-#1573)."
+
+    # LDM-#2042: wait for the tree, at the end of the section, after every
+    # client-extension deploy.
+    #
+    # This assertion used to sit beside the umask check, immediately after the
+    # health wait, announcing "Expected the dxp tree once the healthcheck
+    # curled /c/portal/layout". That is not when Liferay publishes. Measured
+    # on Windows: LDM scaffolds routes/default/dxp at 18:36, and Liferay
+    # writes the four com.liferay.lxc.dxp.* files into it at 18:52 -- three
+    # minutes AFTER the synthetic extension was deployed, in the same minute
+    # as the derived-routes one. So it is the deploy that triggers publication,
+    # and publication lags it.
+    #
+    # The check therefore skipped on every Windows run, and that skip was
+    # investigated three times as a platform defect before anyone read the
+    # timestamps. Linux and macOS passed throughout -- equally misplaced, and
+    # lucky.
+    #
+    # A wait is right HERE, where it is waiting on the event that matters, and
+    # was wrong where it was: from the health wait the gap is sixteen minutes,
+    # which is not a timeout to hold a suite open for.
+    $fsPermRoutes = Join-Path (Join-Path $LDM_WORKSPACE $PROJECT_NAME) "routes"
+    $fsPermWaited = 0
+    while ($fsPermWaited -lt 180) {
+        if (@(Get-ChildItem -Recurse -File -LiteralPath $fsPermRoutes -ErrorAction SilentlyContinue).Count -gt 0) { break }
+        Start-Sleep -Seconds 5
+        $fsPermWaited += 5
+    }
+
+    # LDM-#1946 / LDM-#1944: the modes that actually landed on disk.
+    #
+    # Third and last layer of the LDM-#1944 assertion, and the only one that
+    # looks at a real file:
+    #
+    #   1. a unit test asserts LDM emits a umask granting other-read
+    #   2. the /proc check above asserts Tomcat HONOURED it
+    #   3. this asserts the resulting files are actually readable
+    #
+    # Layers 1 and 2 can both pass while the filesystem quietly discards the
+    # mode, which is the whole of LDM-#1946.
+    #
+    # Whether this runs on Windows is decided by the probe, not asserted here.
+    # NTFS ACLs are not POSIX modes, so it very likely skips -- but that has
+    # not been measured, and the sh half's equivalent assumption turned out to
+    # be wrong for macOS: Docker Desktop rewrites OWNERSHIP, not the mode bits,
+    # so a container writing at umask 0027 really does leave 640 on an APFS
+    # host. Let the probe answer it.
+    #
+    # A skip is announced, never counted as a pass -- reporting a pass here
+    # would relocate LDM-#1946's defect into this script.
+    #
+    # Parity with the LDM-#1944/#1946 block in verify_e2e_refactor.sh.
+    Write-Host ">> Verifying the published config trees are readable on disk (LDM-#1944/#1946)..."
+    # LDM-#2026: the probe goes to the container base64-encoded, not as a
+    # literal `sh -c '...'` argument.
+    #
+    # Windows PowerShell 5.1 does not escape the double quotes inside an
+    # argument bound for a native command, so docker.exe's own parser
+    # re-split this script at its quote boundaries and `sh` got a truncated
+    # `-c` payload -- the trailing words becoming positional parameters,
+    # which is why $0 was `for`:
+    #
+    #   for: line 6: syntax error: unexpected end of file (expecting "}")
+    #
+    # pwsh 7 passes it intact, and CI's one PowerShell 5.1 job runs this
+    # file's helper unit tests rather than this file, so the pipeline was
+    # green throughout. Base64 removes the class rather than this instance:
+    # the argument reaching docker.exe carries no quote, newline, `$` or `&`
+    # for any parser to act on.
+    #
+    # The `r strip is load-bearing. A CRLF checkout would otherwise decode to
+    # a script `sh` rejects, failing in a way indistinguishable from the bug
+    # above.
+    $fsPermProbe = @'
+probe=/w/.ldm-mode-probe
+: > "$probe" 2>/dev/null || exit 3
+chmod 640 "$probe" 2>/dev/null
+back=$(stat -c "%a" "$probe" 2>/dev/null)
+rm -f "$probe"
+[ "$back" != "640" ] && { echo "NOHONOUR $back"; exit 0; }
+bad=""
+seen=0
+for f in $(find /w -type f 2>/dev/null); do
+    seen=$((seen + 1))
+    m=$(stat -c "%a" "$f" 2>/dev/null)
+    [ "$((0$m & 0004))" -eq 0 ] && bad="$bad $m:$f"
+done
+echo "SEEN $seen BAD$bad"
+'@
+    $fsPermB64 = [Convert]::ToBase64String(
+        [Text.Encoding]::UTF8.GetBytes(($fsPermProbe -replace "`r", ""))
+    )
+    $fsPermStat = & docker run --rm -v "${fsPermRoutes}:/w" alpine sh -c "echo $fsPermB64 | base64 -d | sh" 2>&1 | Out-String
+
+    # The probe runs inside a container so the mode semantics are the mount's
+    # own, not Windows'. It is the same question either way: does a chmod here
+    # survive a read-back.
+    if ($fsPermStat -cmatch 'NOHONOUR\s+(\S*)') {
+        Write-Verdict "[WARNING] SKIPPED (not run): this filesystem does not honour chmod -- probed 640, read back '$($Matches[1])'."
+        Write-Verdict "[WARNING] exFAT/FAT32 mounted 'noowners' behave this way, as does NTFS in general. The LDM-#1944 file-mode assertion was NOT evaluated on this run."
+    }
+    elseif ($fsPermStat -cmatch 'SEEN\s+(\d+)\s+BAD(.*)') {
+        $fsPermSeen = [int]$Matches[1]
+        $fsPermBad = $Matches[2].Trim()
+        if ($fsPermBad) {
+            throw ("Liferay published config files a client extension cannot read (LDM-#1944): $fsPermBad. catalina.sh defaults UMASK to 0027 (files 640); LDM sets UMASK=0022 so these land 644 -- if they are 640 the override did not take.")
+        }
+        if ($fsPermSeen -eq 0) {
+            # LDM-#2042: a bare "no files" skip has now happened on three
+            # consecutive Windows runs while Linux and macOS report four
+            # published files, and it does not say WHICH of two very
+            # different things is true:
+            #
+            #   the probe cannot see them -- it looks through a SECOND
+            #   container, and on Docker Desktop a Windows-filesystem bind
+            #   mount need not surface one container's writes to another
+            #   promptly. That is a defect in this check.
+            #
+            #   they are not there -- Liferay's writes are not reaching the
+            #   host at all. That is a defect in the product, and it means a
+            #   client extension on Windows cannot read the OAuth credentials
+            #   Liferay generates for it.
+            #
+            # Counting from the host directly separates them, costs nothing,
+            # and records the answer in the report rather than requiring
+            # someone to stage a boot by hand afterwards.
+            $fsPermHostSeen = @(Get-ChildItem -Recurse -File -LiteralPath $fsPermRoutes -ErrorAction SilentlyContinue).Count
+            if ($fsPermHostSeen -gt 0) {
+                Write-Verdict "[WARNING] SKIPPED (not run): the container probe found no files under routes/, but the host has $fsPermHostSeen. The files exist; this check cannot see them through a second container's bind mount (LDM-#2042). The LDM-#1944 file-mode assertion was NOT evaluated -- the defect is in this check, not in LDM."
+            } else {
+                Write-Verdict "[WARNING] SKIPPED (not run): no files under routes/ after ${fsPermWaited}s, from inside a container OR on the host, with every client extension in this run already deployed. Liferay publishes the dxp tree on CX deploy, so by here it should exist -- its absence means Liferay's published config is not reaching the host, and a client extension could not read it either (LDM-#2042)."
+            }
+        } else {
+            Write-Verdict "[SUCCESS] All $fsPermSeen published config file(s) under routes/ are readable by a client extension (LDM-#1944/#1946)."
+        }
+    }
+    else {
+        throw "Could not probe the routes filesystem for LDM-#1944/#1946. Output was: $fsPermStat"
+    }
+
     } # LDM-#1975 end section: boundary (2 of 2)
 
     # LDM-#1975 section: extras -- portal patch overlay, non-ASCII naming, shared
