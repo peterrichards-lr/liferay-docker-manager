@@ -908,8 +908,8 @@ check_docker_disk() {
     echo "   (The host may report far more -- Docker's storage is inside its own VM.)" | tee -a "$RESULTS_FILE_TMP"
     echo "" | tee -a "$RESULTS_FILE_TMP"
     echo "   Free some space, then re-run:" | tee -a "$RESULTS_FILE_TMP"
-    echo "     ldm prune --seeds --samples     # reclaim LDM seed and sample archives" | tee -a "$RESULTS_FILE_TMP"
-    echo "     ldm prune --all                 # also images, volumes and build cache" | tee -a "$RESULTS_FILE_TMP"
+    echo "     ldm prune --seeds --samples     # base sweep PLUS the seed and sample caches" | tee -a "$RESULTS_FILE_TMP"
+    echo "     ldm prune --all                 # the same, without the volume/image prompts" | tee -a "$RESULTS_FILE_TMP"
     echo "     docker system prune -a          # everything Docker considers unused" | tee -a "$RESULTS_FILE_TMP"
     echo "" | tee -a "$RESULTS_FILE_TMP"
     if [ "$mode" = "warn" ]; then
@@ -4098,7 +4098,8 @@ anchor_mounts = [v for v in vols if v.endswith(":/etc/liferay/lxc/routes")]
 if not anchor_mounts:
     fails.append("the routes tree is not mounted at /etc/liferay/lxc/routes, "
                  "so neither config tree resolves (LDM-#1944): %s" % vols)
-elif not [v for v in anchor_mounts if v.split(":")[0].endswith("/routes/default")]:
+elif not [v for v in anchor_mounts
+          if v[: -len(":/etc/liferay/lxc/routes")].endswith("/routes/default")]:
     fails.append("the anchored mount is not routes/default. A leaf goes stale "
                  "when Liferay recreates it (LDM-#1944), and `routes` itself "
                  "would expose every other virtual instance: %s" % anchor_mounts)
@@ -4603,7 +4604,8 @@ anchor_mounts = [v for v in vols if v.endswith(":" + ANCHOR)]
 if not anchor_mounts:
     fails.append("no mount at %s, so neither config tree resolves "
                  "(LDM-#1944): %s" % (ANCHOR, vols))
-elif not [v for v in anchor_mounts if v.split(":")[0].endswith("/routes/default")]:
+elif not [v for v in anchor_mounts
+          if v[: -len(":/etc/liferay/lxc/routes")].endswith("/routes/default")]:
     fails.append("the anchored mount is not routes/default -- a leaf goes "
                  "stale, and `routes` itself would expose every other virtual "
                  "instance: %s" % anchor_mounts)

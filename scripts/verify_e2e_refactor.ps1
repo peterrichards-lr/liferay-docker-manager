@@ -723,8 +723,8 @@ function Test-DockerDiskSpace {
     Write-Verdict "        (The host may report far more -- Docker's storage is inside its own VM.)"
     Write-Verdict ""
     Write-Verdict "        Free some space, then re-run:"
-    Write-Verdict "          ldm prune --seeds --samples     # reclaim LDM seed and sample archives"
-    Write-Verdict "          ldm prune --all                 # also images, volumes and build cache"
+    Write-Verdict "          ldm prune --seeds --samples     # base sweep PLUS the seed and sample caches"
+    Write-Verdict "          ldm prune --all                 # the same, without the volume/image prompts"
     Write-Verdict "          docker system prune -a          # everything Docker considers unused"
     Write-Verdict ""
     return $false
@@ -954,7 +954,7 @@ function Test-CascadingDefaultGuard {
         # The other half: a key the defaults resolver does not own must still write.
         $plainOut = & $LdmCmd config set share_domain e2e.example.com 2>&1 | Out-String
         $plainCode = $LASTEXITCODE
-        $plainWritten = (Test-Path $ldmrc) -and ((Get-Content -Raw $ldmrc) -match "e2e.example.com")
+        $plainWritten = (Test-Path $ldmrc) -and ((Get-Content -Raw $ldmrc) -cmatch "e2e.example.com")
         if ($plainCode -ne 0 -or -not $plainWritten) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm config set share_domain' should still write ~/.ldmrc (exit ${plainCode}, written=${plainWritten}). The guard is too broad.`n   Output was: ${plainOut}" }
         }
@@ -1163,7 +1163,7 @@ function Test-MacPinRefusal {
         # is the only way to make the two disagree -- 'ldm run' would recreate it.
         & $LdmCmd target add $node --mac-address $macB 2>&1 | Out-Null
         $ldmrc = Join-Path $isoHome ".ldmrc"
-        if (-not ((Test-Path $ldmrc) -and ((Get-Content -Raw $ldmrc) -match [regex]::Escape($macB)))) {
+        if (-not ((Test-Path $ldmrc) -and ((Get-Content -Raw $ldmrc) -cmatch [regex]::Escape($macB)))) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: could not change the configured MAC to ${macB}." }
         }
 
@@ -2076,7 +2076,7 @@ try {
     Write-Host ">> Verifying Custom SSL Port & Recreate..."
     Log-AndRun "Custom SSL Port Setup" $LDM_CMD "-y infra setup --ssl-port 8443 --force-recreate"
     $dockerInspect = & docker inspect liferay-proxy-global
-    if ($dockerInspect -match '"HostPort": "8443"') {
+    if ($dockerInspect -cmatch '"HostPort": "8443"') {
         Write-Verdict "[SUCCESS] Custom SSL Port & Recreate verified."
     } else {
         Write-Host "[ERROR] ERROR: Traefik proxy was not recreated on custom port 8443!" -ForegroundColor Red
@@ -2089,7 +2089,7 @@ try {
     $env:CI = "true"
     $res = & $LDM_CMD system version --bump patch 2>&1
     $env:CI = "false"
-    if ($res -match "Developer utility requires LDM_DEV_MODE=true" -or $res -match "Action restricted") { 
+    if ($res -cmatch "Developer utility requires LDM_DEV_MODE=true" -or $res -cmatch "Action restricted") { 
         Write-Verdict "[SUCCESS] Dev Guardrails verified."
     } else { 
         Write-Host "[ERROR] ERROR: Dev Guardrails failed! Output was: $res" -ForegroundColor Red
@@ -2257,10 +2257,10 @@ try {
     Write-Host ">> Verifying ldm doctor Dependency Integrity..."
     $doctorOut = & $LDM_CMD doctor --detailed --skip-project 2>&1
     $doctorStr = ($doctorOut -join "`n")
-    if ($doctorStr -match "Dependency Integrity") {
+    if ($doctorStr -cmatch "Dependency Integrity") {
         if ($doctorStr -match "Dependency Integrity.*(Failed|Missing|FAILED)") {
             Write-Host "[ERROR] ERROR: ldm doctor Dependency Integrity check failed!" -ForegroundColor Red
-            $doctorOut | Where-Object { $_ -match "Dependency Integrity" } | Write-Host
+            $doctorOut | Where-Object { $_ -cmatch "Dependency Integrity" } | Write-Host
             Add-Content -Path $RESULTS_FILE_TMP -Value "ERROR: ldm doctor Dependency Integrity failed"
             exit 1
         } else {
@@ -2298,7 +2298,7 @@ try {
         Set-Location $prev
         $out
     }
-    if ($nestedRes -match "Project collision" -or $nestedRes -match "already registered") {
+    if ($nestedRes -cmatch "Project collision" -or $nestedRes -cmatch "already registered") {
         Write-Verdict "[SUCCESS] Project Collision verified."
     } else {
         Write-Host "[ERROR] ERROR: Project Collision detection failed! Output was: $nestedRes" -ForegroundColor Red
@@ -2310,7 +2310,7 @@ try {
 
     Write-Host ">> Verifying Tag Validation Guardrail..."
     $tagRes = & $LDM_CMD -y run "tag-val-test" --tag "invalid-tag" --port 8099 --no-wait --no-up --no-seed 2>&1
-    if ($tagRes -match "not listed in official Liferay releases") {
+    if ($tagRes -cmatch "not listed in official Liferay releases") {
         Write-Verdict "[SUCCESS] Tag Validation Guardrail verified."
     } else {
         Write-Host "[ERROR] ERROR: Tag Validation Guardrail failed! Output was: $tagRes" -ForegroundColor Red
@@ -2327,7 +2327,7 @@ try {
     Write-Host ">> Testing Target CRUD Cycle..."
     Log-AndRun "Target Add (Mock Node)" $LDM_CMD "target add $TARGET_TEST_NODE --host 127.0.0.1"
     $targetLsRes = & $LDM_CMD target ls 2>&1
-    if ($targetLsRes -match $TARGET_TEST_NODE) {
+    if ($targetLsRes -cmatch $TARGET_TEST_NODE) {
         Write-Verdict "[SUCCESS] Target registration verified."
     } else {
         Write-Host "[ERROR] ERROR: Target $TARGET_TEST_NODE not found in registry." -ForegroundColor Red
@@ -2339,7 +2339,7 @@ try {
     $loopbackNode = "loopback-node-${TEST_PORT}"
     Log-AndRun "Target Add (127.0.0.2 Loopback)" $LDM_CMD "target add $loopbackNode --host 127.0.0.2"
     $loopbackLsRes = & $LDM_CMD target ls 2>&1
-    if ($loopbackLsRes -match $loopbackNode) {
+    if ($loopbackLsRes -cmatch $loopbackNode) {
         Write-Verdict "[SUCCESS] Loopback target registration verified."
     } else {
         Write-Host "[ERROR] ERROR: Target $loopbackNode not found in registry." -ForegroundColor Red
@@ -2400,7 +2400,7 @@ try {
     $announceOut = (& $LDM_CMD list 2>&1) -join "`n"
     Write-Host $announceOut
     $announceOut | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
-    if (($announceOut -match "a remote compute node") -and ($announceOut -match "$ANNOUNCE_TEST_PROJ -> $ANNOUNCE_TEST_NODE")) {
+    if (($announceOut -cmatch "a remote compute node") -and ($announceOut -cmatch "$ANNOUNCE_TEST_PROJ -> $ANNOUNCE_TEST_NODE")) {
         Write-Verdict "[SUCCESS] Remote compute node announced up front, naming project -> node (LDM-#1341)."
     } else {
         Remove-Ldm1383Artifacts
@@ -2411,7 +2411,7 @@ try {
     # deliberately suppressed there. Asserted because a future edit that moves
     # the announcement earlier would silently corrupt every --json consumer.
     $announceJsonOut = (& $LDM_CMD list --json 2>&1) -join "`n"
-    if ($announceJsonOut -match "a remote compute node") {
+    if ($announceJsonOut -cmatch "a remote compute node") {
         Remove-Ldm1383Artifacts
         throw "The remote-node announcement leaked into 'ldm list --json'."
     }
@@ -2627,7 +2627,7 @@ services:
         Log-AndRun "Target Add (Remote Host)" $LDM_CMD "target add $remoteNodeName --host $remoteHost"
         $remoteStatusOut = & $LDM_CMD target status $remoteNodeName 2>&1
         Write-Host ($remoteStatusOut -join "`n")
-        if ($remoteStatusOut -match "ONLINE") {
+        if ($remoteStatusOut -cmatch "ONLINE") {
             Write-Verdict "[SUCCESS] Remote Target Probe verified (ONLINE)."
         } else {
             Write-Host "[WARNING] Remote Target Probe returned OFFLINE or unreachable for $remoteHost."
@@ -2639,7 +2639,7 @@ services:
     $nightlyProj = "nightly-test-$TEST_PORT"
     & $LDM_CMD -y run $nightlyProj --nightly --port 8098 --no-wait --no-up > $null 2>&1
     $metaContent = Get-Content (Join-Path $nightlyProj "meta") -Raw 2>$null
-    if ($metaContent -match "nightly") {
+    if ($metaContent -cmatch "nightly") {
         Write-Verdict "[SUCCESS] --nightly flag resolution verified."
     } else {
         Write-Host "[ERROR] --nightly flag resolution failed." -ForegroundColor Red
@@ -2651,7 +2651,7 @@ services:
     $masterProj = "master-test-$TEST_PORT"
     & $LDM_CMD -y run $masterProj --master --port 8097 --no-wait --no-up > $null 2>&1
     $masterMetaContent = Get-Content (Join-Path $masterProj "meta") -Raw 2>$null
-    if ($masterMetaContent -match "nightly") {
+    if ($masterMetaContent -cmatch "nightly") {
         Write-Verdict "[SUCCESS] --master flag alias verified."
     } else {
         Write-Host "[ERROR] --master flag alias failed." -ForegroundColor Red
@@ -2824,11 +2824,11 @@ echo "SEEN $seen BAD$bad"
     # The probe runs inside a container so the mode semantics are the mount's
     # own, not Windows'. It is the same question either way: does a chmod here
     # survive a read-back.
-    if ($fsPermStat -match 'NOHONOUR\s+(\S*)') {
+    if ($fsPermStat -cmatch 'NOHONOUR\s+(\S*)') {
         Write-Verdict "[WARNING] SKIPPED (not run): this filesystem does not honour chmod -- probed 640, read back '$($Matches[1])'."
         Write-Verdict "[WARNING] exFAT/FAT32 mounted 'noowners' behave this way, as does NTFS in general. The LDM-#1944 file-mode assertion was NOT evaluated on this run."
     }
-    elseif ($fsPermStat -match 'SEEN\s+(\d+)\s+BAD(.*)') {
+    elseif ($fsPermStat -cmatch 'SEEN\s+(\d+)\s+BAD(.*)') {
         $fsPermSeen = [int]$Matches[1]
         $fsPermBad = $Matches[2].Trim()
         if ($fsPermBad) {
@@ -2898,7 +2898,7 @@ zf.close()
 
     $hotDeploySuccess = $false
     for ($i=0; $i -lt 60; $i++) {
-        if ((docker logs ldm-smoke-test --tail 200 2>&1) -match "STARTED com.liferay.test.bundle") {
+        if ((docker logs ldm-smoke-test --tail 200 2>&1) -cmatch "STARTED com.liferay.test.bundle") {
             Write-Verdict "[SUCCESS] Hot Deploy verified."
             $hotDeploySuccess = $true
             break
@@ -2948,7 +2948,7 @@ zf.close()
     $latestSnapshotDir = (Get-ChildItem snapshots | Sort LastWriteTime -Desc | Select -First 1).FullName
     $shaFile = Join-Path $latestSnapshotDir "files.tar.gz.sha256"
     "CORRUPTED" | Out-File $shaFile -Encoding utf8
-    if ((& $LDM_CMD -y restore --latest 2>&1) -match "Integrity check failed") { 
+    if ((& $LDM_CMD -y restore --latest 2>&1) -cmatch "Integrity check failed") { 
         Write-Verdict "[SUCCESS] Integrity check verified."
     } else { 
         throw "Integrity block failed" 
@@ -2987,7 +2987,7 @@ zf.close()
             Write-Verdict "        embedded Elasticsearch alongside the shared one (LDM-#1773)."
             $searchStripFailed = $true
         }
-        if (-not ($peText -match [regex]::Escape($searchStripCanary))) {
+        if (-not ($peText -cmatch [regex]::Escape($searchStripCanary))) {
             Write-Verdict "[ERROR] ERROR: $pe lost the non-search canary '$searchStripCanary'."
             Write-Verdict "        The strip is too broad -- it is discarding the publisher's own"
             Write-Verdict "        properties, not just the search settings LDM owns."
@@ -3071,7 +3071,7 @@ zf.close()
     Write-Host ">> Verifying Legacy Command Translation..."
     $legacyDoc = & $LDM_CMD doctor --help 2>&1
     $legacySetup = & $LDM_CMD infra-setup --help 2>&1
-    if ($legacyDoc -match "Usage" -and $legacySetup -match "Usage") {
+    if ($legacyDoc -cmatch "Usage" -and $legacySetup -cmatch "Usage") {
         Write-Verdict "[SUCCESS] Legacy command translation verified."
     } else {
         throw "Legacy command translation failed."
@@ -3395,7 +3395,7 @@ zf.close()
     Write-Host ">> Verifying Cascading Defaults..."
     & $LDM_CMD config defaults test_key test_value > $null 2>&1
     $defaultsOut = & $LDM_CMD config defaults 2>&1
-    if ($defaultsOut -match "test_key" -and $defaultsOut -match "test_value" -and $defaultsOut -match "User") {
+    if ($defaultsOut -cmatch "test_key" -and $defaultsOut -cmatch "test_value" -and $defaultsOut -cmatch "User") {
         Write-Verdict "[SUCCESS] Set User Default verified."
     } else {
         throw "Set User Default failed. Output: $defaultsOut"
@@ -3410,7 +3410,7 @@ zf.close()
 
     Write-Host ">> Verifying Env Sync..."
     & $LDM_CMD config env . TEST_SECRET=supersecret123 > $null 2>&1
-    if ((Get-Content "docker-compose.yml" -Raw) -match "TEST_SECRET=supersecret123") { 
+    if ((Get-Content "docker-compose.yml" -Raw) -cmatch "TEST_SECRET=supersecret123") { 
         Write-Verdict "[SUCCESS] Env Sync verified."
     } else {
         throw "Env Sync verification failed."
@@ -3418,7 +3418,7 @@ zf.close()
 
     Write-Host ">> Verifying Redaction..."
     $redactOut = & $LDM_CMD status REDACT_SECRET=hidden 2>&1
-    if ($redactOut -match "REDACT_SECRET=\[REDACTED\]") { 
+    if ($redactOut -cmatch "REDACT_SECRET=\[REDACTED\]") { 
         Write-Verdict "[SUCCESS] Redaction verified."
     } else {
         throw "Redaction verification failed. Output: $redactOut"
@@ -3426,7 +3426,7 @@ zf.close()
 
     Write-Host ">> Verifying Scaling..."
     Log-AndRun "Scaling Liferay" $LDM_CMD "-y scale . liferay=3 --no-run"
-    if ((Get-Content "meta" -Raw) -match "scale_liferay.*3") { 
+    if ((Get-Content "meta" -Raw) -cmatch "scale_liferay.*3") { 
         Write-Verdict "[SUCCESS] Scaling verified."
     } else {
         throw "Scaling verification failed."
@@ -3435,7 +3435,7 @@ zf.close()
     Write-Host ">> Verifying logs --instance..."
     $logErr4 = & $LDM_CMD logs . --instance 4 2>&1
     $logErr2 = & $LDM_CMD logs . --instance 2 2>&1
-    if ($logErr4 -match "Invalid instance index 4" -and $logErr2 -match "Container 'ldm-smoke-test-liferay-2' not found") {
+    if ($logErr4 -cmatch "Invalid instance index 4" -and $logErr2 -cmatch "Container 'ldm-smoke-test-liferay-2' not found") {
         Write-Verdict "[SUCCESS] logs --instance routing verified."
     } else {
         throw "logs --instance routing validation failed."
@@ -3462,7 +3462,7 @@ zf.close()
     }
     Write-Host ">> Verifying ldm start UX fast-fail..."
     $startFailOut = & $LDM_CMD start fake-non-existent-project 2>&1
-    if ($startFailOut -match "Project not found or not initialized") {
+    if ($startFailOut -cmatch "Project not found or not initialized") {
         Write-Verdict "[SUCCESS] ldm start fast-fail verified."
     } else {
         throw "ldm start fast-fail message not found. Output: $startFailOut"
@@ -3470,7 +3470,7 @@ zf.close()
 
     Write-Host ">> Verifying ldm run reconfigure UX message..."
     $runReconfigOut = & $LDM_CMD -y run . --no-wait --info 2>&1
-    if ($runReconfigOut -match "already exists and this command will reconfigure it") {
+    if ($runReconfigOut -cmatch "already exists and this command will reconfigure it") {
         Write-Verdict "[SUCCESS] ldm run reconfigure UX message verified."
     } else {
         throw "ldm run reconfigure message not found. Output: $runReconfigOut"
@@ -3478,7 +3478,7 @@ zf.close()
 
     Write-Host ">> Verifying Safe SELECT SQL Query..."
     $dbQueryOut = & $LDM_CMD db query . -s "SELECT 1 as test_val;" --allow-db-query 2>&1
-    if ($dbQueryOut -match "test_val") {
+    if ($dbQueryOut -cmatch "test_val") {
         Write-Verdict "[SUCCESS] Safe SELECT SQL Query verified."
     } else {
         throw "Safe SELECT SQL Query failed. Output: $dbQueryOut"
@@ -3876,7 +3876,8 @@ anchor_mounts = [v for v in vols if v.endswith(":/etc/liferay/lxc/routes")]
 if not anchor_mounts:
     fails.append("the routes tree is not mounted at /etc/liferay/lxc/routes, "
                  "so neither config tree resolves (LDM-#1944): %s" % vols)
-elif not [v for v in anchor_mounts if v.split(":")[0].endswith("/routes/default")]:
+elif not [v for v in anchor_mounts
+          if v[: -len(":/etc/liferay/lxc/routes")].endswith("/routes/default")]:
     fails.append("the anchored mount is not routes/default. A leaf goes stale "
                  "when Liferay recreates it (LDM-#1944), and `routes` itself "
                  "would expose every other virtual instance: %s" % anchor_mounts)
@@ -4076,25 +4077,56 @@ sys.exit(0)
     } else {
         $pairingMounted = @(& $VENV_PYTHON -c @"
 import pathlib, yaml
+# LDM-#1944: which per-extension directory each service is ADDRESSED at.
+#
+# This used to split mount sources on '/routes/default/'. Since the mount is
+# anchored AT routes/default that yields nothing -- the source IS that path --
+# so the check was trivially satisfiable. On Windows it was worse than useless:
+# the source came from str(spec).split(':')[0], which on 'C:/Users/...' is the
+# drive letter 'C', so the set was always empty, nothing was ever compared and
+# the assertion passed silently (LDM-#2031).
+#
+# Reading the variable is also STRICTER than reading the mount: it checks what
+# the extension is actually TOLD, not merely what is visible to it. Under the
+# anchored mount everything below routes/default is visible, so a mount-only
+# check cannot distinguish right from wrong at all.
+#
+# Parity with PAIRING_PY in verify_e2e_refactor.sh, which was rewritten this
+# way first; this half kept the superseded version.
+ANCHOR = '/etc/liferay/lxc/routes'
 compose = yaml.safe_load(pathlib.Path('docker-compose.yml').read_text())
 names = set()
 for svc in (compose.get('services') or {}).values():
-    for spec in svc.get('volumes') or []:
-        source = spec.get('source') if isinstance(spec, dict) else str(spec).split(':')[0]
-        parts = str(source or '').rstrip('/').split('/routes/default/')
-        if len(parts) == 2 and parts[1] and parts[1] != 'dxp':
-            names.add(parts[1])
+    # The anchor must be present, or the variable below names a path inside a
+    # mount that does not exist. split(':')[-1] takes the CONTAINER side, so it
+    # is unaffected by a Windows drive letter on the host side.
+    anchored = [
+        spec for spec in (svc.get('volumes') or [])
+        if str(spec.get('target') if isinstance(spec, dict)
+               else str(spec).split(':')[-1]) == ANCHOR
+    ]
+    if not anchored:
+        continue
+    for entry in svc.get('environment') or []:
+        key, _, value = str(entry).partition('=')
+        if key != 'LIFERAY_ROUTES_CLIENT_EXTENSION':
+            continue
+        if not value.startswith(ANCHOR + '/'):
+            continue
+        leaf = value[len(ANCHOR) + 1:].strip('/')
+        if leaf and leaf != 'dxp':
+            names.add(leaf)
 print('\n'.join(sorted(names)))
 "@)
         $pairingUnmounted = @($pairingPublished | Where-Object { $pairingMounted -notcontains $_ })
         if ($pairingUnmounted.Count -gt 0) {
             throw ("Liferay published routes directories that LDM does not mount (LDM-#1944). Liferay created: " +
-                ($pairingPublished -join ' ') + " | LDM mounted: " + ($pairingMounted -join ' ') +
+                ($pairingPublished -join ' ') + " | LDM addressed: " + ($pairingMounted -join ' ') +
                 " | Unmounted: " + ($pairingUnmounted -join ' ') +
                 ". The extension reads a real, empty, readable directory while Liferay fills a different one beside it." +
                 " Liferay names it from projectName in the extension's client-extension-config.json, NOT from the LCP.json id.")
         }
-        Write-Verdict ("[SUCCESS] Every routes directory Liferay published (" + ($pairingPublished -join ' ') + ") is one LDM mounted (LDM-#1944).")
+        Write-Verdict ("[SUCCESS] Every routes directory Liferay published (" + ($pairingPublished -join ' ') + ") is one LDM points an extension at, inside the anchored mount (LDM-#1944).")
     }
 
     # LDM-#1928: the host side. Docker creates a missing bind-mount source as
@@ -4243,7 +4275,8 @@ anchor_mounts = [v for v in vols if v.endswith(":" + ANCHOR)]
 if not anchor_mounts:
     fails.append("no mount at %s, so neither config tree resolves "
                  "(LDM-#1944): %s" % (ANCHOR, vols))
-elif not [v for v in anchor_mounts if v.split(":")[0].endswith("/routes/default")]:
+elif not [v for v in anchor_mounts
+          if v[: -len(":/etc/liferay/lxc/routes")].endswith("/routes/default")]:
     fails.append("the anchored mount is not routes/default -- a leaf goes "
                  "stale, and `routes` itself would expose every other virtual "
                  "instance: %s" % anchor_mounts)
