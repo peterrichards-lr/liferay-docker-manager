@@ -1204,15 +1204,24 @@ def reserved_port_tip(cmd, stderr: str) -> str | None:
 
     match = _RESERVED_PORT_RE.search(stderr)
     port = f"Port {match.group(1)}" if match else "That port"
+    # LDM-#2041: the gentler remedy leads, and the heavier one carries its
+    # cost. The first version of this tip named WSL as a consumer of WinNAT in
+    # one breath and told the reader to restart WinNAT in the next, with no
+    # warning -- advice that cost the maintainer their WSL networking. Worse,
+    # Docker Desktop on the WSL2 backend rides the same stack, so following it
+    # to fix a Docker problem can take Docker down on the way.
     return (
         f"{port} is inside a range Windows has reserved -- usually taken by "
         "Hyper-V or WSL via WinNAT -- so Docker cannot bind it. Nothing is "
         "listening on it, so it will not show up as in use. Confirm with "
-        "'netsh interface ipv4 show excludedportrange protocol=tcp', then "
-        "free it by restarting WinNAT from an elevated prompt: 'net stop "
-        "winnat' followed by 'net start winnat'. Restarting Docker Desktop "
-        "does the same. The ranges move when the host or WinNAT restarts, so "
-        "a port that worked yesterday can fail today."
+        "'netsh interface ipv4 show excludedportrange protocol=tcp'. "
+        "Restarting Docker Desktop usually frees the range and is the safe "
+        "option, so try that first. Restarting WinNAT instead ('net stop "
+        "winnat' then 'net start winnat', from an elevated prompt) also works "
+        "but DISRUPTS WSL2 and the Docker Desktop WSL2 backend -- run 'wsl "
+        "--shutdown' afterwards to restore them. The ranges move when the "
+        "host or WinNAT restarts, so a port that worked yesterday can fail "
+        "today."
     )
 
 

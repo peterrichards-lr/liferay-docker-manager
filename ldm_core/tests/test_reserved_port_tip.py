@@ -36,6 +36,37 @@ DOCKER_CMD = ["docker", "compose", "-f", "infra-compose.yml", "up", "-d"]
 
 
 class TestReservedPortTip(unittest.TestCase):
+    def test_the_remedy_does_not_cost_the_reader_their_wsl(self):
+        """LDM-#2041: the first version of this tip broke the maintainer's WSL.
+
+        It named WSL as a consumer of WinNAT and then recommended restarting
+        WinNAT, with no warning. Docker Desktop on the WSL2 backend rides the
+        same stack, so following it to fix a Docker problem could take Docker
+        down on the way -- advice that can leave the reader worse off than the
+        failure it addresses.
+        """
+        tip = reserved_port_tip(DOCKER_CMD, REAL_STDERR)
+        assert tip is not None
+        lowered = tip.lower()
+        self.assertIn(
+            "wsl --shutdown",
+            lowered,
+            "the WinNAT restart is offered without the recovery step",
+        )
+        self.assertLess(
+            lowered.index("docker desktop"),
+            lowered.index("net stop winnat"),
+            "the safe remedy must be offered before the disruptive one",
+        )
+        disrupts = lowered.index("disrupts")
+        winnat = lowered.index("net stop winnat")
+        self.assertLess(
+            abs(disrupts - winnat),
+            260,
+            "the warning must sit with the command it warns about, not "
+            "somewhere else in the paragraph",
+        )
+
     def test_the_reported_failure_is_recognised(self):
         tip = reserved_port_tip(DOCKER_CMD, REAL_STDERR)
         assert tip is not None, "the reported stderr was not recognised"

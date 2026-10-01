@@ -2848,7 +2848,30 @@ echo "SEEN $seen BAD$bad"
             throw ("Liferay published config files a client extension cannot read (LDM-#1944): $fsPermBad. catalina.sh defaults UMASK to 0027 (files 640); LDM sets UMASK=0022 so these land 644 -- if they are 640 the override did not take.")
         }
         if ($fsPermSeen -eq 0) {
-            Write-Verdict "[WARNING] SKIPPED (not run): no files under routes/ after the health wait, so there were none to check. Expected the dxp tree once the healthcheck curled /c/portal/layout."
+            # LDM-#2042: a bare "no files" skip has now happened on three
+            # consecutive Windows runs while Linux and macOS report four
+            # published files, and it does not say WHICH of two very
+            # different things is true:
+            #
+            #   the probe cannot see them -- it looks through a SECOND
+            #   container, and on Docker Desktop a Windows-filesystem bind
+            #   mount need not surface one container's writes to another
+            #   promptly. That is a defect in this check.
+            #
+            #   they are not there -- Liferay's writes are not reaching the
+            #   host at all. That is a defect in the product, and it means a
+            #   client extension on Windows cannot read the OAuth credentials
+            #   Liferay generates for it.
+            #
+            # Counting from the host directly separates them, costs nothing,
+            # and records the answer in the report rather than requiring
+            # someone to stage a boot by hand afterwards.
+            $fsPermHostSeen = @(Get-ChildItem -Recurse -File -LiteralPath $fsPermRoutes -ErrorAction SilentlyContinue).Count
+            if ($fsPermHostSeen -gt 0) {
+                Write-Verdict "[WARNING] SKIPPED (not run): the container probe found no files under routes/, but the host has $fsPermHostSeen. The files exist; this check cannot see them through a second container's bind mount (LDM-#2042). The LDM-#1944 file-mode assertion was NOT evaluated -- the defect is in this check, not in LDM."
+            } else {
+                Write-Verdict "[WARNING] SKIPPED (not run): no files under routes/ after the health wait, from inside a container OR on the host. Expected the dxp tree once the healthcheck curled /c/portal/layout. Liferay's published config is not reaching the host here, so a client extension could not read it either (LDM-#2042)."
+            }
         } else {
             Write-Verdict "[SUCCESS] All $fsPermSeen published config file(s) under routes/ are readable by a client extension (LDM-#1944/#1946)."
         }
