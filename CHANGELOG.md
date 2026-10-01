@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.0-pre.15] - 2026-10-01
+
+### Fixed
+
+- **The PowerShell verification suite no longer asserts less than the shell one** (LDM-#2031). Three defects, all Windows-only, all in the region past line 2783 that no Windows run had reached until this week.
+
+  A mount check read the host path as `v.split(":")[0]`, which on `C:/Users/...` is **`"C"`** -- so the check rejected a mount that was correct, and the error message printed the very mount that refuted it. Unix host paths carry no colon, which is why macOS and Fedora passed throughout. Four sites, fixed by slicing off the known container suffix rather than splitting; verified it still rejects both wrong shapes it exists to catch.
+
+  The same expression elsewhere was **silently passing**: it produced an always-empty set on Windows, so the published-versus-addressed comparison had nothing in it and the assertion verified nothing at all. The `.sh` half had already been rewritten away from that approach and the `.ps1` had kept the superseded version, so the fix was to port the `.sh` implementation across -- it reads `LIFERAY_ROUTES_CLIENT_EXTENSION` and takes the container side of the mount, which no drive letter can disturb, and is stricter besides.
+
+  And PowerShell's `-match` is case-insensitive by default, where the shell half greps case-sensitively almost everywhere (111 plain `grep -q` against 6 `grep -qi`). 36 occurrences were converted, each confirmed verbatim in `ldm_core` or test-created first. **Not a blanket conversion**: polarity decides. A match leading to `[SUCCESS]` must be narrow, because broad passes on output LDM never produced; a match leading to `[ERROR]` must stay broad, because narrow misses failures. Eleven were deliberately left -- narrowing the guard that catches wording LDM must *not* emit would defeat it.
+
+- **A repaired Elasticsearch no longer fails the whole verification** (LDM-#2032). `ldm infra` reported three recoverable conditions with `UI.error`, then repaired the search volume and exited 0. The suite scans command output for failure markers *after* the exit code has passed, so a **successful** recovery failed the run -- intermittently, costing a full run each time. All three are now warnings; `UI.die` at the second restart attempt is untouched, so a search engine that never comes up is still an Infrastructure error. The third site was found by reading the path rather than trusting appearances: it looks terminal and is not, breaking instead to "Snapshots may fail initially" while the run continues.
+
+### Added
+
+- **Every environment variable LDM reads is listed in one place** (LDM-#2025), in `docs/reference/configuration.md`. Three variables shipped during this cycle -- `LDM_DOCKER_TUNNEL`, `LDM_PROXY_LOG_LEVEL` and `LDM_PROXY_LOG_FORMAT` -- were documented in two other files and not in the reference, and a downstream team wired two of the three into their pipeline and missed the third.
+
+  The list is **derived from the source**, because the obvious implementation reproduces the bug: a grep for `os.environ.get("LDM_...")` finds 26 variables and misses all three this was raised about. LDM reads them three ways -- a literal, a module constant (`TUNNEL_ENV_VAR = "LDM_DOCKER_TUNNEL"`), and a `${...}` in a shipped Compose template that never reaches Python at all. The check walks the AST for the first two and scans resources for the third, finding 31, and fails when the table and the code disagree. Variables LDM *writes into containers* are excluded deliberately: documenting them as settings would invite people to set values that are overwritten.
+
 ## [v2.26.0-pre.14] - 2026-09-30
 
 ### Fixed
