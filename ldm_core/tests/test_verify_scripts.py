@@ -1629,3 +1629,53 @@ class TestCleanupDistinguishesNeverCreatedFromFailedRemoval(unittest.TestCase):
                     "the project directory may remain",
                     script.read_text(encoding="utf-8"),
                 )
+
+
+INSTALLER_PS1 = SCRIPTS_DIR / "install_verification.ps1"
+
+
+class TestInstallerRunInstructionWorksOnADefaultPolicy(unittest.TestCase):
+    """LDM-#2037: the line the installer tells you to run must actually run.
+
+    `install_verification.ps1` closed with `cd <dir>; .\\verify_e2e_refactor.ps1`,
+    which on a default Windows execution policy fails with *"cannot be loaded
+    because running scripts is disabled on this system"*.
+
+    The hint cannot live in the suite: PowerShell refuses to **load** the file,
+    so nothing inside it ever executes. It has to come from the installer,
+    which is where the instruction is copied from.
+
+    Nor is a one-time note enough. The reporter had already run
+    `Set-ExecutionPolicy -Scope Process` to run the installer itself --
+    `-Scope Process` is the right scope precisely because it changes nothing
+    permanently, and is exactly why it did not survive into the next window.
+    """
+
+    def _text(self):
+        return INSTALLER_PS1.read_text(encoding="utf-8")
+
+    def test_the_primary_instruction_needs_no_policy_change(self):
+        self.assertIn(
+            "-ExecutionPolicy Bypass -File",
+            self._text(),
+            "the installer's run instruction must work on a default execution "
+            "policy without a prior Set-ExecutionPolicy (LDM-#2037)",
+        )
+
+    def test_the_direct_form_states_that_the_policy_does_not_persist(self):
+        """Offering `Set-ExecutionPolicy -Scope Process` without saying it is
+        per-window is what produced the report."""
+        text = self._text()
+        if "Set-ExecutionPolicy" not in text:
+            self.skipTest("the direct form is no longer offered")
+        self.assertIn(
+            "does not persist",
+            text,
+            "the direct form is offered without warning that -Scope Process "
+            "dies with the window (LDM-#2037)",
+        )
+
+    def test_the_host_is_resolved_rather_than_assumed(self):
+        """`powershell` and `pwsh` are different binaries; printing the wrong
+        one hands the user a command their machine may not have."""
+        self.assertIn("PSEdition", self._text())

@@ -235,6 +235,26 @@ if (-not $keyOk) {
     Write-Host "  Then copy your activation key into $TargetDir\common\"
     Write-Host ""
 }
+# LDM-#2037: the plain `.\verify_e2e_refactor.ps1` form fails on a default
+# Windows PowerShell with
+#
+#   cannot be loaded because running scripts is disabled on this system
+#
+# and no hint can come from the suite itself -- PowerShell refuses to load the
+# file, so nothing in it ever runs. It has to come from here, the place the
+# instruction is copied from.
+#
+# `-Scope Process` is the right scope (it changes nothing permanently) and is
+# exactly why a one-time note is not enough: it dies with the window. Someone
+# who sets it to run THIS installer meets the same error in the next window.
+# So the one-shot form leads, and the policy form is offered second.
+$psExe = if ($PSVersionTable.PSEdition -eq "Core") { "pwsh" } else { "powershell" }
 Write-Host "  Run the suite:"
-Write-Host "    cd $TargetDir; .\verify_e2e_refactor.ps1"
+Write-Host "    cd $TargetDir"
+Write-Host "    $psExe -ExecutionPolicy Bypass -File .\verify_e2e_refactor.ps1"
+Write-Host ""
+Write-Host "  To run it directly instead, allow scripts in THIS window first --"
+Write-Host "  -Scope Process does not persist, so a new window needs it again:"
+Write-Host "    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass"
+Write-Host "    .\verify_e2e_refactor.ps1"
 Write-Host ""
