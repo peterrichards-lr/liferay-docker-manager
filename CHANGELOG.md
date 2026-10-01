@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.0-pre.16] - 2026-10-01
+
+### Added
+
+- **A port Windows has reserved is now diagnosed, not dumped** (LDM-#2036). Docker refusing to bind a port inside a Windows reserved range surfaced the daemon's own text -- `bind: An attempt was made to access a socket in a way forbidden by its access permissions` -- which reads as a privilege problem and is not. The range is usually taken by Hyper-V or WSL through WinNAT; nothing is listening on the port, so every "what is holding this" check comes back empty. LDM now names the cause, how to confirm it (`netsh interface ipv4 show excludedportrange protocol=tcp`), how to clear it, and the fact that the ranges move when the host restarts -- so a port that worked yesterday can fail today.
+
+  A sibling of the disk-space tip from LDM-#1906: same call site, returns nothing for anything it does not recognise, so no other failure changes. A port genuinely held by another container is deliberately **not** claimed -- that is a different problem with a different remedy (LDM-#1350), and sending that user to WinNAT would be worse than silence.
+
+### Fixed
+
+- **The legacy-command check could never fail** (LDM-#2039). It asserted that `ldm doctor --help` printed a usage banner. If the legacy translation broke completely, argparse prints one anyway -- `usage: ldm [-h] ...` -- so the test passed while the behaviour it existed to verify was entirely broken. It now asserts the **translated** target (`ldm system doctor`, `ldm infra setup`), which an untranslated command does not produce.
+
+  It was also miscased. The LDM-#2031 conversion made it case-sensitive on `"Usage"`, and argparse emits lowercase. The audit rule behind that conversion -- confirm the literal exists somewhere in `ldm_core` -- was too weak: `"Usage: ldm <command> [options]"` does exist, on a different code path than this command takes. Every converted literal has been re-audited against string constants extracted by AST rather than raw file text, so comments and docstrings no longer count as output; this was the only break.
+
+- **A run that dies before provisioning no longer invents a second failure** (LDM-#2035). The project was never created, so `ldm rm` correctly reported it missing -- and the suite called that a removal failure and added "the project directory may remain", describing leftovers from something that never existed. The two cases are now told apart on evidence: LDM reports it missing **and** no container carries the name. Anything else still warns, because that warning is LDM-#1436's signal, which has fired on runs that otherwise passed and remains unexplained.
+
+- **The installer's own run instruction now works** (LDM-#2037). It ended with `.\verify_e2e_refactor.ps1`, which on a default Windows execution policy fails to load. No hint could come from the suite -- PowerShell refuses to load the file, so nothing in it runs -- and a one-time note would not have helped either, since `-Scope Process` dies with the window. The instruction now leads with the form that needs no policy change at all, and resolves `pwsh` or `powershell` to match the host rather than guessing.
+
 ## [v2.26.0-pre.15] - 2026-10-01
 
 ### Fixed
