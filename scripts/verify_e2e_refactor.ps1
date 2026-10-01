@@ -3084,7 +3084,26 @@ zf.close()
     Write-Host ">> Verifying Legacy Command Translation..."
     $legacyDoc = & $LDM_CMD doctor --help 2>&1
     $legacySetup = & $LDM_CMD infra-setup --help 2>&1
-    if ($legacyDoc -cmatch "Usage" -and $legacySetup -cmatch "Usage") {
+    # LDM-#2039: this asserted `-match "Usage"`, which could not fail.
+    #
+    # Two defects, found together. The capitalisation was wrong: argparse
+    # emits a LOWERCASE "usage:" banner, and LDM's own "Usage: ldm <command>
+    # [options]" lives on a different code path than these two commands take
+    # -- so searching the source for the string wrongly suggested the
+    # capitalised form was safe.
+    #
+    # The worse one is that "usage" proves nothing. If the legacy translation
+    # broke, argparse would still print a usage banner, with an "invalid
+    # choice" error beside it, and the assertion would still pass. It could
+    # not detect the failure it exists to catch.
+    #
+    # Assert the TRANSLATED target instead, which is the thing under test.
+    # Measured:
+    #   ldm doctor --help      -> usage: ldm system doctor [-h] ...
+    #   ldm infra-setup --help -> usage: ldm infra setup [-h] ...
+    # A broken translation prints neither.
+    if ($legacyDoc -cmatch "ldm system doctor" -and
+        $legacySetup -cmatch "ldm infra setup") {
         Write-Verdict "[SUCCESS] Legacy command translation verified."
     } else {
         throw "Legacy command translation failed."

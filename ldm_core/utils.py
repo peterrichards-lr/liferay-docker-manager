@@ -1167,6 +1167,55 @@ def _context_node(parts) -> str | None:
 _DISK_FULL_MARKERS = ("no space left on device", "enospc")
 
 
+# LDM-#2036: Windows reserves dynamic port ranges (commonly for Hyper-V/WSL
+# via WinNAT). A bind inside one fails with a message that reads like a
+# privilege problem and is not -- nothing is listening on the port, so every
+# "what is using this port" instinct comes back empty. Both markers are
+# required: "ports are not available" alone is also emitted when another
+# container holds the port, which is a different problem with a different
+# remedy and is already diagnosed elsewhere (LDM-#1350).
+_RESERVED_PORT_MARKERS = (
+    "ports are not available",
+    "forbidden by its access permissions",
+)
+
+_RESERVED_PORT_RE = re.compile(r"listen tcp[^:]*:(\d+)")
+
+
+def reserved_port_tip(cmd, stderr: str) -> str | None:
+    """Names the Windows reserved-port range when a Docker bind is refused.
+
+    Returns None for anything else, so every other failure is unchanged --
+    the same contract as `disk_space_tip`, with which it shares a call site.
+
+    The signature is self-gating to Windows: that socket error text is
+    Windows', so no platform check is needed and none is made, which keeps
+    this testable on any host.
+    """
+    if not stderr:
+        return None
+    lowered = stderr.lower()
+    if not all(marker in lowered for marker in _RESERVED_PORT_MARKERS):
+        return None
+
+    parts = cmd if isinstance(cmd, list) else str(cmd).split()
+    if not parts or "docker" not in Path(str(parts[0])).name.lower():
+        return None
+
+    match = _RESERVED_PORT_RE.search(stderr)
+    port = f"Port {match.group(1)}" if match else "That port"
+    return (
+        f"{port} is inside a range Windows has reserved -- usually taken by "
+        "Hyper-V or WSL via WinNAT -- so Docker cannot bind it. Nothing is "
+        "listening on it, so it will not show up as in use. Confirm with "
+        "'netsh interface ipv4 show excludedportrange protocol=tcp', then "
+        "free it by restarting WinNAT from an elevated prompt: 'net stop "
+        "winnat' followed by 'net start winnat'. Restarting Docker Desktop "
+        "does the same. The ranges move when the host or WinNAT restarts, so "
+        "a port that worked yesterday can fail today."
+    )
+
+
 def disk_space_tip(cmd, stderr: str) -> str | None:
     """Names LDM's own reclamation command when a Docker command hits ENOSPC.
 
@@ -1612,7 +1661,13 @@ class CommandRunner:
                 # that filled. Only the remedy was missing.
                 UI.error(
                     f"Command failed (Exit {e.returncode}): {cmd_str}",
-                    tip=disk_space_tip(cmd, err_details),
+                    # LDM-#2036: first tip that recognises the failure wins.
+                    # Each returns None for anything it does not recognise, so
+                    # order expresses specificity, not precedence.
+                    tip=(
+                        disk_space_tip(cmd, err_details)
+                        or reserved_port_tip(cmd, err_details)
+                    ),
                 )
                 UI.trace(f"[ERROR] Exit {e.returncode}")
                 if err_details:
