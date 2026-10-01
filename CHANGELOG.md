@@ -7,9 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v2.26.1-pre.1] - 2026-10-01
 
-### Added
+### Fixed
 
--
+- **A reserved Windows port no longer costs you WSL** (LDM-#2041). The tip v2.26.0 shipped for a port inside a Windows reserved range named WSL as a consumer of WinNAT in one sentence and recommended restarting WinNAT in the next, with no warning. It cost the maintainer their WSL networking within minutes of release, and it can defeat its own purpose: Docker Desktop on the WSL2 backend rides the same stack, so following the tip to fix a Docker port problem can take Docker down on the way.
+
+  Restarting Docker Desktop is now offered first as the safe remedy. The WinNAT route is still there, carrying its cost -- it **disrupts WSL2 and the Docker Desktop WSL2 backend** -- and the `wsl --shutdown` needed to recover. Pinned by a test on the properties rather than the prose: the recovery step is present, the safe option precedes the disruptive one, and the warning sits beside the command it warns about.
+
+- **The routes probe says why it skipped** (LDM-#2042). It had reported a bare "no files under routes/" on three consecutive Windows runs while Linux and macOS reported four published files -- which does not distinguish *the files are absent* from *this check cannot see them*, and only the first is a defect in LDM.
+
+  The two halves were never measuring the same thing. `verify_e2e_refactor.sh` runs `find` **directly on the host**; the PowerShell half mounts the path into a second container and runs `find` **there**, because bash can read POSIX modes natively and PowerShell cannot. Reasonable in itself, but the one platform that fails is the one with the extra indirection, and on Docker Desktop a Windows-filesystem bind mount need not surface one container's writes to another.
+
+  The skip branch now counts from the host as well and names which case it is: *"the files exist; this check cannot see them through a second container's bind mount"*, or *"not reaching the host here, so a client extension could not read it either"*. The next Windows run settles it at no cost. The `.sh` half is deliberately unchanged -- with no container in that path, a host count *is* the probe count, so the same branch there would be tautological.
 
 ## [v2.26.0] - 2026-10-01
 
