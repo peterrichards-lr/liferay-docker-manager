@@ -1057,7 +1057,14 @@ tls:
                     search_name, target_name=target_name
                 )
                 if status == "exited":
-                    UI.error("Elasticsearch container exited unexpectedly.")
+                    # LDM-#2032: a warning, not an error. A repair attempt
+                    # follows immediately below, and the terminal failure is
+                    # already UI.die() at _depth >= 2. Reporting a condition
+                    # LDM is about to fix as an error misleads the reader and
+                    # fails any caller that scans output for markers -- the E2E
+                    # suite does exactly that, so a SUCCESSFUL auto-repair was
+                    # failing the whole verification run.
+                    UI.warning("Elasticsearch container exited unexpectedly.")
                     break
 
                 res = self.manager.run_command(
@@ -1084,7 +1091,9 @@ tls:
                         "Elasticsearch failed to start after 2 restart attempts. Check: ldm logs",
                         exit_code=3,
                     )
-                UI.error("Elasticsearch failed to become ready in time.")
+                # LDM-#2032: warning for the same reason as above -- the
+                # auto-repair is the very next statement.
+                UI.warning("Elasticsearch failed to become ready in time.")
                 # AUTO-REPAIR: If ES fails to start, it's often due to corrupted data in the volume.
                 # Wiping and restarting usually fixes mapping/plugin-mismatch issues.
                 UI.warning("Attempting automatic search volume repair...")
@@ -1236,7 +1245,12 @@ tls:
                     search_name, target_name=target_name
                 )
                 if status == "exited":
-                    UI.error(
+                    # LDM-#2032: a warning, like the two above. This path does
+                    # NOT die -- it breaks to "Global Search restart timed out.
+                    # Snapshots may fail initially." and the run continues, so
+                    # the run can and does succeed after this line. An error
+                    # marker here fails any caller scanning output.
+                    UI.warning(
                         "Elasticsearch container exited unexpectedly after restart."
                     )
                     break
