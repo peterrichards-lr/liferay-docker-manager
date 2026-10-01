@@ -1575,3 +1575,107 @@ class TestPositiveAssertionsAreCaseSensitive(unittest.TestCase):
         negative = 'if ($out -match "Thing") {\n    throw "[ERROR] bad."\n}'
         self.assertEqual(len(_case_insensitive_success_assertions(positive)), 1)
         self.assertEqual(_case_insensitive_success_assertions(negative), [])
+
+
+class TestCleanupDistinguishesNeverCreatedFromFailedRemoval(unittest.TestCase):
+    """LDM-#2035: a run that dies early must not invent a second failure.
+
+    When the suite aborts before provisioning, `ldm rm` correctly reports the
+    project missing. Both halves treated that as a removal failure and added
+    "the project directory may remain", so a reader saw two problems and the
+    louder one was the fabricated one. Reported on `v2.26.0-pre.15`, where the
+    run died at infra setup on a Windows reserved port and then claimed a
+    leftover project that had never existed.
+
+    The benign branch must be evidenced, not assumed -- LDM says missing AND no
+    container carries the name -- because the warning it bypasses is
+    LDM-#1436's signal, which fired on runs that otherwise PASSED and is still
+    unexplained. Swallowing that to tidy this output would trade a real unknown
+    for a cosmetic one.
+
+    Checked in both halves because they have drifted before (LDM-#1982).
+    """
+
+    def test_both_halves_have_the_benign_branch(self):
+        for script in (BASH_SCRIPT, PS1_SCRIPT):
+            with self.subTest(script=script.name):
+                text = script.read_text(encoding="utf-8")
+                self.assertIn(
+                    "No project to remove",
+                    text,
+                    "a run that ends before the project exists still reports a "
+                    "removal failure (LDM-#2035)",
+                )
+
+    def test_the_benign_branch_also_requires_no_leftover_containers(self):
+        """The guard that stops this becoming a blanket suppression."""
+        for script, token in ((BASH_SCRIPT, "rm_leftover"), (PS1_SCRIPT, "rmLeftover")):
+            with self.subTest(script=script.name):
+                text = script.read_text(encoding="utf-8")
+                idx = text.index("No project to remove")
+                window = text[max(0, idx - 600) : idx]
+                self.assertIn(
+                    token,
+                    window,
+                    "the benign branch must also prove no container carries the "
+                    "project name, or it suppresses LDM-#1436",
+                )
+
+    def test_the_failure_warning_still_exists(self):
+        """The counterweight: LDM-#1436's signal must survive."""
+        for script in (BASH_SCRIPT, PS1_SCRIPT):
+            with self.subTest(script=script.name):
+                self.assertIn(
+                    "the project directory may remain",
+                    script.read_text(encoding="utf-8"),
+                )
+
+
+INSTALLER_PS1 = SCRIPTS_DIR / "install_verification.ps1"
+
+
+class TestInstallerRunInstructionWorksOnADefaultPolicy(unittest.TestCase):
+    """LDM-#2037: the line the installer tells you to run must actually run.
+
+    `install_verification.ps1` closed with `cd <dir>; .\\verify_e2e_refactor.ps1`,
+    which on a default Windows execution policy fails with *"cannot be loaded
+    because running scripts is disabled on this system"*.
+
+    The hint cannot live in the suite: PowerShell refuses to **load** the file,
+    so nothing inside it ever executes. It has to come from the installer,
+    which is where the instruction is copied from.
+
+    Nor is a one-time note enough. The reporter had already run
+    `Set-ExecutionPolicy -Scope Process` to run the installer itself --
+    `-Scope Process` is the right scope precisely because it changes nothing
+    permanently, and is exactly why it did not survive into the next window.
+    """
+
+    def _text(self):
+        return INSTALLER_PS1.read_text(encoding="utf-8")
+
+    def test_the_primary_instruction_needs_no_policy_change(self):
+        self.assertIn(
+            "-ExecutionPolicy Bypass -File",
+            self._text(),
+            "the installer's run instruction must work on a default execution "
+            "policy without a prior Set-ExecutionPolicy (LDM-#2037)",
+        )
+
+    def test_the_direct_form_states_that_the_policy_does_not_persist(self):
+        """Offering `Set-ExecutionPolicy -Scope Process` without saying it is
+        per-window is what produced the report."""
+        text = self._text()
+        if "Set-ExecutionPolicy" not in text:
+            self.skipTest("the direct form is no longer offered")
+        self.assertIn(
+            "does not persist",
+            text,
+            "the direct form is offered without warning that -Scope Process "
+            "dies with the window (LDM-#2037)",
+        )
+
+    def test_the_host_is_resolved_rather_than_assumed(self):
+        """`powershell` and `pwsh` are different binaries; printing the wrong
+        one hands the user a command their machine may not have."""
+        self.assertIn("PSEdition", self._text())

@@ -527,7 +527,19 @@ cleanup_test_projects() {
         rm_out=$(LDM_WORKSPACE="${LDM_WORKSPACE}" "$LDM_CMD" -y rm "${PROJECT_NAME}" --delete 2>&1)
         rm_rc=$?
         set -e
-        if [ "$rm_rc" -ne 0 ]; then
+        # LDM-#2035: a run that died before provisioning never created the
+        # project, so `rm` correctly reports it missing. Calling that a failure,
+        # and claiming the directory may remain, invents a second problem on
+        # top of the real one. Evidenced rather than assumed: LDM says missing
+        # AND no container carries the name. Anything else falls through to the
+        # warning, which is LDM-#1436's signal and must not be swallowed.
+        local rm_leftover
+        rm_leftover=$(docker ps -a --filter "name=${PROJECT_NAME}" \
+            --format '{{.Names}}  {{.Status}}' 2>/dev/null || true)
+        if [ "$rm_rc" -ne 0 ] && printf '%s' "$rm_out" | grep -q "not found" \
+           && [ -z "$rm_leftover" ]; then
+            echo "ℹ  No project to remove: the run ended before '${PROJECT_NAME}' was created, and no container carries its name." | tee -a "$RESULTS_FILE_TMP"
+        elif [ "$rm_rc" -ne 0 ]; then
             echo "⚠  'ldm rm ${PROJECT_NAME} --delete' failed (exit ${rm_rc}); the project directory may remain." | tee -a "$RESULTS_FILE_TMP"
             if [ -n "$rm_out" ]; then
                 echo "   LDM said:" | tee -a "$RESULTS_FILE_TMP"
@@ -538,8 +550,7 @@ cleanup_test_projects() {
             # The stack still being up is the leading hypothesis (LDM-#1436);
             # record it either way rather than asking the reader to re-run.
             echo "   Containers still present for this project:" | tee -a "$RESULTS_FILE_TMP"
-            docker ps -a --filter "name=${PROJECT_NAME}" --format '     {{.Names}}  {{.Status}}' \
-                2>/dev/null | tee -a "$RESULTS_FILE_TMP" || true
+            printf '%s\n' "$rm_leftover" | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
         fi
 
         if [ "$PRUNE_AFTER" = true ]; then
