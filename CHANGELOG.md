@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.1-pre.2] - 2026-10-01
+
+### Changed
+
+- **Re-cut of `v2.26.1-pre.1` so the tag carries its own release notes.** There is no code difference: `git diff v2.26.1-pre.1 v2.26.1-pre.2` is `CHANGELOG.md` and nothing else. The pre.1 entry below was committed *after* that tag was pushed, so the tag's snapshot of this file held the empty stub while the branch held the text.
+
+  Verification against pre.1 would have worked -- `SCRIPT_VERSION` in both halves and `LDM_MAGIC_VERSION` all read `2.26.1-pre.1` in the tag and on the branch, so the bundle's scripts and the binary were the matched pair the per-tag bundle exists to guarantee. This is about a tag being a faithful snapshot of what it claims, not about the artifacts being wrong.
+
 ## [v2.26.1-pre.1] - 2026-10-01
 
 ### Fixed
