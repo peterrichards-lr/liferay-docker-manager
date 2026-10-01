@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.1] - 2026-10-01
+
+### Changed
+
+- **Re-cut of `v2.26.1-pre.1` so the tag carries its own release notes.** There is no code difference: `git diff v2.26.1-pre.1 v2.26.1-pre.2` is `CHANGELOG.md` and nothing else. The pre.1 entry below was committed *after* that tag was pushed, so the tag's snapshot of this file held the empty stub while the branch held the text.
+
+### Fixed
+
+- **A reserved Windows port no longer costs you WSL** (LDM-#2041). The tip v2.26.0 shipped for a port inside a Windows reserved range named WSL as a consumer of WinNAT in one sentence and recommended restarting WinNAT in the next, with no warning. It cost the maintainer their WSL networking within minutes of release, and it can defeat its own purpose: Docker Desktop on the WSL2 backend rides the same stack, so following the tip to fix a Docker port problem can take Docker down on the way.
+- **The routes probe says why it skipped** (LDM-#2042). It had reported a bare "no files under routes/" on three consecutive Windows runs while Linux and macOS reported four published files -- which does not distinguish *the files are absent* from *this check cannot see them*, and only the first is a defect in LDM.
+
 ## [v2.26.1-pre.2] - 2026-10-01
 
 ### Changed
