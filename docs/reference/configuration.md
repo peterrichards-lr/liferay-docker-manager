@@ -141,6 +141,60 @@ Three properties are deliberate:
 > containers as `SSH_READY_TIMEOUT` by the rule below. It has no meaning there
 > and is harmless, but it will appear in the container environment.
 
+## Environment Variables LDM Reads
+
+Every `LDM_`-prefixed variable LDM itself reads. The three sections above
+(`LDM_COMMON_DIR`, `LDM_HOME`, `LDM_SSH_READY_TIMEOUT`) explain theirs in
+full; this table is the index.
+
+This list is **derived from the source**, not maintained by hand —
+`ldm_core/tests/test_env_var_reference.py` fails when a variable the code
+reads is missing from it. Three variables shipped in v2.26.0 documented
+elsewhere and not here, and a hand-kept list would drift the same way again
+(LDM-#2025).
+
+Do not confuse these with the variables LDM *forwards into containers*,
+described under [Environment Variable Forwarding](#environment-variable-forwarding).
+Those are values you supply for your own services; these change how LDM
+itself behaves.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `LDM_ADMIN_PORT` | `18080` | Host port for the global proxy's admin endpoint. |
+| `LDM_ALLOW_ROOT` | `false` | Set `true` to permit running as root, overriding the sudo guard. |
+| `LDM_COMMON_DIR` | — | Shared configuration directory. See [above](#shared-configuration-ldm_common_dir). |
+| `LDM_CPU_IDLE_CHECKS` | `3` | Consecutive idle CPU samples before the readiness wait treats the portal as settled. |
+| `LDM_CPU_IDLE_THRESHOLD` | `15.0` | CPU percentage below which a sample counts as idle. |
+| `LDM_DEV_MODE` | unset | Must be `true` for developer-only commands; they refuse otherwise. |
+| `LDM_DOCKER_TUNNEL` | unset | One SSH connection per run instead of one per Docker command, for projects on a remote node. See [Remote Node Architecture](../explanation/remote-node-architecture.md#7a-one-ssh-connection-per-run-ldm_docker_tunnel). |
+| `LDM_DRY_RUN` | unset | `true` plans without executing. Also set by `--dry-run`. |
+| `LDM_FAIL_ON_STALE_PATCHES` | unset | `1` fails the run on stale portal patches rather than warning. |
+| `LDM_FORWARD_PREFIXES` | — | Extra prefixes to forward into containers. See [below](#3-custom-passthrough-prefixes). |
+| `LDM_FRAGMENT_PATCH_TIMEOUT` | `0` (off) | Seconds to wait for OSGi/Site-Initializer readiness. `--fragment-patch-timeout` wins over it. |
+| `LDM_HOME` | — | State directory. See [above](#state-directory-ldm_home). |
+| `LDM_HTTP_PORT` | `80` | Host HTTP port for the global proxy. |
+| `LDM_IGNORE_DOCKER` | `false` | `true` skips Docker availability checks. |
+| `LDM_LFR_TUNNEL_BIN` | unset | Path to the `lfr-tunnel` binary, instead of searching `PATH`. |
+| `LDM_LFR_TUNNEL_INSTALL_CMD` | unset | Command LDM names when `lfr-tunnel` is missing. |
+| `LDM_MCP_CIRCUIT_BREAKER_MAX_ACTIONS` | `5` | Actions allowed inside the MCP circuit-breaker window. |
+| `LDM_MCP_CIRCUIT_BREAKER_WINDOW` | `300` | That window, in seconds. |
+| `LDM_NO_KEYRING` | unset | `1` bypasses the OS keyring. |
+| `LDM_PROXY_LOG_FORMAT` | `common` | Traefik log format for the global proxy. `json` is greppable; `common` emits ANSI escapes. See [Troubleshooting](../TROUBLESHOOTING.md). |
+| `LDM_PROXY_LOG_LEVEL` | `ERROR` | Traefik log level. `ERROR` is Traefik's own default, which is why the proxy log is empty on a healthy run. |
+| `LDM_REPO_NAME` | `liferay-docker-manager` | Repository LDM checks for updates. |
+| `LDM_REPO_OWNER` | `peterrichards-lr` | Owner of that repository. |
+| `LDM_RUN_CONTEXT` | unset | `ci` marks the run as automated. |
+| `LDM_SAMPLES_PATH` | — | Overrides the sample-extension cache location. |
+| `LDM_SLUG_OS_SUFFIX` | unset | Suffix added to the OS component of a verification report slug. Unset on an ordinary run. |
+| `LDM_SSH_READY_TIMEOUT` | — | Remote node readiness. See [above](#remote-node-readiness-ldm_ssh_ready_timeout). |
+| `LDM_SSL_PORT` | `443` | Host HTTPS port for the global proxy. |
+| `LDM_TEST_MODE` | unset | `true` marks a test run. |
+| `LDM_WORKSPACE` | — | Overrides the workspace directory. |
+
+> [!NOTE]
+> `LDM_CERTS_DIR` appears in the shipped Compose template but is **set by LDM**
+> before Compose runs, so setting it yourself achieves nothing.
+
 ## Environment Variable Forwarding
 
 LDM forwards specific host environment variables into your project containers
@@ -258,4 +312,4 @@ LDM mounts.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-24* | *Last Reviewed: 2026-09-24*
+*Last Updated: 2026-10-01* | *Last Reviewed: 2026-10-01*
