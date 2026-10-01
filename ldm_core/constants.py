@@ -100,6 +100,23 @@ PIP_INSTALL_TIMEOUT = 600  # 10 min -- plugin/completion dependency installs
 # --- Release Announcements Mapping ---
 # Maps major.minor or exact version keys to lists of (cmd, description) tuples.
 RELEASE_ANNOUNCEMENTS = {
+    # LDM-#1663: a patch needs its OWN key. The banner tries
+    # RELEASE_ANNOUNCEMENTS[VERSION] before falling back to the series, so
+    # without this a v2.26.0 -> v2.26.1 upgrade re-prints the v2.26.0
+    # highlights the user has already seen and says nothing about the release
+    # they are actually taking.
+    "2.26.1": [
+        (
+            "A reserved Windows port no longer costs you WSL",
+            "The v2.26.0 tip for a port Windows has reserved recommended "
+            "restarting WinNAT without saying that this disrupts WSL2 and "
+            "the Docker Desktop WSL2 backend -- so following it to fix a "
+            "Docker problem could take Docker down on the way. Restarting "
+            "Docker Desktop is now offered first as the safe remedy, and the "
+            "WinNAT route carries its cost and the 'wsl --shutdown' needed "
+            "to recover.",
+        ),
+    ],
     "2.26": [
         (
             "Client extensions receive their own config tree",
