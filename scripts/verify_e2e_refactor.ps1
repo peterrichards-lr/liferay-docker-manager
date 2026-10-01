@@ -496,7 +496,21 @@ function Finalize-Verification {
     # because the output was thrown away. Capture and print it.
     $rmOut = (& $LDM_CMD -y rm ldm-smoke-test --delete 2>&1) -join "`n"
     $rmRc = $LASTEXITCODE
-    if ($rmRc -ne 0) {
+    # LDM-#2035: a run that died before provisioning never created the project,
+    # so `rm` correctly reports it missing. Reporting that as a failure, with
+    # "the project directory may remain", invents a second problem on top of
+    # the real one and points the reader at the wrong line -- the project was
+    # never there to leave behind.
+    #
+    # The distinction is evidenced, not assumed: LDM says it is missing AND no
+    # container carries its name. If either is untrue this falls through to the
+    # warning below, which is LDM-#1436's signal and must not be swallowed --
+    # that fired on runs which otherwise passed, and is still unexplained.
+    $rmLeftover = @(& docker ps -a --filter "name=ldm-smoke-test" --format "{{.Names}}  {{.Status}}" 2>$null)
+    if ($rmRc -ne 0 -and $rmOut -cmatch "not found" -and $rmLeftover.Count -eq 0) {
+        Write-Verdict "[INFO] No project to remove: the run ended before 'ldm-smoke-test' was created, and no container carries its name."
+    }
+    elseif ($rmRc -ne 0) {
         Write-Verdict "[WARNING] 'ldm rm ldm-smoke-test --delete' failed (exit $rmRc); the project directory may remain."
         if ($rmOut) {
             Write-Verdict "          LDM said:"
@@ -507,8 +521,7 @@ function Finalize-Verification {
         # The stack still being up is the leading hypothesis (LDM-#1436);
         # record it either way rather than asking the reader to re-run.
         Write-Verdict "          Containers still present for this project:"
-        $leftover = & docker ps -a --filter "name=ldm-smoke-test" --format "{{.Names}}  {{.Status}}" 2>$null
-        foreach ($line in $leftover) { Write-Verdict "            $line" }
+        foreach ($line in $rmLeftover) { Write-Verdict "            $line" }
     }
     
     # LDM-#1438: report what this run cost, so growth is visible per run rather

@@ -1575,3 +1575,57 @@ class TestPositiveAssertionsAreCaseSensitive(unittest.TestCase):
         negative = 'if ($out -match "Thing") {\n    throw "[ERROR] bad."\n}'
         self.assertEqual(len(_case_insensitive_success_assertions(positive)), 1)
         self.assertEqual(_case_insensitive_success_assertions(negative), [])
+
+
+class TestCleanupDistinguishesNeverCreatedFromFailedRemoval(unittest.TestCase):
+    """LDM-#2035: a run that dies early must not invent a second failure.
+
+    When the suite aborts before provisioning, `ldm rm` correctly reports the
+    project missing. Both halves treated that as a removal failure and added
+    "the project directory may remain", so a reader saw two problems and the
+    louder one was the fabricated one. Reported on `v2.26.0-pre.15`, where the
+    run died at infra setup on a Windows reserved port and then claimed a
+    leftover project that had never existed.
+
+    The benign branch must be evidenced, not assumed -- LDM says missing AND no
+    container carries the name -- because the warning it bypasses is
+    LDM-#1436's signal, which fired on runs that otherwise PASSED and is still
+    unexplained. Swallowing that to tidy this output would trade a real unknown
+    for a cosmetic one.
+
+    Checked in both halves because they have drifted before (LDM-#1982).
+    """
+
+    def test_both_halves_have_the_benign_branch(self):
+        for script in (BASH_SCRIPT, PS1_SCRIPT):
+            with self.subTest(script=script.name):
+                text = script.read_text(encoding="utf-8")
+                self.assertIn(
+                    "No project to remove",
+                    text,
+                    "a run that ends before the project exists still reports a "
+                    "removal failure (LDM-#2035)",
+                )
+
+    def test_the_benign_branch_also_requires_no_leftover_containers(self):
+        """The guard that stops this becoming a blanket suppression."""
+        for script, token in ((BASH_SCRIPT, "rm_leftover"), (PS1_SCRIPT, "rmLeftover")):
+            with self.subTest(script=script.name):
+                text = script.read_text(encoding="utf-8")
+                idx = text.index("No project to remove")
+                window = text[max(0, idx - 600) : idx]
+                self.assertIn(
+                    token,
+                    window,
+                    "the benign branch must also prove no container carries the "
+                    "project name, or it suppresses LDM-#1436",
+                )
+
+    def test_the_failure_warning_still_exists(self):
+        """The counterweight: LDM-#1436's signal must survive."""
+        for script in (BASH_SCRIPT, PS1_SCRIPT):
+            with self.subTest(script=script.name):
+                self.assertIn(
+                    "the project directory may remain",
+                    script.read_text(encoding="utf-8"),
+                )
