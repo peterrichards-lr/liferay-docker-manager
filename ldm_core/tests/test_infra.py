@@ -805,3 +805,70 @@ class TestTheProxyLogLevelIsReachable(unittest.TestCase):
         The level is the lever, not the destination.
         """
         self.assertNotIn("--log.filePath", self._compose_text())
+
+
+class TestRecoverableSearchFailuresAreWarnings(unittest.TestCase):
+    """LDM-#2032: a condition LDM repairs must not be reported as an error.
+
+    Elasticsearch exiting during infra bring-up is recoverable: LDM wipes and
+    recreates the search volume, and the run continues. Reporting it with
+    `UI.error` made a SUCCESSFUL recovery fail the whole E2E suite, because
+    `log_and_run` in verify_e2e_refactor.sh scans command output for failure
+    markers *after* the exit code has already passed:
+
+        grep -Ei "FATAL|❌|ERROR:" "$tmp_out" | grep -vEi "not found|..."
+
+    The recovery path necessarily prints the failure it recovered from, so the
+    auto-repair feature and the marker scan were in direct conflict. Reported
+    against v2.26.0-pre.14 on macOS/Colima, and seen several times before that.
+
+    Severity is the thing under test, not the wording. `UI.die` at `_depth >= 2`
+    remains the terminal failure and is deliberately untouched -- a search
+    engine that never comes up is still exit 3.
+
+    This reads the source rather than driving the path, which is the weaker
+    kind of test. Driving it needs a container that exits on demand plus the
+    full repair sequence, and the honest downstream catch is the E2E itself:
+    if these regress to `UI.error`, the next run that hits a flaky
+    Elasticsearch fails exactly as it did before.
+    """
+
+    RECOVERABLE = (
+        "Elasticsearch container exited unexpectedly.",
+        "Elasticsearch failed to become ready in time.",
+        "Elasticsearch container exited unexpectedly after restart.",
+    )
+
+    def _source(self):
+        from pathlib import Path
+
+        import ldm_core.handlers.infra as infra_mod
+
+        return Path(infra_mod.__file__).read_text(encoding="utf-8")
+
+    def test_each_recoverable_condition_is_a_warning(self):
+        src = self._source()
+        for msg in self.RECOVERABLE:
+            with self.subTest(message=msg):
+                self.assertIn(msg, src, "message no longer present; update this test")
+                idx = src.index(msg)
+                call = src.rfind("UI.", max(0, idx - 300), idx)
+                self.assertNotEqual(call, -1, f"no UI.* call found before {msg!r}")
+                self.assertTrue(
+                    src.startswith("UI.warning", call),
+                    f"{msg!r} is reported with {src[call : call + 10]!r}, not UI.warning. "
+                    "A condition LDM repairs must not print an error marker "
+                    "(LDM-#2032).",
+                )
+
+    def test_the_terminal_failure_is_still_fatal(self):
+        """The counterweight: downgrading must not have made everything soft."""
+        src = self._source()
+        self.assertIn(
+            "Elasticsearch failed to start after 2 restart attempts",
+            src,
+            "the terminal failure message is gone -- a search engine that never "
+            "starts must still be an Infrastructure error (exit 3)",
+        )
+        idx = src.index("Elasticsearch failed to start after 2 restart attempts")
+        self.assertIn("UI.die", src[max(0, idx - 200) : idx])

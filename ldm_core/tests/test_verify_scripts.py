@@ -1513,3 +1513,65 @@ class TestEveryCommandTheScriptCallsExists(unittest.TestCase):
             offenders = _undefined_commands(binary, fake)
         self.assertEqual(len(offenders), 1, offenders)
         self.assertTrue(offenders[0].startswith("Invoke-LoggedCommand:"), offenders)
+
+
+def _case_insensitive_success_assertions(text):
+    """`-match` lines whose success branch declares the behaviour CORRECT.
+
+    Polarity decides which operator is right, and it is derivable rather than
+    a list someone maintains:
+
+    * a match that leads to `[SUCCESS]` is a POSITIVE assertion -- narrow is
+      stricter, so it must be `-cmatch`. Case-insensitive here passes on
+      output LDM never produced.
+    * a match that leads to `[ERROR]`/`throw` is a failure detector or a
+      regression guard -- BROAD is safer, so `-match` is correct and must be
+      left alone. Narrowing those would miss failures, which is the opposite
+      of the point.
+
+    Returns `(line_number, text)` for each positive assertion still using the
+    case-insensitive operator.
+    """
+    out = []
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        if re.match(r"\s*#", line) or " -match " not in line:
+            continue
+        follow = " ".join(lines[i + 1 : i + 3])
+        if "[SUCCESS]" in follow and "[ERROR]" not in follow and "throw" not in follow:
+            out.append((i + 1, line.strip()[:100]))
+    return out
+
+
+class TestPositiveAssertionsAreCaseSensitive(unittest.TestCase):
+    """LDM-#2031: PowerShell's `-match` is case-insensitive by default.
+
+    The `.sh` half greps case-sensitively almost everywhere (111 plain `grep -q`
+    against 6 `grep -qi`), so a `-match` in the `.ps1` asserts strictly less
+    than its `.sh` counterpart. That difference never fails a run -- it passes
+    output LDM never produced -- which is exactly why it survives review.
+
+    Only POSITIVE assertions are required to be case-sensitive. Failure
+    detectors and regression guards are deliberately left broad; narrowing
+    `if ($out -match "the pre-flight check will select port")` would make it
+    miss the very wording it exists to catch.
+    """
+
+    def test_no_success_assertion_matches_case_insensitively(self):
+        offenders = _case_insensitive_success_assertions(
+            PS1_SCRIPT.read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            offenders,
+            [],
+            "these assert success with the case-INSENSITIVE operator, so they "
+            "pass on output LDM never produced. Use -cmatch (LDM-#2031):\n  "
+            + "\n  ".join(f"line {n}: {t}" for n, t in offenders),
+        )
+
+    def test_the_guard_distinguishes_polarity(self):
+        """Neuter probe, and a check that it does not over-reach."""
+        positive = 'if ($out -match "Thing") {\n    Write-Verdict "[SUCCESS] ok."\n}'
+        negative = 'if ($out -match "Thing") {\n    throw "[ERROR] bad."\n}'
+        self.assertEqual(len(_case_insensitive_success_assertions(positive)), 1)
+        self.assertEqual(_case_insensitive_success_assertions(negative), [])
