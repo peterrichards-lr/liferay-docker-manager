@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.2-pre.1] - 2026-10-02
+
+### Fixed
+
+- **Liferay is no longer declared dead while it is still starting** (LDM-#2050). v2.26.0 gave every client-extension and custom-service container `depends_on: liferay: condition: service_healthy` (LDM-#1928) -- and LDM had never written a healthcheck for the liferay service, so the `liferay/dxp` image's own applied: `StartPeriod 10s`, `Interval 4s`, and no `Retries`, meaning Docker's default of three. **Twelve seconds of unresponsiveness marked a working portal unhealthy**, and compose then aborted the stack with `dependency failed to start`, naming Liferay for something that was not Liferay's fault.
+
+  Before v2.26.0 nothing read that signal, so the image's defaults were harmless. Making extensions wait for Liferay -- correct in itself -- turned a cosmetic default into a load-bearing one.
+
+  Reported from a CI run killed twenty seconds after logging `addLayoutPageTemplates took 7156 ms`, with a clean console and `BundleSiteInitializer` mid-run. The same pipeline passed at 5m53s and died at 7m17s on the same commit and the same LDM version, which is the signature: the dependency is necessary, a slow boot is the other half.
+
+  LDM now writes a healthcheck reusing **the image's own test** -- what "healthy" means stays Liferay's to define, only the patience is ours. Both numbers are derived from choices LDM had already made rather than picked to stop a symptom: `start_period` matches the boot budget `_wait_for_ready` already allows, and `retries` matches the database healthcheck LDM writes in the same file. A fast boot is not delayed by a second, because a probe that succeeds during the start period marks the container healthy immediately.
+
+  **Not reproduced on a workstation.** A warm restart on Fedora stays `starting` then goes `healthy`, never `unhealthy` -- so this rests on the reported cold-boot CI failure and on v2.26.0 having created the dependency, not on a local reproduction. Recorded so nobody assumes one exists.
+
+### Changed
+
+- **The client-extension guide says that Liferay can rewrite a config tree after the container starts** (LDM-#2029). Liferay -- not LDM -- writes the contents of the routes trees, and rewrites them when it deploys a client extension, which can be minutes after a consumer read them. An extension that resolves its OAuth credentials once and caches them for the life of the process keeps working until its access token expires, then fails to renew and never recovers.
+
+  The guide now says to re-resolve on an authentication failure rather than cache, notes that no signal exists for this so failure-driven re-resolution is the available mechanism, and repeats that the directory is named from `projectName` and not the `LCP.json` `id`.
+
+  Filed originally as a defect in LDM's startup ordering. It is not: measurement showed the consumer read valid credentials at container start, and the failure was a cached client id at token renewal nine minutes later. LDM does what it documented; what was missing was telling an extension author the tree can change underneath them.
+
+- **A wrong explanation removed from the verification suite** (LDM-#2042). Comments added with the LDM-#2042 fix claimed Liferay publishes the routes tree *on client-extension deploy*, inferred from Windows timestamps where the files appeared in the same minute as a deploy. The Fedora report finds all four files 81 lines **before** its first CX deploy, and a vanilla project with no extension publishes them during boot. Publication happens during boot; the trigger is not established. The fix itself is unaffected -- asserting after the deploys is correct either way.
+
 ## [v2.26.1] - 2026-10-01
 
 ### Changed
