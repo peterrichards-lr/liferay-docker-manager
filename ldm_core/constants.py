@@ -100,6 +100,24 @@ PIP_INSTALL_TIMEOUT = 600  # 10 min -- plugin/completion dependency installs
 # --- Release Announcements Mapping ---
 # Maps major.minor or exact version keys to lists of (cmd, description) tuples.
 RELEASE_ANNOUNCEMENTS = {
+    # LDM-#1663: a patch needs its OWN key, or the banner falls back to the
+    # minor series and re-prints highlights the user has already seen.
+    "2.26.2": [
+        (
+            "Liferay is no longer declared dead while it is still starting",
+            "v2.26.0 made client-extension and custom-service containers "
+            "depend on Liferay being healthy -- and LDM had never written a "
+            "healthcheck for Liferay, so the image's default applied: a 10 "
+            "second start period and three retries, meaning twelve seconds "
+            "of unresponsiveness marked a working portal unhealthy. On a slow "
+            "boot, compose then killed the stack with 'dependency failed to "
+            "start', blaming Liferay for something that was not its fault. "
+            "LDM now writes a healthcheck with a start period matching the "
+            "boot budget it already waits for. A fast boot is not delayed: a "
+            "probe that succeeds during the start period marks the container "
+            "healthy immediately.",
+        ),
+    ],
     # LDM-#1663: a patch needs its OWN key. The banner tries
     # RELEASE_ANNOUNCEMENTS[VERSION] before falling back to the series, so
     # without this a v2.26.0 -> v2.26.1 upgrade re-prints the v2.26.0
