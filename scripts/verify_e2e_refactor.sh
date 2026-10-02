@@ -4630,8 +4630,14 @@ fi
 # when Liferay publishes. Measured on Windows: LDM scaffolds routes/default/dxp
 # at 18:36 and Liferay writes the four com.liferay.lxc.dxp.* files into it at
 # 18:52 -- three minutes after the synthetic extension was deployed, in the
-# same minute as the derived-routes one. The deploy triggers publication, and
-# publication lags it.
+# same minute as the derived-routes one.
+#
+# That coincidence was read as "the deploy triggers publication". It does not:
+# the Fedora 44 report finds all four files 81 lines BEFORE its first CX
+# deploy, and a vanilla Fedora project with no extension publishes them during
+# boot. What is established is that publication happens during boot and that
+# Windows is later than Linux. The trigger is not. Asserting after the deploys
+# is correct either way, which is why this placement stands.
 #
 # This half passed on Linux and macOS throughout, which is luck rather than
 # correctness: it was equally misplaced here and happened to find a published
@@ -4739,7 +4745,7 @@ else
         # a request, and the healthcheck does exactly that -- so an empty tree
         # here means the assertion had nothing to assert on.
         echo "⚠️  SKIPPED (not run): no files under routes/ after ${FSPERM_WAITED}s, with every client extension in this run already deployed." | tee -a "$RESULTS_FILE_TMP"
-        echo "   Liferay publishes the dxp tree on CX deploy, so by here it should exist (LDM-#2042)." | tee -a "$RESULTS_FILE_TMP"
+        echo "   Liferay publishes the dxp tree during boot, so by here it should exist (LDM-#2042)." | tee -a "$RESULTS_FILE_TMP"
     else
         report_ok "✅ All ${FSPERM_SEEN} published config file(s) under routes/ are readable by a client extension (LDM-#1944/#1946)."
     fi

@@ -4375,8 +4375,15 @@ assert sys.argv[2] in lst, 'client_extensions is %r and omits %r' % (lst, sys.ar
     # on Windows: LDM scaffolds routes/default/dxp at 18:36, and Liferay
     # writes the four com.liferay.lxc.dxp.* files into it at 18:52 -- three
     # minutes AFTER the synthetic extension was deployed, in the same minute
-    # as the derived-routes one. So it is the deploy that triggers publication,
-    # and publication lags it.
+    # as the derived-routes one.
+    #
+    # That coincidence was read as "the deploy triggers publication". It does
+    # not: the Fedora 44 report finds all four files 81 lines BEFORE its first
+    # CX deploy, and a vanilla Fedora project with no extension at all
+    # publishes them during boot. What is established is that publication
+    # happens during boot and that Windows is later than Linux. The trigger
+    # is not established, and asserting after the deploys is correct either
+    # way -- which is why this placement stands.
     #
     # The check therefore skipped on every Windows run, and that skip was
     # investigated three times as a platform defect before anyone read the
@@ -4495,7 +4502,7 @@ echo "SEEN $seen BAD$bad"
             if ($fsPermHostSeen -gt 0) {
                 Write-Verdict "[WARNING] SKIPPED (not run): the container probe found no files under routes/, but the host has $fsPermHostSeen. The files exist; this check cannot see them through a second container's bind mount (LDM-#2042). The LDM-#1944 file-mode assertion was NOT evaluated -- the defect is in this check, not in LDM."
             } else {
-                Write-Verdict "[WARNING] SKIPPED (not run): no files under routes/ after ${fsPermWaited}s, from inside a container OR on the host, with every client extension in this run already deployed. Liferay publishes the dxp tree on CX deploy, so by here it should exist -- its absence means Liferay's published config is not reaching the host, and a client extension could not read it either (LDM-#2042)."
+                Write-Verdict "[WARNING] SKIPPED (not run): no files under routes/ after ${fsPermWaited}s, from inside a container OR on the host, with every client extension in this run already deployed. Liferay publishes the dxp tree during boot, so by here it should exist -- its absence means Liferay's published config is not reaching the host, and a client extension could not read it either (LDM-#2042)."
             }
         } else {
             Write-Verdict "[SUCCESS] All $fsPermSeen published config file(s) under routes/ are readable by a client extension (LDM-#1944/#1946)."
