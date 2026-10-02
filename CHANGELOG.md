@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.2] - 2026-10-02
+
+### Changed
+
+- **The client-extension guide says that Liferay can rewrite a config tree after the container starts** (LDM-#2029). Liferay -- not LDM -- writes the contents of the routes trees, and rewrites them when it deploys a client extension, which can be minutes after a consumer read them. An extension that resolves its OAuth credentials once and caches them for the life of the process keeps working until its access token expires, then fails to renew and never recovers.
+- **A wrong explanation removed from the verification suite** (LDM-#2042). Comments added with the LDM-#2042 fix claimed Liferay publishes the routes tree *on client-extension deploy*, inferred from Windows timestamps where the files appeared in the same minute as a deploy. The Fedora report finds all four files 81 lines **before** its first CX deploy, and a vanilla project with no extension publishes them during boot. Publication happens during boot; the trigger is not established. The fix itself is unaffected -- asserting after the deploys is correct either way.
+
+### Fixed
+
+- **Liferay is no longer declared dead while it is still starting** (LDM-#2050). v2.26.0 gave every client-extension and custom-service container `depends_on: liferay: condition: service_healthy` (LDM-#1928) -- and LDM had never written a healthcheck for the liferay service, so the `liferay/dxp` image's own applied: `StartPeriod 10s`, `Interval 4s`, and no `Retries`, meaning Docker's default of three. **Twelve seconds of unresponsiveness marked a working portal unhealthy**, and compose then aborted the stack with `dependency failed to start`, naming Liferay for something that was not Liferay's fault.
+
 ## [v2.26.2-pre.1] - 2026-10-02
 
 ### Fixed
