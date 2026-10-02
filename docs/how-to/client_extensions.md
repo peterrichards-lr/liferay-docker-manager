@@ -32,6 +32,38 @@ LDM manages SSCE containers out of the box:
 - **Dynamic Docker Compose Sidecars**: Generates dynamic Compose fragments to spin up the SSCE microservice alongside Liferay on the same internal container network.
 - **Automated OAuth2 ERC Wiring**: Injects Liferay OAuth2 External Reference Codes (ERC) so the microservice and Liferay authenticate seamlessly.
 
+### Your extension's config tree can be rewritten after it starts
+
+LDM points your extension at `LIFERAY_ROUTES_CLIENT_EXTENSION` and
+`LIFERAY_ROUTES_DXP`, and **Liferay — not LDM — writes what is inside them.**
+It rewrites that tree when it deploys a client extension, which can be minutes
+after your container started and read it.
+
+That matters because the tree carries the OAuth2 credentials Liferay generates
+when it registers your application. **An extension that resolves its
+credentials once at startup and caches the result for the life of the process
+will keep working until its access token expires, then fail to renew and never
+recover** — the cached client id no longer matches what Liferay has.
+
+The failure is unpleasant to diagnose: authentication works for several
+minutes, then stops permanently, with nothing in the logs at the moment
+anything changed.
+
+**Re-resolve on an authentication failure rather than caching for the process
+lifetime.** Re-reading the tree on a 401 is correct whether or not the
+rewrite happened, and costs nothing when it did not.
+
+> [!NOTE]
+> There is no event or signal for this today. LDM tells your container the two
+> paths and nothing else, so failure-driven re-resolution is the mechanism
+> available — and it is the right one regardless, because it also covers a
+> redeploy later in your service's life.
+
+The directory is named from the extension's **`projectName`**, not the `id` in
+its `LCP.json`. The two differ for most extensions, and reading the id-named
+path finds a real, empty, readable directory rather than an error
+(LDM-#1944).
+
 ---
 
 ## 🔄 3. Live Hot-Reloading Workflow
@@ -174,4 +206,4 @@ optimistic.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-18* | *Last Reviewed: 2026-09-18*
+*Last Updated: 2026-10-02* | *Last Reviewed: 2026-10-02*
