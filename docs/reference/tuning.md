@@ -147,6 +147,10 @@ commitment:
 3. **Whether `-Xms`/`-Xmx` should converge** for users who *do* run LDM on a
    dedicated machine. That is a good argument for the profiles in LDM-#1449.
 
+All three are boot-time or throughput questions, and none has an answer in
+this file because none has been measured. [Measuring boot
+time](#measuring-boot-time) is the instrument for the first two.
+
 ## Overriding any of this
 
 **An unset value keeps the adaptive calculation.** Changing the heap does not
@@ -252,6 +256,66 @@ reduce what the stack asks for:
 LDM reports the kill on the node the project actually runs on, not the
 operator's laptop.
 
+## Measuring boot time
+
+Several of the open questions above end in "worth benchmarking". The
+instrument for that is `scripts/boot_timing.sh`.
+
+It reports two numbers per run, and they are not interchangeable:
+
+| Metric | What it is | What it answers |
+|---|---|---|
+| `tomcat_ms` | Liferay's own figure, read from its log | Is the **application** slower? |
+| `healthy_s` | Container start to Docker reporting healthy | Is the **stack** slower? |
+
+Only the second gates anything. `depends_on: condition: service_healthy`
+blocks dependent containers on `healthy_s`, so that number -- not Tomcat's --
+decides when a client extension is allowed to start. The two move
+independently: the healthcheck's `interval`, `retries` and `start_period` are
+LDM's to write (`ldm_core/handlers/composer.py`), so a change there moves
+`healthy_s` and leaves `tomcat_ms` untouched. That is a real difference, not
+noise, which is why both are reported.
+
+```bash
+scripts/boot_timing.sh --runs 3
+```
+
+The script pre-pulls the image outside the timed window, creates a fresh
+project per run so no OSGi state or database carries over, deletes it
+afterwards, and passes `--no-wait` so LDM's own readiness polling is not part
+of what is measured -- `healthy_s` is Docker's verdict, not `ldm wait`'s.
+
+### Reading the result
+
+Compare **medians and ranges**, on one machine, against one other version. If
+the ranges overlap, you have not measured a difference.
+
+Worked example from 2026-10-02, the A/B that closed out a suspected v2.26.0
+startup regression. One Fedora 44 workstation, Liferay `2026.q3.5`, three runs
+each:
+
+| Version | `tomcat_ms` median | range | `healthy_s` median | range |
+|---|---|---|---|---|
+| v2.25.0 | 137,664 | 137,256-142,155 | 199 | 198-199 |
+| v2.26.2-pre.1 | 138,473 | 138,364-139,725 | 203 | 198-203 |
+
+That is +0.6% and +2.0%, and the `healthy_s` ranges overlap at 198s. The
+decisive line is not the median at all: **v2.25.0's slowest run, 142.2s, is
+slower than v2.26.2's slowest, 139.7s.** The hypothesis under test was that
+v2.26.0's move of the routes mount into `/opt/liferay/routes` -- a path
+Liferay reads and writes during startup, where the previous location was not
+-- had added boot-time I/O. A plausible mechanism, and not what was happening.
+
+Two cautions that example illustrates:
+
+- **It measures the machine it runs on.** Bind mounts are cheap on native
+  Linux and expensive through Docker Desktop's translation layer or CI network
+  storage. A null result here does not transfer to those.
+- **One run proves nothing.** The report that prompted the investigation was
+  two runs 84 seconds apart -- 24% -- and both were the *same build*.
+  Within-version variance of that size swamps anything these two releases did
+  to each other.
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-17* | *Last Reviewed: 2026-09-17*
+*Last Updated: 2026-10-02* | *Last Reviewed: 2026-10-02*
