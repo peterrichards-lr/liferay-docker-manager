@@ -1092,6 +1092,53 @@ class ComposerService:
             "image": image,
             "ports": port_list,
             "environment": liferay_env,
+            # LDM-#2050: override the image's healthcheck, which declares a
+            # working Liferay dead.
+            #
+            # `liferay/dxp` ships StartPeriod 10s, Interval 4s, no Retries --
+            # so Docker's default of 3 applies, and TWELVE SECONDS of
+            # unresponsiveness marks the container unhealthy. A portal that is
+            # busy is not a portal that is dead: site initialisation blocks
+            # request serving for longer than that routinely, and a reported
+            # run was killed twenty seconds after logging
+            # "addLayoutPageTemplates took 7156 ms" with no errors at all.
+            # `depends_on: service_healthy` aborts on unhealthy, so compose
+            # takes the stack down and blames Liferay.
+            #
+            # The test is the image's own, unchanged -- what "healthy" means
+            # is Liferay's to define, not ours. Only the patience is ours.
+            #
+            # Both numbers are derived from choices LDM has already made
+            # rather than picked to make a symptom stop:
+            #
+            #   start_period 600s -- `_wait_for_ready` (runtime/readiness.py)
+            #       already treats 600s as the boot budget. A healthcheck that
+            #       declares death at 22s contradicts the thing LDM itself
+            #       waits for. During start_period a failure does not count
+            #       toward retries and a success marks healthy IMMEDIATELY, so
+            #       this costs a fast boot nothing -- it is not a timeout.
+            #
+            #   retries 10 -- the same value LDM already writes for the
+            #       database healthcheck below. At the image's 4s interval
+            #       that tolerates 40s of unresponsiveness, roughly five times
+            #       the longest initialiser step observed.
+            #
+            # This does not extend how long a hung boot takes to surface:
+            # `_wait_for_ready` still gives up at 600s and reports what the
+            # logs said.
+            "healthcheck": {
+                "test": [
+                    "CMD-SHELL",
+                    'curl --cookie "/tmp/healthcheck" '
+                    '--cookie-jar "/tmp/healthcheck" --fail --show-error '
+                    '--silent "http://localhost:8080/c/portal/layout" '
+                    "|| exit 1",
+                ],
+                "interval": "4s",
+                "timeout": "60s",
+                "start_period": "600s",
+                "retries": 10,
+            },
             "labels": [
                 f"com.liferay.ldm.project={project_name}",
                 "com.liferay.ldm.managed=true",

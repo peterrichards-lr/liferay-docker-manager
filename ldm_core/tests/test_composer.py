@@ -2238,3 +2238,136 @@ class TestSharedDatabaseJdbcResolution(unittest.TestCase):
             "the MySQL dialect is hardcoded again; an older tag would then be "
             "given a MariaDB dialect alongside a MySQL driver (LDM-#1361).",
         )
+
+
+class TestTheLiferayHealthcheckIsPatientEnough(unittest.TestCase):
+    """LDM-#2050: compose was killing a Liferay that was still working.
+
+    LDM wrote no healthcheck for the liferay service, so it inherited the
+    `liferay/dxp` image's: `StartPeriod 10s`, `Interval 4s`, and no `Retries`
+    -- so Docker's default of 3 applies and **twelve seconds of
+    unresponsiveness marks the container unhealthy**.
+
+    A portal that is busy is not a portal that is dead. Site initialisation
+    blocks request serving for longer than that routinely: a reported run was
+    killed twenty seconds after logging `addLayoutPageTemplates took 7156 ms`,
+    with no errors in its console at all. `depends_on: service_healthy` aborts
+    on unhealthy, so compose took the stack down and the message blamed
+    Liferay.
+
+    The numbers are asserted against the things they were DERIVED from rather
+    than written out as literals, so the derivation cannot quietly rot into a
+    magic constant:
+
+    * `start_period` must match `_wait_for_ready`'s own boot budget. A
+      healthcheck declaring death at 22s contradicts the thing LDM itself
+      waits 600s for.
+    * `retries` must match what LDM already writes for the database
+      healthcheck -- the same patience, chosen once.
+
+    `start_period` is not a timeout: a failure during it does not count toward
+    retries, and a success marks the container healthy immediately, so this
+    costs a fast boot nothing.
+    """
+
+    def setUp(self):
+        self.manager = MockComposerManager()
+        self.composer = ComposerService(self.manager)
+        self.environ_patcher = patch.dict("os.environ", {"GITHUB_ACTIONS": "false"})
+        self.environ_patcher.start()
+        self.addCleanup(self.environ_patcher.stop)
+        # Without this, target resolution reaches a real ~/.ldmrc and can try
+        # a real SSH round trip to build a compose file in a unit test -- the
+        # same reason the class above patches it.
+        from ldm_core.config import TargetNode
+
+        self.target_patcher = patch(
+            "ldm_core.config.get_active_target",
+            return_value=TargetNode(name="local", host="localhost", is_default=True),
+        )
+        self.target_patcher.start()
+        self.addCleanup(self.target_patcher.stop)
+        # A bare MagicMock scan puts un-serialisable objects in the compose.
+        # This class is about the liferay service, so: no extensions.
+        self.manager.workspace.scan_client_extensions.return_value = []
+        self.manager.workspace.scan_custom_containers.return_value = []
+        # The log-rotation size comes from config and would otherwise land in
+        # the compose as a MagicMock, which yaml cannot serialise.
+        self.manager.defaults.get.return_value = "10m"
+
+    def _liferay_service(self):
+        return self._compose()["services"]["liferay"]
+
+    def _compose(self):
+        import yaml
+
+        # The same paths/config shape the passing compose tests in this module
+        # use. A hand-rolled subset leaves the mock manager filling gaps with
+        # MagicMocks, which yaml cannot serialise.
+        paths = {
+            "root": Path(f"{TEST_TMP_ROOT}/hc"),
+            "deploy": Path(f"{TEST_TMP_ROOT}/hc/deploy"),
+            "files": Path(f"{TEST_TMP_ROOT}/hc/files"),
+            "data": Path(f"{TEST_TMP_ROOT}/hc/data"),
+            "configs": Path(f"{TEST_TMP_ROOT}/hc/osgi/configs"),
+            "modules": Path(f"{TEST_TMP_ROOT}/hc/osgi/modules"),
+            "cx": Path(f"{TEST_TMP_ROOT}/hc/osgi/client-extensions"),
+            "scripts": Path(f"{TEST_TMP_ROOT}/hc/scripts"),
+            "state": Path(f"{TEST_TMP_ROOT}/hc/osgi/state"),
+            "logs": Path(f"{TEST_TMP_ROOT}/hc/logs"),
+            "portal_log4j": Path(f"{TEST_TMP_ROOT}/hc/osgi/log4j"),
+            "compose": Path(f"{TEST_TMP_ROOT}/hc/docker-compose.yml"),
+        }
+        config = {
+            "container_name": "ldm-hc-test",
+            "tag": "2025.q1.0-lts",
+            "db_type": "postgresql",
+            "host_name": "hc-test.localhost",
+        }
+        with patch("ldm_core.utils.safe_write_text") as mock_write:
+            self.composer.write_docker_compose(paths, config)
+            return yaml.safe_load(mock_write.call_args[0][1])
+
+    def test_the_liferay_service_has_a_healthcheck_at_all(self):
+        self.assertIn(
+            "healthcheck",
+            self._liferay_service(),
+            "the liferay service inherits the image's 10s start period and "
+            "3 retries, which kills a working portal (LDM-#2050)",
+        )
+
+    def test_the_start_period_matches_ldms_own_boot_budget(self):
+        import inspect
+
+        from ldm_core.runtime.readiness import ReadinessService
+
+        budget = (
+            inspect.signature(ReadinessService._wait_for_ready)
+            .parameters["timeout"]
+            .default
+        )
+        self.assertEqual(
+            f"{budget}s",
+            self._liferay_service()["healthcheck"]["start_period"],
+            "the healthcheck's patience must match the budget _wait_for_ready "
+            "already allows; a healthcheck that gives up first contradicts it",
+        )
+
+    def test_retries_match_the_database_healthcheck(self):
+        """The same patience, chosen once rather than twice."""
+        compose = self._compose()
+        db = next(
+            svc
+            for name, svc in compose["services"].items()
+            if name != "liferay" and "healthcheck" in svc and "db" in name
+        )
+        self.assertEqual(
+            db["healthcheck"]["retries"],
+            compose["services"]["liferay"]["healthcheck"]["retries"],
+        )
+
+    def test_healthy_still_means_what_liferay_says_it_means(self):
+        """Only the patience is ours. Redefining the probe would be us
+        deciding what a working portal is, which is not our call."""
+        test = self._liferay_service()["healthcheck"]["test"]
+        self.assertIn("/c/portal/layout", " ".join(test))
