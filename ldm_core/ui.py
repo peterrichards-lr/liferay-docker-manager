@@ -2,6 +2,8 @@ import contextlib
 import logging
 import os
 import sys
+from pathlib import Path
+from typing import TextIO
 
 if sys.platform == "win32":
     # Enable ANSI escape sequence processing in Windows consoles
@@ -82,8 +84,13 @@ class UI:
     NO_COLOR = False
     NO_UNICODE = False
 
-    TRACE_LOG_PATH = None
-    _trace_handle = None
+    # LDM-#1407 follow-on: annotated, not merely assigned. Without these,
+    # mypy infers the type as exactly `None` from the initialiser and
+    # every later `.parent`, `.write` and `.flush` is an attr-defined
+    # error -- eight of them, as of mypy 2.4.0, which tightened inference
+    # for class attributes with a None-only initialiser.
+    TRACE_LOG_PATH: Path | None = None
+    _trace_handle: TextIO | None = None
     _log_bridge = None
 
     @classmethod

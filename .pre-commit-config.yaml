@@ -27,7 +27,7 @@ repos:
   # was chasing findings CI would never raise, while CI-only failures stayed
   # invisible until push.
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.3.1
+    rev: v2.4.0
     hooks:
       - id: mypy
         stages: [pre-push, manual]
