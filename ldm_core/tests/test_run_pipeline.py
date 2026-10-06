@@ -1,7 +1,9 @@
+import ast
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 from ldm_core.pipelines.run import (
@@ -221,18 +223,27 @@ class TestRunPipeline(unittest.TestCase):
             "the normal path must still bring the stack up",
         )
 
-    def test_no_compose_bringup_is_issued_without_a_timeout(self):
-        """LDM-#2064: an unbounded `compose up` can hang a run for ever.
+    #: Compose verbs that may legitimately carry no bound. `logs -f` follows
+    #: until the user interrupts it; bounding it would kill a developer's log
+    #: tail after thirty minutes, which is a new defect rather than the
+    #: completion of the guard it resembles (LDM-#2072).
+    MAY_BE_UNBOUNDED: ClassVar[set[str]] = {"logs"}
 
-        Against a remote node `DOCKER_HOST=ssh://` carries the pull, the build
-        and container creation over one SSH connection. `run_command` defaults
-        to `timeout=None`, so a transport that stopped answering produced no
-        error and no diagnosis -- observed on a consumer's CI as 106 minutes of
-        silence after "Starting Container Stack".
+    def _compose_calls(self):
+        """(verb, argv, call) for every compose command the stage issued."""
+        found = []
+        for call in self.context.manager.run_command.call_args_list:
+            if not call.args or not isinstance(call.args[0], list):
+                continue
+            argv = [str(a) for a in call.args[0]]
+            if "compose" not in argv:
+                continue
+            k = argv.index("compose")
+            verb = argv[k + 1] if k + 1 < len(argv) else ""
+            found.append((verb, argv, call))
+        return found
 
-        Asserted over EVERY bring-up this stage issues rather than the one call
-        that was reported, so adding a second unbounded `up` fails here.
-        """
+    def _drive_execution_stage(self):
         self.context.set("no_up", None)
         self.context.manager.args.no_up = False
         self.context.set("paths", {"root": MagicMock()})
@@ -240,28 +251,80 @@ class TestRunPipeline(unittest.TestCase):
         self.context.set("no_wait", True)
         self.context.manager.args.no_wait = True
         self.context.manager.get_container_status.return_value = "healthy"
+        ExecutionStage().execute(self.context)
 
-        stage = ExecutionStage()
-        stage.execute(self.context)
+    def test_no_compose_bringup_is_issued_without_a_timeout(self):
+        """LDM-#2064/#2072: an unbounded `compose up` can hang a run for ever.
 
-        bringups = [
-            call
-            for call in self.context.manager.run_command.call_args_list
-            if isinstance(call.args[0], list)
-            and any(tok in ("up", "create") for tok in call.args[0])
-        ]
-        self.assertTrue(bringups, "the stage issued no compose bring-up to check")
-        for call in bringups:
-            with self.subTest(cmd=" ".join(str(a) for a in call.args[0])):
+        Against a remote node `DOCKER_HOST=ssh://` carries the pull, the build
+        and container creation over one SSH connection. `run_command` defaults
+        to `timeout=None`, so a transport that stopped answering produced no
+        error and no diagnosis -- observed on a consumer's CI as 106 minutes of
+        silence after "Starting Container Stack".
+
+        Asserted over EVERY compose command the stage issues, with an explicit
+        allowlist, rather than over a list of verbs. LDM-#2064 bounded `up` and
+        `create` and missed the `start` that completes the bring-up on the
+        portal-patch path, because the test was written around the verbs the
+        author had in mind.
+        """
+        self._drive_execution_stage()
+
+        calls = self._compose_calls()
+        self.assertTrue(calls, "the stage issued no compose command to check")
+        for verb, argv, call in calls:
+            if verb in self.MAY_BE_UNBOUNDED:
+                continue
+            with self.subTest(cmd=" ".join(argv)):
                 self.assertIn(
-                    "timeout",
-                    call.kwargs,
-                    "a compose bring-up was issued with no timeout",
+                    "timeout", call.kwargs, "a compose command carries no bound"
                 )
                 self.assertEqual(
                     call.kwargs["timeout"],
                     _stack_bringup_timeout(),
                     "a bring-up used a bound other than the stack one",
+                )
+
+    def test_the_patch_path_start_is_bounded_too(self):
+        """LDM-#2072: with portal patches the bring-up is `create` + `start`.
+
+        Bounding only the `create` left the half that actually starts the
+        containers unbounded, on the one path where the bring-up is split.
+        """
+        with (
+            patch("ldm_core.runtime.portal_patches.plan_patches") as plan,
+            patch("ldm_core.runtime.portal_patches.copy_patches_into"),
+        ):
+            plan.return_value = [{"jar": "synthetic.jar"}]
+            self._drive_execution_stage()
+
+        starts = [c for c in self._compose_calls() if c[0] == "start"]
+        self.assertTrue(
+            starts,
+            "the patch path issued no `compose start` -- test drove the wrong branch",
+        )
+        for _verb, argv, call in starts:
+            with self.subTest(cmd=" ".join(argv)):
+                self.assertEqual(call.kwargs.get("timeout"), _stack_bringup_timeout())
+
+    def test_logs_follow_is_left_unbounded_on_purpose(self):
+        """The exclusion needs a test, or a later sweep "completes" the guard.
+
+        `logs -f` follows until interrupted. A bound would cap a developer's
+        log tail at thirty minutes.
+        """
+        self.context.set("follow", True)
+        self.context.manager.args.follow = True
+        self._drive_execution_stage()
+
+        logs = [c for c in self._compose_calls() if c[0] == "logs"]
+        self.assertTrue(logs, "the stage issued no `compose logs` to check")
+        for _verb, argv, call in logs:
+            with self.subTest(cmd=" ".join(argv)):
+                self.assertNotIn(
+                    "timeout",
+                    call.kwargs,
+                    "`logs -f` must stay unbounded; a bound caps the log tail",
                 )
 
     def test_the_bringup_bound_is_longer_than_the_lifecycle_bound(self):
@@ -841,3 +904,71 @@ class TestSharedSearchWiring(unittest.TestCase):
         context = self._stage_context()
         ConfigResolutionStage().execute(context)
         self.assertFalse(context.get("use_shared_search"))
+
+
+class TestEveryBringupInTheStageIsBounded(unittest.TestCase):
+    """A structural contract over ExecutionStage (LDM-#2072).
+
+    The behavioural tests above can only check the paths they drive. The
+    samples / external-snapshot database bring-up needs a restore fixture to
+    reach, and that is exactly the kind of path an unbounded call hides on --
+    LDM-#2064 shipped with two of them because the author bounded what the
+    tests happened to execute.
+
+    This reads the source instead, which is legitimate here because the claim
+    IS structural: every compose command this stage issues carries a bound,
+    except the ones explicitly allowed not to. It is not a substitute for the
+    behavioural tests and does not replace them.
+    """
+
+    ALLOWED_UNBOUNDED: ClassVar[set[str]] = {"logs"}
+
+    def _execution_stage_compose_calls(self):
+        source = (
+            Path(__file__).resolve().parent.parent / "pipelines" / "run.py"
+        ).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        stage = next(
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.ClassDef) and n.name == "ExecutionStage"
+        )
+        for call in ast.walk(stage):
+            if not isinstance(call, ast.Call) or not call.args:
+                continue
+            if getattr(call.func, "attr", None) != "run_command":
+                continue
+            argv = ast.unparse(call.args[0])
+            if "compose_base" not in argv and "compose_prefix" not in argv:
+                continue
+            bounded = any(k.arg == "timeout" for k in call.keywords)
+            yield call.lineno, argv, bounded
+
+    def test_every_compose_call_is_bounded_or_explicitly_allowed(self):
+        found = list(self._execution_stage_compose_calls())
+        self.assertTrue(found, "no compose calls found -- the walk is broken")
+
+        offenders = [
+            (lineno, argv)
+            for lineno, argv, bounded in found
+            if not bounded and not any(f"'{v}'" in argv for v in self.ALLOWED_UNBOUNDED)
+        ]
+        self.assertEqual(
+            offenders,
+            [],
+            "unbounded compose call(s) in ExecutionStage: "
+            + "; ".join(f"run.py:{n} {a}" for n, a in offenders),
+        )
+
+    def test_the_allowlist_still_matches_something(self):
+        """An allowlist that matches nothing is a rule nobody is following.
+
+        If `logs -f` moves or goes, this fails rather than silently becoming
+        a no-op that would let a future unbounded call through unexamined.
+        """
+        allowed = [
+            argv
+            for _lineno, argv, _bounded in self._execution_stage_compose_calls()
+            if any(f"'{v}'" in argv for v in self.ALLOWED_UNBOUNDED)
+        ]
+        self.assertTrue(allowed, "nothing matches ALLOWED_UNBOUNDED; drop it or fix it")
