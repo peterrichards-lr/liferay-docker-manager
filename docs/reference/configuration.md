@@ -186,6 +186,7 @@ itself behaves.
 | `LDM_RUN_CONTEXT` | unset | `ci` marks the run as automated. |
 | `LDM_SAMPLES_PATH` | — | Overrides the sample-extension cache location. |
 | `LDM_SLUG_OS_SUFFIX` | unset | Suffix added to the OS component of a verification report slug. Unset on an ordinary run. |
+| `LDM_STACK_BRINGUP_TIMEOUT` | `1800` | Seconds allowed for `docker compose up`/`create` when starting a project's stack. A liveness bound, not a performance limit: it stops a dead Docker transport hanging a run for ever (exit `124`). `0` removes the bound and restores the unbounded wait. See [Stack bring-up timed out](../TROUBLESHOOTING.md#stack-bring-up-timed-out-exit-code-124). |
 | `LDM_SSH_READY_TIMEOUT` | — | Remote node readiness. See [above](#remote-node-readiness-ldm_ssh_ready_timeout). |
 | `LDM_SSL_PORT` | `443` | Host HTTPS port for the global proxy. |
 | `LDM_TEST_MODE` | unset | `true` marks a test run. |
@@ -312,4 +313,4 @@ LDM mounts.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-01* | *Last Reviewed: 2026-10-01*
+*Last Updated: 2026-10-06* | *Last Reviewed: 2026-10-06*

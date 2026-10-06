@@ -212,6 +212,49 @@ unless you specifically want to keep the original port.
 If the tip names no alternative, every port in the 20 above the conflicting one
 was also busy; free one up, or set a different port for the service.
 
+### **Stack bring-up timed out (Exit Code 124)**
+
+```text
+❌  Command timed out after 1800s: docker compose up -d --remove-orphans
+```
+
+The bring-up ran for 30 minutes without finishing. LDM stopped waiting and
+exited `124` rather than hanging indefinitely (LDM-#2064).
+
+This is a **liveness bound, not a performance limit**. It is long enough that a
+cold image pull and an image build should never reach it, so hitting it almost
+always means something stopped making progress rather than being slow.
+
+Against a **remote node** this is the likeliest cause. With `DOCKER_HOST` set
+to `ssh://`, that single command carries the pull, the build and container
+creation over one SSH connection, and if the transport dies the Docker client
+can block on it without noticing. The signature is no output at all after
+`Starting Container Stack`.
+
+What to check, in order:
+
+1. **Is the node reachable?** `ldm system doctor` and `docker --context <node> info`.
+2. **Was the daemon still working?** On the node, `journalctl -u docker -S -30min`.
+   A daemon that was pulling or building happily means the transport failed,
+   not the build.
+3. **Add SSH keepalives.** A `Host <node>` block in `~/.ssh/config` with
+   `ServerAliveInterval 30` and `ServerAliveCountMax 6` turns an unbounded
+   stall into a named failure in about three minutes. Docker's connection
+   helper reads that file, so this needs no LDM change.
+
+Locally, a genuine 30-minute bring-up means a very slow pull or a Dockerfile
+doing heavy work. Pull the image first with `docker pull`, outside the run.
+
+If your build legitimately needs longer, raise the bound rather than patching
+LDM:
+
+```bash
+LDM_STACK_BRINGUP_TIMEOUT=5400 ldm run my-project
+```
+
+`0` removes the bound entirely. That restores the unbounded wait this guard
+exists to prevent, so LDM warns when you set it.
+
 ## 📂 Permission & Mount Issues
 
 ### **macOS / ExFAT: "Unable to create lock manager" or "access_denied_exception"**
@@ -662,4 +705,4 @@ Projects are discovered from the current folder, its parent, `~/ldm`, the LDM in
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-30* | *Last Reviewed: 2026-09-30*
+*Last Updated: 2026-10-06* | *Last Reviewed: 2026-10-06*
