@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.3-pre.2] - 2026-10-06
+
+### Fixed
+
+- **The bring-up bound now covers every bring-up, not just the common one** (LDM-#2072). LDM-#2064 bounded `docker compose up`/`create` and missed two calls that are also part of starting a stack: the `compose up` the samples and external-snapshot paths issue for the database before a restore, and the `compose start` that completes the bring-up when portal patches are present -- on that path the operation is `create` **+** `start`, and only the first half was bounded. Both now carry the same bound. A `start` that takes thirty minutes is as broken as a `create` that does.
+
+  `compose logs -f` is deliberately left unbounded and now says so in the source: it follows until the user interrupts it, and a bound there would cap a developer's log tail at thirty minutes. A test asserts it stays unbounded, so a later sweep cannot "complete" the guard and break log following.
+
+  Reported by the AI Commerce Accelerator team, who read the shipped code while checking an unrelated answer. The original test could not have caught this -- it matched the verbs `up` and `create`, which are the verbs the author had in mind, and a test written around the shape of a fix cannot find the part of the problem the fix missed. It is replaced by a contract that inverts the default: every compose command the stage issues must be bounded unless explicitly allowed not to be.
+
 ## [v2.26.3-pre.1] - 2026-10-06
 
 ### Fixed
