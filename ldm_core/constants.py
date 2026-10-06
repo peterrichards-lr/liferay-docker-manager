@@ -102,6 +102,18 @@ PIP_INSTALL_TIMEOUT = 600  # 10 min -- plugin/completion dependency installs
 RELEASE_ANNOUNCEMENTS = {
     # LDM-#1663: a patch needs its OWN key, or the banner falls back to the
     # minor series and re-prints highlights the user has already seen.
+    "2.26.3": [
+        (
+            "A stalled bring-up now fails instead of hanging for ever",
+            "'docker compose up' was the one call LDM placed no bound on, so "
+            "a bring-up that stopped making progress produced no error and no "
+            "end -- it simply stopped being watched. One report ran 106 "
+            "minutes before being cancelled. It now exits 124 with the "
+            "command named after 30 minutes, which is far above any "
+            "legitimate cold pull or build. Set LDM_BRINGUP_TIMEOUT to raise "
+            "it, or to 0 to remove the bound entirely.",
+        ),
+    ],
     "2.26.2": [
         (
             "Liferay is no longer declared dead while it is still starting",
