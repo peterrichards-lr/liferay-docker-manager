@@ -3,6 +3,7 @@ Orchestrates the main 'ldm run' pipeline.
 """
 
 import contextlib
+import os
 import platform
 import time
 import typing
@@ -144,6 +145,84 @@ def project_has_own_db_service(db_mode):
 # than as "saves resources" because the number is what makes the trade-off
 # decidable -- the same project's Liferay heap is -Xmx3072m, about 25x this.
 SHARED_DB_TIP_MB = 120
+
+# A liveness bound on bringing the container stack up, NOT a performance
+# expectation (LDM-#2064).
+#
+# `docker compose up -d` here was the one unbounded call in the run: against a
+# remote node, `DOCKER_HOST=ssh://` carries the image pull, any build and
+# container creation over a single SSH connection, and `run_command`'s default
+# `timeout=None` meant a transport that stopped answering hung the run with no
+# error and no diagnosis. Observed on a consumer's CI, 2026-10-06: 106 minutes
+# of silence after "Starting Container Stack", the process still alive at
+# cancellation, and no `ssh` among the orphans -- the transport had gone and
+# the Docker client never noticed.
+#
+# Deliberately much larger than `_COMPOSE_LIFECYCLE_TIMEOUT` (300s, in
+# `runtime/orchestration.py`), because start/stop/restart cannot pull or build
+# and this can. Both of those are bounded by the user's network and Dockerfile,
+# which LDM has no way to predict, so this number is a judgement rather than a
+# derivation and is stated as one: well above the slowest legitimate cold pull
+# and build seen, and well below "nobody is watching any more".
+#
+# On expiry `CommandRunner` prints the command and exits 124. That is the whole
+# benefit -- a named failure at a known time instead of an unbounded wait.
+_STACK_BRINGUP_TIMEOUT_DEFAULT = 1800
+
+#: Named for the operation it bounds, not for `compose`, because it governs the
+#: bring-up alone -- `start`/`stop`/`restart`/`down` keep
+#: `_COMPOSE_LIFECYCLE_TIMEOUT`, and other compose calls remain unbounded. A
+#: `LDM_COMPOSE_TIMEOUT` would promise all of them. Follows
+#: `LDM_FRAGMENT_PATCH_TIMEOUT`, which names its operation the same way.
+_STACK_BRINGUP_TIMEOUT_ENV = "LDM_STACK_BRINGUP_TIMEOUT"
+
+
+def _stack_bringup_timeout() -> float | None:
+    """Seconds to allow the stack bring-up, or None for no bound (LDM-#2064).
+
+    Read per call rather than at import, so setting the variable affects the
+    run that sets it.
+
+    The default is a judgement (see above) and a judgement can be wrong for
+    somebody: a Dockerfile doing genuinely heavy work on a slow link could
+    exceed 30 minutes legitimately, and without an escape hatch their only
+    recourse would be patching LDM. `0` disables the bound and restores the
+    pre-LDM-#2064 behaviour, which is worth saying plainly -- it reinstates
+    the hang this guard exists to prevent, so it warns rather than going
+    quietly.
+
+    A malformed value warns and falls back rather than failing the run: a typo
+    in an environment variable should not stop someone starting a stack.
+    """
+    raw = os.environ.get(_STACK_BRINGUP_TIMEOUT_ENV, "").strip()
+    if not raw:
+        return _STACK_BRINGUP_TIMEOUT_DEFAULT
+
+    try:
+        value = float(raw)
+    except ValueError:
+        UI.warning(
+            f"Malformed {_STACK_BRINGUP_TIMEOUT_ENV} ('{raw}'); "
+            f"using {_STACK_BRINGUP_TIMEOUT_DEFAULT}s."
+        )
+        return _STACK_BRINGUP_TIMEOUT_DEFAULT
+
+    if value < 0:
+        UI.warning(
+            f"{_STACK_BRINGUP_TIMEOUT_ENV} must not be negative "
+            f"('{raw}'); using {_STACK_BRINGUP_TIMEOUT_DEFAULT}s."
+        )
+        return _STACK_BRINGUP_TIMEOUT_DEFAULT
+
+    if value == 0:
+        UI.warning(
+            f"{_STACK_BRINGUP_TIMEOUT_ENV}=0: the stack bring-up is unbounded. "
+            "A Docker transport that stops answering will hang this run with "
+            "no error."
+        )
+        return None
+
+    return value
 
 
 def should_offer_shared_database_tip(
@@ -2609,6 +2688,7 @@ class ExecutionStage(PipelineStage):
                     [*compose_base, "up", "-d", *deps],
                     cwd=str(paths["root"]),
                     check=True,
+                    timeout=_stack_bringup_timeout(),
                 )
                 for dep in deps:
                     UI.detail(
@@ -2694,7 +2774,12 @@ class ExecutionStage(PipelineStage):
                         reclaim_volume_permissions(paths[p_key], chmod_val="777")
 
             follow = context.get("follow") or getattr(manager.args, "follow", False)
-            manager.run_command(cmd, cwd=str(paths["root"]), capture_output=not follow)
+            manager.run_command(
+                cmd,
+                cwd=str(paths["root"]),
+                capture_output=not follow,
+                timeout=_stack_bringup_timeout(),
+            )
 
             if portal_patch_plan:
                 # `cmd` was a `create`, so the containers exist but are not

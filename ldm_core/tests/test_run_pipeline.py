@@ -5,6 +5,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ldm_core.pipelines.run import (
+    _STACK_BRINGUP_TIMEOUT_DEFAULT,
+    _STACK_BRINGUP_TIMEOUT_ENV,
     ComposerStage,
     ConfigResolutionStage,
     EnvironmentSetupStage,
@@ -12,6 +14,7 @@ from ldm_core.pipelines.run import (
     ProjectInitializationStage,
     RunPipelineContext,
     RuntimeValidationStage,
+    _stack_bringup_timeout,
 )
 from ldm_core.tests.tmproot import TEST_TMP_ROOT
 
@@ -217,6 +220,61 @@ class TestRunPipeline(unittest.TestCase):
             self.context.manager.run_command.called,
             "the normal path must still bring the stack up",
         )
+
+    def test_no_compose_bringup_is_issued_without_a_timeout(self):
+        """LDM-#2064: an unbounded `compose up` can hang a run for ever.
+
+        Against a remote node `DOCKER_HOST=ssh://` carries the pull, the build
+        and container creation over one SSH connection. `run_command` defaults
+        to `timeout=None`, so a transport that stopped answering produced no
+        error and no diagnosis -- observed on a consumer's CI as 106 minutes of
+        silence after "Starting Container Stack".
+
+        Asserted over EVERY bring-up this stage issues rather than the one call
+        that was reported, so adding a second unbounded `up` fails here.
+        """
+        self.context.set("no_up", None)
+        self.context.manager.args.no_up = False
+        self.context.set("paths", {"root": MagicMock()})
+        # Answer the readiness poll; see the sibling test for why.
+        self.context.set("no_wait", True)
+        self.context.manager.args.no_wait = True
+        self.context.manager.get_container_status.return_value = "healthy"
+
+        stage = ExecutionStage()
+        stage.execute(self.context)
+
+        bringups = [
+            call
+            for call in self.context.manager.run_command.call_args_list
+            if isinstance(call.args[0], list)
+            and any(tok in ("up", "create") for tok in call.args[0])
+        ]
+        self.assertTrue(bringups, "the stage issued no compose bring-up to check")
+        for call in bringups:
+            with self.subTest(cmd=" ".join(str(a) for a in call.args[0])):
+                self.assertIn(
+                    "timeout",
+                    call.kwargs,
+                    "a compose bring-up was issued with no timeout",
+                )
+                self.assertEqual(
+                    call.kwargs["timeout"],
+                    _stack_bringup_timeout(),
+                    "a bring-up used a bound other than the stack one",
+                )
+
+    def test_the_bringup_bound_is_longer_than_the_lifecycle_bound(self):
+        """The two are not interchangeable, and the ordering is the reason.
+
+        `start`/`stop`/`restart` cannot pull or build; a bring-up can. Setting
+        this to the 300s lifecycle value would abort a legitimate cold pull,
+        which is the "idleness mistaken for death" failure the tunnel docstring
+        warns about.
+        """
+        from ldm_core.runtime.orchestration import _COMPOSE_LIFECYCLE_TIMEOUT
+
+        self.assertGreater(_STACK_BRINGUP_TIMEOUT_DEFAULT, _COMPOSE_LIFECYCLE_TIMEOUT)
 
     def test_execution_stage_syncs_and_uses_compose_prefix_from_target_context(self):
         """Regression guard for a real bug found migrating this stage:
@@ -662,6 +720,59 @@ class TestResolvePipelineTargetContext(unittest.TestCase):
 
         mock_resolve.assert_called_once()
         self.assertEqual(mock_resolve.call_args.kwargs["explicit_target"], "aws-2")
+
+
+class TestStackBringupTimeoutOverride(unittest.TestCase):
+    """LDM-#2064: the escape hatch for the bound, and its failure modes.
+
+    The default is a judgement, and a judgement can be wrong for somebody.
+    Without an override their only recourse would be patching LDM.
+    """
+
+    def _resolve(self, raw):
+        env = {} if raw is None else {_STACK_BRINGUP_TIMEOUT_ENV: raw}
+        with patch.dict("os.environ", env, clear=False):
+            if raw is None:
+                import os as _os
+
+                _os.environ.pop(_STACK_BRINGUP_TIMEOUT_ENV, None)
+            with patch("ldm_core.pipelines.run.UI.warning") as warn:
+                return _stack_bringup_timeout(), warn
+
+    def test_unset_uses_the_default(self):
+        value, warn = self._resolve(None)
+        self.assertEqual(value, _STACK_BRINGUP_TIMEOUT_DEFAULT)
+        warn.assert_not_called()
+
+    def test_a_value_is_honoured(self):
+        value, warn = self._resolve("5400")
+        self.assertEqual(value, 5400)
+        warn.assert_not_called()
+
+    def test_zero_disables_the_bound_and_says_so(self):
+        """`0` reinstates the hang this guard exists to prevent."""
+        value, warn = self._resolve("0")
+        self.assertIsNone(value, "0 must mean no bound, not a 0s timeout")
+        warn.assert_called_once()
+        self.assertIn("unbounded", warn.call_args.args[0])
+
+    def test_a_malformed_value_warns_and_falls_back(self):
+        """A typo must not stop someone starting a stack."""
+        value, warn = self._resolve("half an hour")
+        self.assertEqual(value, _STACK_BRINGUP_TIMEOUT_DEFAULT)
+        warn.assert_called_once()
+        self.assertIn("Malformed", warn.call_args.args[0])
+
+    def test_a_negative_value_warns_and_falls_back(self):
+        value, warn = self._resolve("-1")
+        self.assertEqual(value, _STACK_BRINGUP_TIMEOUT_DEFAULT)
+        warn.assert_called_once()
+
+    def test_it_is_read_per_call_not_at_import(self):
+        """Set-then-run must work; an import-time read would ignore it."""
+        first, _ = self._resolve("600")
+        second, _ = self._resolve("900")
+        self.assertEqual((first, second), (600, 900))
 
 
 if __name__ == "__main__":
