@@ -249,7 +249,7 @@ If your build legitimately needs longer, raise the bound rather than patching
 LDM:
 
 ```bash
-LDM_STACK_BRINGUP_TIMEOUT=5400 ldm run my-project
+LDM_BRINGUP_TIMEOUT=5400 ldm run my-project
 ```
 
 `0` removes the bound entirely. That restores the unbounded wait this guard

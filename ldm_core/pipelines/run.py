@@ -169,12 +169,15 @@ SHARED_DB_TIP_MB = 120
 # benefit -- a named failure at a known time instead of an unbounded wait.
 _STACK_BRINGUP_TIMEOUT_DEFAULT = 1800
 
-#: Named for the operation it bounds, not for `compose`, because it governs the
-#: bring-up alone -- `start`/`stop`/`restart`/`down` keep
-#: `_COMPOSE_LIFECYCLE_TIMEOUT`, and other compose calls remain unbounded. A
-#: `LDM_COMPOSE_TIMEOUT` would promise all of them. Follows
+#: Named for the operation it bounds, and deliberately not for two shorter
+#: spellings that were considered. `LDM_COMPOSE_TIMEOUT` would promise every
+#: compose call, when `start`/`stop`/`restart`/`down` keep
+#: `_COMPOSE_LIFECYCLE_TIMEOUT` and the rest are unbounded. `LDM_UP_TIMEOUT`
+#: would read as a cap on the whole of `ldm up`, which it is not -- the
+#: readiness wait that follows has its own, larger budget and is unaffected.
+#: "Bring-up" names the compose phase alone. Follows
 #: `LDM_FRAGMENT_PATCH_TIMEOUT`, which names its operation the same way.
-_STACK_BRINGUP_TIMEOUT_ENV = "LDM_STACK_BRINGUP_TIMEOUT"
+_STACK_BRINGUP_TIMEOUT_ENV = "LDM_BRINGUP_TIMEOUT"
 
 
 def _stack_bringup_timeout() -> float | None:
