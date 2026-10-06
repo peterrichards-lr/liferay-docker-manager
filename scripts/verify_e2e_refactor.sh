@@ -2177,6 +2177,67 @@ verify_stop_hint_and_start_confirmation() {
     return 0
 }
 
+verify_bringup_timeout_is_read_by_the_binary() {
+    # LDM-#2064: the bound on the stack bring-up is overridable, and the
+    # override has to be read by the SHIPPED binary. A unit test can prove the
+    # resolver behaves; only this can prove the value reaches it through the
+    # real CLI.
+    #
+    # A MALFORMED value is used deliberately, not `0`. Both warn and both
+    # exercise the same read path, but `0` removes the bound -- which would
+    # leave THIS run unbounded, reinstating inside the verification suite the
+    # exact hang the guard exists to prevent. A malformed value warns and then
+    # falls back to the default, so the bring-up stays bounded throughout.
+    #
+    # Two things are asserted, and the first matters as much as the second: a
+    # typo in an environment variable must not stop a stack starting.
+    #
+    # `--no-wait` keeps this to about a minute. The bound applies to `compose
+    # up`, which has already run by the time the containers exist, so waiting
+    # for Liferay to boot would add minutes and no signal.
+    local ldm_cmd="$1"
+    local work_dir="$2"
+
+    local iso_home="${work_dir}/bringup-home"
+    local run_dir="${work_dir}/bringup-work"
+    local proj="ldmbringup"
+
+    rm -rf "$iso_home" "$run_dir"
+    mkdir -p "$iso_home" "$run_dir" || return 1
+
+    _bringup_teardown() {
+        (cd "$run_dir" 2>/dev/null && LDM_HOME="$iso_home" "$ldm_cmd" rm "$proj" --delete -y >/dev/null 2>&1)
+        docker rm -f "$proj" "${proj}-db" >/dev/null 2>&1
+        rm -rf "$iso_home" "$run_dir"
+    }
+
+    local out code
+    out=$(cd "$run_dir" && LDM_HOME="$iso_home" LDM_BRINGUP_TIMEOUT="not-a-number" \
+        "$ldm_cmd" run "$proj" -y -t 2026.q1.7-lts --no-wait 2>&1) && code=0 || code=$?
+
+    if [ "$code" -ne 0 ]; then
+        _bringup_teardown
+        echo "❌ ERROR: a malformed LDM_BRINGUP_TIMEOUT failed the run (exit ${code})."
+        echo "   It must warn and fall back to the default, not abort: a typo in"
+        echo "   an environment variable should never stop a stack starting."
+        echo "   Output was: $(echo "$out" | tail -5)"
+        return 1
+    fi
+
+    if ! echo "$out" | grep -qF "Malformed LDM_BRINGUP_TIMEOUT"; then
+        _bringup_teardown
+        echo "❌ ERROR: a malformed LDM_BRINGUP_TIMEOUT produced no warning (LDM-#2064)."
+        echo "   Either the binary never read the variable, or it read it silently."
+        echo "   Either way the documented override cannot be relied on."
+        echo "   Output was: $(echo "$out" | tail -10)"
+        return 1
+    fi
+
+    _bringup_teardown
+    echo "✅ LDM_BRINGUP_TIMEOUT is read by the binary: a malformed value warns and falls back."
+    return 0
+}
+
 verify_ssl_renewal_reissues() {
     # The certificate directory and the renewal command, both asserted because
     # `docs/TROUBLESHOOTING.md` told Windows/WSL users to
@@ -2300,6 +2361,14 @@ if STOPHINT_OUT=$(verify_stop_hint_and_start_confirmation "$LDM_CMD" "$LDM_WORKS
     report_ok "$STOPHINT_OUT"
 else
     echo "$STOPHINT_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying LDM_BRINGUP_TIMEOUT is read by the binary (LDM-#2064)..."
+if BRINGUP_TMO_OUT=$(verify_bringup_timeout_is_read_by_the_binary "$LDM_CMD" "$LDM_WORKSPACE"); then
+    report_ok "$BRINGUP_TMO_OUT"
+else
+    echo "$BRINGUP_TMO_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
 

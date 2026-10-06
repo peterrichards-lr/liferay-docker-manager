@@ -1343,6 +1343,73 @@ function Test-ContainersRemovedVolumesIntact {
     }
 }
 
+function Test-BringupTimeoutIsReadByTheBinary {
+    # LDM-#2064: parity with verify_bringup_timeout_is_read_by_the_binary in
+    # verify_e2e_refactor.sh.
+    #
+    # The bound on the stack bring-up is overridable, and the override has to
+    # be read by the SHIPPED binary. A unit test can prove the resolver
+    # behaves; only this proves the value reaches it through the real CLI.
+    #
+    # A MALFORMED value is used deliberately, not '0'. Both warn and both
+    # exercise the same read path, but '0' removes the bound -- which would
+    # leave THIS run unbounded, reinstating inside the verification suite the
+    # exact hang the guard exists to prevent. A malformed value warns and then
+    # falls back to the default, so the bring-up stays bounded throughout.
+    #
+    # '--no-wait' keeps this to about a minute: the bound applies to
+    # 'compose up', which has already run by the time the containers exist.
+    param($LdmCmd, $WorkDir)
+
+    $isoHome = Join-Path $WorkDir "bringup-home"
+    $runDir = Join-Path $WorkDir "bringup-work"
+    $proj = "ldmbringup"
+
+    foreach ($d in @($isoHome, $runDir)) {
+        if (Test-Path $d) { Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue }
+        New-Item -ItemType Directory -Path $d -Force | Out-Null
+    }
+
+    $prevHome = $env:LDM_HOME
+    $prevTimeout = $env:LDM_BRINGUP_TIMEOUT
+    $env:LDM_HOME = $isoHome
+    $env:LDM_BRINGUP_TIMEOUT = "not-a-number"
+    $startLocation = Get-Location
+    try {
+        Set-Location $runDir
+        $out = & $LdmCmd run $proj -y -t 2026.q1.7-lts --no-wait 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: a malformed LDM_BRINGUP_TIMEOUT failed the run (exit ${LASTEXITCODE}).`n        It must warn and fall back to the default, not abort: a typo in an`n        environment variable should never stop a stack starting.`n   Output was: ${out}" }
+        }
+
+        # -cmatch, not -match: -match is case-INSENSITIVE in PowerShell, so it
+        # would accept a differently-cased message the shell half would reject
+        # and the two suites would disagree about identical correct output.
+        if ($out -cnotmatch [regex]::Escape("Malformed LDM_BRINGUP_TIMEOUT")) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: a malformed LDM_BRINGUP_TIMEOUT produced no warning (LDM-#2064).`n        Either the binary never read the variable, or it read it silently.`n        Either way the documented override cannot be relied on.`n   Output was: ${out}" }
+        }
+    } finally {
+        & $LdmCmd rm $proj --delete -y 2>&1 | Out-Null
+        & docker rm -f $proj "$proj-db" 2>&1 | Out-Null
+        Set-Location $startLocation
+        if ($null -eq $prevHome) {
+            Remove-Item Env:LDM_HOME -ErrorAction SilentlyContinue
+        } else {
+            $env:LDM_HOME = $prevHome
+        }
+        if ($null -eq $prevTimeout) {
+            Remove-Item Env:LDM_BRINGUP_TIMEOUT -ErrorAction SilentlyContinue
+        } else {
+            $env:LDM_BRINGUP_TIMEOUT = $prevTimeout
+        }
+        foreach ($d in @($isoHome, $runDir)) {
+            if (Test-Path $d) { Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue }
+        }
+    }
+
+    return @{ Ok = $true; Message = "[SUCCESS] LDM_BRINGUP_TIMEOUT is read by the binary: a malformed value warns and falls back." }
+}
+
 function Test-StopHintAndStartConfirmation {
     # LDM-#1937: the complement of Test-ContainersRemovedVolumesIntact above.
     # That function covers containers that were REMOVED, where 'ldm start'
@@ -2169,6 +2236,15 @@ try {
         Write-Verdict $stopHint.Message
     } else {
         Write-Host $stopHint.Message -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying LDM_BRINGUP_TIMEOUT is read by the binary (LDM-#2064)..."
+    $bringupTmo = Test-BringupTimeoutIsReadByTheBinary -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE
+    if ($bringupTmo.Ok) {
+        Write-Verdict $bringupTmo.Message
+    } else {
+        Write-Host $bringupTmo.Message -ForegroundColor Red
         exit 1
     }
 
