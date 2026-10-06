@@ -2546,7 +2546,14 @@ class ExecutionStage(PipelineStage):
         if is_samples or external_snapshot:
             db_svc = compose_db_service_name(paths, project_meta)
             db_args = ["up", "-d", db_svc] if not use_shared_db else ["up", "-d"]
-            manager.run_command([*compose_base, *db_args], cwd=str(paths["root"]))
+            # Bounded for the same reason as the main bring-up below
+            # (LDM-#2072): this is a `compose up` that can pull, so it can
+            # hang on a dead transport exactly as that one could.
+            manager.run_command(
+                [*compose_base, *db_args],
+                cwd=str(paths["root"]),
+                timeout=_stack_bringup_timeout(),
+            )
             time.sleep(5)
             manager.snapshot.cmd_restore(
                 project_id,
@@ -2794,10 +2801,16 @@ class ExecutionStage(PipelineStage):
                     _patch_docker_prefix(manager, target_context),
                     force=getattr(manager.args, "force_portal_patches", False),
                 )
+                # LDM-#2072: on this path the bring-up is `create` + `start`,
+                # so bounding only the `create` above left the half that
+                # actually starts the containers unbounded. Same bound, because
+                # it is the same operation in two steps -- a `start` that takes
+                # thirty minutes is as broken as a `create` that does.
                 manager.run_command(
                     [*compose_base, "start"],
                     cwd=str(paths["root"]),
                     capture_output=not follow,
+                    timeout=_stack_bringup_timeout(),
                 )
 
             # LDM-#1752: the container is up, so the MAC it ACTUALLY has can
@@ -2816,6 +2829,11 @@ class ExecutionStage(PipelineStage):
 
             if follow:
                 context.set("logs_attached", True)
+                # DELIBERATELY UNBOUNDED (LDM-#2072). `logs -f` follows until
+                # the user interrupts it; that is its whole purpose. A bound
+                # here would kill a developer's log tail after thirty minutes,
+                # which is a new defect rather than the completion of the
+                # guard it looks like. A test asserts this stays unbounded.
                 manager.run_command(
                     [*compose_base, "logs", "-f"], cwd=str(paths["root"])
                 )
