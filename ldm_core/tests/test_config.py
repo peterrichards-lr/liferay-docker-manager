@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from ldm_core.handlers.config import ConfigService
@@ -1565,3 +1566,87 @@ class TestCmdConfigTargetKeyCollision(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()  # type: ignore[misc]
+
+
+class TheNodeCopyIsRemovedToo(unittest.TestCase):
+    """LDM-#2077: `ldm rm --delete` left the project directory on the node.
+
+    `sync_project_to_target` pushes it there and had no counterpart, so a
+    project rebuilt nightly kept whatever state it had accumulated. Reported
+    with a `routes/default/dxp` tree three weeks older than the container it
+    was mounted into, holding `com.liferay.lxc.dxp.main.domain = localhost`,
+    which made every OAuth redirect URI point at localhost.
+    """
+
+    def test_the_push_and_the_removal_use_the_same_path(self):
+        """The contract that matters: they cannot drift.
+
+        A removal aimed at a different directory than the push would delete
+        nothing and report success, which is worse than today's behaviour
+        because it would look fixed.
+        """
+        from ldm_core.config import remote_project_dir
+
+        self.assertEqual(
+            remote_project_dir("myproj"), "~/.liferay-docker/projects/myproj"
+        )
+
+    def test_an_unsafe_project_name_is_refused(self):
+        """This string is interpolated into an `rm -rf` on someone else's box.
+
+        Each of these turns a project removal into something else entirely, so
+        the guard is asserted rather than assumed.
+        """
+        from ldm_core.config import remote_project_dir
+
+        for bad in ("", "   ", ".", "..", "a/b", "/abs", "~/x", "a\\b"):
+            with self.subTest(name=bad), self.assertRaises(ValueError):
+                remote_project_dir(bad)
+
+    def test_a_local_project_does_nothing(self):
+        from ldm_core.config import remove_project_from_target
+
+        with patch("ldm_core.config.get_active_target") as gat:
+            gat.return_value = SimpleNamespace(
+                name="local", host="localhost", user=None, key_path=None
+            )
+            self.assertIsNone(remove_project_from_target(Path("/tmp/myproj")))
+
+    def test_a_remote_project_is_removed_over_ssh(self):
+        from ldm_core.config import remove_project_from_target
+
+        seen = {}
+
+        def _run(cmd, **_kwargs):
+            seen["cmd"] = cmd
+            return ""
+
+        with (
+            patch("ldm_core.config.get_active_target") as gat,
+            patch("ldm_core.config.is_local_host", return_value=False),
+            patch("ldm_core.config.run_command", _run),
+        ):
+            gat.return_value = SimpleNamespace(
+                name="aws-2", host="10.0.0.9", user="ldm", key_path=None
+            )
+            ok = remove_project_from_target(Path("/tmp/myproj"))
+
+        self.assertTrue(ok)
+        self.assertEqual(seen["cmd"][0], "ssh")
+        self.assertIn("ldm@10.0.0.9", seen["cmd"])
+        self.assertIn("rm -rf ~/.liferay-docker/projects/myproj", seen["cmd"])
+
+    def test_an_unreachable_node_reports_rather_than_raising(self):
+        """The local removal must still happen; a node we cannot reach is not
+        a reason to leave the project half-deleted here."""
+        from ldm_core.config import remove_project_from_target
+
+        with (
+            patch("ldm_core.config.get_active_target") as gat,
+            patch("ldm_core.config.is_local_host", return_value=False),
+            patch("ldm_core.config.run_command", return_value=None),
+        ):
+            gat.return_value = SimpleNamespace(
+                name="aws-2", host="10.0.0.9", user="ldm", key_path=None
+            )
+            self.assertFalse(remove_project_from_target(Path("/tmp/myproj")))
