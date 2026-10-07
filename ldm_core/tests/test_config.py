@@ -1650,3 +1650,86 @@ class TheNodeCopyIsRemovedToo(unittest.TestCase):
                 name="aws-2", host="10.0.0.9", user="ldm", key_path=None
             )
             self.assertFalse(remove_project_from_target(Path("/tmp/myproj")))
+
+
+class BothOutcomesAnnounceThemselves(unittest.TestCase):
+    """LDM-#2077: a remote deletion must not be identifiable by silence.
+
+    The success and failure paths both opened with "Removing X", and success
+    added nothing. A truncated log could not distinguish a completed `rm -rf`
+    on another machine from a failed one -- absence read as evidence, which is
+    the defect family this investigation kept hitting.
+    """
+
+    def _target(self):
+        return SimpleNamespace(name="aws-2", host="10.0.0.9", user="ldm", key_path=None)
+
+    def _run_with(self, run_result):
+        from ldm_core.config import remove_project_from_target
+
+        with (
+            patch("ldm_core.config.get_active_target", return_value=self._target()),
+            patch("ldm_core.config.is_local_host", return_value=False),
+            patch("ldm_core.config.run_command", return_value=run_result),
+            patch("ldm_core.ui.UI.success") as ok,
+            patch("ldm_core.ui.UI.warning") as warn,
+        ):
+            result = remove_project_from_target(Path("/tmp/myproj"))
+        said = [str(c.args[0]) for c in ok.call_args_list] + [
+            str(c.args[0]) for c in warn.call_args_list
+        ]
+        return result, said
+
+    def test_success_states_the_removal_happened(self):
+        result, said = self._run_with("")
+        self.assertTrue(result)
+        self.assertTrue(
+            any(s.startswith("Removed ") for s in said),
+            f"success announced no completion: {said}",
+        )
+
+    def test_failure_never_claims_the_removal_happened(self):
+        result, said = self._run_with(None)
+        self.assertFalse(result)
+        self.assertFalse(
+            any(s.startswith("Removed ") for s in said),
+            f"a failed removal said it had removed something: {said}",
+        )
+        self.assertTrue(any("Could not remove" in s for s in said), said)
+
+
+class TheTwoRemotePathFormsAgree(unittest.TestCase):
+    """LDM-#2077: the node path is needed in two forms and must stay one path.
+
+    Shell-facing callers pass `~` and let the remote shell expand it;
+    `get_remote_project_root` must return something absolute because it
+    becomes a compose bind-mount source, which no shell expands. That
+    difference is why the convention got written twice -- and
+    `get_remote_project_root`'s docstring asked for a single source of truth
+    while being the second copy.
+    """
+
+    def test_the_absolute_form_is_the_tilde_form_with_the_home_resolved(self):
+        from ldm_core.config import (
+            TargetNode,
+            get_remote_project_root,
+            remote_project_dir,
+        )
+
+        with patch("ldm_core.config.resolve_remote_home", return_value="/home/ldm"):
+            absolute = get_remote_project_root(
+                TargetNode(name="aws-2", host="h"), "myproj"
+            )
+
+        tilde = remote_project_dir("myproj")
+        self.assertEqual(absolute, tilde.replace("~", "/home/ldm", 1))
+
+    def test_an_unresolvable_home_still_returns_none(self):
+        """Unchanged behaviour: a bind-mount source we cannot build is None,
+        not a guess and not an exception."""
+        from ldm_core.config import TargetNode, get_remote_project_root
+
+        with patch("ldm_core.config.resolve_remote_home", return_value=None):
+            self.assertIsNone(
+                get_remote_project_root(TargetNode(name="aws-2", host="h"), "myproj")
+            )
