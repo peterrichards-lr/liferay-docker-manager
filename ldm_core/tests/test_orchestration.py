@@ -282,7 +282,21 @@ class TestOrchestration(unittest.TestCase):
             self.handler.cmd_down("test", delete=True)
 
         self.assertTrue(mock_sub_run.called)
-        drop_cmd = mock_sub_run.call_args[0][0]
+
+        # LDM-#2077: find the drop among the calls rather than assuming it is
+        # the last one. The teardown now also removes the project directory on
+        # the node, which runs after this and was silently becoming
+        # `call_args`. The assertion below is unchanged in substance -- only
+        # how it locates the command it is about.
+        drop_cmds = [
+            call[0][0]
+            for call in mock_sub_run.call_args_list
+            if isinstance(call[0][0], list) and "dropdb" in call[0][0]
+        ]
+        self.assertEqual(
+            len(drop_cmds), 1, f"expected exactly one dropdb call, saw {drop_cmds}"
+        )
+        drop_cmd = drop_cmds[0]
         self.assertIn("--context", drop_cmd)
         self.assertIn("aws-1", drop_cmd)
         self.assertIn("dropdb", drop_cmd)

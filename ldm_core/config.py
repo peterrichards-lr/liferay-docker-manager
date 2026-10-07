@@ -305,6 +305,84 @@ def get_remote_project_root(target: TargetNode, project_name: str) -> str | None
     return f"{home}/.liferay-docker/projects/{project_name}"
 
 
+#: Where a node keeps the projects LDM ships to it. Read by BOTH
+#: `sync_project_to_target` and `remove_project_from_target` so the push and
+#: the removal cannot drift -- the same reason `_scaffold_routes_tree` derives
+#: its directories from the volumes rather than from a second list.
+REMOTE_PROJECTS_ROOT = "~/.liferay-docker/projects"
+
+
+def remote_project_dir(project_name: str) -> str:
+    """The node-side directory for `project_name`, or raise if it is unsafe.
+
+    The validation is not decoration. This string is interpolated into an
+    `rm -rf` that runs on someone else's machine, so a name that is empty,
+    absolute, or contains a path separator or `..` must never reach it -- each
+    of those turns a project removal into something else entirely.
+    """
+    name = (project_name or "").strip()
+    if (
+        not name
+        or name in {".", ".."}
+        or "/" in name
+        or "\\" in name
+        or name.startswith("~")
+    ):
+        raise ValueError(f"unsafe project name for a remote path: {project_name!r}")
+    return f"{REMOTE_PROJECTS_ROOT}/{name}"
+
+
+def remove_project_from_target(
+    project_path: Path,
+    target_name: str | None = None,
+    config_path: Path | None = None,
+) -> bool | None:
+    """Remove a project's directory ON the node (LDM-#2077).
+
+    The counterpart to `sync_project_to_target`, which had none: `ldm rm
+    --delete` removed the local directory and left the node's copy, so a
+    project rebuilt nightly kept whatever state it had accumulated. Reported
+    with a `routes/default/dxp` tree three weeks older than the container it
+    was mounted into, holding `com.liferay.lxc.dxp.main.domain = localhost`,
+    which made every OAuth redirect URI point at localhost.
+
+    A surviving directory is not inert: it is bind-mounted back in at
+    `/opt/liferay/routes`, so stale values are presented to the new run as
+    current configuration.
+
+    Returns True when the directory was removed, False when the attempt
+    failed, and None when there was nothing to do because the project is
+    local.
+    """
+    from ldm_core.ui import UI
+
+    target = get_active_target(project_target=target_name, config_path=config_path)
+    if target.name == "local" or is_local_host(target.host):
+        return None
+
+    dest_dir = remote_project_dir(project_path.name)
+    target_spec = f"{target.user}@{target.host}" if target.user else target.host
+    ssh_opts = ["-i", target.key_path] if target.key_path else []
+
+    # Said on every run, not only interactive ones. In CI the prompt is
+    # skipped by -y, and a destructive remote action that leaves no trace in
+    # the log is how this defect stayed invisible for so long.
+    UI.warning(f"Removing {dest_dir} on node '{target.name}' ({target.host})")
+
+    res = run_command(
+        ["ssh", *ssh_opts, target_spec, f"rm -rf {dest_dir}"],
+        check=False,
+    )
+    if res is None:
+        UI.warning(
+            f"  Could not remove {dest_dir} on '{target.name}'. The node may be "
+            "unreachable; the directory is still there and will be reused by "
+            "the next run of a project with this name."
+        )
+        return False
+    return True
+
+
 def sync_project_to_target(
     project_path: Path,
     target_name: str | None = None,
@@ -318,8 +396,7 @@ def sync_project_to_target(
     if target.name == "local" or is_local_host(target.host):
         return True
 
-    project_name = project_path.name
-    dest_dir = f"~/.liferay-docker/projects/{project_name}"
+    dest_dir = remote_project_dir(project_path.name)
     target_spec = f"{target.user}@{target.host}" if target.user else target.host
 
     # Ensure remote directory exists

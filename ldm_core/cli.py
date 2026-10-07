@@ -1378,7 +1378,9 @@ def get_parser():  # noqa: PLR0915
                 help=(
                     "Beyond stopping/removing containers: drop the project's schema "
                     "from the shared database (if applicable), unregister the "
-                    "project, and permanently delete its directory from disk. "
+                    "project, and permanently delete its directory from disk -- "
+                    "including the copy on its target node, if it has one "
+                    "(LDM-#2077). "
                     "This cannot be undone -- use 'ldm rm' without --delete to "
                     "just tear down containers and keep the project"
                 ),

@@ -663,11 +663,45 @@ class OrchestrationService(BaseHandler):
             # asserted only that `UI.detail` had been called.
             print(f"  {UI.CYAN}{root.name}{UI.COLOR_OFF}: {size_text}, {state_text}")
 
+            # LDM-#2077: a removal that reaches another machine has to say so
+            # before it is agreed to, not after. Naming the node and the exact
+            # path is the difference between consenting to a deletion and
+            # consenting to a word.
+            node_line = self._node_removal_line(root)
+            if node_line:
+                print(node_line)
+
         noun = "project" if len(targets) == 1 else f"{len(targets)} projects"
         return UI.confirm(
             f"Permanently delete this {noun}, including containers and volumes?",
             "N",
         )
+
+    def _node_removal_line(self, root):
+        """What will be removed on a node, if anything (LDM-#2077).
+
+        Returns None for a local project so the prompt is unchanged for the
+        common case. Any failure to resolve the target returns None too: this
+        is a confirmation line, and failing to render it must not stop someone
+        deleting a project.
+        """
+        try:
+            from ldm_core.config import (
+                get_active_target,
+                is_local_host,
+                remote_project_dir,
+            )
+
+            meta = self.manager.read_meta(root) or {}
+            target = get_active_target(project_target=meta.get("target"))
+            if target.name == "local" or is_local_host(target.host):
+                return None
+            return (
+                f"    {UI.BYELLOW}and on node '{target.name}' ({target.host}): "
+                f"{remote_project_dir(root.name)}{UI.COLOR_OFF}"
+            )
+        except Exception:  # nosec B110 - a prompt detail must never block the prompt
+            return None
 
     def cmd_down(  # noqa: C901, PLR0912, PLR0915
         self,
@@ -1009,6 +1043,25 @@ class OrchestrationService(BaseHandler):
                     ):
                         self.manager._active_locks[path_key].release()
                         del self.manager._active_locks[path_key]
+
+                    # LDM-#2077: the node keeps its own copy, and nothing
+                    # removed it. `--delete` promised "permanently delete its
+                    # directory from disk" while leaving a directory that is
+                    # bind-mounted straight back into the next container, so a
+                    # three-week-old config tree could present itself to a
+                    # freshly built environment as current.
+                    #
+                    # Before the local removal, deliberately: the target is
+                    # read from the project's own meta, which is inside the
+                    # directory about to be deleted.
+                    from ldm_core.config import remove_project_from_target
+
+                    try:
+                        remove_project_from_target(
+                            root, meta.get("target") if meta else None
+                        )
+                    except Exception as exc:  # nosec B110 - never block the local removal
+                        UI.warning(f"  Could not remove the node's copy: {exc}")
 
                     self.manager.unregister_project(root.name)
                     self.manager.safe_rmtree(root)
