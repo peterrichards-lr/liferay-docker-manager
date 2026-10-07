@@ -88,8 +88,14 @@ EOF
 # exists to prevent.
 #
 # Escape hatch: LDM_ALLOW_PROTECTED_BRANCH=1 for the genuine cases -- the
-# backport merge commit and the release-branch CHANGELOG entry, both of which
-# are made deliberately and cannot be expressed as a feature branch.
+# backport merge commit, the release-branch CHANGELOG entry, and the
+# compatibility-matrix sync, all of which are made deliberately and cannot be
+# expressed as a feature branch.
+#
+# The matrix sync was missing from that list until 2026-10-07 even though it
+# had been made this way for v2.26.2 and v2.26.3: `sync_compatibility.py` must
+# run from the checkout whose VERSION matches the reports, which during a cycle
+# is the release branch, so its output can only be committed there.
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
 case "$CURRENT_BRANCH" in
   master|main|release/*)

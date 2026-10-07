@@ -255,6 +255,29 @@ LDM_BRINGUP_TIMEOUT=5400 ldm run my-project
 `0` removes the bound entirely. That restores the unbounded wait this guard
 exists to prevent, so LDM warns when you set it.
 
+#### Why a bound beats a hang, even when you lose the run either way
+
+The obvious benefit is time. The larger one is evidence.
+
+A job that hangs gets cancelled, and a cancellation kills the script
+**mid-command** -- so none of its teardown runs. No diagnostics are gathered,
+no logs are captured, nothing is uploaded. A bounded failure exits `124` and
+the script carries on to its own failure path, where all of that executes.
+
+Measured on a consumer's CI, where this defect was reported:
+
+| run | outcome | log artifact |
+|---|---|---|
+| 110 minutes | cancelled by hand | **166 bytes** |
+| 23 minutes | failed normally | **347 KB** |
+
+Same pipeline, same captures configured. The difference is entirely whether
+the script reached its teardown. A hang does not just cost you the run -- it
+costs you the ability to find out why.
+
+Observation and figures contributed by the AI Commerce Accelerator team, who
+reported the original hang (LDM-#2064).
+
 ## 📂 Permission & Mount Issues
 
 ### **macOS / ExFAT: "Unable to create lock manager" or "access_denied_exception"**
@@ -705,4 +728,4 @@ Projects are discovered from the current folder, its parent, `~/ldm`, the LDM in
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-06* | *Last Reviewed: 2026-10-06*
+*Last Updated: 2026-10-07* | *Last Reviewed: 2026-10-07*
