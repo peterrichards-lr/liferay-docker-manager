@@ -27,6 +27,7 @@ the harness itself does; see `.github/workflows/fragment-override.yml`.
 
 import importlib.util
 import json
+import subprocess
 import unittest
 import zipfile
 from pathlib import Path
@@ -593,3 +594,96 @@ class ItStaysOutOfTheDefaultGate(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheFailureCapturesWhatItTellsYouToRead(unittest.TestCase):
+    """LDM-#2071: the harness named a log it did not capture.
+
+    Its failure message said "check the portal log for a client-extension
+    deployment failure" and its evidence artifact was 422 bytes --
+    `report.json` and nothing else. The one instruction a failure gave could
+    not be followed after the runner was gone, so a single intermittent
+    failure cost two 25-minute re-dispatches to re-observe.
+    """
+
+    def setUp(self):
+        self.mod = _load()
+        self._tmp = TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.evidence = Path(self._tmp.name) / "evidence"
+
+    def _fake_run(self, stdout):
+        """Returns the real type `subprocess.run` does, not a stand-in.
+
+        An ad-hoc stub class would type-check as having no `stdout`, and more
+        importantly would let the capture drift away from the shape it
+        actually receives.
+        """
+
+        def _run(cmd, **_kwargs):
+            return subprocess.CompletedProcess(
+                cmd, 0, f"{stdout} :: {' '.join(cmd[-2:])}", ""
+            )
+
+        return _run
+
+    def test_the_portal_log_and_container_list_are_written(self):
+        with patch.object(self.mod.subprocess, "run", self._fake_run("CAPTURED")):
+            self.mod._capture_diagnostics(self.evidence, "proj", None)
+
+        portal = self.evidence / "portal.log"
+        containers = self.evidence / "containers.txt"
+        self.assertTrue(portal.is_file(), "portal.log was not written")
+        self.assertTrue(containers.is_file(), "containers.txt was not written")
+        self.assertIn("CAPTURED", portal.read_text())
+        self.assertIn("logs proj", portal.read_text())
+
+    def test_a_capture_failure_never_raises(self):
+        """A diagnostic problem must not replace the failure being diagnosed.
+
+        These call sites are already on a failure path. Raising here would
+        change the harness's exit code and bury the reason it failed.
+        """
+
+        def _boom(*_a, **_k):
+            raise OSError("docker is gone")
+
+        with patch.object(self.mod.subprocess, "run", _boom):
+            written = self.mod._capture_diagnostics(self.evidence, "proj", None)
+
+        self.assertTrue(any("FAILED" in w for w in written), written)
+
+    def test_the_client_extension_directory_is_listed_when_given(self):
+        """Whether Liferay consumed the artifact is itself the discriminator.
+
+        It removes the zip when it deploys one, so a zip still present and a
+        zip gone are different failures wanting different fixes -- and neither
+        is visible in report.json.
+        """
+        cx = Path(self._tmp.name) / "cx"
+        cx.mkdir()
+        (cx / "site-initializer.zip").write_bytes(b"xx")
+
+        with patch.object(self.mod.subprocess, "run", self._fake_run("x")):
+            self.mod._capture_diagnostics(self.evidence, "proj", None, cx)
+
+        listing = (self.evidence / "client-extensions.txt").read_text()
+        self.assertIn("site-initializer.zip", listing)
+
+    def test_a_missing_client_extension_directory_is_recorded_not_skipped(self):
+        missing = Path(self._tmp.name) / "nope"
+        with patch.object(self.mod.subprocess, "run", self._fake_run("x")):
+            self.mod._capture_diagnostics(self.evidence, "proj", None, missing)
+
+        self.assertIn(
+            "does not exist", (self.evidence / "client-extensions.txt").read_text()
+        )
+
+    def test_the_failure_message_points_at_a_file_that_now_exists(self):
+        """The message and the capture must not drift apart again."""
+        source = _HARNESS.read_text(encoding="utf-8")
+        block = source[source.index("The Site Initializer never placed") :][:900]
+        self.assertIn("portal.log", block, "the message names no captured file")
+        self.assertIn(
+            "_capture_diagnostics", block, "the message is not backed by a capture"
+        )

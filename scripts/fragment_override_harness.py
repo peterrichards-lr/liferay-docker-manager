@@ -710,6 +710,72 @@ def headless_answered(api: Headless):
     return res if isinstance(res, dict) and "_error" not in res else None
 
 
+def _capture_diagnostics(
+    evidence_dir: Path,
+    project: str,
+    node: str | None,
+    cx_dir: Path | None = None,
+) -> list[str]:
+    """Capture what the failure message tells the reader to look at (LDM-#2071).
+
+    The harness used to end a failure with "check the portal log for a
+    client-extension deployment failure" and then not capture the portal log.
+    Its evidence artifact was 422 bytes -- `report.json` and nothing else -- so
+    the single instruction a failure gave could not be followed once the runner
+    was gone. One intermittent failure on 2026-10-06 cost two 25-minute
+    re-dispatches to re-observe something the first run could have recorded.
+
+    Called from the post-boot failure paths, where the containers are still up:
+    those paths return before the teardown at the end of `main()`, which is
+    what makes this possible at all.
+
+    Best-effort by construction. A capture that fails must not change the
+    harness's verdict -- the run has already failed for its own reason, and
+    turning a diagnostic problem into a different exit code would obscure it.
+    """
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    prefix = docker_prefix(node)
+    captures: dict[str, list[str]] = {
+        "portal.log": [*prefix, "logs", project],
+        "containers.txt": [*prefix, "ps", "-a"],
+    }
+
+    written: list[str] = []
+    for name, cmd in captures.items():
+        try:
+            proc = subprocess.run(  # nosec B603 - fixed argv, no shell
+                cmd, capture_output=True, text=True, check=False, timeout=120
+            )
+            body = (proc.stdout or "") + (proc.stderr or "")
+            target = evidence_dir / name
+            target.write_text(body, encoding="utf-8", errors="replace")
+            written.append(f"{name} ({len(body)} bytes)")
+        except Exception as exc:  # nosec B110 - diagnosis is best-effort
+            written.append(f"{name} FAILED: {exc}")
+
+    # Whether Liferay consumed the artifact at all. It removes the file when it
+    # deploys one, so a zip still sitting here and a zip gone are different
+    # failures wanting different fixes -- and neither is visible in report.json.
+    if cx_dir is not None:
+        try:
+            listing = (
+                "\n".join(
+                    sorted(f"{q.name}  {q.stat().st_size}" for q in cx_dir.iterdir())
+                )
+                if cx_dir.is_dir()
+                else f"{cx_dir} does not exist"
+            )
+            (evidence_dir / "client-extensions.txt").write_text(
+                listing + "\n", encoding="utf-8"
+            )
+            written.append("client-extensions.txt")
+        except Exception as exc:  # nosec B110 - diagnosis is best-effort
+            written.append(f"client-extensions.txt FAILED: {exc}")
+
+    print(f"  captured for the evidence artifact: {', '.join(written)}", flush=True)
+    return written
+
+
 def _report(path: Path, report: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, indent=2), encoding="utf-8")
@@ -916,6 +982,7 @@ def main() -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915 - linear by design
     timings["headless_ready"] = waited
     if sites is None:
         print("  Headless never answered.")
+        _capture_diagnostics(out.parent, args.project, args.node)
         _report(out, report)
         return 3
 
@@ -951,9 +1018,15 @@ def main() -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915 - linear by design
         print()
         print("  The Site Initializer never placed the fragment.")
         print("  `fragmententrylink` has no row mentioning the field, so there is")
-        print("  nothing for the override chain to patch. Check the portal log for")
-        print("  a client-extension deployment failure before reading anything")
-        print("  else into this run.")
+        print("  nothing for the override chain to patch. Look for a")
+        print("  client-extension deployment failure in portal.log, in the")
+        print("  evidence artifact, before reading anything else into this run.")
+        _capture_diagnostics(
+            out.parent,
+            args.project,
+            args.node,
+            project_root / "osgi" / "client-extensions",
+        )
         _report(out, report)
         return 3
 
