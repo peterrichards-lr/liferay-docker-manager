@@ -1696,3 +1696,40 @@ class BothOutcomesAnnounceThemselves(unittest.TestCase):
             f"a failed removal said it had removed something: {said}",
         )
         self.assertTrue(any("Could not remove" in s for s in said), said)
+
+
+class TheTwoRemotePathFormsAgree(unittest.TestCase):
+    """LDM-#2077: the node path is needed in two forms and must stay one path.
+
+    Shell-facing callers pass `~` and let the remote shell expand it;
+    `get_remote_project_root` must return something absolute because it
+    becomes a compose bind-mount source, which no shell expands. That
+    difference is why the convention got written twice -- and
+    `get_remote_project_root`'s docstring asked for a single source of truth
+    while being the second copy.
+    """
+
+    def test_the_absolute_form_is_the_tilde_form_with_the_home_resolved(self):
+        from ldm_core.config import (
+            TargetNode,
+            get_remote_project_root,
+            remote_project_dir,
+        )
+
+        with patch("ldm_core.config.resolve_remote_home", return_value="/home/ldm"):
+            absolute = get_remote_project_root(
+                TargetNode(name="aws-2", host="h"), "myproj"
+            )
+
+        tilde = remote_project_dir("myproj")
+        self.assertEqual(absolute, tilde.replace("~", "/home/ldm", 1))
+
+    def test_an_unresolvable_home_still_returns_none(self):
+        """Unchanged behaviour: a bind-mount source we cannot build is None,
+        not a guess and not an exception."""
+        from ldm_core.config import TargetNode, get_remote_project_root
+
+        with patch("ldm_core.config.resolve_remote_home", return_value=None):
+            self.assertIsNone(
+                get_remote_project_root(TargetNode(name="aws-2", host="h"), "myproj")
+            )

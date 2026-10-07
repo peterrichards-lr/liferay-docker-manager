@@ -302,14 +302,29 @@ def get_remote_project_root(target: TargetNode, project_name: str) -> str | None
     home = resolve_remote_home(target)
     if not home:
         return None
-    return f"{home}/.liferay-docker/projects/{project_name}"
+    # Derived from REMOTE_PROJECTS_SUBPATH, not restated: this used to carry
+    # its own copy of the convention while its docstring asked for a single
+    # source of truth (LDM-#2077).
+    return f"{home}/{REMOTE_PROJECTS_SUBPATH}/{project_name}"
 
 
-#: Where a node keeps the projects LDM ships to it. Read by BOTH
-#: `sync_project_to_target` and `remove_project_from_target` so the push and
-#: the removal cannot drift -- the same reason `_scaffold_routes_tree` derives
-#: its directories from the volumes rather than from a second list.
+#: Where a node keeps the projects LDM ships to it, written ONCE.
+#:
+#: Three callers need this path and they need it in two forms: shell-facing
+#: ones (`sync_project_to_target`, `remove_project_from_target`) can pass `~`
+#: and let the remote shell expand it, while `get_remote_project_root` must
+#: return something absolute because it becomes a compose bind-mount source,
+#: which no shell expands.
+#:
+#: That difference is why the convention was written twice, and writing it
+#: twice is how it drifts -- `get_remote_project_root`'s own docstring said
+#: there must be a single source of truth for it while being the second copy.
+#: Both forms are now derived from this one string.
 REMOTE_PROJECTS_ROOT = "~/.liferay-docker/projects"
+
+#: The same path relative to the node's home, for callers that resolve `$HOME`
+#: themselves rather than leaving it to a shell.
+REMOTE_PROJECTS_SUBPATH = REMOTE_PROJECTS_ROOT.removeprefix("~/")
 
 
 def remote_project_dir(project_name: str) -> str:
