@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.3] - 2026-10-07
+
+### Added
+
+- **`scripts/boot_timing.sh`**, a deterministic boot-timing harness (LDM-#2057). Reports Liferay's own `Server startup in` figure and container-start-to-Docker-healthy separately, because they move independently -- the healthcheck's `start_period` and `retries` are LDM's to write, so LDM-#2050 moved one and left the other alone. Contributor tooling: it ships in no release artifact. Built to test a claim that v2.26.0 had slowed Liferay's startup, which it refuted -- +0.6% and +2.0% across three runs each of v2.25.0 and v2.26.2-pre.1, with overlapping ranges and v2.25.0's slowest run slower than v2.26.2's slowest.
+
+### Changed
+
+- **`mypy` 2.4.0 and `ruff` 0.16.10** (LDM-#2062). 2.4.0 tightened inference for class attributes with a `None`-only initialiser, which surfaced eight `attr-defined` errors in `ldm_core/ui.py` -- annotations, not a runtime defect. The pre-commit revs moved in the same change as `requirements-dev.txt`, because a drift between them is LDM-#1407: developers chasing findings CI will never raise, or missing ones it will. **Contributors should re-run `pip install -r requirements-dev.txt`.**
+
+### Fixed
+
+- **A stalled container bring-up can no longer hang a run indefinitely** (LDM-#2064). `docker compose up -d` in the run pipeline was the one call LDM placed no bound on, so a bring-up that stopped making progress produced no error, no diagnosis and no end -- it simply stopped being watched. Reported from a consumer's CI as 106 minutes of silence after `Starting Container Stack`, cancelled with the process still alive. It bites hardest against a **remote node**, where `DOCKER_HOST=ssh://` carries the image pull, the build and container creation over a single connection.
+- **The bring-up bound now covers every bring-up, not just the common one** (LDM-#2072). LDM-#2064 bounded `docker compose up`/`create` and missed two calls that are also part of starting a stack: the `compose up` the samples and external-snapshot paths issue for the database before a restore, and the `compose start` that completes the bring-up when portal patches are present -- on that path the operation is `create` **+** `start`, and only the first half was bounded. Both now carry the same bound. A `start` that takes thirty minutes is as broken as a `create` that does.
+
 ## [v2.26.3-pre.2] - 2026-10-06
 
 ### Fixed
