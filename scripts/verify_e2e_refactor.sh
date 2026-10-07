@@ -964,6 +964,61 @@ check_docker_disk "$MIN_DISK_GB" "to finish"
 DISK_START_DOCKER_GB=$(docker_free_gb)
 DISK_START_HOST_GB=$(host_free_gb)
 
+# LDM-#2085: refuse to run while another LDM project is live.
+#
+# This suite reconfigures GLOBAL infrastructure -- the shared proxy and the
+# shared search node -- which other projects on this machine are using. Two
+# things follow, and the second is the reason this is a refusal rather than a
+# warning:
+#
+#   * `ldm infra setup` will not recreate the SSL proxy while projects are
+#     running (handlers/infra.py). The run fails at that section, two minutes
+#     and two image pulls in, having already changed global state.
+#
+#   * If Elasticsearch misses its readiness window, LDM's automatic "search
+#     volume repair" DELETES the shared search data directory -- every
+#     project's index, not just this suite's. Observed 2026-10-07: a live
+#     project's index destroyed silently while it continued reporting
+#     healthy, because its healthcheck is an HTTP probe that never touches
+#     search. That is LDM-#2083, and until it is guarded on its own side this
+#     is the only thing standing in front of it.
+#
+# Checked against `ldm list --json`, which is authoritative about LDM
+# projects. The cleanup path greps `docker ps` instead, which also matches
+# unrelated containers -- there were three on the reporting machine.
+#
+# Before the image pulls deliberately: this should cost ten seconds, not two
+# pulls and a mutated global proxy.
+RUNNING_PROJECTS=$("$LDM_CMD" list --json 2>/dev/null \
+    | "$VENV_PYTHON" -c 'import json,sys
+try:
+    rows = json.load(sys.stdin)
+except Exception:
+    rows = []
+print(" ".join(r.get("project", "?") for r in rows if str(r.get("status", "")).lower() == "running"))' 2>/dev/null || true)
+
+if [ -n "${RUNNING_PROJECTS// /}" ]; then
+    echo "❌ ERROR: other LDM projects are running: ${RUNNING_PROJECTS}" >&2
+    echo "" >&2
+    echo "   This suite reconfigures the SHARED proxy and search node, which those" >&2
+    echo "   projects are using. Two things can happen, and the second is why this" >&2
+    echo "   refuses rather than warns:" >&2
+    echo "" >&2
+    echo "     * 'ldm infra setup' will refuse to recreate the SSL proxy while they" >&2
+    echo "       run, so the suite fails partway through anyway." >&2
+    echo "     * if Elasticsearch misses its readiness window, LDM wipes the SHARED" >&2
+    echo "       search data directory -- destroying those projects' indexes," >&2
+    echo "       silently, while they continue to report healthy (LDM-#2083)." >&2
+    echo "" >&2
+    echo "   Stop them first, then re-run:" >&2
+    for _p in ${RUNNING_PROJECTS}; do
+        echo "       ldm stop ${_p}" >&2
+    done
+    echo "" >&2
+    echo "   They will reindex on their next boot if their index was already lost." >&2
+    exit 1
+fi
+
 # Pre-pull large images to avoid containerd lease timeouts during the timed E2E run
 echo "ℹ  Pre-pulling required Docker images..."
 docker pull liferay/dxp:2026.q1.7-lts --quiet

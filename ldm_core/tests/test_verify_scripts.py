@@ -1824,3 +1824,66 @@ class TheSuiteRemovesTheImagesItBuilds(unittest.TestCase):
                     path.read_text(encoding="utf-8"),
                     f"{path.name} does not sweep the images this run built",
                 )
+
+
+class TheSuiteRefusesToRunBesideLiveProjects(unittest.TestCase):
+    """LDM-#2085: the suite reconfigures shared infrastructure.
+
+    Without this it pays two image pulls and, if Elasticsearch misses its
+    readiness window, a destroyed shared search index (LDM-#2083) before
+    failing at the SSL section it was always going to fail at.
+    """
+
+    def test_both_halves_check_for_running_projects(self):
+        for path in (BASH_SCRIPT, PS1_SCRIPT):
+            with self.subTest(script=path.name):
+                self.assertIn(
+                    "LDM-#2085",
+                    path.read_text(encoding="utf-8"),
+                    f"{path.name} has no running-project pre-flight",
+                )
+
+    def test_the_check_runs_before_the_image_pulls(self):
+        """The ordering IS the fix.
+
+        A check after the pulls would still prevent the index loss but waste
+        the two pulls that made the original failure expensive; a check after
+        `infra setup` would prevent neither.
+        """
+        for path in (BASH_SCRIPT, PS1_SCRIPT):
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(script=path.name):
+                guard = text.index("LDM-#2085")
+                pull = text.index("Pre-pulling required Docker images")
+                self.assertLess(
+                    guard, pull, f"{path.name} checks only after pulling images"
+                )
+
+    def test_the_powershell_half_enumerates_every_project(self):
+        """PowerShell 5.1 does not enumerate a deserialized JSON array.
+
+        Without ConvertTo-LdmArray the check sees one object and names only
+        the first running project, so a second one is silently permitted to
+        have its index destroyed -- LDM-#1300 in a new place.
+        """
+        text = PS1_SCRIPT.read_text(encoding="utf-8")
+        guard = text.index("LDM-#2085")
+        block = text[guard : guard + 2500]
+        self.assertIn(
+            "ConvertTo-LdmArray",
+            block,
+            "the PS pre-flight reads list --json without the 5.1 array fix",
+        )
+
+    def test_the_refusal_names_what_is_at_risk(self):
+        """A refusal a user cannot act on gets bypassed.
+
+        The index risk is the part nobody can guess, so it has to be said.
+        """
+        for path in (BASH_SCRIPT, PS1_SCRIPT):
+            text = path.read_text(encoding="utf-8")
+            guard = text.index("LDM-#2085")
+            block = text[guard : guard + 3500]
+            with self.subTest(script=path.name):
+                self.assertIn("ldm stop", block, "no actionable remedy given")
+                self.assertIn("LDM-#2083", block, "the index risk is not named")

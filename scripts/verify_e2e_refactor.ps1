@@ -2222,6 +2222,54 @@ try {
     $script:DiskStartHostGb = Get-HostFreeGb
 
     # Pre-pull large images to avoid containerd lease timeouts during the timed E2E run
+    # LDM-#2085: refuse to run while another LDM project is live.
+    # Parity with the shell half; see it for the full reasoning.
+    #
+    # This suite reconfigures GLOBAL infrastructure -- the shared proxy and
+    # the shared search node -- which other projects are using. 'ldm infra
+    # setup' will refuse to recreate the SSL proxy while they run, so the run
+    # fails partway through anyway; and if Elasticsearch misses its readiness
+    # window LDM wipes the SHARED search data directory, destroying every
+    # project's index silently while they keep reporting healthy (LDM-#2083).
+    #
+    # ConvertTo-LdmArray is not optional here: PowerShell 5.1 does not
+    # enumerate a deserialized JSON array, so a bare foreach over the result
+    # sees one object and this check would miss every project but the first
+    # (LDM-#1300).
+    $runningRaw = & $LDM_CMD list --json 2>$null | Out-String
+    $runningNames = @()
+    if ($runningRaw -and $runningRaw.Trim()) {
+        try {
+            $rows = ConvertTo-LdmArray -Value (ConvertFrom-LdmJson -Raw $runningRaw -Label "list --json")
+            $runningNames = @($rows | Where-Object { "$($_.status)".ToLower() -eq "running" } |
+                ForEach-Object { $_.project })
+        } catch {
+            # A parse failure must not block the suite: this is a courtesy
+            # guard, and refusing on an unreadable list would be a new way to
+            # fail. The run proceeds and hits the SSL refusal as before.
+            Write-Host "[WARN]  Could not read 'ldm list --json'; skipping the running-project check." -ForegroundColor Yellow
+        }
+    }
+    if ($runningNames.Count -gt 0) {
+        Write-Host "[ERROR] ERROR: other LDM projects are running: $($runningNames -join ', ')" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "   This suite reconfigures the SHARED proxy and search node, which those"
+        Write-Host "   projects are using. Two things can happen, and the second is why this"
+        Write-Host "   refuses rather than warns:"
+        Write-Host ""
+        Write-Host "     * 'ldm infra setup' will refuse to recreate the SSL proxy while they"
+        Write-Host "       run, so the suite fails partway through anyway."
+        Write-Host "     * if Elasticsearch misses its readiness window, LDM wipes the SHARED"
+        Write-Host "       search data directory -- destroying those projects' indexes,"
+        Write-Host "       silently, while they continue to report healthy (LDM-#2083)."
+        Write-Host ""
+        Write-Host "   Stop them first, then re-run:"
+        foreach ($rp in $runningNames) { Write-Host "       ldm stop $rp" }
+        Write-Host ""
+        Write-Host "   They will reindex on their next boot if their index was already lost."
+        exit 1
+    }
+
     Write-Host "[INFO]  Pre-pulling required Docker images..."
     & docker pull liferay/dxp:2026.q1.7-lts --quiet
     & docker pull postgres:16.2 --quiet
