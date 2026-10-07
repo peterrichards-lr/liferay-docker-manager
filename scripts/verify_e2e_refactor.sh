@@ -553,6 +553,28 @@ cleanup_test_projects() {
             printf '%s\n' "$rm_leftover" | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
         fi
 
+        # LDM-#2084: remove every image compose built for THIS run.
+        #
+        # Scoped to the run's own project name, which carries the random test
+        # port, so it cannot match another project, another developer's work,
+        # or a base image like liferay/dxp. That scoping is why this is safe
+        # as a DEFAULT, where `--prune-after` is not: `docker system prune -af
+        # --volumes` reclaims machine-wide and would re-cost a 5 GB Liferay
+        # pull on the next run.
+        #
+        # Reported rather than silent: a cleanup that removes nothing should
+        # be visible, because that is exactly how the rmi above failed
+        # unnoticed for so long.
+        local built_images
+        built_images=$(docker images -q --filter "reference=${PROJECT_NAME}-*" 2>/dev/null | sort -u)
+        if [ -n "$built_images" ]; then
+            local built_count
+            built_count=$(printf '%s\n' "$built_images" | grep -c . || true)
+            echo "ℹ  Removing ${built_count} image(s) built by this run..." | tee -a "$RESULTS_FILE_TMP"
+            # shellcheck disable=SC2086
+            docker rmi -f $built_images >/dev/null 2>&1 || true
+        fi
+
         if [ "$PRUNE_AFTER" = true ]; then
             # Deliberately after the project removal above, so the project's own
             # volumes are already gone and this only reclaims what nothing else
@@ -941,6 +963,61 @@ check_docker_disk "$MIN_DISK_GB" "to finish"
 # none looked identical to one that cleaned up perfectly.
 DISK_START_DOCKER_GB=$(docker_free_gb)
 DISK_START_HOST_GB=$(host_free_gb)
+
+# LDM-#2085: refuse to run while another LDM project is live.
+#
+# This suite reconfigures GLOBAL infrastructure -- the shared proxy and the
+# shared search node -- which other projects on this machine are using. Two
+# things follow, and the second is the reason this is a refusal rather than a
+# warning:
+#
+#   * `ldm infra setup` will not recreate the SSL proxy while projects are
+#     running (handlers/infra.py). The run fails at that section, two minutes
+#     and two image pulls in, having already changed global state.
+#
+#   * If Elasticsearch misses its readiness window, LDM's automatic "search
+#     volume repair" DELETES the shared search data directory -- every
+#     project's index, not just this suite's. Observed 2026-10-07: a live
+#     project's index destroyed silently while it continued reporting
+#     healthy, because its healthcheck is an HTTP probe that never touches
+#     search. That is LDM-#2083, and until it is guarded on its own side this
+#     is the only thing standing in front of it.
+#
+# Checked against `ldm list --json`, which is authoritative about LDM
+# projects. The cleanup path greps `docker ps` instead, which also matches
+# unrelated containers -- there were three on the reporting machine.
+#
+# Before the image pulls deliberately: this should cost ten seconds, not two
+# pulls and a mutated global proxy.
+RUNNING_PROJECTS=$("$LDM_CMD" list --json 2>/dev/null \
+    | "$VENV_PYTHON" -c 'import json,sys
+try:
+    rows = json.load(sys.stdin)
+except Exception:
+    rows = []
+print(" ".join(r.get("project", "?") for r in rows if str(r.get("status", "")).lower() == "running"))' 2>/dev/null || true)
+
+if [ -n "${RUNNING_PROJECTS// /}" ]; then
+    echo "❌ ERROR: other LDM projects are running: ${RUNNING_PROJECTS}" >&2
+    echo "" >&2
+    echo "   This suite reconfigures the SHARED proxy and search node, which those" >&2
+    echo "   projects are using. Two things can happen, and the second is why this" >&2
+    echo "   refuses rather than warns:" >&2
+    echo "" >&2
+    echo "     * 'ldm infra setup' will refuse to recreate the SSL proxy while they" >&2
+    echo "       run, so the suite fails partway through anyway." >&2
+    echo "     * if Elasticsearch misses its readiness window, LDM wipes the SHARED" >&2
+    echo "       search data directory -- destroying those projects' indexes," >&2
+    echo "       silently, while they continue to report healthy (LDM-#2083)." >&2
+    echo "" >&2
+    echo "   Stop them first, then re-run:" >&2
+    for _p in ${RUNNING_PROJECTS}; do
+        echo "       ldm stop ${_p}" >&2
+    done
+    echo "" >&2
+    echo "   They will reindex on their next boot if their index was already lost." >&2
+    exit 1
+fi
 
 # Pre-pull large images to avoid containerd lease timeouts during the timed E2E run
 echo "ℹ  Pre-pulling required Docker images..."
@@ -4318,8 +4395,24 @@ CXSVC_SVCNAME_PY
         echo "❌ ERROR: the extension's own code at /opt/liferay/routes is not visible inside its container -- an LDM mount is shadowing the application (LDM-#1911)." | tee -a "$RESULTS_FILE_TMP"
         CXSVC_OK=false
     fi
+    # LDM-#2084: ask compose for the image ID BEFORE removing the container.
+    #
+    # This used to be `docker rmi -f "${CXSVC_SERVICE}:latest"`, which targets
+    # a name compose has never produced: it builds `<project>-<service>`, so
+    # the real image is `ldm-smoke-test-<PORT>-syntheticsvc:latest`. The rmi
+    # therefore matched nothing on every run since it was written, and
+    # `|| true` swallowed the failure -- measured on a developer machine as
+    # three orphaned images from three past runs, each anchoring its own build
+    # cache, inside 29 GB of reclaimable images.
+    #
+    # The ID is taken from compose rather than reconstructed, because the
+    # reconstruction is what broke: compose changed `_` to `-` between v1 and
+    # v2 and would break a hand-built name again.
+    CXSVC_IMAGE_ID=$(docker compose images -q "$CXSVC_SERVICE" 2>/dev/null | head -1)
     docker compose rm -fsv "$CXSVC_SERVICE" >/dev/null 2>&1 || true
-    docker rmi -f "${CXSVC_SERVICE}:latest" >/dev/null 2>&1 || true
+    if [ -n "$CXSVC_IMAGE_ID" ]; then
+        docker rmi -f "$CXSVC_IMAGE_ID" >/dev/null 2>&1 || true
+    fi
 fi
 
 if [ "$CXSVC_OK" = true ]; then
