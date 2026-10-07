@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.4-pre.1] - 2026-10-07
+
+### Fixed
+
+- **`ldm rm --delete` now removes the project directory on its target node, not only the local copy** (LDM-#2077). The command's own help promised to "permanently delete its directory from disk" and removed only what was on your machine. `sync_project_to_target` pushes a project to a node and had no counterpart, so the node kept its copy with whatever state it had accumulated.
+
+  That directory is not inert: it is bind-mounted straight back into the next container at `/opt/liferay/routes`, so values written weeks earlier are presented to a fresh run as current configuration. Reported with a `routes/default/dxp` tree three weeks older than the container it was mounted into, holding `com.liferay.lxc.dxp.main.domain = localhost` -- which gave every OAuth user-agent application a redirect URI pointing at localhost, so no browser on the real host could complete a handshake.
+
+  **This is the first time LDM deletes anything on a machine it does not own**, and it is treated accordingly. The project name is validated before it can reach an `rm -rf` over ssh -- empty, `.`, `..`, a path separator or a leading `~` are refused, because each turns a project removal into something else. The confirmation prompt names the node and the exact path before you agree. The removal announces itself on every run, including under `-y` where no prompt appears, and says so on success as well as failure: a removal that worked and one that failed must not be distinguishable only by silence.
+
+  An unreachable node warns and continues; the local removal still happens, and the warning says the node's directory survives and will be reused.
+
+- **The fragment-override harness captures the log its failure message names** (LDM-#2071). It ended a failure with "check the portal log for a client-extension deployment failure" and its evidence artifact was 422 bytes -- `report.json` and nothing else. One intermittent failure then cost two 25-minute re-dispatches to re-observe what the failing run could have recorded for free. It now captures `portal.log`, `containers.txt` and the client-extension directory listing; the last of those discriminates between an artifact Liferay never picked up and one it consumed, which are different failures wanting different fixes.
+
 ## [v2.26.3] - 2026-10-07
 
 ### Added

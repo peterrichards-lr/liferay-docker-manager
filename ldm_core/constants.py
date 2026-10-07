@@ -102,6 +102,19 @@ PIP_INSTALL_TIMEOUT = 600  # 10 min -- plugin/completion dependency installs
 RELEASE_ANNOUNCEMENTS = {
     # LDM-#1663: a patch needs its OWN key, or the banner falls back to the
     # minor series and re-prints highlights the user has already seen.
+    "2.26.4": [
+        (
+            "'ldm rm --delete' now clears the node's copy too",
+            "A project that runs on a target node kept its directory THERE "
+            "when you deleted it, and that directory is mounted back into the "
+            "next container -- so configuration written weeks earlier could "
+            "present itself to a fresh run as current. One report traced "
+            "OAuth redirect URIs pointing at localhost to a config tree three "
+            "weeks old. The delete now reaches the node as well. It names the "
+            "node and the path before asking, says what it removed, and "
+            "refuses an unsafe project name outright.",
+        ),
+    ],
     "2.26.3": [
         (
             "A stalled bring-up now fails instead of hanging for ever",
