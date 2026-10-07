@@ -225,22 +225,51 @@ This is a **liveness bound, not a performance limit**. It is long enough that a
 cold image pull and an image build should never reach it, so hitting it almost
 always means something stopped making progress rather than being slow.
 
-Against a **remote node** this is the likeliest cause. With `DOCKER_HOST` set
-to `ssh://`, that single command carries the pull, the build and container
-creation over one SSH connection, and if the transport dies the Docker client
-can block on it without noticing. The signature is no output at all after
+Against a **remote node** it is more likely still: with `DOCKER_HOST` set to
+`ssh://`, that one command carries the pull, the build and container creation
+over a single connection. The signature is no output at all after
 `Starting Container Stack`.
 
-What to check, in order:
+**Start with the client's own process tree, not the network.** This ordering
+is deliberate and was learned the expensive way -- see the note below.
+
+```bash
+ps -eo pid,etime,stat,wchan:20,args | grep -E 'docker|buildx|ssh'
+```
+
+`wchan` is what makes this a diagnosis rather than an observation. Without it
+you see a stuck process; with it you see what it is stuck *on*:
+
+| what you see | what it means |
+|---|---|
+| `docker-buildx bake` in `futex_do_wait`, long `etime` | **the image build has wedged.** The transport is irrelevant |
+| `ssh ... dial-stdio` in `poll_schedule_timeout` | its children waiting on a reply that will not come -- a *symptom* of the above, not the cause |
+| no `ssh` process at all, `docker` still running | the transport went and the client did not notice |
+
+Then, and only then, the network:
 
 1. **Is the node reachable?** `ldm system doctor` and `docker --context <node> info`.
 2. **Was the daemon still working?** On the node, `journalctl -u docker -S -30min`.
-   A daemon that was pulling or building happily means the transport failed,
-   not the build.
-3. **Add SSH keepalives.** A `Host <node>` block in `~/.ssh/config` with
-   `ServerAliveInterval 30` and `ServerAliveCountMax 6` turns an unbounded
-   stall into a named failure in about three minutes. Docker's connection
-   helper reads that file, so this needs no LDM change.
+3. **SSH keepalives.** A `Host <node>` block in `~/.ssh/config` with
+   `ServerAliveInterval 30` and `ServerAliveCountMax 6` bounds a *dead peer* at
+   about three minutes. Docker's connection helper reads that file, so this
+   needs no LDM change -- but note it does nothing for a wedged build, which
+   is the case above.
+
+> **Why this order.** A consumer spent four days on SSH remedies -- keepalives,
+> `MaxStartups`, `ControlMaster` -- for a 200-minute hang whose transport was
+> healthy throughout: `ESTAB` in all 199 samples, control socket present in
+> 198, send queue always draining. The stall was `docker-buildx bake` blocked
+> in `futex_do_wait` for over three hours, *above* the transport. Every SSH
+> remedy was already in place on the run that proved it. A healthy transport
+> does not mean a healthy build, and the process tree says which you have in
+> one command.
+
+**Where the build output went.** With no `--follow` the bring-up runs captured,
+and LDM writes the full captured stdout to `~/.ldm/last-command.log` -- silently,
+regardless of verbosity. That file is **truncated on every `ldm` invocation**,
+so copy it before running anything else. On a failed command stderr is printed
+to the terminal verbatim.
 
 Locally, a genuine 30-minute bring-up means a very slow pull or a Dockerfile
 doing heavy work. Pull the image first with `docker pull`, outside the run.
@@ -254,6 +283,29 @@ LDM_BRINGUP_TIMEOUT=5400 ldm run my-project
 
 `0` removes the bound entirely. That restores the unbounded wait this guard
 exists to prevent, so LDM warns when you set it.
+
+#### Why a bound beats a hang, even when you lose the run either way
+
+The obvious benefit is time. The larger one is evidence.
+
+A job that hangs gets cancelled, and a cancellation kills the script
+**mid-command** -- so none of its teardown runs. No diagnostics are gathered,
+no logs are captured, nothing is uploaded. A bounded failure exits `124` and
+the script carries on to its own failure path, where all of that executes.
+
+Measured on a consumer's CI, where this defect was reported:
+
+| run | outcome | log artifact |
+|---|---|---|
+| 110 minutes | cancelled by hand | **166 bytes** |
+| 23 minutes | failed normally | **347 KB** |
+
+Same pipeline, same captures configured. The difference is entirely whether
+the script reached its teardown. A hang does not just cost you the run -- it
+costs you the ability to find out why.
+
+Observation and figures contributed by the AI Commerce Accelerator team, who
+reported the original hang (LDM-#2064).
 
 ## 📂 Permission & Mount Issues
 
@@ -705,4 +757,4 @@ Projects are discovered from the current folder, its parent, `~/ldm`, the LDM in
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-06* | *Last Reviewed: 2026-10-06*
+*Last Updated: 2026-10-07* | *Last Reviewed: 2026-10-07*

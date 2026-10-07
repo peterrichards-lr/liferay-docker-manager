@@ -190,6 +190,24 @@ To prevent "version fatigue" and ensure the stability of the main release channe
 
 - **Immutable Tags (The Burn Rule)**: GitHub Repository Rules strictly prohibit the deletion or force-updating of Git tags. Once a tag (e.g. `v2.15.19`) is pushed, it is permanently locked to that commit. Any premature tagging permanently burns the version number, requiring a version bump to recover. You MUST be absolutely certain all pre-requisites are met before tagging.
 - **Compatibility Matrix Gate**: You MUST update the compatibility matrix (in the project documentation) to reflect the newly verified environments BEFORE moving to a stable release. Always run `python3 scripts/sync_compatibility.py` from a checkout whose `ldm_core/constants.py` `VERSION` actually matches the report(s) you're syncing (e.g. the active `release/vX.Y.Z-pre.N` branch for pre-release reports) -- running it from `master` (or any other mismatched checkout) silently archives every report whose binary/script version doesn't match as "stale," discarding real test data with no error.
+  - **Committing the sync needs `LDM_ALLOW_PROTECTED_BRANCH=1`.** The matrix
+    sync is a release-branch commit by design -- this skill already says so
+    under *Fix on `master` first* -- but `scripts/agent_push.sh` refuses to
+    commit on `master` or `release/*` without that variable (LDM-#1764). Its
+    own comment names only two genuine cases, the backport merge and the
+    release-branch CHANGELOG entry; **the matrix sync is a third**, and was
+    made this way for v2.26.2 and v2.26.3. Without this note an agent learns
+    it only by tripping the guard mid-release and reading the error.
+
+    ```bash
+    LDM_ALLOW_PROTECTED_BRANCH=1 ./scripts/agent_push.sh "<msg>"
+    ```
+
+    It is an acknowledgement, not a bypass: the full gate still runs, and the
+    wrapper prints a warning naming the branch. Note that an agent harness may
+    refuse the variable on its name alone, in which case the maintainer runs
+    the command -- do not reach the same commit with bare `git commit`, which
+    skips the gates the wrapper exists to enforce.
   - **The script now refuses rather than discarding (LDM-#1390).** A raw report whose recorded version does not match the checkout's `VERSION` makes `sync_compatibility.py` exit non-zero *before moving anything*, naming each report and both versions. Check out the ref whose `VERSION` matches and re-run. `--archive-stale` is the deliberate opt-out for genuinely clearing an older cycle's reports -- it prints the full plan first (each report and the name it moves to) before touching anything; `--dry-run` shows the same diagnosis without a failing exit, and `--quiet` suppresses routine progress without ever hiding a refusal. This used to be a `UI.warning` followed by the move, which is easy to miss in a long run.
   - **Sandboxable (LDM-#1391)**: `--results-dir PATH` and `--table PATH` override the two locations the script mutates, defaulting to `references/verification-results/` and `docs/reference/compatibility.md`. Tests MUST use them -- a test run against the defaults archives and rewrites the real verification record, which the Honesty Rule below exists to protect.
   - **Preview first**: `python3 scripts/sync_compatibility.py --dry-run` lists every rename, archive and table edit without touching anything, and prints the `VERSION` it resolved so a mismatch is visible before any file moves. Note this only became safe in LDM-#1252 -- the script previously had no argument parsing, so `--help`, `--dry-run` or any typo silently performed a full sync.
