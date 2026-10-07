@@ -380,6 +380,15 @@ def remove_project_from_target(
             "the next run of a project with this name."
         )
         return False
+
+    # LDM-#2077: say so on success too. Without this the two outcomes are
+    # distinguished only by the PRESENCE of a second line -- "Removing X"
+    # then either nothing or a failure -- so a truncated log, or a reader who
+    # stops at the first line, cannot tell a completed remote deletion from a
+    # failed one. Absence is not evidence, least of all for an `rm -rf` on
+    # another machine. Raised by the reporting side, who had written their own
+    # equivalent warning carefully for the same reason.
+    UI.success(f"Removed {dest_dir} on node '{target.name}'")
     return True
 
 
