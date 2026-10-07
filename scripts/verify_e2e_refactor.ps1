@@ -4091,8 +4091,21 @@ sys.exit(1 if fails else 0)
     }
     & docker compose run --rm --no-deps --entrypoint sh $cxSvcService -c 'test -f /opt/liferay/routes/app.cjs' 2>&1 | Out-Null
     $cxSvcShadowed = ($LASTEXITCODE -ne 0)
+    # LDM-#2084: ask compose for the image ID BEFORE removing the container.
+    #
+    # This used to be `docker rmi -f "${cxSvcService}:latest"`, which targets a
+    # name compose has never produced: it builds `<project>-<service>`, so the
+    # real image is `ldm-smoke-test-<PORT>-syntheticsvc:latest`. The rmi matched
+    # nothing on every run, and the redirect swallowed the failure. The shell
+    # half had the identical bug.
+    #
+    # The ID is taken from compose rather than rebuilt from parts, because the
+    # rebuilding is what broke -- compose changed `_` to `-` between v1 and v2.
+    $cxSvcImageId = (& docker compose images -q $cxSvcService 2>$null | Select-Object -First 1)
     & docker compose rm -fsv $cxSvcService 2>&1 | Out-Null
-    & docker rmi -f "${cxSvcService}:latest" 2>&1 | Out-Null
+    if ($cxSvcImageId) {
+        & docker rmi -f $cxSvcImageId 2>&1 | Out-Null
+    }
     if ($cxSvcShadowed) {
         throw "The extension's own code at /opt/liferay/routes is not visible inside its container -- an LDM mount is shadowing the application (LDM-#1911)."
     }
@@ -5937,6 +5950,27 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     $script:VerificationExitCode = 1
 } finally {
     Set-Location $ORIGINAL_PWD
+
+    # LDM-#2084: remove every image compose built for THIS run.
+    #
+    # Scoped to the run's own project name, which carries the random test port,
+    # so it cannot match another project, another developer's work, or a base
+    # image like liferay/dxp. That scoping is why this is safe to do always,
+    # where a `docker system prune -af` would not be: a machine-wide reclaim
+    # re-costs a 5 GB Liferay pull on the next run.
+    #
+    # Reported rather than silent. A cleanup that removes nothing should be
+    # visible, because that is exactly how the rmi above failed unnoticed.
+    try {
+        $builtImages = @(& docker images -q --filter "reference=$PROJECT_NAME-*" 2>$null |
+            Where-Object { $_ } | Select-Object -Unique)
+        if ($builtImages.Count -gt 0) {
+            Write-Host "[INFO]  Removing $($builtImages.Count) image(s) built by this run..."
+            & docker rmi -f @builtImages 2>&1 | Out-Null
+        }
+    } catch {
+        Write-Host "[WARN]  Could not remove this run's built images: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
 }
 
 # LDM-#1611: exit explicitly, or a failed run reports success.

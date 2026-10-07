@@ -1745,3 +1745,82 @@ class TestTheConfigTreeProbeRunsAfterTheDeploys(unittest.TestCase):
                         "a skip message still names the healthcheck as the "
                         "trigger for publication (LDM-#2042)",
                     )
+
+
+class TheSuiteRemovesTheImagesItBuilds(unittest.TestCase):
+    """LDM-#2084: both halves removed an image name compose never produces.
+
+    Compose builds `<project>-<service>`, so the real image is
+    `ldm-smoke-test-<PORT>-syntheticsvc:latest`. Both suites ran
+    `docker rmi -f "<service>:latest"`, which matched nothing on every run
+    since it was written, and both swallowed the failure. Measured on a
+    developer machine: six orphaned images from three past runs, inside 29 GB
+    of reclaimable images.
+
+    The fix is not a corrected name -- reconstructing the name is what broke,
+    and compose already changed `_` to `-` between v1 and v2. The ID is asked
+    of compose instead. These assertions are structural because the claim is
+    structural: the scripts must not rebuild that name again.
+    """
+
+    @staticmethod
+    def _code_only(path):
+        """The script with comment lines removed.
+
+        The first version of this test searched the raw file and failed
+        against the explanatory comment directly above the fix, which quotes
+        the broken line it replaced. That is the same defect the comment
+        describes: a measurement matching prose ABOUT the symptom rather than
+        the symptom. Both halves use `#` for comments.
+        """
+        return "\n".join(
+            line
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if not line.lstrip().startswith("#")
+        )
+
+    def test_neither_half_reconstructs_the_image_name(self):
+        for path, pattern in (
+            (BASH_SCRIPT, r'rmi\s+-f\s+"\$\{CXSVC_SERVICE\}:latest"'),
+            (PS1_SCRIPT, r'rmi\s+-f\s+"\$\{cxSvcService\}:latest"'),
+        ):
+            with self.subTest(script=path.name):
+                self.assertIsNone(
+                    re.search(pattern, self._code_only(path)),
+                    f"{path.name} rebuilds the image name compose does not use",
+                )
+
+    def test_both_halves_ask_compose_for_the_image_id(self):
+        for path in (BASH_SCRIPT, PS1_SCRIPT):
+            with self.subTest(script=path.name):
+                self.assertIn(
+                    "compose images -q",
+                    path.read_text(encoding="utf-8"),
+                    f"{path.name} does not ask compose for the image it built",
+                )
+
+    def test_the_id_is_captured_before_the_container_is_removed(self):
+        """Order matters: `compose images` returns nothing once the container
+        is gone, so capturing afterwards would silently reclaim nothing --
+        the same failure in a new costume."""
+        for path in (BASH_SCRIPT, PS1_SCRIPT):
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(script=path.name):
+                capture = text.index("compose images -q")
+                removal = text.index("compose rm -fsv", capture - 2000)
+                self.assertLess(
+                    capture, removal, f"{path.name} captures the ID too late"
+                )
+
+    def test_both_halves_sweep_the_run_s_own_images(self):
+        """Scoped to PROJECT_NAME, which carries the random test port, so it
+        cannot reach a base image or another developer's work."""
+        for path in (BASH_SCRIPT, PS1_SCRIPT):
+            with self.subTest(script=path.name):
+                self.assertIn(
+                    "reference=$PROJECT_NAME-*"
+                    if path is PS1_SCRIPT
+                    else "reference=${PROJECT_NAME}-*",
+                    path.read_text(encoding="utf-8"),
+                    f"{path.name} does not sweep the images this run built",
+                )

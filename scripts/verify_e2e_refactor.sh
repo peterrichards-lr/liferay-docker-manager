@@ -553,6 +553,28 @@ cleanup_test_projects() {
             printf '%s\n' "$rm_leftover" | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
         fi
 
+        # LDM-#2084: remove every image compose built for THIS run.
+        #
+        # Scoped to the run's own project name, which carries the random test
+        # port, so it cannot match another project, another developer's work,
+        # or a base image like liferay/dxp. That scoping is why this is safe
+        # as a DEFAULT, where `--prune-after` is not: `docker system prune -af
+        # --volumes` reclaims machine-wide and would re-cost a 5 GB Liferay
+        # pull on the next run.
+        #
+        # Reported rather than silent: a cleanup that removes nothing should
+        # be visible, because that is exactly how the rmi above failed
+        # unnoticed for so long.
+        local built_images
+        built_images=$(docker images -q --filter "reference=${PROJECT_NAME}-*" 2>/dev/null | sort -u)
+        if [ -n "$built_images" ]; then
+            local built_count
+            built_count=$(printf '%s\n' "$built_images" | grep -c . || true)
+            echo "ℹ  Removing ${built_count} image(s) built by this run..." | tee -a "$RESULTS_FILE_TMP"
+            # shellcheck disable=SC2086
+            docker rmi -f $built_images >/dev/null 2>&1 || true
+        fi
+
         if [ "$PRUNE_AFTER" = true ]; then
             # Deliberately after the project removal above, so the project's own
             # volumes are already gone and this only reclaims what nothing else
@@ -4318,8 +4340,24 @@ CXSVC_SVCNAME_PY
         echo "❌ ERROR: the extension's own code at /opt/liferay/routes is not visible inside its container -- an LDM mount is shadowing the application (LDM-#1911)." | tee -a "$RESULTS_FILE_TMP"
         CXSVC_OK=false
     fi
+    # LDM-#2084: ask compose for the image ID BEFORE removing the container.
+    #
+    # This used to be `docker rmi -f "${CXSVC_SERVICE}:latest"`, which targets
+    # a name compose has never produced: it builds `<project>-<service>`, so
+    # the real image is `ldm-smoke-test-<PORT>-syntheticsvc:latest`. The rmi
+    # therefore matched nothing on every run since it was written, and
+    # `|| true` swallowed the failure -- measured on a developer machine as
+    # three orphaned images from three past runs, each anchoring its own build
+    # cache, inside 29 GB of reclaimable images.
+    #
+    # The ID is taken from compose rather than reconstructed, because the
+    # reconstruction is what broke: compose changed `_` to `-` between v1 and
+    # v2 and would break a hand-built name again.
+    CXSVC_IMAGE_ID=$(docker compose images -q "$CXSVC_SERVICE" 2>/dev/null | head -1)
     docker compose rm -fsv "$CXSVC_SERVICE" >/dev/null 2>&1 || true
-    docker rmi -f "${CXSVC_SERVICE}:latest" >/dev/null 2>&1 || true
+    if [ -n "$CXSVC_IMAGE_ID" ]; then
+        docker rmi -f "$CXSVC_IMAGE_ID" >/dev/null 2>&1 || true
+    fi
 fi
 
 if [ "$CXSVC_OK" = true ]; then
