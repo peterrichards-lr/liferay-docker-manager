@@ -2177,6 +2177,89 @@ verify_stop_hint_and_start_confirmation() {
     return 0
 }
 
+verify_local_delete_stays_local() {
+    # LDM-#2077: `--delete` now removes the project directory ON THE NODE as
+    # well as locally. A LOCAL project must never reach that path --
+    # `remove_project_from_target` returns None when the target is local, and
+    # a regression in that guard would attempt an ssh for every local user,
+    # which is the majority of them.
+    #
+    # The suite already runs `--delete` dozens of times, so the local path is
+    # exercised. Exercised is not asserted: nothing checked that it stayed
+    # local, and a teardown that quietly tried to reach a node would still
+    # have torn the project down.
+    #
+    # Anchored on "on node '", which appears in exactly three places in
+    # ldm_core, all of them the node-removal code. A bare "node" would match
+    # unrelated output.
+    #
+    # --no-up: the deletion is what is under test, so booting Liferay would
+    # cost minutes for no additional signal.
+    local ldm_cmd="$1"
+    local work_dir="$2"
+
+    local iso_home="${work_dir}/localdel-home"
+    local run_dir="${work_dir}/localdel-work"
+    local proj="ldmlocaldel"
+
+    rm -rf "$iso_home" "$run_dir"
+    mkdir -p "$iso_home" "$run_dir" || return 1
+
+    local out code
+    out=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" run "$proj" --no-up -y 2>&1) && code=0 || code=$?
+    if [ "$code" -ne 0 ]; then
+        rm -rf "$iso_home" "$run_dir"
+        echo "❌ ERROR: could not create the local project (exit ${code})."
+        echo "   Output was: $(echo "$out" | tail -5)"
+        return 1
+    fi
+
+    # Where LDM actually put it. --delete's whole promise is that this stops
+    # existing, and until LDM-#2077 nothing in either suite asserted that --
+    # the 34 other `--delete` calls here are teardowns, which succeed whether
+    # or not the directory goes. That is the same shape as the defect itself:
+    # a promise nobody checked.
+    local proj_dir
+    proj_dir=$(find "$run_dir" -maxdepth 2 -type d -name "$proj" 2>/dev/null | head -1)
+    if [ -z "$proj_dir" ] || [ ! -d "$proj_dir" ]; then
+        rm -rf "$iso_home" "$run_dir"
+        echo "❌ ERROR: no project directory was created under ${run_dir}; nothing to delete."
+        return 1
+    fi
+
+    local del_out del_code
+    del_out=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" rm "$proj" --delete -y 2>&1) && del_code=0 || del_code=$?
+
+    local dir_survived=0
+    [ -d "$proj_dir" ] && dir_survived=1
+    rm -rf "$iso_home" "$run_dir"
+
+    if [ "$del_code" -ne 0 ]; then
+        echo "❌ ERROR: 'ldm rm --delete' on a LOCAL project exited ${del_code}."
+        echo "   Output was: $(echo "$del_out" | tail -8)"
+        return 1
+    fi
+
+    if [ "$dir_survived" -eq 1 ]; then
+        echo "❌ ERROR: '--delete' left the project directory behind (LDM-#2077)."
+        echo "   ${proj_dir} still exists. The flag's help says it will"
+        echo "   \"permanently delete its directory from disk\"."
+        echo "   Output was: $(echo "$del_out" | tail -8)"
+        return 1
+    fi
+
+    if echo "$del_out" | grep -qF "on node '"; then
+        echo "❌ ERROR: a local project's deletion announced a node removal (LDM-#2077)."
+        echo "   remove_project_from_target must return early when the target is"
+        echo "   local; this output means it did not."
+        echo "   Output was: $(echo "$del_out" | tail -8)"
+        return 1
+    fi
+
+    echo "✅ '--delete' removed the project directory, and stayed local."
+    return 0
+}
+
 verify_bringup_timeout_is_read_by_the_binary() {
     # LDM-#2064: the bound on the stack bring-up is overridable, and the
     # override has to be read by the SHIPPED binary. A unit test can prove the
@@ -2361,6 +2444,14 @@ if STOPHINT_OUT=$(verify_stop_hint_and_start_confirmation "$LDM_CMD" "$LDM_WORKS
     report_ok "$STOPHINT_OUT"
 else
     echo "$STOPHINT_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying a local --delete stays local (LDM-#2077)..."
+if LOCALDEL_OUT=$(verify_local_delete_stays_local "$LDM_CMD" "$LDM_WORKSPACE"); then
+    report_ok "$LOCALDEL_OUT"
+else
+    echo "$LOCALDEL_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
 

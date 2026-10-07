@@ -1343,6 +1343,85 @@ function Test-ContainersRemovedVolumesIntact {
     }
 }
 
+function Test-LocalDeleteStaysLocal {
+    # LDM-#2077: parity with verify_local_delete_stays_local in
+    # verify_e2e_refactor.sh.
+    #
+    # '--delete' now removes the project directory ON THE NODE as well as
+    # locally. A LOCAL project must never reach that path:
+    # remove_project_from_target returns None when the target is local, and a
+    # regression in that guard would attempt an ssh for every local user.
+    #
+    # The suite already runs '--delete' dozens of times, so the local path is
+    # exercised. Exercised is not asserted -- a teardown that quietly tried to
+    # reach a node would still have torn the project down.
+    #
+    # Anchored on "on node '", which appears in exactly three places in
+    # ldm_core, all of them the node-removal code.
+    #
+    # '--no-up': the deletion is what is under test.
+    param($LdmCmd, $WorkDir)
+
+    $isoHome = Join-Path $WorkDir "localdel-home"
+    $runDir = Join-Path $WorkDir "localdel-work"
+    $proj = "ldmlocaldel"
+
+    foreach ($d in @($isoHome, $runDir)) {
+        if (Test-Path $d) { Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue }
+        New-Item -ItemType Directory -Path $d -Force | Out-Null
+    }
+
+    $prevHome = $env:LDM_HOME
+    $env:LDM_HOME = $isoHome
+    $startLocation = Get-Location
+    try {
+        Set-Location $runDir
+        $out = & $LdmCmd run $proj --no-up -y 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: could not create the local project (exit ${LASTEXITCODE}).`n   Output was: ${out}" }
+        }
+
+        # Where LDM actually put it. '--delete's whole promise is that this
+        # stops existing, and until LDM-#2077 nothing in either suite asserted
+        # it -- the other 48 '--delete' calls here are teardowns, which succeed
+        # whether or not the directory goes. The same shape as the defect: a
+        # promise nobody checked.
+        $projDir = Get-ChildItem -Path $runDir -Directory -Recurse -Depth 1 -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -eq $proj } | Select-Object -First 1
+        if ($null -eq $projDir) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: no project directory was created under ${runDir}; nothing to delete." }
+        }
+
+        $delOut = & $LdmCmd rm $proj --delete -y 2>&1 | Out-String
+        $delCode = $LASTEXITCODE
+        if ($delCode -ne 0) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm rm --delete' on a LOCAL project exited ${delCode}.`n   Output was: ${delOut}" }
+        }
+
+        if (Test-Path $projDir.FullName) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: '--delete' left the project directory behind (LDM-#2077).`n        $($projDir.FullName) still exists. The flag's help says it will permanently delete its directory from disk.`n   Output was: ${delOut}" }
+        }
+
+        # -cmatch, not -match: -match is case-INSENSITIVE in PowerShell, so
+        # the two suites would disagree about identical correct output.
+        if ($delOut -cmatch [regex]::Escape("on node '")) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: a local project's deletion announced a node removal (LDM-#2077).`n        remove_project_from_target must return early when the target is local.`n   Output was: ${delOut}" }
+        }
+    } finally {
+        Set-Location $startLocation
+        if ($null -eq $prevHome) {
+            Remove-Item Env:LDM_HOME -ErrorAction SilentlyContinue
+        } else {
+            $env:LDM_HOME = $prevHome
+        }
+        foreach ($d in @($isoHome, $runDir)) {
+            if (Test-Path $d) { Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue }
+        }
+    }
+
+    return @{ Ok = $true; Message = "[SUCCESS] '--delete' removed the project directory, and stayed local." }
+}
+
 function Test-BringupTimeoutIsReadByTheBinary {
     # LDM-#2064: parity with verify_bringup_timeout_is_read_by_the_binary in
     # verify_e2e_refactor.sh.
@@ -2236,6 +2315,15 @@ try {
         Write-Verdict $stopHint.Message
     } else {
         Write-Host $stopHint.Message -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying a local --delete stays local (LDM-#2077)..."
+    $localDel = Test-LocalDeleteStaysLocal -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE
+    if ($localDel.Ok) {
+        Write-Verdict $localDel.Message
+    } else {
+        Write-Host $localDel.Message -ForegroundColor Red
         exit 1
     }
 
