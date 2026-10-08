@@ -486,6 +486,36 @@ If you see Python encoding errors (like `'\u25cf' character maps to <undefined>`
 
 ## 🔍 Search (Elasticsearch)
 
+### **"Refusing to wipe the shared search data while other LDM projects are running"**
+
+LDM stopped before deleting `~/.ldm/infra/search/data` and exited **3**. This
+is a guard, not a failure of the repair.
+
+**Why it exists.** When Elasticsearch misses its readiness window, LDM runs an
+automatic search volume repair that deletes that directory and starts a clean
+node. The directory is **shared**: it holds the indexes of *every* project on
+the machine, not just the one you are working on. Deleting it destroys all of
+them, and nothing tells you — a project's healthcheck is an HTTP probe against
+the portal that never touches search, so every project keeps reporting
+`healthy` until somebody runs a search and gets nothing back.
+
+**What to do.** Stop the projects it names, then re-run. The refusal prints the
+exact commands:
+
+```bash
+ldm stop <project>
+```
+
+**If you accept the loss**, re-run with `--force`. Each project rebuilds its
+index on its next boot. `ldm reindex` only *schedules* a rebuild for the next
+start — it does not rebuild anything at the time you run it.
+
+**Diagnosing why the repair triggered.** The repair writes the failing
+container's logs to `~/.ldm/infra/search/search-failure-<timestamp>.log`
+*before* removing the container. Read that first: a readiness timeout on a
+loaded machine is not corruption, and in that case the right fix is usually to
+re-run rather than to wipe anything.
+
 ### **Elasticsearch: Failed to obtain node locks**
 
 If Elasticsearch fails to boot with `AccessDeniedException: /usr/share/elasticsearch/data/node.lock`:
@@ -757,4 +787,4 @@ Projects are discovered from the current folder, its parent, `~/ldm`, the LDM in
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-07* | *Last Reviewed: 2026-10-07*
+*Last Updated: 2026-10-08* | *Last Reviewed: 2026-10-08*

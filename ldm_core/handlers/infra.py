@@ -118,6 +118,102 @@ class InfraService:
             pass
         return ports if found else None
 
+    def scan_running_projects(self):
+        """Every LDM project currently running, as `(name, node)` pairs.
+
+        Best-effort by nature -- there is a TOCTOU window between this scan
+        and whatever the caller does next -- but an *unanswerable* probe is
+        never reported as "nothing is running". A `docker ps` that times out
+        or errors raises, so the caller can fail closed. That distinction is
+        LDM-#1548 and it is the whole value of this function: silently
+        concluding the machine is idle from a wedged daemon is the one answer
+        it must not give.
+
+        Extracted for LDM-#2083. It guarded the SSL proxy recreate -- which
+        costs a few seconds of connectivity -- while the search volume wipe,
+        which permanently destroys every project's index, had no guard at
+        all. One implementation, so the two cannot drift again.
+        """
+        from ldm_core.docker_service import DockerService
+
+        running_projects = []
+        for r in self.manager.find_dxp_roots():
+            path = r["path"]
+            meta = self.manager.read_meta(path)
+            name = (
+                meta.get("liferay_container_name")
+                or meta.get("container_name")
+                or path.name.replace(".", "-")
+            )
+            target_node = meta.get("target", "local")
+            docker_prefix = DockerService.get_docker_cmd_prefix(target_node)
+
+            from ldm_core.utils import run_command
+
+            containers_status = run_command(
+                [
+                    *docker_prefix,
+                    "ps",
+                    "-a",
+                    "--filter",
+                    f"name=^{name}$",
+                    "--format",
+                    "{{.State}}",
+                ],
+                check=False,
+                timeout=_INFRA_PROBE_TIMEOUT,
+            )
+            # LDM-#1548: `check=False` returns None for a non-zero exit AND
+            # for a timeout (utils.py), so a daemon that could not answer
+            # produced exactly the same result as "no container by that
+            # name". An empty string is a real answer (exit 0, no match) and
+            # stays one.
+            if containers_status is None:
+                raise RuntimeError(
+                    f"'docker ps' gave no answer for '{name}' on node '{target_node}'"
+                )
+            if "running" in containers_status:
+                running_projects.append((name, target_node))
+        return running_projects
+
+    def _capture_search_failure_logs(self, docker_prefix, search_name, dest_dir):
+        """Save the failing search container's logs before it is removed.
+
+        LDM-#2083. The repair ends with `docker rm -f`, which takes the logs
+        with it -- so the message "Attempting automatic search volume repair"
+        was the only surviving trace of why the repair ran, and the original
+        cause of an occurrence on 2026-10-07 is now unknowable. A failure
+        that destroys its own evidence can only ever be re-observed.
+
+        Best-effort and never fatal: this runs on a path that is already
+        failing, and losing the logs must not also lose the repair. Returns
+        the path written, or None.
+        """
+        try:
+            from datetime import datetime
+
+            # Through the manager, like the `rm -f` it must precede. A direct
+            # ldm_core.utils.run_command would bypass the manager entirely --
+            # and the test suite's own daemon guard (LDM-#1409) catches
+            # exactly that, which is how this was found.
+            logs = self.manager.run_command(
+                [*docker_prefix, "logs", "--tail", "500", search_name],
+                check=False,
+                timeout=_INFRA_PROBE_TIMEOUT,
+            )
+            if not logs:
+                UI.detail("  No logs could be read from the failing search container.")
+                return None
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            path = dest_dir / f"search-failure-{stamp}.log"
+            path.write_text(logs, encoding="utf-8", errors="replace")
+            UI.info(f"  Saved the failing container's logs to {path}")
+            return path
+        except Exception as exc:  # pragma: no cover - defensive
+            UI.detail(f"  Could not capture the search container's logs: {exc}")
+            return None
+
     def setup_infrastructure(  # noqa: C901, PLR0912, PLR0915
         self,
         resolved_ip,
@@ -175,50 +271,7 @@ class InfraService:
             # NOTE: Best-effort check. There is a small TOCTOU window between this scan and stopping the proxy.
             running_projects = []
             try:
-                roots = self.manager.find_dxp_roots()
-                for r in roots:
-                    path = r["path"]
-                    meta = self.manager.read_meta(path)
-                    name = (
-                        meta.get("liferay_container_name")
-                        or meta.get("container_name")
-                        or path.name.replace(".", "-")
-                    )
-                    target_node = meta.get("target", "local")
-                    docker_prefix = DockerService.get_docker_cmd_prefix(target_node)
-
-                    from ldm_core.utils import run_command
-
-                    containers_status = run_command(
-                        [
-                            *docker_prefix,
-                            "ps",
-                            "-a",
-                            "--filter",
-                            f"name=^{name}$",
-                            "--format",
-                            "{{.State}}",
-                        ],
-                        check=False,
-                        timeout=_INFRA_PROBE_TIMEOUT,
-                    )
-                    # LDM-#1548: `check=False` returns None for a non-zero exit
-                    # AND for a timeout (utils.py), so a daemon that could not
-                    # answer produced exactly the same result as "no container
-                    # by that name" -- and this scan exists solely to warn that
-                    # recreating the proxy will cut connectivity to live
-                    # projects. Silently concluding "nothing is running" from a
-                    # broken daemon is the one answer this block must never
-                    # give, so an unanswerable probe fails closed into the
-                    # handler below, which honours --force. An empty string is
-                    # a real answer (exit 0, no match) and stays one.
-                    if containers_status is None:
-                        raise RuntimeError(
-                            f"'docker ps' gave no answer for '{name}' on node "
-                            f"'{target_node}'"
-                        )
-                    if "running" in containers_status:
-                        running_projects.append((name, target_node))
+                running_projects = self.scan_running_projects()
             except Exception as e:
                 import sys
 
@@ -1096,7 +1149,84 @@ tls:
                 UI.warning("Elasticsearch failed to become ready in time.")
                 # AUTO-REPAIR: If ES fails to start, it's often due to corrupted data in the volume.
                 # Wiping and restarting usually fixes mapping/plugin-mismatch issues.
+                # LDM-#2083: this wipe deletes the SHARED search data
+                # directory, destroying the index of every project on the
+                # machine -- permanently, and invisibly, because a project's
+                # healthcheck is an HTTP probe against the portal that never
+                # touches search. It ran with no prompt and no --force while
+                # the far less destructive SSL proxy recreate, in this same
+                # file, refused outright when projects were live. Observed
+                # 2026-10-07: LDM destroyed a running project's index and
+                # then refused to recreate the proxy for that same project
+                # two steps later. The guard was on the reversible operation
+                # and absent from the irreversible one.
+                cli_force = getattr(self.manager.args, "force", False)
+                try:
+                    live = self.scan_running_projects()
+                except Exception as exc:
+                    # Fails closed, for the same reason as the SSL guard: an
+                    # unanswerable probe must never be read as "nothing is
+                    # running" when the next statement destroys data.
+                    if not cli_force:
+                        UI.die(
+                            "Could not verify which projects are running, so the "
+                            "shared search data was left untouched.",
+                            details=f"{exc}\nData directory: {es_data}",
+                            tip=(
+                                "Check the Docker daemon and re-run. To wipe the "
+                                "search data anyway -- destroying EVERY project's "
+                                "index -- re-run with --force."
+                            ),
+                            exit_code=3,
+                        )
+                    live = []
+
+                if live and not cli_force:
+                    names = "\n".join(
+                        f"  - {name} (on node: {node})" for name, node in live
+                    )
+                    UI.die(
+                        "Refusing to wipe the shared search data while other "
+                        f"LDM projects are running ({len(live)}).",
+                        details=(
+                            f"{names}\n\nThe repair deletes {es_data}, which is "
+                            "SHARED. Every index above would be destroyed and "
+                            "would need rebuilding. Nothing would report a "
+                            "problem: a project's healthcheck never touches "
+                            "search, so the loss only surfaces when someone "
+                            "searches."
+                        ),
+                        tip=(
+                            "Stop them first, then re-run:\n"
+                            + "\n".join(f"      ldm stop {name}" for name, _ in live)
+                            + "\n\nOr re-run with --force to wipe anyway, "
+                            "accepting the loss. Each project will reindex on "
+                            "its next boot."
+                        ),
+                        exit_code=3,
+                    )
+
+                # LDM-#2083: capture the evidence BEFORE `rm -f` destroys it.
+                # The repair previously removed the failing container and with
+                # it the only record of what it was repairing, so every
+                # occurrence had to be re-observed rather than read. Written
+                # beside the data directory, not inside it -- the rmtree below
+                # would take it otherwise.
+                self._capture_search_failure_logs(
+                    docker_prefix, search_name, es_data.parent
+                )
+
                 UI.warning("Attempting automatic search volume repair...")
+                if live:
+                    UI.warning(
+                        f"  --force given: deleting the SHARED search data at {es_data}. "
+                        f"{len(live)} running project(s) will lose their index and must reindex."
+                    )
+                else:
+                    UI.warning(
+                        f"  This deletes the SHARED search data at {es_data}. "
+                        "Any project that had an index will need to rebuild it."
+                    )
                 removed = self.manager.run_command(
                     [*docker_prefix, "rm", "-f", search_name],
                     check=False,

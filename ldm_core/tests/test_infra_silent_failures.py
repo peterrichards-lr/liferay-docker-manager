@@ -281,6 +281,145 @@ class TestNonFatalSearchDefectsWarn(unittest.TestCase):
         # Warned about, not fatal: no SystemExit was raised above.
 
 
+class TestTheSearchWipeIsGuardedLikeTheSSLRecreate(unittest.TestCase):
+    """LDM-#2083: the irreversible operation had no guard, the reversible one did.
+
+    `shutil.rmtree(es_data)` deletes the SHARED search data directory,
+    destroying the index of every project on the machine. It ran with no
+    prompt and no --force. The SSL proxy recreate, in the same file, refuses
+    outright when projects are live -- and costs only a few seconds of
+    connectivity.
+
+    Observed 2026-10-07: LDM wiped a running project's index and then refused
+    to recreate the proxy for that same project two steps later. Nothing
+    surfaced the loss, because a project's healthcheck is an HTTP probe
+    against the portal that never touches search.
+    """
+
+    def _run(self, *, running, cli_force=False, probe_raises=False, home):
+        calls = []
+
+        def responder(cmd, **_kwargs):
+            calls.append(list(cmd))
+            return ""
+
+        manager = _Manager(responder=responder)
+        manager.args.force = cli_force
+        infra = InfraService(manager)
+
+        if probe_raises:
+            scan = MagicMock(side_effect=RuntimeError("daemon gave no answer"))
+        else:
+            scan = MagicMock(return_value=running)
+
+        die_calls = []
+
+        def fake_die(msg, details=None, tip=None, exit_code=1, **_kw):
+            die_calls.append(
+                {
+                    "msg": msg,
+                    "details": details or "",
+                    "tip": tip or "",
+                    "code": exit_code,
+                }
+            )
+            raise SystemExit(exit_code)
+
+        with (
+            _no_real_docker(),
+            patch("ldm_core.docker_service.DockerService.exists", return_value=False),
+            patch(
+                "ldm_core.docker_service.DockerService.is_running", return_value=False
+            ),
+            patch("ldm_core.docker_service.DockerService.start"),
+            patch("ldm_core.handlers.infra.get_actual_home", return_value=home),
+            patch("ldm_core.utils.reclaim_volume_permissions"),
+            patch.object(InfraService, "scan_running_projects", scan),
+            patch("ldm_core.handlers.infra.UI.die", side_effect=fake_die),
+            patch("shutil.rmtree") as rmtree,
+            patch("time.sleep"),
+        ):
+            with self.assertRaises(SystemExit):
+                infra.setup_global_search()
+            return rmtree, die_calls, calls
+
+    @staticmethod
+    def _tmp():
+        import tempfile
+
+        return tempfile.TemporaryDirectory()
+
+    def test_the_wipe_is_refused_while_a_project_runs(self):
+        with self._tmp() as tmp:
+            rmtree, die, _ = self._run(
+                running=[("devcon2026", "local")], home=Path(tmp)
+            )
+        rmtree.assert_not_called()
+        self.assertEqual(die[0]["code"], 3)
+
+    def test_the_refusal_names_the_project_and_how_to_stop_it(self):
+        """A refusal that does not say what to do just moves the problem."""
+        with self._tmp() as tmp:
+            _, die, _ = self._run(running=[("devcon2026", "local")], home=Path(tmp))
+        blob = die[0]["msg"] + die[0]["details"] + die[0]["tip"]
+        self.assertIn("devcon2026", blob)
+        self.assertIn("ldm stop devcon2026", blob)
+        self.assertIn("--force", blob)
+
+    def test_the_refusal_says_the_loss_is_silent(self):
+        """The reason this went unnoticed for a cycle, stated where it helps."""
+        with self._tmp() as tmp:
+            _, die, _ = self._run(running=[("devcon2026", "local")], home=Path(tmp))
+        self.assertIn("healthcheck", die[0]["details"])
+
+    def test_force_wipes_anyway(self):
+        """--force is the documented way through, exactly as the SSL guard."""
+        with self._tmp() as tmp:
+            rmtree, _, _ = self._run(
+                running=[("devcon2026", "local")], cli_force=True, home=Path(tmp)
+            )
+        self.assertTrue(rmtree.called)
+
+    def test_an_unanswerable_probe_refuses_rather_than_assuming_idle(self):
+        """LDM-#1548's lesson applied to the destructive path: a daemon that
+        cannot answer must never read as 'nothing is running'."""
+        with self._tmp() as tmp:
+            rmtree, die, _ = self._run(running=[], probe_raises=True, home=Path(tmp))
+        rmtree.assert_not_called()
+        self.assertEqual(die[0]["code"], 3)
+
+    def test_an_unanswerable_probe_with_force_still_proceeds(self):
+        with self._tmp() as tmp:
+            rmtree, _, _ = self._run(
+                running=[], probe_raises=True, cli_force=True, home=Path(tmp)
+            )
+        self.assertTrue(rmtree.called)
+
+    def test_an_idle_machine_still_repairs(self):
+        """The contrast case. The guard must not break the repair itself."""
+        with self._tmp() as tmp:
+            rmtree, _, _ = self._run(running=[], home=Path(tmp))
+        self.assertTrue(rmtree.called)
+
+    def test_the_failing_containers_logs_are_captured_before_it_is_removed(self):
+        """The repair ended with `docker rm -f`, taking the only record of
+        what it was repairing. Ordering is the whole assertion: captured
+        after the removal is captured never."""
+        with self._tmp() as tmp:
+            _, _, calls = self._run(running=[], home=Path(tmp))
+
+        def first_index(verb):
+            for i, c in enumerate(calls):
+                if verb in c:
+                    return i
+            return None
+
+        logs_at, rm_at = first_index("logs"), first_index("rm")
+        self.assertIsNotNone(logs_at, f"no 'docker logs' call was made: {calls}")
+        self.assertIsNotNone(rm_at, f"no 'docker rm' call was made: {calls}")
+        self.assertLess(logs_at, rm_at)
+
+
 class TestRunningProjectScanCannotBeFooledByABrokenDaemon(unittest.TestCase):
     """The scan could not tell "nothing running" from "docker broke" (#1548).
 
