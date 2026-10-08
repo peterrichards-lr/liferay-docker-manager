@@ -11,6 +11,7 @@ is the contract's Infrastructure/Data Error
 (.agents/skills/ldm-architecture/SKILL.md).
 """
 
+import contextlib
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -42,6 +43,7 @@ class _Manager:
         self.detect_project_path = MagicMock(return_value=None)
         self.check_port = MagicMock(return_value=True)
         self.find_available_port = MagicMock(return_value=443)
+        self.select_project_interactively = MagicMock(return_value=None)
 
     def get_container_status(self, *_args, **_kwargs):
         return self._status
@@ -418,6 +420,223 @@ class TestTheSearchWipeIsGuardedLikeTheSSLRecreate(unittest.TestCase):
         self.assertIsNotNone(logs_at, f"no 'docker logs' call was made: {calls}")
         self.assertIsNotNone(rm_at, f"no 'docker rm' call was made: {calls}")
         self.assertLess(logs_at, rm_at)
+
+
+class TestTheProxyIsNotMistakenForAPortConflict(unittest.TestCase):
+    """LDM-#2101: --force-recreate raced its own teardown.
+
+    `docker rm -f` returns when the container is gone, not when the host has
+    released its port bindings. The availability check ran immediately
+    after, so LDM concluded its own just-removed proxy was a conflict and
+    reallocated -- permanently, because a later `infra setup` without
+    --force-recreate adopts the running container's ports (LDM-#1568).
+
+    Measured in a committed verification report: created on 80/443/18080,
+    `--force-recreate` seconds later, both 80 and 18080 reported in use and
+    bumped to 81 and 18081. Both by exactly one, to the adjacent port.
+    """
+
+    def _service(self, free_after):
+        """check_port returns False until it has been asked `free_after`
+        times for that port, then True -- a binding that clears shortly
+        after removal, which is the real behaviour being modelled."""
+        manager = _Manager()
+        asked: dict[int, int] = {}
+
+        def check_port(_ip, port):
+            asked[port] = asked.get(port, 0) + 1
+            return asked[port] > free_after
+
+        manager.check_port = MagicMock(side_effect=check_port)
+        manager.find_available_port = MagicMock(side_effect=lambda _ip, port: port + 1)
+        return InfraService(manager), manager
+
+    def test_a_binding_that_clears_shortly_is_not_reallocated(self):
+        """The bug itself: with free_after=2 the port is busy for the first
+        two probes and free afterwards."""
+        infra, manager = self._service(free_after=2)
+
+        with patch("time.sleep"):
+            infra._await_released_ports([80, 18080], timeout=5.0, interval=0)
+
+        # Having waited, the ports now read as free to the caller.
+        self.assertTrue(manager.check_port("0.0.0.0", 80))
+        self.assertTrue(manager.check_port("0.0.0.0", 18080))
+
+    def test_a_port_held_by_something_else_is_still_reported_busy(self):
+        """The guard must not be weakened. A port that never frees must
+        still fall through to the existing reallocation."""
+        manager = _Manager()
+        manager.check_port = MagicMock(return_value=False)
+        infra = InfraService(manager)
+
+        with patch("time.sleep"):
+            infra._await_released_ports([80], timeout=0.3, interval=0)
+
+        self.assertFalse(manager.check_port("0.0.0.0", 80))
+
+    def test_the_wait_is_scoped_to_the_ports_we_released(self):
+        """Never a blind sleep: nothing is probed when the proxy was not
+        running and there was nothing to release."""
+        manager = _Manager()
+        manager.check_port = MagicMock(return_value=True)
+        infra = InfraService(manager)
+
+        infra._await_released_ports([])
+        infra._await_released_ports(None)
+
+        manager.check_port.assert_not_called()
+
+    def test_it_returns_as_soon_as_the_ports_are_free(self):
+        """It must not burn the whole timeout on the common case."""
+        manager = _Manager()
+        manager.check_port = MagicMock(return_value=True)
+        infra = InfraService(manager)
+
+        with patch("time.sleep") as slept:
+            infra._await_released_ports([80, 443, 18080], timeout=30.0)
+
+        slept.assert_not_called()
+        self.assertEqual(manager.check_port.call_count, 3)
+
+    def test_the_recreate_path_actually_waits(self):
+        """The helper being correct is worthless if nothing calls it.
+
+        Asserts the wiring, not the implementation: a force-recreate of a
+        RUNNING proxy must await exactly the ports it just gave up, and must
+        do so before the availability checks that follow.
+        """
+        manager = _Manager()
+        infra = InfraService(manager)
+        order = []
+
+        # Takes `self`: patch.object with a plain function binds it as an
+        # unbound method, so omitting it silently shifts every argument --
+        # which is how this test first "failed" against working code.
+        def await_spy(_self, ports, **_kw):
+            order.append(("await", sorted(p for p in ports if p)))
+
+        def check_spy(_ip, port):
+            order.append(("check", port))
+            return True
+
+        manager.check_port = MagicMock(side_effect=check_spy)
+
+        with (
+            _no_real_docker(),
+            patch(
+                "ldm_core.docker_service.DockerService.is_running", return_value=True
+            ),
+            patch("ldm_core.docker_service.DockerService.stop"),
+            patch("ldm_core.docker_service.DockerService.rm"),
+            patch.object(
+                InfraService,
+                "get_proxy_ports",
+                return_value={"http": 80, "https": 443, "admin": 18080},
+            ),
+            patch.object(InfraService, "_await_released_ports", await_spy),
+            patch.object(InfraService, "scan_running_projects", return_value=[]),
+            patch("ldm_core.handlers.infra.UI.die", side_effect=SystemExit(1)),
+            patch("time.sleep"),
+        ):
+            # Narrow deliberately. A broad `except Exception` here hid a
+            # TypeError in this test's own stub and made the assertion
+            # below look like a defect in the code under test.
+            with contextlib.suppress(SystemExit):
+                infra.setup_infrastructure(
+                    "0.0.0.0", 443, use_ssl=True, force_recreate=True
+                )
+
+        awaits = [o for o in order if o[0] == "await"]
+        self.assertTrue(awaits, f"the recreate path never awaited: {order[:8]}")
+        self.assertEqual(awaits[0][1], [80, 443, 18080])
+
+        first_check = next((i for i, o in enumerate(order) if o[0] == "check"), None)
+        first_await = next(i for i, o in enumerate(order) if o[0] == "await")
+        if first_check is not None:
+            self.assertLess(
+                first_await,
+                first_check,
+                "the wait must come BEFORE the availability checks",
+            )
+
+
+class TestInfraSetupNeverAsksWhichProject(unittest.TestCase):
+    """LDM-#2102: a machine-scope command reached the interactive picker.
+
+    `ldm infra setup` resolved a project only to read two values --
+    `resolve_database_mode(meta, ...)` and `meta.get("db_type")` -- and with
+    no project in the cwd it asked:
+
+        === Select Project ===
+        [1] liferay-ai-commerce-accelerator [2026.q3.0]
+        [2] devcon2026 [2026.q3.5]
+
+    The answer decides whether the WHOLE MACHINE gets a shared database and
+    with which engine, from a list ordered by discovery rather than
+    relevance, and the prompt says none of that. It also made the command
+    unscriptable: unattended use hangs on the question.
+    """
+
+    def _run_setup(self):
+        manager = _Manager()
+        manager.args.ssl_port = 443
+        manager.args.force_recreate = False
+        manager.args.database_mode = None
+        manager.args.db = None
+        infra = InfraService(manager)
+
+        picker = MagicMock(return_value={"path": Path("/tmp/whichever"), "new": False})
+        manager.select_project_interactively = picker
+        captured = {}
+
+        def fake_setup(*args, **kwargs):
+            captured["kwargs"] = kwargs
+
+        with (
+            _no_real_docker(),
+            patch.object(InfraService, "setup_infrastructure", fake_setup),
+        ):
+            infra.cmd_infra_setup()
+        return picker, captured
+
+    def test_it_does_not_ask(self):
+        picker, _ = self._run_setup()
+
+        picker.assert_not_called()
+
+    def test_it_still_sets_infrastructure_up(self):
+        """The guard must not turn the command into a no-op."""
+        _, captured = self._run_setup()
+
+        self.assertIn("kwargs", captured)
+
+    def test_the_detection_is_asked_not_to_prompt(self):
+        """Asserts the mechanism, since the picker could also be unreached
+        by accident -- e.g. if detection simply failed in this fixture."""
+        manager = _Manager()
+        manager.args.ssl_port = 443
+        manager.args.force_recreate = False
+        manager.args.database_mode = None
+        manager.args.db = None
+        infra = InfraService(manager)
+        seen = {}
+
+        def detect(project_id=None, **kwargs):
+            seen.update(kwargs)
+
+        manager.detect_project_path = MagicMock(side_effect=detect)
+
+        with (
+            _no_real_docker(),
+            patch.object(InfraService, "setup_infrastructure", MagicMock()),
+        ):
+            infra.cmd_infra_setup()
+
+        self.assertFalse(
+            seen.get("interactive", True),
+            f"infra setup must request non-interactive detection; got {seen}",
+        )
 
 
 class TestRunningProjectScanCannotBeFooledByABrokenDaemon(unittest.TestCase):

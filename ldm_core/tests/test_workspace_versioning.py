@@ -45,7 +45,9 @@ class _FakeManager(BaseHandler):
 
         self.defaults = DefaultsManager()
 
-    def detect_project_path(self, project_id=None, for_init=False, fatal=True):
+    def detect_project_path(
+        self, project_id=None, for_init=False, fatal=True, interactive=True
+    ):
         return self._project_path
 
 

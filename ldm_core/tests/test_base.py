@@ -1302,3 +1302,69 @@ class TestBaseFixHosts(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestNonInteractiveDetectionNeverAsks(unittest.TestCase):
+    """LDM-#2102: the `interactive=False` knob must be honoured HERE.
+
+    A caller passing it is only half the contract. `infra setup` asking for
+    non-interactive detection means nothing if `_detect_project_path_raw`
+    still falls through to `select_project_interactively()`. That gap was
+    found by neuter probe: deleting the branch left every caller-side test
+    passing.
+
+    Driven through the real LiferayManager rather than a bare BaseHandler.
+    That matters -- with a bare BaseHandler the picker is never reached at
+    all, so the first version of this test passed for the wrong reason and
+    its contrast case failed. The discovery mixins are what make the
+    fall-through reachable, which is also why the maintainer saw the prompt
+    and a unit fixture did not.
+    """
+
+    def _manager(self):
+        import argparse
+
+        from ldm_core.manager import LiferayManager
+
+        args = argparse.Namespace(verbose=False, info=False, yes=True, project=None)
+        manager = LiferayManager(args)
+        # setattr rather than direct assignment: mypy rejects assigning to a
+        # bound method, and this stub must sit on the instance so the real
+        # discovery mixins around it stay in play.
+        setattr(  # noqa: B010
+            manager,
+            "select_project_interactively",
+            MagicMock(return_value={"path": "/tmp/picked", "new": False}),
+        )
+        return manager
+
+    def _detect(self, manager, **kwargs):
+        """From a neutral cwd, so nothing resolves from the directory."""
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = os.getcwd()
+            os.chdir(tmp)
+            try:
+                return manager.detect_project_path(None, fatal=False, **kwargs)
+            finally:
+                os.chdir(cwd)
+
+    def test_non_interactive_returns_none_instead_of_asking(self):
+        manager = self._manager()
+
+        result = self._detect(manager, interactive=False)
+
+        manager.select_project_interactively.assert_not_called()
+        self.assertIsNone(result)
+
+    def test_the_default_still_asks(self):
+        """The contrast case, and the proof the fixture reaches the picker
+        at all. Every other command relies on being able to ask."""
+        manager = self._manager()
+
+        result = self._detect(manager)
+
+        manager.select_project_interactively.assert_called()
+        self.assertEqual(result, "/tmp/picked")

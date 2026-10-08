@@ -54,7 +54,9 @@ class MockDiagManager(BaseHandler):
         self.license = MagicMock()
         self.license.check_license_health = MagicMock(return_value=("OK", True, []))
 
-    def detect_project_path(self, project_id=None, for_init=False, fatal=True):
+    def detect_project_path(
+        self, project_id=None, for_init=False, fatal=True, interactive=True
+    ):
         return Path(f"/tmp/{project_id}") if project_id else Path("/tmp/default")
 
     def read_meta(self, *args, **kwargs):
