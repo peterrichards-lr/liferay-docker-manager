@@ -430,6 +430,33 @@ cleanup_1383_artifacts() {
     rm -rf "${LDM_WORKSPACE:?}/${LDMP_REFUSAL_PROJECT}" "${LDM_WORKSPACE:?}/.ldm_temp"
 }
 
+restore_shared_infrastructure() {
+    # LDM-#2100 / LDM-#2103: shared state this suite changed, put back from
+    # the EXIT trap so an early exit cannot skip it. Both defects were the
+    # same shape -- cleanup that was correct on the happy path and absent on
+    # the paths that actually leave the machine dirty.
+    if [ -n "${ORIGINAL_SSL_PORT:-}" ]; then
+        local current
+        current=$(docker inspect liferay-proxy-global \
+            --format '{{(index (index .NetworkSettings.Ports "443/tcp") 0).HostPort}}' \
+            2>/dev/null | tr -d '\r')
+        if [ -n "$current" ] && [ "$current" != "$ORIGINAL_SSL_PORT" ]; then
+            echo "ℹ  Restoring the global proxy to SSL port ${ORIGINAL_SSL_PORT} (was ${current})."
+            "$LDM_CMD" -y infra setup --ssl-port "$ORIGINAL_SSL_PORT" \
+                --force-recreate >/dev/null 2>&1 \
+                || echo "⚠️  Could not restore the global proxy to port ${ORIGINAL_SSL_PORT}; run 'ldm infra setup --ssl-port ${ORIGINAL_SSL_PORT} --force-recreate' by hand."
+        fi
+    fi
+
+    # LDM-#2103: the shared-DB boot check removes this inline at the end of
+    # its own function, which covers its failure paths but not an abort
+    # between creating the directory and reaching that line. Swept by
+    # prefix, which is safe because the prefix is the suite's own.
+    if [ -n "${LDM_WORKSPACE:-}" ]; then
+        rm -rf "${LDM_WORKSPACE:?}"/sharedboot-* 2>/dev/null || true
+    fi
+}
+
 cleanup_test_projects() {
     local EXIT_CODE=$?
     set +e
@@ -452,6 +479,10 @@ cleanup_test_projects() {
     # output was discarded (#1255 recovered the exit code, #1440 the message).
     # The message is what identified it, on the first run that printed one.
     cd "$ORIGINAL_PWD" 2>/dev/null || cd / || true
+
+    # Before the report is finalised, so a restore failure is visible in it.
+    restore_shared_infrastructure
+
     local status="pass"
     if [ $EXIT_CODE -ne 0 ]; then
         status="fail"
@@ -1031,6 +1062,26 @@ log_and_run "Initializing Infrastructure" "$LDM_CMD" -y infra setup --search
 # Liferay/Docker boundary, so a change to mount or compose generation gains
 # nothing from it. Body deliberately not re-indented; see section_enabled above.
 if section_enabled guardrails; then
+# LDM-#2100: `liferay-proxy-global` is global by name and by effect, and
+# this check moves it to a non-standard port. Nothing put it back, and
+# because LDM adopts the RUNNING container's ports when --force-recreate is
+# absent (LDM-#1568), every project created on the machine afterwards
+# inherited 8443 -- indefinitely, with no stale config value to find.
+# Reported from a quickstart that came up on https://<host>:8443 with 443
+# free, and reproduced on a second machine within the hour.
+#
+# Recorded BEFORE the change and restored from the EXIT trap, not inline:
+# the suite exits from dozens of points between here and the end, and an
+# inline restore would be skipped by exactly the failing runs that leave
+# the machine mutated.
+ORIGINAL_SSL_PORT=$(docker inspect liferay-proxy-global \
+    --format '{{(index (index .NetworkSettings.Ports "443/tcp") 0).HostPort}}' \
+    2>/dev/null | tr -d '\r' || true)
+case "$ORIGINAL_SSL_PORT" in
+    ''|*[!0-9]*) ORIGINAL_SSL_PORT=443 ;;
+esac
+export ORIGINAL_SSL_PORT
+
 echo ">> Verifying Custom SSL Port & Recreate..."
 log_and_run "Custom SSL Port Setup" "$LDM_CMD" -y infra setup --ssl-port 8443 --force-recreate
 if docker inspect liferay-proxy-global | grep -q '"HostPort": "8443"'; then

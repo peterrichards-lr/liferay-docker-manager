@@ -1887,3 +1887,79 @@ class TheSuiteRefusesToRunBesideLiveProjects(unittest.TestCase):
             with self.subTest(script=path.name):
                 self.assertIn("ldm stop", block, "no actionable remedy given")
                 self.assertIn("LDM-#2083", block, "the index risk is not named")
+
+
+class TheSuiteRestoresTheSharedStateItChanges(unittest.TestCase):
+    """LDM-#2100 / LDM-#2103: the suite mutated shared state and left it.
+
+    The custom-SSL-port check moves `liferay-proxy-global` -- global by name
+    and by effect -- to 8443 and nothing put it back. Because LDM adopts the
+    RUNNING container's ports when --force-recreate is absent (LDM-#1568),
+    every project created on that machine afterwards inherited it, with no
+    stale config value anywhere to explain why. Reported from a quickstart
+    that came up on `https://<host>:8443` with 443 free, and reproduced on a
+    second machine within the hour.
+
+    Structural assertions, because the claim is structural: the restore must
+    exist, in BOTH halves, and must run from the exit path rather than
+    inline. An inline restore is skipped by exactly the failing runs that
+    leave the machine dirty, which is the shape shared with LDM-#2084 and
+    LDM-#2103.
+
+    The behaviour itself was exercised directly: both restore functions were
+    run against a stubbed docker and ldm, confirming they reissue
+    `infra setup --ssl-port <original> --force-recreate` only when the port
+    has drifted, and that the sweep removes `sharedboot-*` while leaving
+    neighbouring directories alone.
+    """
+
+    @staticmethod
+    def _code_only(path):
+        return "\n".join(
+            line
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if not line.lstrip().startswith("#")
+        )
+
+    def test_both_halves_define_a_restore(self):
+        self.assertIn("restore_shared_infrastructure()", self._code_only(BASH_SCRIPT))
+        self.assertIn(
+            "function Restore-SharedInfrastructure", self._code_only(PS1_SCRIPT)
+        )
+
+    def test_both_halves_record_the_port_before_changing_it(self):
+        """Restoring to a hardcoded 443 would be wrong on a machine that was
+        deliberately on another port."""
+        self.assertIn(
+            "ORIGINAL_SSL_PORT=$(docker inspect", self._code_only(BASH_SCRIPT)
+        )
+        self.assertIn("script:ORIGINAL_SSL_PORT", self._code_only(PS1_SCRIPT))
+
+    def test_the_restore_runs_from_the_exit_path_not_inline(self):
+        """The whole point. The suite exits from dozens of places between
+        the port change and the end of the run."""
+        bash = self._code_only(BASH_SCRIPT)
+        trap_body = bash[bash.index("cleanup_test_projects()") :]
+        self.assertIn("restore_shared_infrastructure", trap_body)
+
+        ps1 = self._code_only(PS1_SCRIPT)
+        final_body = ps1[ps1.index("function Finalize-Verification") :]
+        self.assertIn("Restore-SharedInfrastructure", final_body)
+
+    def test_both_halves_sweep_the_shared_db_boot_directories(self):
+        """LDM-#2103: removed inline at the end of its own function, which
+        covers its failure paths but not an abort in between. An empty
+        `sharedboot-mysql-9911` from September was found in a user's
+        workspace."""
+        self.assertIn("sharedboot-*", self._code_only(BASH_SCRIPT))
+        self.assertIn("sharedboot-*", self._code_only(PS1_SCRIPT))
+
+    def test_the_bash_sweep_cannot_run_against_an_unset_workspace(self):
+        """`rm -rf $LDM_WORKSPACE/sharedboot-*` with the variable unset is a
+        different command entirely. The `:?` guard and the enclosing test
+        are what stop it."""
+        bash = self._code_only(BASH_SCRIPT)
+        line = next(
+            ln for ln in bash.splitlines() if "sharedboot-*" in ln and "rm -rf" in ln
+        )
+        self.assertIn("${LDM_WORKSPACE:?}", line)

@@ -386,6 +386,46 @@ function Invoke-Cleanup {
     }
 }
 
+function Restore-SharedInfrastructure {
+    # LDM-#2100 / LDM-#2103: parity with restore_shared_infrastructure in
+    # verify_e2e_refactor.sh.
+    #
+    # `liferay-proxy-global` is global by name and by effect, and the custom
+    # SSL port check moves it. Nothing put it back, and because LDM adopts
+    # the RUNNING container's ports when --force-recreate is absent
+    # (LDM-#1568), every project created afterwards inherited 8443 -- with
+    # no stale config value to find. Restored from the finalizer, not
+    # inline, because the suite exits from dozens of points in between and
+    # an inline restore is skipped by exactly the failing runs that leave
+    # the machine mutated.
+    if ($script:ORIGINAL_SSL_PORT) {
+        $current = $null
+        try {
+            $current = (& docker inspect liferay-proxy-global `
+                --format '{{(index (index .NetworkSettings.Ports "443/tcp") 0).HostPort}}' 2>$null |
+                Out-String).Trim()
+        } catch {
+            $current = $null
+        }
+        if ($current -and $current -ne $script:ORIGINAL_SSL_PORT) {
+            Write-Host "[INFO]  Restoring the global proxy to SSL port $($script:ORIGINAL_SSL_PORT) (was $current)."
+            Invoke-Cleanup $LDM_CMD "-y infra setup --ssl-port $($script:ORIGINAL_SSL_PORT) --force-recreate"
+        }
+    }
+
+    # LDM-#2103: the shared-DB boot check removes its directory inline at
+    # the end of its own function, which covers its failure paths but not an
+    # abort in between. Swept by prefix, which is safe because the prefix is
+    # the suite's own.
+    if ($LDM_WORKSPACE) {
+        Get-ChildItem -Path $LDM_WORKSPACE -Directory -Filter "sharedboot-*" `
+            -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue
+            }
+    }
+}
+
 function Remove-Ldm1383Artifacts {
     # LDM-#1383: the artefacts of the two checks below are torn down inline as
     # soon as each check finishes, and again from Finalize-Verification.
@@ -414,6 +454,10 @@ function Remove-Ldm1383Artifacts {
 
 function Finalize-Verification {
     param($ExitCode)
+
+    # LDM-#2100 / LDM-#2103: before the report is written, so a failed
+    # restore is visible in it.
+    Restore-SharedInfrastructure
 
     # LDM-#1465: put the user's console back as we found it. `chcp 65001`
     # changes the console itself, not just this process's view of it, so
@@ -2388,6 +2432,17 @@ try {
     # diagnosis. None of it needs a booted portal and none of it observes the
     # Liferay/Docker boundary. Body deliberately not re-indented.
     if (Test-SectionEnabled "guardrails") {
+    # LDM-#2100: recorded BEFORE the change, restored by the finalizer.
+    $script:ORIGINAL_SSL_PORT = $null
+    try {
+        $probed = (& docker inspect liferay-proxy-global `
+            --format '{{(index (index .NetworkSettings.Ports "443/tcp") 0).HostPort}}' 2>$null |
+            Out-String).Trim()
+        if ($probed -match '^\d+$') { $script:ORIGINAL_SSL_PORT = $probed } else { $script:ORIGINAL_SSL_PORT = "443" }
+    } catch {
+        $script:ORIGINAL_SSL_PORT = "443"
+    }
+
     Write-Host ">> Verifying Custom SSL Port & Recreate..."
     Log-AndRun "Custom SSL Port Setup" $LDM_CMD "-y infra setup --ssl-port 8443 --force-recreate"
     $dockerInspect = & docker inspect liferay-proxy-global
