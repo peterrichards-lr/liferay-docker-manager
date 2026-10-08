@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.4] - 2026-10-08
+
+### Fixed
+
+- **`ldm rm --delete` now removes the project directory on its target node, not only the local copy** (LDM-#2077). The command's own help promised to "permanently delete its directory from disk" and removed only what was on your machine. `sync_project_to_target` pushes a project to a node and had no counterpart, so the node kept its copy with whatever state it had accumulated.
+- **The fragment-override harness captures the log its failure message names** (LDM-#2071). It ended a failure with "check the portal log for a client-extension deployment failure" and its evidence artifact was 422 bytes -- `report.json` and nothing else. One intermittent failure then cost two 25-minute re-dispatches to re-observe what the failing run could have recorded for free. It now captures `portal.log`, `containers.txt` and the client-extension directory listing; the last of those discriminates between an artifact Liferay never picked up and one it consumed, which are different failures wanting different fixes.
+- **The verification suites no longer leak the images they build** (LDM-#2084). Both halves ran `docker rmi -f "<service>:latest"` -- a name Compose has never produced, since it builds `<project>-<service>`. The removal matched nothing on every run since it was written and the failure was swallowed, leaving two images per run behind along with the build cache each one anchors. Measured on a developer machine: 29 GB of reclaimable images, six orphans from three past runs. The fix asks Compose for the image ID before the container is removed, rather than reconstructing a name -- reconstructing it is what broke, and Compose already changed `_` to `-` between v1 and v2 -- and sweeps anything else the run built, scoped to the run's own project name so it cannot reach a base image or another developer's work.
+- **The verification suites refuse to start while other LDM projects are running** (LDM-#2085). They reconfigure the *shared* proxy and search node. Starting beside a live project cost two image pulls and then failed at the SSL section, which `ldm infra setup` correctly refuses while projects run -- but by then LDM's automatic search-volume repair had already deleted the shared Elasticsearch data directory, destroying the live project's index while it carried on reporting healthy, because its healthcheck is an HTTP probe that never touches search. The pre-flight runs before the image pulls, names the running projects, gives the exact `ldm stop` commands and says what is at risk. It uses `ldm list --json`, which is authoritative about LDM projects, rather than the `docker ps` grep already present in the cleanup path, which also matches unrelated containers.
+
 ## [v2.26.4-pre.2] - 2026-10-07
 
 ### Fixed
