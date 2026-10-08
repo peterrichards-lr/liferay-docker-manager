@@ -322,6 +322,11 @@ def get_remote_project_root(target: TargetNode, project_name: str) -> str | None
 #: Both forms are now derived from this one string.
 REMOTE_PROJECTS_ROOT = "~/.liferay-docker/projects"
 
+# LDM-#2094: matched to the other ssh call sites in this module, which have
+# used ConnectTimeout=10 since they were written.
+_REMOTE_RM_CONNECT_TIMEOUT = 10
+_REMOTE_RM_TIMEOUT = 60
+
 #: The same path relative to the node's home, for callers that resolve `$HOME`
 #: themselves rather than leaving it to a shell.
 REMOTE_PROJECTS_SUBPATH = REMOTE_PROJECTS_ROOT.removeprefix("~/")
@@ -384,9 +389,36 @@ def remove_project_from_target(
     # the log is how this defect stayed invisible for so long.
     UI.warning(f"Removing {dest_dir} on node '{target.name}' ({target.host})")
 
+    # LDM-#2094: BatchMode and ConnectTimeout are not optional here, and
+    # this call shipped without either. Without BatchMode ssh falls back to
+    # an interactive prompt when the key is missing, rejected or the host
+    # key unknown -- so `ldm rm --delete -y` waits forever on a prompt
+    # nobody can answer, and in CI there is no terminal at all. Without
+    # ConnectTimeout the "node may be unreachable" warning below cannot be
+    # reached promptly: it waits out the OS default TCP timeout, so
+    # degradation that is already written does not actually run.
+    #
+    # The `timeout` is separate and also required. ConnectTimeout bounds
+    # only the connect phase, so a node that accepts the connection and then
+    # stalls -- a wedged sshd, a host paused mid-handshake -- is unbounded
+    # without it. That is LDM-#2064's shape, and `rm -rf` on a reachable
+    # node is fast: a minute is generous.
+    #
+    # Both failure modes land on the `res is None` branch, which warns and
+    # lets the local removal proceed.
     res = run_command(
-        ["ssh", *ssh_opts, target_spec, f"rm -rf {dest_dir}"],
+        [
+            "ssh",
+            *ssh_opts,
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            f"ConnectTimeout={_REMOTE_RM_CONNECT_TIMEOUT}",
+            target_spec,
+            f"rm -rf {dest_dir}",
+        ],
         check=False,
+        timeout=_REMOTE_RM_TIMEOUT,
     )
     if res is None:
         UI.warning(
