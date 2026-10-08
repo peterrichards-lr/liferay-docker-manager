@@ -1141,8 +1141,20 @@ class BaseHandler:
                 # Treat as filter string
                 filter_str = str(choice)
 
-    def detect_project_path(self, project_id=None, for_init=False, fatal=True):
-        path = self._detect_project_path_raw(project_id, for_init=for_init, fatal=fatal)
+    def detect_project_path(
+        self, project_id=None, for_init=False, fatal=True, interactive=True
+    ):
+        """Resolve a project path, optionally without ever asking.
+
+        LDM-#2102: `interactive=False` is for commands whose scope is the
+        MACHINE rather than a project -- `infra setup` reached the picker
+        and the answer silently determined machine-wide database topology,
+        from a list ordered by discovery rather than relevance. Such a
+        command should use whatever the cwd already implies, or nothing.
+        """
+        path = self._detect_project_path_raw(
+            project_id, for_init=for_init, fatal=fatal, interactive=interactive
+        )
         if path:
             self._acquire_lock_if_needed(path)
             self._check_external_drive_warning(path)
@@ -1244,7 +1256,9 @@ class BaseHandler:
                 except RuntimeError as e:
                     UI.die(str(e))
 
-    def _detect_project_path_raw(self, project_id=None, for_init=False, fatal=True):  # noqa: C901, PLR0911, PLR0912, PLR0915
+    def _detect_project_path_raw(  # noqa: C901, PLR0911, PLR0912, PLR0915
+        self, project_id=None, for_init=False, fatal=True, interactive=True
+    ):
         """Resolves a project ID or path to a full filesystem path."""
         no_home_warn = False
         if hasattr(self, "args") and self.args is not None:
@@ -1548,6 +1562,12 @@ class BaseHandler:
                 )
             elif not fatal:
                 return None
+
+        # LDM-#2102: a machine-scope command must not reach the picker.
+        # Returning None lets the caller fall back to defaults, which is the
+        # honest answer when nothing in the request names a project.
+        if not interactive:
+            return None
 
         selection = self.select_project_interactively()
         if selection and selection.get("new"):

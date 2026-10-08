@@ -42,7 +42,15 @@ class InfraService:
             else self.manager.get_resolved_ip("localhost")
         )
 
-        project_path = self.manager.detect_project_path(None)
+        # LDM-#2102: machine scope. This reached the interactive picker
+        # whenever the cwd was not inside a project, and the answer decided
+        # whether the WHOLE MACHINE got a shared database and with which
+        # engine -- from a list ordered by discovery. A project is used only
+        # when the cwd already implies one; otherwise defaults and explicit
+        # flags decide, which is the honest answer.
+        project_path = self.manager.detect_project_path(
+            None, fatal=False, interactive=False
+        )
         meta = self.manager.read_meta(project_path) or {} if project_path else {}
 
         from ldm_core.utils import resolve_database_mode
@@ -176,6 +184,48 @@ class InfraService:
                 running_projects.append((name, target_node))
         return running_projects
 
+    def _await_released_ports(self, ports, timeout=15.0, interval=0.25):
+        """Wait for ports LDM has just released to actually come free.
+
+        LDM-#2101. `docker rm -f` returns when the container is gone, not
+        when the host has released its port bindings. `setup_infrastructure`
+        then checked availability immediately and concluded its OWN
+        just-removed proxy was a conflict, reallocating to the next free
+        port -- permanently, because a later `infra setup` without
+        --force-recreate adopts the running container's ports (LDM-#1568).
+
+        Measured in a committed verification report: the proxy was created
+        on 80/443/18080, `--force-recreate` ran seconds later, and both 80
+        and 18080 reported "in use" and were bumped to 81 and 18081. The
+        tell is that both moved by exactly one, to the adjacent port.
+
+        Scoped to the ports LDM itself just gave up. A port genuinely held
+        by other software never frees, so the wait expires and the existing
+        conflict handling reallocates it exactly as before -- the guard is
+        not weakened, only its timing corrected.
+        """
+        import time
+
+        pending = [p for p in (ports or []) if p]
+        if not pending:
+            return
+        deadline = time.monotonic() + timeout
+        while pending and time.monotonic() < deadline:
+            pending = [
+                p
+                for p in pending
+                if not self.manager.check_port("0.0.0.0", p)  # nosec B104
+            ]
+            if pending:
+                time.sleep(interval)
+        if pending:
+            # Not fatal: something else really does hold them, and the
+            # reallocation below is the right answer in that case.
+            UI.debug(
+                f"Ports still held after {timeout}s following proxy removal: "
+                f"{', '.join(str(p) for p in pending)}"
+            )
+
     def _capture_search_failure_logs(self, docker_prefix, search_name, dest_dir):
         """Save the failing search container's logs before it is removed.
 
@@ -298,11 +348,17 @@ class InfraService:
 
             # Stop and remove existing Traefik to release port bindings cleanly before checks
             UI.detail("Stopping existing Traefik SSL proxy to release port bindings...")
+            # LDM-#2101: remember what it was holding, so the wait below can
+            # be scoped to exactly those ports rather than sleeping blindly.
+            released = self.get_proxy_ports()
             DockerService.stop("liferay-proxy-global", target_name=target_name)
             DockerService.rm(
                 "liferay-proxy-global", force=True, target_name=target_name
             )
             is_proxy_running = False
+            # The message above says "to release port bindings". It was not
+            # true yet when the checks below ran.
+            self._await_released_ports(list(released.values()) if released else [])
 
         if is_proxy_running and not force_recreate:
             # Use the currently running ports to keep compose state identical.
