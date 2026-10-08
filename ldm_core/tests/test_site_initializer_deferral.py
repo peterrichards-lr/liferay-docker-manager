@@ -27,6 +27,7 @@ it; the ``type: siteInitializer`` declaration is a source-side descriptor that
 the build consumes).
 """
 
+import ast
 import tempfile
 import unittest
 import zipfile
@@ -470,3 +471,200 @@ class TheDeferredDeployment(_HydrationCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheRestoreHoldsItBackToo(unittest.TestCase):
+    """LDM-#2105: the deferral guarded `ldm import` and not snapshot restore.
+
+    A restored tree arrives whole, so the site-initializer zip is already in
+    `osgi/client-extensions/` when the container starts. Liferay processes
+    it during startup and `SiteInitializerClientExtension` NPEs on a null
+    Layout -- the portal's default layouts do not exist yet. 48 occurrences
+    on the reported run, no site created, `/web/<site>` 404 afterwards.
+
+    `handlers/snapshot.py` had zero references to the deferral: it never
+    calls `_sync_cx_artifact`, so the branch LDM-#1779 added was
+    unreachable from here.
+
+    These assert the OUTCOME -- which file is where -- rather than that a
+    deferral function was called. The function existed and was called all
+    along, just not from this path, so a call-assertion would have passed
+    against the defect.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name) / "proj"
+        self.cx_dir = self.root / "osgi" / "client-extensions"
+        self.cx_dir.mkdir(parents=True)
+
+        from ldm_core.handlers.snapshot import SnapshotService
+
+        self.service = SnapshotService.__new__(SnapshotService)
+
+    def _defer(self):
+        return self.service._defer_restored_site_initializers({"root": self.root})
+
+    def _deferred(self):
+        from ldm_core.workspace.site_initializers import deferred_dir
+
+        d = deferred_dir(self.root)
+        return sorted(p.name for p in d.glob("*.zip")) if d.is_dir() else []
+
+    def test_a_restored_site_initializer_leaves_osgi_client_extensions(self):
+        """The whole bug: present at boot means processed at boot."""
+        _site_initializer_zip(self.cx_dir / "aica-site-initializer.zip")
+
+        self._defer()
+
+        self.assertFalse(
+            (self.cx_dir / "aica-site-initializer.zip").exists(),
+            "the zip is still where Liferay will pick it up during startup",
+        )
+
+    def test_it_is_staged_for_deployment_after_the_portal_is_ready(self):
+        """Removing it is only half: it must still be deployed later, which
+        is what `_wait_for_ready` picks up."""
+        _site_initializer_zip(self.cx_dir / "aica-site-initializer.zip")
+
+        self._defer()
+
+        self.assertEqual(self._deferred(), ["aica-site-initializer.zip"])
+
+    def test_a_plain_client_extension_is_left_alone(self):
+        """The control. Only site initializers break at boot; everything
+        else must deploy exactly as before -- AICA's batch extension
+        deployed fine in the same boot that produced the NPEs."""
+        _make_zip(
+            self.cx_dir / "aica-batch.zip",
+            {"Dockerfile": "FROM scratch\n", "LCP.json": "{}"},
+        )
+
+        staged = self._defer()
+
+        self.assertTrue((self.cx_dir / "aica-batch.zip").exists())
+        self.assertEqual(staged, [])
+
+    def test_a_mixed_restore_splits_them(self):
+        _site_initializer_zip(self.cx_dir / "si.zip")
+        _make_zip(self.cx_dir / "plain.zip", {"LCP.json": "{}"})
+
+        self._defer()
+
+        self.assertFalse((self.cx_dir / "si.zip").exists())
+        self.assertTrue((self.cx_dir / "plain.zip").exists())
+        self.assertEqual(self._deferred(), ["si.zip"])
+
+    def test_a_project_with_no_client_extensions_is_fine(self):
+        import shutil
+
+        shutil.rmtree(self.cx_dir)
+
+        self.assertEqual(self._defer(), [])
+
+    def test_an_unreadable_zip_does_not_fail_the_restore(self):
+        """The data is already on disk by this point. Aborting here would
+        turn a cosmetic problem into a broken restore."""
+        (self.cx_dir / "corrupt.zip").write_bytes(b"not a zip")
+
+        with patch(
+            "ldm_core.workspace.site_initializers.is_site_initializer_zip",
+            side_effect=OSError("boom"),
+        ):
+            self.assertEqual(self._defer(), [])
+
+        self.assertTrue((self.cx_dir / "corrupt.zip").exists())
+
+
+class TheRestorePathActuallyCallsIt(unittest.TestCase):
+    """A wiring contract, stated as one rather than dressed up as behaviour.
+
+    The helper being correct is worthless if `cmd_restore` never calls it --
+    which is precisely the defect LDM-#2105 was: the deferral existed,
+    worked, and was called from `ldm import` only.
+
+    This is a source-level contract because driving a full `cmd_restore`
+    needs a snapshot archive, a database and a container. It catches the
+    call being deleted, which is the realistic regression; it does NOT
+    prove the call is reached at runtime, and the behavioural assertions
+    above do not prove it is wired. The two together are the coverage.
+    """
+
+    def _restore_fn(self):
+        import ast
+        import inspect
+
+        from ldm_core.handlers import snapshot as snapshot_module
+
+        tree = ast.parse(inspect.getsource(snapshot_module))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "cmd_restore":
+                return node
+        self.fail("cmd_restore not found in handlers/snapshot.py")
+        return None
+
+    def test_cmd_restore_defers_site_initializers(self):
+        calls = [
+            n.func.attr
+            for n in ast.walk(self._restore_fn())
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+        ]
+
+        self.assertIn(
+            "_defer_restored_site_initializers",
+            calls,
+            "cmd_restore no longer holds back site initializers; a restored "
+            "project will deploy one before boot and create no site",
+        )
+
+    def test_it_is_deferred_after_extraction_and_before_the_stack_starts(self):
+        """Ordering is the whole point, and the anchors have to be the right
+        ones. `cmd_restore` calls `cmd_run` three times: twice with
+        `no_up=True`, which only scaffolds, and once without, which is what
+        actually starts the project. An earlier version of this test
+        anchored on the first `cmd_run` it found and failed against correct
+        code -- the scaffolding call precedes the extraction.
+
+        The real contract: stage AFTER the tree is written, BEFORE anything
+        starts the container.
+        """
+        fn = self._restore_fn()
+
+        def lines(attr, predicate=None):
+            predicate = predicate or (lambda _n: True)
+            return [
+                n.lineno
+                for n in ast.walk(fn)
+                if isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Attribute)
+                and n.func.attr == attr
+                and predicate(n)
+            ]
+
+        def starts_the_stack(node):
+            return not any(
+                k.arg == "no_up"
+                and isinstance(k.value, ast.Constant)
+                and k.value.value is True
+                for k in node.keywords
+            )
+
+        defer = lines("_defer_restored_site_initializers")
+        extract = lines("_extract_snapshot_archive")
+        starting = lines("cmd_run", starts_the_stack)
+
+        self.assertTrue(defer, "cmd_restore does not defer at all")
+        if extract:
+            self.assertGreater(
+                min(defer),
+                min(extract),
+                "deferral runs before the tree is extracted, so there is "
+                "nothing there yet to hold back",
+            )
+        if starting:
+            self.assertLess(
+                max(defer),
+                min(starting),
+                "the stack starts before the site initializer is held back",
+            )

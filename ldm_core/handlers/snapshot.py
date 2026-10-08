@@ -138,6 +138,50 @@ class SnapshotService(BaseHandler):
         self.archive = ArchiveSnapshotService(self)
         self.utils = UtilsSnapshotService(self)
 
+    def _defer_restored_site_initializers(self, paths):
+        """Hold back any restored site-initializer CX until the portal is up.
+
+        LDM-#2105. Returns the names staged, for the caller's benefit and so
+        a test can assert on the outcome rather than on the call.
+
+        Best-effort per artifact: a zip that cannot be read or moved must not
+        fail a restore that has otherwise succeeded. Leaving one in place
+        reproduces the old behaviour for that one extension only, which is
+        strictly better than aborting after the data is already on disk.
+        """
+        from ldm_core.workspace.site_initializers import (
+            is_site_initializer_zip,
+            stage_for_deferred_deploy,
+        )
+
+        root = paths.get("root") if isinstance(paths, dict) else None
+        if not root:
+            return []
+        cx_dir = Path(root) / "osgi" / "client-extensions"
+        if not cx_dir.is_dir():
+            return []
+
+        staged = []
+        for zip_path in sorted(cx_dir.glob("*.zip")):
+            try:
+                if not is_site_initializer_zip(zip_path):
+                    continue
+                stage_for_deferred_deploy(zip_path, Path(root))
+                staged.append(zip_path.name)
+            except Exception as exc:  # nosec B112 - never fail a restore here
+                UI.warning(
+                    f"Could not hold back site initializer '{zip_path.name}': {exc}"
+                )
+                continue
+
+        if staged:
+            UI.detail(
+                "  + Held back "
+                + ", ".join(staged)
+                + " until the portal is ready (LDM-#2105)."
+            )
+        return staged
+
     def _install_restored_portal_ext(self, paths, project_meta):
         """Copies the restored portal-ext into the cascade, minus LDM's own
         search settings. LDM-#1773.
@@ -472,6 +516,22 @@ class SnapshotService(BaseHandler):
             self.volumes._restore_cloud_volume(paths, choice_path, project_meta)
         else:
             UI.die(f"Snapshot files not found in {choice_path}")
+
+        # LDM-#2105: a restored tree arrives whole, site-initializer client
+        # extension included, so the zip is sitting in
+        # osgi/client-extensions/ before the container starts. Liferay then
+        # processes it during startup and SiteInitializerClientExtension
+        # NPEs on a null Layout, because the portal's default layouts do not
+        # exist yet -- 48 times on the reported run, with no site created
+        # and /web/<site> returning 404 afterwards.
+        #
+        # LDM-#1779 built the deferral for exactly this and wired it into
+        # `ldm import` hydration only; the restore path never calls
+        # `_sync_cx_artifact`, so it never took the branch. Staged here,
+        # after everything that writes the tree and before the stack is
+        # started; `_wait_for_ready` deploys it once the portal is healthy,
+        # deliberately before the fragment patcher.
+        self._defer_restored_site_initializers(paths)
 
         UI.phase(3, 4, "Finalizing Metadata")
         snap_meta = self.manager.read_meta(choice_path / "meta")
