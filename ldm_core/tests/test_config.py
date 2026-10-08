@@ -1636,6 +1636,88 @@ class TheNodeCopyIsRemovedToo(unittest.TestCase):
         self.assertIn("ldm@10.0.0.9", seen["cmd"])
         self.assertIn("rm -rf ~/.liferay-docker/projects/myproj", seen["cmd"])
 
+    def test_the_ssh_cannot_hang_on_a_password_prompt(self):
+        """LDM-#2094. Without BatchMode, ssh falls back to an interactive
+        prompt when the key is missing, rejected, or the host key unknown --
+        so `ldm rm --delete -y` waits forever on a prompt nobody can answer,
+        and in CI there is no terminal at all. The two other ssh call sites
+        in this same module already pass it."""
+        from ldm_core.config import remove_project_from_target
+
+        seen = {}
+
+        def _run(cmd, **kwargs):
+            seen["cmd"] = cmd
+            seen["kwargs"] = kwargs
+            return ""
+
+        with (
+            patch("ldm_core.config.get_active_target") as gat,
+            patch("ldm_core.config.is_local_host", return_value=False),
+            patch("ldm_core.config.run_command", _run),
+        ):
+            gat.return_value = SimpleNamespace(
+                name="aws-2", host="10.0.0.9", user="ldm", key_path=None
+            )
+            remove_project_from_target(Path("/tmp/myproj"))
+
+        self.assertIn("BatchMode=yes", seen["cmd"])
+
+    def test_the_ssh_connect_phase_is_bounded(self):
+        """An unreachable node must reach the existing "may be unreachable"
+        warning promptly. Without ConnectTimeout that warning waits on the
+        OS default TCP timeout -- minutes -- so the graceful degradation
+        that is already written cannot actually run."""
+        from ldm_core.config import remove_project_from_target
+
+        seen = {}
+
+        def _run(cmd, **kwargs):
+            seen["cmd"] = cmd
+            return ""
+
+        with (
+            patch("ldm_core.config.get_active_target") as gat,
+            patch("ldm_core.config.is_local_host", return_value=False),
+            patch("ldm_core.config.run_command", _run),
+        ):
+            gat.return_value = SimpleNamespace(
+                name="aws-2", host="10.0.0.9", user="ldm", key_path=None
+            )
+            remove_project_from_target(Path("/tmp/myproj"))
+
+        self.assertTrue(
+            any(str(a).startswith("ConnectTimeout=") for a in seen["cmd"]),
+            f"no ConnectTimeout in {seen['cmd']}",
+        )
+
+    def test_a_stalled_connection_is_bounded_too(self):
+        """ConnectTimeout bounds only the connect phase. A node that accepts
+        the TCP connection and then stalls -- a wedged sshd, a host paused
+        mid-handshake -- is still unbounded without a timeout on the call
+        itself. Same shape as LDM-#2064."""
+        from ldm_core.config import remove_project_from_target
+
+        seen = {}
+
+        def _run(cmd, **kwargs):
+            seen["kwargs"] = kwargs
+            return ""
+
+        with (
+            patch("ldm_core.config.get_active_target") as gat,
+            patch("ldm_core.config.is_local_host", return_value=False),
+            patch("ldm_core.config.run_command", _run),
+        ):
+            gat.return_value = SimpleNamespace(
+                name="aws-2", host="10.0.0.9", user="ldm", key_path=None
+            )
+            remove_project_from_target(Path("/tmp/myproj"))
+
+        self.assertIsNotNone(
+            seen["kwargs"].get("timeout"), "run_command was given no timeout"
+        )
+
     def test_an_unreachable_node_reports_rather_than_raising(self):
         """The local removal must still happen; a node we cannot reach is not
         a reason to leave the project half-deleted here."""
