@@ -833,14 +833,62 @@ class OrchestrationService(BaseHandler):
                     cmd.append("-v")
                 cmd.append("--remove-orphans")
 
+                # LDM-#2096: a project whose target node is unregistered --
+                # decommissioned, renamed, or `ldm target rm`'d -- could not
+                # be removed AT ALL. `docker --context <gone>` cannot resolve
+                # an endpoint, check=True exited 1 here, and the directory,
+                # volumes and registry entry all survived with no flag to get
+                # past it. The `--all` path has always degraded through the
+                # branch below; the single-project form could not reach it.
+                #
+                # That made LDM-#2077's node removal unreachable exactly when
+                # it was needed, contradicting the principle its own tests
+                # state: a node we cannot reach is not a reason to leave the
+                # project half-deleted HERE.
+                #
+                # Scoped to non-local targets deliberately. A LOCAL
+                # `compose down` that fails means containers on this machine,
+                # and deleting the directory anyway would orphan them
+                # silently -- that is what check=True is protecting and it is
+                # not weakened. Resolved through config's own helpers rather
+                # than by comparing the name to "local", so a target that
+                # merely points at localhost is treated as local too.
+                is_remote_target = False
+                try:
+                    from ldm_core.config import get_active_target, is_local_host
+
+                    _tgt = get_active_target(project_target=target_name)
+                    is_remote_target = not (
+                        _tgt.name == "local" or is_local_host(_tgt.host)
+                    )
+                except Exception:  # nosec B110 - fail safe to the strict path
+                    is_remote_target = False
+
                 if (root / "docker-compose.yml").exists():
                     res = self.manager.run_command(
                         cmd,
-                        check=not all_projects,
+                        check=not (all_projects or is_remote_target),
                         capture_output=capture,
                         cwd=str(root),
                         timeout=_COMPOSE_LIFECYCLE_TIMEOUT,
                     )
+                    if is_remote_target and not all_projects and res is None:
+                        # Say what survives. The sweeps below also run against
+                        # the same unreachable node and degrade on their own
+                        # (check=False, inside try/except), so execution
+                        # reaches the local removal either way -- but the user
+                        # must not discover from silence that containers were
+                        # left on another machine.
+                        UI.warning(
+                            f"Could not reach node '{target_name}' to tear down "
+                            f"'{root.name}'. Any containers and volumes it has "
+                            "there are NOT removed and must be cleaned up on "
+                            "the node itself."
+                        )
+                        UI.warning(
+                            "  Continuing with the local removal; the project "
+                            "would otherwise be impossible to remove at all."
+                        )
                     if all_projects and res is None:
                         # Skip the rest of THIS project's teardown -- the
                         # container sweep and volume removal below assume the
