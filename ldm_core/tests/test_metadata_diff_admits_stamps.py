@@ -52,6 +52,7 @@ from sync_compatibility import (
     _METADATA_ONLY_ALLOWLIST,
     _is_man_page_diff_stamp_only,
     _is_metadata_only_diff,
+    _release_ref,
 )
 
 MAN_PAGE = "ldm_core/resources/ldm.1"
@@ -199,6 +200,85 @@ class ThePromoteIsRecognisedAsMetadataOnly(unittest.TestCase):
         run.side_effect = _git_double(PROMOTE_FILES, returncode=1)
 
         assert _is_metadata_only_diff("no-such-ref", "v2.23.0") is False
+
+
+class TheComparisonEndpointIsTheRelease(unittest.TestCase):
+    """LDM-#2090: staleness was measured against HEAD, not against the release.
+
+    The compatibility table records which RELEASE was verified on which
+    platform. HEAD is not a release. Once any functional commit landed on
+    master after a promote, every report from that cycle became permanently
+    un-syncable -- measured on v2.26.4, where LDM-#2087 merged two days of
+    work later and `_is_metadata_only_diff("v2.26.4-pre.2", "HEAD")` went
+    False while the same call against `v2.26.4` was True.
+    """
+
+    @patch("sync_compatibility.VERSION", "2.26.4")
+    @patch("sync_compatibility.subprocess.run")
+    def test_a_released_checkout_compares_against_its_tag(self, run):
+        run.return_value = _result("", returncode=0)
+
+        assert _release_ref() == "v2.26.4"
+
+    @patch("sync_compatibility.VERSION", "2.26.5-pre.1")
+    @patch("sync_compatibility.subprocess.run")
+    def test_mid_cycle_still_compares_against_head(self, run):
+        """A pre-release checkout has no release to compare against, so the
+        previous behaviour must be preserved exactly."""
+        run.return_value = _result("", returncode=0)
+
+        assert _release_ref() == "HEAD"
+
+    @patch("sync_compatibility.VERSION", "2.26.4")
+    @patch("sync_compatibility.subprocess.run")
+    def test_a_missing_tag_falls_back_to_head(self, run):
+        """Fails safe: an unresolvable tag must not silently widen anything."""
+        run.return_value = _result("", returncode=1)
+
+        assert _release_ref() == "HEAD"
+
+    @patch("sync_compatibility.VERSION", "2.26.4")
+    @patch("sync_compatibility.subprocess.run")
+    def test_a_post_release_commit_does_not_invalidate_a_release_report(self, run):
+        """The bug itself. Shipped code differs between the pre-release tag
+        and HEAD, but not between it and the release -- so the report still
+        describes the release and must be accepted."""
+
+        def git(cmd, *_a, **_kw):
+            if "--name-only" in cmd:
+                if "HEAD" in cmd:
+                    return _result(
+                        "\n".join([*PROMOTE_FILES, "ldm_core/handlers/dev.py"]) + "\n"
+                    )
+                return _result("\n".join(PROMOTE_FILES) + "\n")
+            if MAN_PAGE in cmd:
+                return _result(STAMP_DIFF)
+            return _result(VERIFY_STAMP_DIFF)
+
+        run.side_effect = git
+
+        assert _is_metadata_only_diff("v2.26.4-pre.2", _release_ref()) is True
+        assert _is_metadata_only_diff("v2.26.4-pre.2", "HEAD") is False
+
+    @patch("sync_compatibility.VERSION", "2.26.4")
+    @patch("sync_compatibility.subprocess.run")
+    def test_shipped_code_changed_by_the_promote_itself_still_refuses(self, run):
+        """Nothing here may weaken LDM-#1390/#1810. If the release itself
+        differs functionally from the verified pre-release, the honest
+        pre-release label must survive."""
+
+        def git(cmd, *_a, **_kw):
+            if "--name-only" in cmd:
+                return _result(
+                    "\n".join([*PROMOTE_FILES, "ldm_core/diagnostics/info.py"]) + "\n"
+                )
+            if MAN_PAGE in cmd:
+                return _result(STAMP_DIFF)
+            return _result(VERIFY_STAMP_DIFF)
+
+        run.side_effect = git
+
+        assert _is_metadata_only_diff("v2.26.4-pre.2", _release_ref()) is False
 
 
 class TheConditionalFilesAreNotAlsoUnconditional(unittest.TestCase):

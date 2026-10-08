@@ -257,6 +257,38 @@ def normalize_version(v):
     return v.lstrip("v").strip()
 
 
+def _release_ref():
+    """The ref a verification report should be measured against.
+
+    LDM-#2090. The compatibility table records which RELEASE was verified on
+    which platform, so "does this report still describe us?" is a question
+    about the release, not about the working tree. Measuring against HEAD
+    meant the first functional commit landed after a promote retroactively
+    invalidated every report from that cycle: on v2.26.4,
+    `_is_metadata_only_diff("v2.26.4-pre.2", "HEAD")` was False because
+    LDM-#2087 had merged, while the same call against `v2.26.4` was True.
+
+    Returns the release tag when this checkout claims a stable VERSION and
+    that tag resolves; otherwise HEAD, which is the mid-cycle case and the
+    previous behaviour exactly. Falls back to HEAD on any git error, so an
+    unresolvable tag narrows the comparison rather than widening it.
+    """
+    if "-" in VERSION:
+        return "HEAD"
+    tag = f"v{normalize_version(VERSION)}"
+    try:
+        res = subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", tag],
+            capture_output=True,
+            text=True,
+            cwd=PROJECT_ROOT,
+            check=False,
+        )
+    except Exception:
+        return "HEAD"
+    return tag if res.returncode == 0 else "HEAD"
+
+
 def _is_metadata_only_diff(old_ref, new_ref="HEAD"):
     """True only if every file changed between old_ref and new_ref matches
     _METADATA_ONLY_ALLOWLIST -- i.e. nothing that ends up in the shipped ldm
@@ -471,9 +503,10 @@ def get_promotable_stable_version(report_version):
         )
         return None
 
-    if not _is_metadata_only_diff(tag):
+    against = _release_ref()
+    if not _is_metadata_only_diff(tag, against):
         UI.warning(
-            f"Changes between {tag} and HEAD touch more than docs/version "
+            f"Changes between {tag} and {against} touch more than docs/version "
             f"metadata -- keeping the honest pre-release label in the "
             f"compatibility table until a fresh verification run confirms v{VERSION}."
         )
@@ -1048,7 +1081,7 @@ def sync_reports(results_dir=None, table_file=None):  # noqa: C901, PLR0912, PLR
                         check=False,
                     )
                     cosmetic_bin = tag_check.returncode == 0 and _is_metadata_only_diff(
-                        binary_tag
+                        binary_tag, _release_ref()
                     )
                     if cosmetic_bin:
                         UI.info(
@@ -1084,7 +1117,9 @@ def sync_reports(results_dir=None, table_file=None):  # noqa: C901, PLR0912, PLR
                     )
                     cosmetic = (
                         tag_check.returncode == 0
-                        and _is_verify_script_diff_cosmetic_only(script_tag)
+                        and _is_verify_script_diff_cosmetic_only(
+                            script_tag, _release_ref()
+                        )
                     )
                     if cosmetic:
                         UI.info(
