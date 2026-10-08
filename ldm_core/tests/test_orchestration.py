@@ -892,6 +892,68 @@ class TestBatchResilience(unittest.TestCase):
 
         self.assertTrue(seen.get("check"), "single-project stop must keep check=True")
 
+    def _compose_down_kwargs(self, meta):
+        """Run a single-project `rm --delete` and return the compose-down kwargs."""
+        seen = {}
+
+        def stub(cmd, *args, **kwargs):
+            if "down" in cmd:
+                seen.update(kwargs)
+            return ""
+
+        with (
+            patch.object(
+                self.manager, "detect_project_path", return_value=self.roots[0]
+            ),
+            patch.object(self.manager, "read_meta", return_value=meta),
+            patch.object(self.manager, "run_command", stub),
+            patch.object(self.manager, "unregister_project"),
+            patch.object(self.manager, "safe_rmtree"),
+            patch("ldm_core.config.remove_project_from_target", return_value=None),
+            patch("ldm_core.utils.archive_project_config", return_value=None),
+        ):
+            self.orch.cmd_down(project_id="alpha", delete=True)
+        return seen
+
+    def test_a_project_on_a_dead_node_can_still_be_removed(self):
+        """LDM-#2096. A project whose target node is unregistered could not be
+        removed at all: `compose down` ran with check=True, `docker --context`
+        could not resolve the endpoint, and the command died at exit 1 leaving
+        the directory, the volumes and the registry entry in place.
+
+        The `--all` path has always degraded here. The single-project form
+        did not, so the careful degradation below it -- LDM-#2077's node
+        removal, bounded by LDM-#2094 -- was unreachable whenever the node
+        was gone.
+        """
+        seen = self._compose_down_kwargs({"target": "ldm-no-such-node.invalid"})
+
+        self.assertFalse(
+            seen.get("check", True),
+            "a non-local target must not fail the teardown fast; "
+            f"compose down got {seen}",
+        )
+
+    def test_a_local_project_still_fails_fast_on_teardown(self):
+        """The guard that must NOT be weakened to fix the above. A local
+        `compose down` that fails means containers on THIS machine, and
+        deleting the directory anyway would orphan them silently."""
+        seen = self._compose_down_kwargs({"target": "local"})
+
+        self.assertTrue(
+            seen.get("check"),
+            f"a local project must keep check=True; compose down got {seen}",
+        )
+
+    def test_a_project_with_no_target_at_all_still_fails_fast(self):
+        """The commonest case by far, and it must be treated as local."""
+        seen = self._compose_down_kwargs({})
+
+        self.assertTrue(
+            seen.get("check"),
+            f"a project with no target must keep check=True; got {seen}",
+        )
+
     def test_the_failure_summary_names_every_failed_project(self):
         from ldm_core.runtime.orchestration import OrchestrationService
 
