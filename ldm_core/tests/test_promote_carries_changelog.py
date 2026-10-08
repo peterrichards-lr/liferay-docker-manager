@@ -58,6 +58,22 @@ PREVIOUS_STABLE = """## [v9.9.8] - 2025-12-01
 """
 
 
+# LDM-#2087: the shape that actually ships. Every fixture above is a
+# single-line bullet, which is exactly why the truncation survived: a
+# one-paragraph bullet is unaffected by it.
+PRE_MULTIPARA = """## [v8.8.8-pre.1] - 2026-02-01
+
+### Fixed
+
+- **Guarded**: the suite no longer triggers the wipe.
+
+  **This does not make the repair safe** -- it stops the suite being the
+  thing that triggers it. That is tracked separately and is still open.
+
+- **Plain**: a single-paragraph bullet alongside it.
+"""
+
+
 class TestCarryForward(unittest.TestCase):
     def test_a_stable_release_collects_its_cycle(self):
         body = collect_prerelease_changelog_body(
@@ -153,6 +169,46 @@ class TestCarryForward(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAMultiParagraphBulletSurvives(unittest.TestCase):
+    """LDM-#2087: promotion kept only a bullet's first paragraph.
+
+    Shipped in v2.26.4: the LDM-#2085 bullet's caveat that the underlying
+    repair is still unguarded was dropped at promotion, so the stable notes
+    read as though it had been fixed. Asserting on the *continuation* text
+    rather than the bullet's lead is the whole point -- the lead survived
+    the bug.
+    """
+
+    def _body(self):
+        return collect_prerelease_changelog_body(changelog(PRE_MULTIPARA), "8.8.8")
+
+    def test_the_continuation_paragraph_is_carried(self):
+        self.assertIn("This does not make the repair safe", self._body())
+
+    def test_the_whole_continuation_is_carried_not_just_its_first_line(self):
+        self.assertIn("is still open", self._body())
+
+    def test_the_continuation_stays_indented_under_its_bullet(self):
+        """Dedented, it would render as a sibling paragraph, not part of the item."""
+        body = self._body()
+        line = next(
+            line
+            for line in body.splitlines()
+            if "This does not make the repair safe" in line
+        )
+        self.assertTrue(line.startswith("  "), f"continuation was dedented: {line!r}")
+
+    def test_a_neighbouring_single_paragraph_bullet_is_unharmed(self):
+        self.assertIn("**Plain**", self._body())
+
+    def test_the_continuation_is_not_mistaken_for_a_separate_bullet(self):
+        """It must stay inside its own item, above the next one."""
+        body = self._body()
+        self.assertLess(
+            body.index("This does not make the repair safe"), body.index("**Plain**")
+        )
 
 
 class TestTheWriterActuallyUsesIt(unittest.TestCase):

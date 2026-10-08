@@ -56,25 +56,59 @@ def _cycle_prerelease_blocks(content, prefix):
     return blocks
 
 
+def _iter_bullets(block):
+    """Yield `(section, lines)` per bullet, keeping its continuation lines.
+
+    LDM-#2087. A bullet is its `- ` line **plus** everything up to the next
+    bullet or section heading: the blank line and the indented paragraphs
+    after it. Collecting only the `- ` line truncated every multi-paragraph
+    bullet to its first paragraph at promotion, which is how the stable
+    v2.26.4 notes lost the caveat saying LDM-#2083 was still open -- and so
+    read as though it had been fixed.
+
+    A one-paragraph bullet is unaffected either way, which is why the gap
+    survived: every fixture in the test file was single-line.
+    """
+    section = None
+    current: list[str] = []
+    for line in block:
+        if line.startswith("### "):
+            if section and current:
+                yield section, current
+            current = []
+            section = line[4:].strip()
+        elif line.startswith("- ") and line.strip() != "-":
+            if section and current:
+                yield section, current
+            current = [line]
+        elif current:
+            current.append(line)
+    if section and current:
+        yield section, current
+
+
 def _merge_sections(blocks):
     """Merge `### Section` bullets across blocks, oldest first, de-duplicated.
 
     A fix is usually restated in each subsequent pre-release, so identical
-    bullets collapse to one.
+    bullets collapse to one. De-duplication compares whole bullets, not their
+    first lines: two bullets can open identically and diverge in a later
+    paragraph, and dropping the second would lose that difference silently.
     """
-    sections: dict[str, list[str]] = {}
+    sections: dict[str, list[list[str]]] = {}
     order: list[str] = []
     for block in reversed(blocks):  # oldest pre-release first
-        section = None
-        for line in block:
-            if line.startswith("### "):
-                section = line[4:].strip()
-                if section not in sections:
-                    sections[section] = []
-                    order.append(section)
-            elif section and line.startswith("- ") and line.strip() != "-":
-                if line not in sections[section]:
-                    sections[section].append(line)
+        for section, bullet in _iter_bullets(block):
+            if section not in sections:
+                sections[section] = []
+                order.append(section)
+            # Trailing blanks are separators from the source entry, not
+            # content; keeping them would compound a blank line per merge.
+            trimmed = list(bullet)
+            while trimmed and not trimmed[-1].strip():
+                trimmed.pop()
+            if trimmed and trimmed not in sections[section]:
+                sections[section].append(trimmed)
     return sections, order
 
 
@@ -110,8 +144,11 @@ def collect_prerelease_changelog_body(content, new_version):
     for section in rendered:
         out.append(f"### {section}")
         out.append("")
-        out.extend(sections[section])
-        out.append("")
+        for bullet in sections[section]:
+            out.extend(bullet)
+            # A blank line between items: Markdown needs one to keep a
+            # multi-paragraph item's later paragraphs inside that item.
+            out.append("")
     return "\n".join(out).rstrip() + "\n"
 
 
