@@ -2019,6 +2019,25 @@ def safe_move(src, dst):
             raise e
 
 
+def github_token_source() -> str | None:
+    """Which source supplied the token `get_github_token()` would return.
+
+    LDM-#2098. Message-only, and it mirrors that function's precedence
+    exactly -- if the two ever disagree the diagnostics point at the wrong
+    credential, which is worse than saying nothing.
+
+    The precedence matters to the user: `GITHUB_PAT` wins over
+    `GITHUB_TOKEN` and over the `gh` CLI, so somebody with three
+    credentials configured and an expired PAT gets 401s while holding two
+    working ones, and nothing told them which was in play.
+    """
+    if os.environ.get("GITHUB_PAT"):
+        return "GITHUB_PAT"
+    if os.environ.get("GITHUB_TOKEN"):
+        return "GITHUB_TOKEN"
+    return "the gh CLI" if get_github_token() else None
+
+
 def get_github_token() -> str | None:
     """Retrieve GitHub token from environment variables or gh CLI."""
     token = os.environ.get("GITHUB_PAT") or os.environ.get("GITHUB_TOKEN")

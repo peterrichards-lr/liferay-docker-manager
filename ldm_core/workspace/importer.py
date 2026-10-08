@@ -130,7 +130,7 @@ def _download_remote_archive(
 def _check_github_release_for_package(self, owner, repo, source_path):
     import requests
 
-    from ldm_core.utils import UI, get_github_token
+    from ldm_core.utils import UI, get_github_token, github_token_source
 
     github_token = get_github_token()
     has_ldmp = False
@@ -161,10 +161,43 @@ def _check_github_release_for_package(self, owner, repo, source_path):
                         f"Remote LDM package '{ldmp_asset.get('name')}' is too small ({asset_size} bytes) "
                         f"and appears to be empty/vanilla. To clone the workspace code directly, please use: 'ldm clone {source_path}'"
                     )
-        elif api_resp.status_code == 403:
+        elif api_resp.status_code == 401:
+            # LDM-#2098: this fell to UI.debug, so at default verbosity the
+            # user saw nothing here and then "No compiled LDM Package found"
+            # from the caller -- the one conclusion the evidence does not
+            # support. Reported with an expired GITHUB_PAT against a release
+            # that answered 200 anonymously and 401 authenticated.
+            src = github_token_source() or "your environment"
             UI.warning(
-                "GitHub API rate limit exceeded. Falling back to standard git clone. (Set GITHUB_TOKEN to avoid this)"
+                f"GitHub rejected the credential from {src} (HTTP 401). "
+                "This is a credential problem, not a missing package."
             )
+            UI.warning(
+                f"  The release may well be readable without it: unset {src} "
+                "and retry, or supply a valid credential."
+            )
+        elif api_resp.status_code == 403:
+            if github_token:
+                # A 403 WITH an Authorization header is usually SSO
+                # enforcement or an insufficient scope. Asserting "rate
+                # limit" sends the user away to wait out something that will
+                # never clear, and the old advice -- "Set GITHUB_TOKEN" --
+                # named the variable get_github_token() deprioritises, so
+                # following it leaves a broken GITHUB_PAT in charge.
+                src = github_token_source() or "your environment"
+                UI.warning(
+                    f"GitHub refused the request (HTTP 403) using the "
+                    f"credential from {src}. Falling back to standard git clone."
+                )
+                UI.warning(
+                    "  With a credential present this is usually SSO "
+                    "enforcement or a missing scope rather than a rate limit."
+                )
+            else:
+                UI.warning(
+                    "GitHub API rate limit exceeded. Falling back to standard "
+                    "git clone. (Set GITHUB_PAT or GITHUB_TOKEN to raise it)"
+                )
         else:
             UI.debug(f"GitHub API returned {api_resp.status_code}")
     except Exception as e:
