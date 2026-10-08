@@ -2337,6 +2337,136 @@ verify_local_delete_stays_local() {
     return 0
 }
 
+verify_node_delete_announces_and_degrades() {
+    # LDM-#2080: the LOCAL half of `--delete` is asserted above; the NODE
+    # half was not, because the suite has no node and deliberately requires
+    # none.
+    #
+    # It does not need one. A project whose meta names an unregistered
+    # target resolves, by config.py's own fallback, to
+    # TargetNode(name=X, host=X) -- so the whole node path runs: the
+    # announcement, the teardown degradation, remote path construction, the
+    # ssh attempt, the failure branch, and the local removal that must still
+    # happen. Only a SUCCESSFUL remote rm is out of reach, and that needs a
+    # second machine.
+    #
+    # An unresolvable `.invalid` hostname is used deliberately rather than a
+    # TEST-NET-1 address: DNS failure is immediate and depends on nothing,
+    # where a TEST-NET-1 connect costs the ConnectTimeout and depends on host
+    # routing.
+    #
+    # This check was WRITTEN and RUN against a real binary before being
+    # committed, which is how LDM-#2096 was found -- until that fix the
+    # command exited 1 at teardown and this could never have passed. It is
+    # also only safe since LDM-#2094 bounded the ssh; before it a prompt
+    # could hang the suite, which is the hazard cleanup_1383_artifacts'
+    # own comment warns about.
+    local ldm_cmd="$1"
+    local work_dir="$2"
+
+    local iso_home="${work_dir}/nodedel-home"
+    local run_dir="${work_dir}/nodedel-work"
+    local proj="ldmnodedel"
+    local node="ldm-no-such-node-${TEST_PORT}.invalid"
+
+    rm -rf "$iso_home" "$run_dir"
+    mkdir -p "$iso_home" "$run_dir" || return 1
+
+    local out code
+    out=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" run "$proj" --no-up -y 2>&1) && code=0 || code=$?
+    if [ "$code" -ne 0 ]; then
+        rm -rf "$iso_home" "$run_dir"
+        echo "❌ ERROR: could not create the project for the node-delete check (exit ${code})."
+        echo "   Output was: $(echo "$out" | tail -5)"
+        return 1
+    fi
+
+    local proj_dir="${run_dir}/${proj}"
+    local meta_file="${proj_dir}/meta"
+    if [ ! -f "$meta_file" ]; then
+        rm -rf "$iso_home" "$run_dir"
+        echo "❌ ERROR: no meta file at ${meta_file}; cannot point the project at a node."
+        return 1
+    fi
+
+    # read_meta accepts JSON or key=value, so both are handled rather than
+    # assumed -- the file LDM actually writes is what the command reads.
+    if ! "$VENV_PYTHON" -c "
+import json, sys
+path, node = sys.argv[1], sys.argv[2]
+with open(path, encoding='utf-8') as fh:
+    content = fh.read().strip()
+if content.startswith('{'):
+    meta = json.loads(content)
+    meta['target'] = node
+    with open(path, 'w', encoding='utf-8') as fh:
+        json.dump(meta, fh, indent=2)
+else:
+    lines = [ln for ln in content.splitlines() if not ln.strip().startswith('target=')]
+    lines.append('target=' + node)
+    with open(path, 'w', encoding='utf-8') as fh:
+        fh.write('\n'.join(lines) + '\n')
+" "$meta_file" "$node"; then
+        rm -rf "$iso_home" "$run_dir"
+        echo "❌ ERROR: could not write the target into ${meta_file}."
+        return 1
+    fi
+
+    # Without this the whole check could pass vacuously against a LOCAL
+    # project, which is the failure mode it exists to detect.
+    if ! grep -qF "$node" "$meta_file"; then
+        rm -rf "$iso_home" "$run_dir"
+        echo "❌ ERROR: the target was not written into ${meta_file}; the check would be vacuous."
+        return 1
+    fi
+
+    local del_out del_code
+    del_out=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" rm "$proj" --delete -y 2>&1) && del_code=0 || del_code=$?
+
+    local dir_survived=0
+    [ -d "$proj_dir" ] && dir_survived=1
+    rm -rf "$iso_home" "$run_dir"
+
+    # 1. LDM-#2096: an unreachable node must not make the project
+    #    unremovable. This exited 1 before that fix.
+    if [ "$del_code" -ne 0 ]; then
+        echo "❌ ERROR: 'ldm rm --delete' against an unreachable node exited ${del_code} (LDM-#2096)."
+        echo "   An unreachable node must warn and continue, not fail the removal."
+        echo "   Output was: $(echo "$del_out" | tail -10)"
+        return 1
+    fi
+
+    # 2. LDM-#2077: the node removal announces itself, naming the node.
+    #    Anchored on "on node '" exactly as the local check anchors its
+    #    NEGATIVE, so the two cannot drift apart.
+    if ! echo "$del_out" | grep -qF "on node '${node}'"; then
+        echo "❌ ERROR: the node removal did not announce itself (LDM-#2077)."
+        echo "   Expected a line naming: on node '${node}'"
+        echo "   A removal that leaves no trace is how the original defect hid."
+        echo "   Output was: $(echo "$del_out" | tail -10)"
+        return 1
+    fi
+
+    # 3. It degraded rather than raising, and said the directory survives.
+    if ! echo "$del_out" | grep -qi "could not remove"; then
+        echo "❌ ERROR: an unreachable node produced no warning (LDM-#2077)."
+        echo "   Success and failure must not be distinguishable only by silence."
+        echo "   Output was: $(echo "$del_out" | tail -10)"
+        return 1
+    fi
+
+    # 4. The LOCAL removal still happened.
+    if [ "$dir_survived" -eq 1 ]; then
+        echo "❌ ERROR: an unreachable node left the LOCAL directory behind (LDM-#2077)."
+        echo "   ${proj_dir} still exists."
+        echo "   Output was: $(echo "$del_out" | tail -10)"
+        return 1
+    fi
+
+    echo "✅ A node-targeted '--delete' announces the node, degrades on an unreachable one, and still removes locally."
+    return 0
+}
+
 verify_bringup_timeout_is_read_by_the_binary() {
     # LDM-#2064: the bound on the stack bring-up is overridable, and the
     # override has to be read by the SHIPPED binary. A unit test can prove the
@@ -2529,6 +2659,14 @@ if LOCALDEL_OUT=$(verify_local_delete_stays_local "$LDM_CMD" "$LDM_WORKSPACE"); 
     report_ok "$LOCALDEL_OUT"
 else
     echo "$LOCALDEL_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying a node-targeted --delete announces and degrades (LDM-#2080)..."
+if NODEDEL_OUT=$(verify_node_delete_announces_and_degrades "$LDM_CMD" "$LDM_WORKSPACE"); then
+    report_ok "$NODEDEL_OUT"
+else
+    echo "$NODEDEL_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
 

@@ -1422,6 +1422,114 @@ function Test-LocalDeleteStaysLocal {
     return @{ Ok = $true; Message = "[SUCCESS] '--delete' removed the project directory, and stayed local." }
 }
 
+function Test-NodeDeleteAnnouncesAndDegrades {
+    # LDM-#2080: parity with verify_node_delete_announces_and_degrades in
+    # verify_e2e_refactor.sh.
+    #
+    # The LOCAL half of '--delete' is asserted above; the NODE half was not,
+    # because the suite has no node and deliberately requires none.
+    #
+    # It does not need one. A project whose meta names an unregistered
+    # target resolves, by config.py's own fallback, to
+    # TargetNode(name=X, host=X) -- so the whole node path runs: the
+    # announcement, the teardown degradation, remote path construction, the
+    # ssh attempt, the failure branch, and the local removal that must still
+    # happen. Only a SUCCESSFUL remote rm is out of reach, and that needs a
+    # second machine.
+    #
+    # An unresolvable '.invalid' hostname is used rather than a TEST-NET-1
+    # address: DNS failure is immediate and depends on nothing, where a
+    # TEST-NET-1 connect costs the ConnectTimeout and depends on routing.
+    #
+    # Only safe since LDM-#2094 bounded that ssh, and only passable since
+    # LDM-#2096 stopped an unreachable node failing the whole removal.
+    param($LdmCmd, $WorkDir)
+
+    $isoHome = Join-Path $WorkDir "nodedel-home"
+    $runDir = Join-Path $WorkDir "nodedel-work"
+    $proj = "ldmnodedel"
+    $node = "ldm-no-such-node-${TEST_PORT}.invalid"
+
+    foreach ($d in @($isoHome, $runDir)) {
+        if (Test-Path $d) { Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue }
+        New-Item -ItemType Directory -Path $d -Force | Out-Null
+    }
+
+    $prevHome = $env:LDM_HOME
+    $env:LDM_HOME = $isoHome
+    $startLocation = Get-Location
+    try {
+        Set-Location $runDir
+        $out = & $LdmCmd run $proj --no-up -y 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: could not create the project for the node-delete check (exit ${LASTEXITCODE}).`n   Output was: ${out}" }
+        }
+
+        $projDir = Join-Path $runDir $proj
+        $metaFile = Join-Path $projDir "meta"
+        if (-not (Test-Path $metaFile)) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: no meta file at ${metaFile}; cannot point the project at a node." }
+        }
+
+        # read_meta accepts JSON or key=value, so both are handled rather
+        # than assumed -- the file LDM actually writes is what it reads back.
+        $metaRaw = (Get-Content -Raw -Path $metaFile).Trim()
+        if ($metaRaw.StartsWith("{")) {
+            $metaObj = $metaRaw | ConvertFrom-Json
+            $metaObj | Add-Member -NotePropertyName "target" -NotePropertyValue $node -Force
+            $metaObj | ConvertTo-Json -Depth 20 | Set-Content -Path $metaFile -Encoding UTF8
+        } else {
+            $kept = @($metaRaw -split "`n" | Where-Object { -not $_.TrimStart().StartsWith("target=") })
+            ($kept + "target=$node") -join "`n" | Set-Content -Path $metaFile -Encoding UTF8
+        }
+
+        # Without this the whole check could pass vacuously against a LOCAL
+        # project, which is the failure mode it exists to detect.
+        if (-not ((Get-Content -Raw -Path $metaFile) -cmatch [regex]::Escape($node))) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: the target was not written into ${metaFile}; the check would be vacuous." }
+        }
+
+        $delOut = & $LdmCmd rm $proj --delete -y 2>&1 | Out-String
+        $delCode = $LASTEXITCODE
+
+        # 1. LDM-#2096: an unreachable node must not make the project
+        #    unremovable. This exited 1 before that fix.
+        if ($delCode -ne 0) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm rm --delete' against an unreachable node exited ${delCode} (LDM-#2096).`n        An unreachable node must warn and continue, not fail the removal.`n   Output was: ${delOut}" }
+        }
+
+        # 2. LDM-#2077: the node removal announces itself, naming the node.
+        #    -cmatch, not -match: -match is case-INSENSITIVE in PowerShell,
+        #    so the two suites would disagree about identical correct output.
+        if (-not ($delOut -cmatch [regex]::Escape("on node '$node'"))) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: the node removal did not announce itself (LDM-#2077).`n        Expected a line naming: on node '$node'`n        A removal that leaves no trace is how the original defect hid.`n   Output was: ${delOut}" }
+        }
+
+        # 3. It degraded rather than raising. Case-INSENSITIVE deliberately
+        #    here, matching the bash half's 'grep -qi'.
+        if (-not ($delOut -match [regex]::Escape("could not remove"))) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: an unreachable node produced no warning (LDM-#2077).`n        Success and failure must not be distinguishable only by silence.`n   Output was: ${delOut}" }
+        }
+
+        # 4. The LOCAL removal still happened.
+        if (Test-Path $projDir) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: an unreachable node left the LOCAL directory behind (LDM-#2077).`n        ${projDir} still exists.`n   Output was: ${delOut}" }
+        }
+    } finally {
+        Set-Location $startLocation
+        if ($null -eq $prevHome) {
+            Remove-Item Env:LDM_HOME -ErrorAction SilentlyContinue
+        } else {
+            $env:LDM_HOME = $prevHome
+        }
+        foreach ($d in @($isoHome, $runDir)) {
+            if (Test-Path $d) { Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue }
+        }
+    }
+
+    return @{ Ok = $true; Message = "[SUCCESS] A node-targeted '--delete' announces the node, degrades on an unreachable one, and still removes locally." }
+}
+
 function Test-BringupTimeoutIsReadByTheBinary {
     # LDM-#2064: parity with verify_bringup_timeout_is_read_by_the_binary in
     # verify_e2e_refactor.sh.
@@ -2372,6 +2480,15 @@ try {
         Write-Verdict $localDel.Message
     } else {
         Write-Host $localDel.Message -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying a node-targeted --delete announces and degrades (LDM-#2080)..."
+    $nodeDel = Test-NodeDeleteAnnouncesAndDegrades -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE
+    if ($nodeDel.Ok) {
+        Write-Verdict $nodeDel.Message
+    } else {
+        Write-Host $nodeDel.Message -ForegroundColor Red
         exit 1
     }
 
