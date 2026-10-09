@@ -386,6 +386,18 @@ function Invoke-Cleanup {
     }
 }
 
+function Write-RestoreNote {
+    # LDM-#2112 / LDM-#2111: the restore runs after the report is finalised,
+    # so its outcome has to be appended to the finished file. A restore that
+    # cannot be seen in the artifact is how the broken one survived three
+    # green verification runs.
+    param([string]$Message)
+    Write-Host $Message
+    if ($script:FINAL_REPORT_PATH -and (Test-Path $script:FINAL_REPORT_PATH)) {
+        $Message | Out-File -FilePath $script:FINAL_REPORT_PATH -Append -Encoding utf8
+    }
+}
+
 function Restore-SharedInfrastructure {
     # LDM-#2100 / LDM-#2103: parity with restore_shared_infrastructure in
     # verify_e2e_refactor.sh.
@@ -408,8 +420,23 @@ function Restore-SharedInfrastructure {
             $current = $null
         }
         if ($current -and $current -ne $script:ORIGINAL_SSL_PORT) {
-            Write-Host "[INFO]  Restoring the global proxy to SSL port $($script:ORIGINAL_SSL_PORT) (was $current)."
-            Invoke-Cleanup $LDM_CMD "-y infra setup --ssl-port $($script:ORIGINAL_SSL_PORT) --force-recreate"
+            Write-RestoreNote "[INFO]  Restoring the global proxy to SSL port $($script:ORIGINAL_SSL_PORT) (was $current)."
+            # --force as well as -y: -y is --non-interactive, and the recreate
+            # guard honours --force only (LDM-#2112).
+            Invoke-Cleanup $LDM_CMD "-y --force infra setup --ssl-port $($script:ORIGINAL_SSL_PORT) --force-recreate"
+            $now = $null
+            try {
+                $now = (& docker inspect liferay-proxy-global `
+                    --format '{{(index (index .NetworkSettings.Ports "443/tcp") 0).HostPort}}' 2>$null |
+                    Out-String).Trim()
+            } catch {
+                $now = $null
+            }
+            if ($now -eq $script:ORIGINAL_SSL_PORT) {
+                Write-RestoreNote "[SUCCESS] Global proxy restored to SSL port $($script:ORIGINAL_SSL_PORT)."
+            } else {
+                Write-RestoreNote "[WARN]  Could not restore the global proxy to port $($script:ORIGINAL_SSL_PORT) (it is on '$now'); run 'ldm infra setup --ssl-port $($script:ORIGINAL_SSL_PORT) --force-recreate' by hand."
+            }
         }
     }
 
@@ -454,10 +481,6 @@ function Remove-Ldm1383Artifacts {
 
 function Finalize-Verification {
     param($ExitCode)
-
-    # LDM-#2100 / LDM-#2103: before the report is written, so a failed
-    # restore is visible in it.
-    Restore-SharedInfrastructure
 
     # LDM-#1465: put the user's console back as we found it. `chcp 65001`
     # changes the console itself, not just this process's view of it, so
@@ -510,6 +533,9 @@ function Finalize-Verification {
             }
         }
         Move-Item $RESULTS_FILE_TMP (Join-Path $ORIGINAL_PWD $FinalName) -Force
+        # LDM-#2112: the late restore appends here; the report is finalised
+        # before the restore can safely run.
+        $script:FINAL_REPORT_PATH = (Join-Path $ORIGINAL_PWD $FinalName)
         # LDM-#1486: the marker must follow $status. This printed
         # "[SUCCESS] Verification Complete (fail)" on a failing run, and the
         # tail of the output is what a human actually reads.
@@ -592,6 +618,11 @@ function Finalize-Verification {
     if (-not (Test-Path "pyproject.toml")) {
         if (Test-Path $LDM_WORKSPACE) { Remove-Item -Recurse -Force $LDM_WORKSPACE -ErrorAction SilentlyContinue }
     }
+
+    # LDM-#2112: LAST, after the project teardown above. Running it first is
+    # what made it fail on all three platforms -- the recreate is refused
+    # while LDM projects are running.
+    Restore-SharedInfrastructure
 }
 
 function ConvertFrom-LdmJson {

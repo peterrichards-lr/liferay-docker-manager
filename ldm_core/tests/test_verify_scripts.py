@@ -1935,6 +1935,67 @@ class TheSuiteRestoresTheSharedStateItChanges(unittest.TestCase):
         )
         self.assertIn("script:ORIGINAL_SSL_PORT", self._code_only(PS1_SCRIPT))
 
+    def test_the_restore_runs_after_the_project_teardown(self):
+        """LDM-#2112: it ran FIRST in the trap and was refused every time.
+
+        `infra setup --force-recreate` declines while LDM projects are
+        running. The suite's own project is torn down ~70 lines further
+        down, so at restore time it was still up. Three verification runs --
+        Fedora, WSL2, macOS -- reported pass with the proxy still on 8443.
+        """
+        bash = self._code_only(BASH_SCRIPT)
+        trap = bash[bash.index("cleanup_test_projects()") :]
+        call = trap.index("\n    restore_shared_infrastructure")
+        teardown = trap.index("--delete")
+
+        self.assertGreater(
+            call,
+            teardown,
+            "the restore runs before this run's project is torn down, so the "
+            "recreate guard will refuse it",
+        )
+
+    def test_both_halves_pass_force_not_just_yes(self):
+        """LDM-#2112. `-y` is --non-interactive (cli.py); the recreate guard
+        honours `args.force`, so -y alone was refused on every platform.
+
+        Asserted against the function BODY, not a single line: the bash
+        invocation spans a continuation, and selecting "the line with
+        --ssl-port and --force-recreate" picks the WARNING MESSAGE instead,
+        which names the manual command. That is how the first version of
+        this test failed against correct code.
+
+        `--force-recreate` also contains the substring "--force", so a
+        containment check is trivially true -- it passed against a script
+        with the flag removed. The flag must be standalone and attached to
+        the invocation.
+        """
+        for path, start in (
+            (BASH_SCRIPT, "restore_shared_infrastructure() {"),
+            (PS1_SCRIPT, "function Restore-SharedInfrastructure {"),
+        ):
+            code = self._code_only(path)
+            body = code[code.index(start) :]
+            body = body[: body.index("\n}")]
+            self.assertRegex(
+                body,
+                r"--force\s+infra setup",
+                f"{path.name} invokes infra setup without a standalone "
+                f"--force, so the recreate guard will refuse it",
+            )
+
+    def test_both_halves_record_the_outcome_in_the_report(self):
+        """LDM-#2111 is what hid LDM-#2112: the failure branch used a bare
+        echo, so the artifact recorded nothing and three green runs went out
+        with the proxy still moved."""
+        self.assertIn("FINAL_REPORT_PATH", self._code_only(BASH_SCRIPT))
+        self.assertIn("Write-RestoreNote", self._code_only(PS1_SCRIPT))
+
+    def test_both_halves_verify_the_port_actually_changed(self):
+        """ "Reported success" is not "is on 443"."""
+        self.assertIn("Global proxy restored to SSL port", self._code_only(BASH_SCRIPT))
+        self.assertIn("Global proxy restored to SSL port", self._code_only(PS1_SCRIPT))
+
     def test_the_restore_runs_from_the_exit_path_not_inline(self):
         """The whole point. The suite exits from dozens of places between
         the port change and the end of the run."""
