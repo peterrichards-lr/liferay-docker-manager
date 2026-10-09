@@ -22,6 +22,12 @@ BASH_SCRIPT = SCRIPTS_DIR / "verify_e2e_refactor.sh"
 PS1_SCRIPT = SCRIPTS_DIR / "verify_e2e_refactor.ps1"
 
 
+# LDM-#2115: top-level PowerShell helpers that extracted functions may call.
+# Listed explicitly rather than discovered, so a rename shows up as a test
+# failure rather than a silently missing dependency.
+_PS_HELPERS = ("ConvertTo-LdmText", "ConvertFrom-LdmJson", "ConvertTo-LdmArray")
+
+
 def _extract_function(script_path, pattern):
     # LDM-#1309: encoding must be explicit. Without it, read_text() uses the
     # locale codec, which on Windows is cp1252 and cannot decode the UTF-8 in
@@ -33,7 +39,25 @@ def _extract_function(script_path, pattern):
         raise AssertionError(
             f"Could not extract function from {script_path} using {pattern.pattern!r}"
         )
-    return match.group(0)
+    body = match.group(0)
+
+    # LDM-#2115: an extracted PowerShell function runs standalone, so any
+    # top-level helper it calls has to come with it. Without this the
+    # extraction fails at RUNTIME with "The term 'ConvertTo-LdmText' is not
+    # recognized", which reads like a script defect and is not one.
+    #
+    # Resolved here rather than at each of the sixteen call sites, so adding
+    # a helper later does not silently break a harness that does not know to
+    # ask for it.
+    if script_path == PS1_SCRIPT:
+        for helper in _PS_HELPERS:
+            if helper in body and f"function {helper}" not in body:
+                found = re.search(
+                    rf"^function {re.escape(helper)} \{{.*?^\}}", text, re.M | re.S
+                )
+                if found:
+                    body = found.group(0) + "\n\n" + body
+    return body
 
 
 def _run_bash_banner(script_version, installed_version_raw):
@@ -2119,3 +2143,63 @@ class TheTrapWritesItsDecisionsToTheReport(unittest.TestCase):
             'trap_report "!!! VERIFICATION FAILED', self._code_only(BASH_SCRIPT)
         )
         self.assertIn('Write-TrapNote "`n[FAILED]', self._code_only(PS1_SCRIPT))
+
+
+class NativeCapturesDoNotGoThroughTheFormatter(unittest.TestCase):
+    """LDM-#2115: PowerShell 5.1 wrapped native stderr at the console width.
+
+    `& cmd 2>&1 | Out-String` turns stderr into ErrorRecord objects and then
+    FORMATS them; NormalView on Windows PowerShell 5.1 prefixes `ldm.exe :`
+    and hard-wraps at the console width. A phrase split across the wrap no
+    longer matches, so `.Contains('ldm run')` failed against a binary whose
+    message was correct:
+
+        ldm.exe : ... Please use 'ldm
+        run' to recreate it.
+
+    Console-width dependent, which is the worst property an assertion can
+    have -- it passes in a wide terminal and fails in a narrow one.
+
+    pwsh 7 renders ConciseView and does not reproduce it, so these are
+    structural: they pin that the formatter is not in the path.
+    """
+
+    @staticmethod
+    def _code_only(path):
+        return "\n".join(
+            line
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if not line.lstrip().startswith("#")
+        )
+
+    def test_no_native_capture_still_pipes_to_out_string(self):
+        code = self._code_only(PS1_SCRIPT)
+        offenders = [
+            ln.strip() for ln in code.splitlines() if "2>&1 | Out-String" in ln
+        ]
+        self.assertEqual(
+            offenders,
+            [],
+            "these capture native stderr through the formatter and will wrap "
+            f"on a narrow Windows console: {offenders}",
+        )
+
+    def test_the_helper_exists(self):
+        self.assertIn("function ConvertTo-LdmText", self._code_only(PS1_SCRIPT))
+
+    def test_the_helper_reads_the_error_records_own_message(self):
+        """Taking .Exception.Message is the whole fix: it bypasses the
+        formatter, where any width-based workaround only moves the
+        threshold."""
+        code = self._code_only(PS1_SCRIPT)
+        start = code.index("function ConvertTo-LdmText")
+        body = code[start : start + 1400]
+        self.assertIn("ErrorRecord", body)
+        self.assertIn(".Exception.Message", body)
+
+    def test_display_formatting_still_uses_out_string(self):
+        """Guard against over-reach. `Out-String` is correct for formatting
+        objects for display, and for captures using 2>$null which produce no
+        ErrorRecords at all."""
+        code = self._code_only(PS1_SCRIPT)
+        self.assertIn("| Out-String", code)
