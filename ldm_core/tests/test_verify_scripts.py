@@ -1935,6 +1935,67 @@ class TheSuiteRestoresTheSharedStateItChanges(unittest.TestCase):
         )
         self.assertIn("script:ORIGINAL_SSL_PORT", self._code_only(PS1_SCRIPT))
 
+    def test_the_restore_runs_after_the_project_teardown(self):
+        """LDM-#2112: it ran FIRST in the trap and was refused every time.
+
+        `infra setup --force-recreate` declines while LDM projects are
+        running. The suite's own project is torn down ~70 lines further
+        down, so at restore time it was still up. Three verification runs --
+        Fedora, WSL2, macOS -- reported pass with the proxy still on 8443.
+        """
+        bash = self._code_only(BASH_SCRIPT)
+        trap = bash[bash.index("cleanup_test_projects()") :]
+        call = trap.index("\n    restore_shared_infrastructure")
+        teardown = trap.index("--delete")
+
+        self.assertGreater(
+            call,
+            teardown,
+            "the restore runs before this run's project is torn down, so the "
+            "recreate guard will refuse it",
+        )
+
+    def test_both_halves_pass_force_not_just_yes(self):
+        """LDM-#2112. `-y` is --non-interactive (cli.py); the recreate guard
+        honours `args.force`, so -y alone was refused on every platform.
+
+        Asserted against the function BODY, not a single line: the bash
+        invocation spans a continuation, and selecting "the line with
+        --ssl-port and --force-recreate" picks the WARNING MESSAGE instead,
+        which names the manual command. That is how the first version of
+        this test failed against correct code.
+
+        `--force-recreate` also contains the substring "--force", so a
+        containment check is trivially true -- it passed against a script
+        with the flag removed. The flag must be standalone and attached to
+        the invocation.
+        """
+        for path, start in (
+            (BASH_SCRIPT, "restore_shared_infrastructure() {"),
+            (PS1_SCRIPT, "function Restore-SharedInfrastructure {"),
+        ):
+            code = self._code_only(path)
+            body = code[code.index(start) :]
+            body = body[: body.index("\n}")]
+            self.assertRegex(
+                body,
+                r"--force\s+infra setup",
+                f"{path.name} invokes infra setup without a standalone "
+                f"--force, so the recreate guard will refuse it",
+            )
+
+    def test_both_halves_record_the_outcome_in_the_report(self):
+        """LDM-#2111 is what hid LDM-#2112: the failure branch used a bare
+        echo, so the artifact recorded nothing and three green runs went out
+        with the proxy still moved."""
+        self.assertIn("FINAL_REPORT_PATH", self._code_only(BASH_SCRIPT))
+        self.assertIn("Write-TrapNote", self._code_only(PS1_SCRIPT))
+
+    def test_both_halves_verify_the_port_actually_changed(self):
+        """ "Reported success" is not "is on 443"."""
+        self.assertIn("Global proxy restored to SSL port", self._code_only(BASH_SCRIPT))
+        self.assertIn("Global proxy restored to SSL port", self._code_only(PS1_SCRIPT))
+
     def test_the_restore_runs_from_the_exit_path_not_inline(self):
         """The whole point. The suite exits from dozens of places between
         the port change and the end of the run."""
@@ -1963,3 +2024,98 @@ class TheSuiteRestoresTheSharedStateItChanges(unittest.TestCase):
             ln for ln in bash.splitlines() if "sharedboot-*" in ln and "rm -rf" in ln
         )
         self.assertIn("${LDM_WORKSPACE:?}", line)
+
+
+class BothHalvesGuardTheSharedInfrastructure(unittest.TestCase):
+    """LDM-#2113: the PowerShell half destroyed the shared proxy blindly.
+
+    bash has always checked for other running containers before
+    `docker rm -f liferay-proxy-global liferay-search-global
+    liferay-docker-proxy`. PowerShell did not, so a Docker Desktop
+    verification run removed the shared proxy and search node out from
+    under any other LDM project -- whose containers keep running, so
+    nothing reports a failure. The same silent shape as LDM-#2083.
+
+    Verified behaviourally as well: the extracted PowerShell block was run
+    against a stubbed `docker`, cleaning up when nothing else was running
+    and skipping (naming the project) when something was.
+    """
+
+    @staticmethod
+    def _code_only(path):
+        return "\n".join(
+            line
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if not line.lstrip().startswith("#")
+        )
+
+    def test_neither_half_removes_the_proxy_unconditionally(self):
+        for path in (BASH_SCRIPT, PS1_SCRIPT):
+            code = self._code_only(path)
+            idx = code.index("rm -f liferay-proxy-global")
+            preceding = code[max(0, idx - 1200) : idx]
+            self.assertIn(
+                "other",
+                preceding.lower(),
+                f"{path.name} removes the global proxy with no check for "
+                f"other running projects",
+            )
+
+    def test_both_halves_say_which_branch_they_took(self):
+        for path in (BASH_SCRIPT, PS1_SCRIPT):
+            code = self._code_only(path)
+            self.assertIn("Skipping global infrastructure cleanup", code, path.name)
+            self.assertIn("Cleaning up global infrastructure", code, path.name)
+
+
+class TheTrapWritesItsDecisionsToTheReport(unittest.TestCase):
+    """LDM-#2111: the exit trap spoke only to the console.
+
+    "Other LDM projects are running ... Skipping global infrastructure
+    cleanup" was printed on three verification runs and recorded on none.
+    It is the line that explains why the proxy survived on 8443, so having
+    it would have identified LDM-#2112 on the first run rather than the
+    fourth.
+    """
+
+    @staticmethod
+    def _code_only(path):
+        return "\n".join(
+            line
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if not line.lstrip().startswith("#")
+        )
+
+    def test_both_halves_have_a_reporter_that_survives_finalisation(self):
+        """The trap runs on both sides of the report being renamed, so the
+        reporter has to write to whichever file currently exists."""
+        for path, fn in (
+            (BASH_SCRIPT, "trap_report()"),
+            (PS1_SCRIPT, "Write-TrapNote"),
+        ):
+            code = self._code_only(path)
+            self.assertIn(fn, code, path.name)
+            body_at = code.index(fn)
+            body = code[body_at : body_at + 900]
+            self.assertIn("RESULTS_FILE_TMP", body, f"{path.name} reporter")
+            self.assertIn("FINAL_REPORT_PATH", body, f"{path.name} reporter")
+
+    def test_the_infrastructure_decision_is_reported_not_just_printed(self):
+        for path, call in (
+            (BASH_SCRIPT, "trap_report"),
+            (PS1_SCRIPT, "Write-TrapNote"),
+        ):
+            code = self._code_only(path)
+            line = next(
+                ln
+                for ln in code.splitlines()
+                if "Skipping global infrastructure cleanup" in ln
+            )
+            self.assertIn(call, line, f"{path.name}: {line.strip()}")
+
+    def test_the_failure_banner_is_reported(self):
+        """A failed run's report should say it failed."""
+        self.assertIn(
+            'trap_report "!!! VERIFICATION FAILED', self._code_only(BASH_SCRIPT)
+        )
+        self.assertIn('Write-TrapNote "`n[FAILED]', self._code_only(PS1_SCRIPT))
