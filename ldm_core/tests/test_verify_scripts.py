@@ -2203,3 +2203,80 @@ class NativeCapturesDoNotGoThroughTheFormatter(unittest.TestCase):
         ErrorRecords at all."""
         code = self._code_only(PS1_SCRIPT)
         self.assertIn("| Out-String", code)
+
+
+class TheNodeTargetGuardAsksLdmNotTheFile(unittest.TestCase):
+    """LDM-#2117: the guard proved the bytes were written, not that LDM read them.
+
+    The PowerShell half wrote the target with `Set-Content -Encoding UTF8`,
+    which emits a UTF-8 BOM on Windows PowerShell 5.1. `read_meta` sniffs
+    the format with `content.strip().startswith("{")`, and `str.strip()`
+    does not remove a BOM -- so BOM-prefixed JSON took the key=value
+    branch, no line in a JSON document contains "=", and the meta came back
+    empty. The target vanished, `ldm rm --delete` took the LOCAL path, and
+    the check failed against a binary behaving correctly.
+
+    The old guard grepped the meta file for the node name. The bytes were
+    there, so it passed, while the only consumer that matters could not
+    parse the document at all. Reading the file is testing the test.
+    """
+
+    @staticmethod
+    def _code_only(path):
+        return "\n".join(
+            line
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if not line.lstrip().startswith("#")
+        )
+
+    def _fn(self, path, start):
+        code = self._code_only(path)
+        body = code[code.index(start) :]
+        end = body.index("\n}")
+        return body[:end]
+
+    def test_the_powershell_meta_write_is_bom_free(self):
+        body = self._fn(PS1_SCRIPT, "function Test-NodeDeleteAnnouncesAndDegrades")
+        self.assertIn("WriteAllText", body)
+        self.assertIn("UTF8Encoding", body)
+        self.assertNotIn(
+            "Set-Content -Path $metaFile",
+            body,
+            "Set-Content -Encoding UTF8 writes a BOM on Windows PowerShell 5.1",
+        )
+
+    def test_both_halves_confirm_the_target_via_ldm(self):
+        """The assertion that would have caught it: ask the binary what it
+        resolved, not the file we just wrote."""
+        for path, start in (
+            (BASH_SCRIPT, "verify_node_delete_announces_and_degrades() {"),
+            (PS1_SCRIPT, "function Test-NodeDeleteAnnouncesAndDegrades"),
+        ):
+            body = self._fn(path, start)
+            self.assertIn("list --json", body, f"{path.name} does not ask LDM")
+
+    def test_neither_half_still_greps_the_meta_file_as_its_guard(self):
+        for path, start, needle in (
+            (
+                BASH_SCRIPT,
+                "verify_node_delete_announces_and_degrades() {",
+                'grep -qF "$node" "$meta_file"',
+            ),
+            (
+                PS1_SCRIPT,
+                "function Test-NodeDeleteAnnouncesAndDegrades",
+                "Get-Content -Raw -Path $metaFile) -cmatch",
+            ),
+        ):
+            body = self._fn(path, start)
+            self.assertNotIn(needle, body, f"{path.name} still tests the test")
+
+    def test_the_failure_message_shows_both_values(self):
+        """'wrote X, LDM resolved Y' is what makes the next occurrence
+        diagnosable in one read."""
+        for path, start in (
+            (BASH_SCRIPT, "verify_node_delete_announces_and_degrades() {"),
+            (PS1_SCRIPT, "function Test-NodeDeleteAnnouncesAndDegrades"),
+        ):
+            body = self._fn(path, start)
+            self.assertIn("LDM resolved", body, path.name)
