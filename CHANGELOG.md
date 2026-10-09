@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.5-pre.2] - 2026-10-09
+
+### Fixed
+
+- **The verification suites now actually restore the global proxy port** (LDM-#2112). The restore added for LDM-#2100 never ran. It was the first statement in the exit trap, where the run's own project is still up, and `ldm infra setup --force-recreate` is refused while LDM projects are running -- `-y` is `--non-interactive`, not `--force`. Three verification runs on three platforms reported pass with the proxy still on 8443. It now runs last, after the teardown, passes `--force`, and re-inspects the port afterwards rather than trusting the command's exit code: "reported success" is not "is on 443".
+
+- **A verification run on Windows no longer destroys the shared proxy out from under other projects** (LDM-#2113). The PowerShell half removed `liferay-proxy-global` and `liferay-search-global` unconditionally at the end of every run, where the bash half has always checked for other running projects first. Those projects' containers keep running, so nothing reported a failure -- the symptom was a site that stopped being reachable and a search index served by a node that no longer existed. The same silent shape as LDM-#2083. The two halves now agree.
+
+- **The exit trap's decisions reach the verification report** (LDM-#2111). Three lines went to the console only: the `VERIFICATION FAILED (Exit Code: N)` banner and both global-infrastructure cleanup decisions. One of them -- "Other LDM projects are running ... Skipping global infrastructure cleanup" -- is the line that explains why the proxy survived on a non-standard port rather than being removed, and it was printed on three runs and recorded on none. Having it would have identified LDM-#2112 on the first run instead of the fourth. A restore or a cleanup that cannot be seen in the artifact is indistinguishable from one that never happened.
+
 ## [v2.26.5-pre.1] - 2026-10-09
 
 ### Fixed
