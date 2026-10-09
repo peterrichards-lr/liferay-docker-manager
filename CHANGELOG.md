@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.5-pre.4] - 2026-10-09
+
+### Fixed
+
+- **The node-delete verification check works on Windows** (LDM-#2117). It writes a target into the project's metadata to exercise the node half of `ldm rm --delete`, and wrote it with `Set-Content -Encoding UTF8` -- which emits a UTF-8 BOM on Windows PowerShell 5.1, where pwsh 7 does not. `read_meta` chooses its parser with `content.strip().startswith("{")`, and a BOM is not whitespace, so BOM-prefixed JSON fell through to key=value parsing, no line in a JSON document contains `=`, and the metadata came back empty. With no target, the removal took the local path and the announcement the check asserts never happened -- against a binary that was behaving correctly.
+
+  The metadata is now written without a BOM. More importantly, the check's own guard was asking the wrong question: it confirmed the node name was present **in the file**, which it was, rather than whether LDM could read it -- and the only consumer that matters could not parse the document at all. Both halves now read `ldm list --json` and require LDM to resolve the project to the node before relying on it, reporting `wrote: X` against `LDM resolved: Y` when they disagree. The bash half never had the BOM problem but carried the same weak guard, and the two are kept identical so they cannot drift apart.
+
 ## [v2.26.5-pre.3] - 2026-10-09
 
 ### Fixed
