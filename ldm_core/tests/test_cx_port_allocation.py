@@ -35,9 +35,19 @@ class _Manager:
     extension a moment from now".
     """
 
-    def __init__(self, first_free=28080):
+    def __init__(self, first_free=28080, reserved=()):
         self.first_free = first_free
         self.written = []
+        # LDM-#2123: a real manager can report a port the OS refuses outright.
+        # Empty here, which is the ordinary host and keeps every assertion in
+        # this file about LDM-#1969 rather than about reservations.
+        self.reserved = {int(p) for p in reserved}
+
+    def port_is_reserved(self, _ip, port):
+        try:
+            return int(port) in self.reserved
+        except (TypeError, ValueError):
+            return False
 
     def find_available_port(self, ip, start_port, exclude=None):
         exclude = exclude or []
