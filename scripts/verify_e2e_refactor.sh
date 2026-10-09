@@ -2513,11 +2513,29 @@ else:
         return 1
     fi
 
-    # Without this the whole check could pass vacuously against a LOCAL
-    # project, which is the failure mode it exists to detect.
-    if ! grep -qF "$node" "$meta_file"; then
+    # LDM-#2117: ask LDM what it RESOLVED, not what we wrote.
+    #
+    # This used to grep the meta file for the node name. On Windows the
+    # bytes were present and that guard passed while LDM could not parse
+    # the document at all (a BOM defeated read_meta's format sniff), so the
+    # check asserted a node removal against a project LDM considered LOCAL.
+    # Reading the file is testing the test; reading `ldm list --json` is
+    # testing the thing under test. Kept in both halves so they cannot
+    # drift.
+    local seen_target
+    seen_target=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" list --json 2>/dev/null \
+        | "$VENV_PYTHON" -c 'import json,sys
+try:
+    rows = json.load(sys.stdin)
+except Exception:
+    rows = []
+print(next((r.get("target", "") for r in rows if r.get("project") == sys.argv[1]), ""))' "$proj" 2>/dev/null || true)
+    if [ "$seen_target" != "$node" ]; then
         rm -rf "$iso_home" "$run_dir"
-        echo "❌ ERROR: the target was not written into ${meta_file}; the check would be vacuous."
+        echo "❌ ERROR: LDM does not see '${proj}' as targeting the node (LDM-#2117)."
+        echo "   wrote: ${node}"
+        echo "   LDM resolved: '${seen_target}'"
+        echo "   The check would be vacuous -- it would assert a node removal on a LOCAL project."
         return 1
     fi
 
