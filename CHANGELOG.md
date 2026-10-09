@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.5-pre.3] - 2026-10-09
+
+### Fixed
+
+- **The PowerShell suite no longer fails on output the binary got right** (LDM-#2115). Windows PowerShell 5.1 turns a native command's stderr into error objects and then *formats* them, hard-wrapping at the console width before the script can read the text. A phrase split across that wrap stopped matching, so an assertion reported `'ldm start' refused but did not name 'ldm run'` against a message that says exactly that -- the wrap had landed between `'ldm` and `run'`. It was console-width dependent: the same script, binary and message passed in a wide terminal and failed in a narrow one. Native captures now take each error object's own message, so no formatter runs and nothing is wrapped. Applied to all 40 capture sites rather than to the nine assertions that happened to be caught, because the next multi-word assertion written would have been exposed again. PowerShell 7 renders errors differently and never showed the fault, which is why Linux, macOS and WSL2 runs always passed.
+
 ## [v2.26.5-pre.2] - 2026-10-09
 
 ### Fixed
