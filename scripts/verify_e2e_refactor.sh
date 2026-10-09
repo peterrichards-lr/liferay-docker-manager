@@ -430,6 +430,25 @@ cleanup_1383_artifacts() {
     rm -rf "${LDM_WORKSPACE:?}/${LDMP_REFUSAL_PROJECT}" "${LDM_WORKSPACE:?}/.ldm_temp"
 }
 
+# LDM-#2111: anything the EXIT trap says must reach the report, not just the
+# console. The trap runs on both sides of report finalisation, so this writes
+# to whichever file currently exists: RESULTS_FILE_TMP before the move,
+# FINAL_REPORT_PATH after it.
+#
+# This is not cosmetic. "Other LDM projects are running ... Skipping global
+# infrastructure cleanup" was printed on three verification runs and recorded
+# on none -- it is the line that explains why the proxy survived on 8443, and
+# having it would have identified LDM-#2112 immediately.
+trap_report() {
+    if [ -n "${RESULTS_FILE_TMP:-}" ] && [ -f "$RESULTS_FILE_TMP" ]; then
+        echo "$1" | tee -a "$RESULTS_FILE_TMP"
+    elif [ -n "${FINAL_REPORT_PATH:-}" ] && [ -f "$FINAL_REPORT_PATH" ]; then
+        echo "$1" | tee -a "$FINAL_REPORT_PATH"
+    else
+        echo "$1"
+    fi
+}
+
 restore_shared_infrastructure() {
     # LDM-#2112: called at the very END of the trap, after this run's project
     # has been torn down. The first version ran at the TOP and was refused on
@@ -442,13 +461,6 @@ restore_shared_infrastructure() {
     # `_report` appends to the finished report as well, because the report is
     # finalised earlier in the trap than this can safely run. A restore that
     # cannot be seen in the artifact is how this hid.
-    _report() {
-        if [ -n "${FINAL_REPORT_PATH:-}" ] && [ -f "$FINAL_REPORT_PATH" ]; then
-            echo "$1" | tee -a "$FINAL_REPORT_PATH"
-        else
-            echo "$1"
-        fi
-    }
 
     # LDM-#2100 / LDM-#2103: shared state this suite changed, put back from
     # the EXIT trap so an early exit cannot skip it. Both defects were the
@@ -460,7 +472,7 @@ restore_shared_infrastructure() {
             --format '{{(index (index .NetworkSettings.Ports "443/tcp") 0).HostPort}}' \
             2>/dev/null | tr -d '\r')
         if [ -n "$current" ] && [ "$current" != "$ORIGINAL_SSL_PORT" ]; then
-            _report "ℹ  Restoring the global proxy to SSL port ${ORIGINAL_SSL_PORT} (was ${current})."
+            trap_report "ℹ  Restoring the global proxy to SSL port ${ORIGINAL_SSL_PORT} (was ${current})."
             # --force as well as -y: -y is --non-interactive, and the
             # recreate guard honours --force only. Anything still running at
             # this point is not this suite's.
@@ -471,12 +483,12 @@ restore_shared_infrastructure() {
                     --format '{{(index (index .NetworkSettings.Ports "443/tcp") 0).HostPort}}' \
                     2>/dev/null | tr -d '\r')
                 if [ "$now" = "$ORIGINAL_SSL_PORT" ]; then
-                    _report "✅ Global proxy restored to SSL port ${ORIGINAL_SSL_PORT}."
+                    trap_report "✅ Global proxy restored to SSL port ${ORIGINAL_SSL_PORT}."
                 else
-                    _report "⚠️  Restore reported success but the proxy is on '${now:-none}', not ${ORIGINAL_SSL_PORT}."
+                    trap_report "⚠️  Restore reported success but the proxy is on '${now:-none}', not ${ORIGINAL_SSL_PORT}."
                 fi
             else
-                _report "⚠️  Could not restore the global proxy to port ${ORIGINAL_SSL_PORT}; run 'ldm infra setup --ssl-port ${ORIGINAL_SSL_PORT} --force-recreate' by hand."
+                trap_report "⚠️  Could not restore the global proxy to port ${ORIGINAL_SSL_PORT}; run 'ldm infra setup --ssl-port ${ORIGINAL_SSL_PORT} --force-recreate' by hand."
             fi
         fi
     fi
@@ -517,7 +529,7 @@ cleanup_test_projects() {
     if [ $EXIT_CODE -ne 0 ]; then
         status="fail"
         capture_logs_on_failure
-        echo "!!! VERIFICATION FAILED (Exit Code: $EXIT_CODE) !!!"
+        trap_report "!!! VERIFICATION FAILED (Exit Code: $EXIT_CODE) !!!"
     fi
 
     local env_slug
@@ -568,10 +580,10 @@ cleanup_test_projects() {
         local other_containers
         other_containers=$(docker ps --format '{{.Names}}' | grep -vE "^(liferay-proxy-global|liferay-search-global|liferay-docker-proxy|${PROJECT_NAME}|${PROJECT_NAME}-db-1)$" || true)
         if [ -z "$other_containers" ]; then
-            echo "ℹ  No other LDM projects running. Cleaning up global infrastructure..."
+            trap_report "ℹ  No other LDM projects running. Cleaning up global infrastructure..."
             docker rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy 2>/dev/null || true
         else
-            echo "ℹ  Other LDM projects are running (${other_containers//$'\n'/, }). Skipping global infrastructure cleanup."
+            trap_report "ℹ  Other LDM projects are running (${other_containers//$'\n'/, }). Skipping global infrastructure cleanup."
         fi
 
         # LDM-#1255: do not discard the result. Previously this was
