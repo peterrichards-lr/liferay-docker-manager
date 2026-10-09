@@ -655,6 +655,44 @@ function Finalize-Verification {
     Restore-SharedInfrastructure
 }
 
+function ConvertTo-LdmText {
+    # LDM-#2115: a drop-in for `Out-String` when capturing a NATIVE command.
+    #
+    # With `2>&1`, PowerShell turns a native command's stderr into
+    # ErrorRecord objects, and `Out-String` then FORMATS them -- which on
+    # Windows PowerShell 5.1 (NormalView) prefixes "ldm.exe :" and HARD-WRAPS
+    # the text at the console width. A phrase can therefore be split across a
+    # line break, so an assertion like .Contains('ldm run') fails on a narrow
+    # terminal and passes on a wide one, against the same binary emitting the
+    # same correct message. Observed:
+    #
+    #     ldm.exe : ... Please use 'ldm
+    #     run' to recreate it.
+    #
+    # This takes the ErrorRecord's own message instead, so no formatter runs
+    # and nothing is wrapped. PowerShell 7 renders errors differently
+    # (ConciseView) and does not show the fault, which is why it survived
+    # every macOS and Linux run.
+    #
+    # Returns one string with a trailing newline, exactly as Out-String does,
+    # so callers are unchanged.
+    param([Parameter(ValueFromPipeline = $true)]$InputObject)
+
+    begin { $collected = New-Object System.Collections.ArrayList }
+    process {
+        if ($null -eq $InputObject) { return }
+        if ($InputObject -is [System.Management.Automation.ErrorRecord]) {
+            [void]$collected.Add($InputObject.Exception.Message)
+        } else {
+            [void]$collected.Add([string]$InputObject)
+        }
+    }
+    end {
+        if ($collected.Count -eq 0) { return "" }
+        return (($collected -join [Environment]::NewLine) + [Environment]::NewLine)
+    }
+}
+
 function ConvertFrom-LdmJson {
     <#
     .SYNOPSIS
@@ -970,7 +1008,7 @@ function Test-ConfigResetAndRevert {
         if ($resetCode -ne 0) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: 'config defaults --reset-all' exited ${resetCode}, expected 0." }
         }
-        $listed = (& $LdmCmd config defaults 2>&1 | Out-String)
+        $listed = (& $LdmCmd config defaults 2>&1 | ConvertTo-LdmText)
         if ($listed.Contains("9099") -or $listed.Contains("quarterly")) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: --reset-all left a customised default behind." }
         }
@@ -995,7 +1033,7 @@ function Test-ConfigResetAndRevert {
         $noBom = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::WriteAllText($metaPath, $metaJson, $noBom)
 
-        $revOut = (& $LdmCmd -y config revert $proj 2>&1 | Out-String)
+        $revOut = (& $LdmCmd -y config revert $proj 2>&1 | ConvertTo-LdmText)
         $revCode = $LASTEXITCODE
         if ($revCode -ne 0) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: 'config revert' exited ${revCode}, expected 0.`n   Output was: ${revOut}" }
@@ -1055,7 +1093,7 @@ function Test-CascadingDefaultGuard {
     $prevHome = $env:LDM_HOME
     $env:LDM_HOME = $isoHome
     try {
-        $out = & $LdmCmd config set port 8081 2>&1 | Out-String
+        $out = & $LdmCmd config set port 8081 2>&1 | ConvertTo-LdmText
         $code = $LASTEXITCODE
         $wroteAfterRefusal = Test-Path $ldmrc
 
@@ -1070,7 +1108,7 @@ function Test-CascadingDefaultGuard {
         }
 
         # The other half: a key the defaults resolver does not own must still write.
-        $plainOut = & $LdmCmd config set share_domain e2e.example.com 2>&1 | Out-String
+        $plainOut = & $LdmCmd config set share_domain e2e.example.com 2>&1 | ConvertTo-LdmText
         $plainCode = $LASTEXITCODE
         $plainWritten = (Test-Path $ldmrc) -and ((Get-Content -Raw $ldmrc) -cmatch "e2e.example.com")
         if ($plainCode -ne 0 -or -not $plainWritten) {
@@ -1103,7 +1141,7 @@ function Test-ForceIsNotAPositional {
     # a failed verification).
     param([string]$LdmCmd)
 
-    $out = & $LdmCmd run --help 2>&1 | Out-String
+    $out = & $LdmCmd run --help 2>&1 | ConvertTo-LdmText
 
     # -cmatch, not -match: PowerShell's -match is CASE-INSENSITIVE by default,
     # so it matched the wrapped description line of --jvm-tiered-stop-at-level,
@@ -1153,7 +1191,7 @@ function Test-ContainerNameHonoured {
     try {
         # --no-up: the meta write is what is under test, so booting Liferay
         # would cost minutes for no additional signal.
-        $out = & $LdmCmd run $proj -c $requested --no-up -y 2>&1 | Out-String
+        $out = & $LdmCmd run $proj -c $requested --no-up -y 2>&1 | ConvertTo-LdmText
         if ($LASTEXITCODE -ne 0) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm run --container' exited ${LASTEXITCODE}.`n   Output was: ${out}" }
         }
@@ -1208,7 +1246,7 @@ function Test-GuidePrecedence {
     # a real terminal `ldm guide` enters an input() menu loop and blocks
     # forever. It only appeared to work when first written because the test
     # harness had no tty.
-    $out = & $LdmCmd -y guide 2>&1 | Out-String
+    $out = & $LdmCmd -y guide 2>&1 | ConvertTo-LdmText
 
     if ($out -match [regex]::Escape('.ldm/config.json')) {
         return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm guide' still names .ldm/config.json as a precedence level.`n   No such cascade level exists (LDM-#1824)." }
@@ -1261,18 +1299,18 @@ function Test-MacPinRefusal {
     $env:LDM_HOME = $isoHome
     $startLocation = Get-Location
     try {
-        $out = & $LdmCmd -y target add $node --host 127.0.0.1 --mac-address $macA 2>&1 | Out-String
+        $out = & $LdmCmd -y target add $node --host 127.0.0.1 --mac-address $macA 2>&1 | ConvertTo-LdmText
         if ($LASTEXITCODE -ne 0) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: could not register the pinned target.`n   Output was: ${out}" }
         }
 
         Set-Location $runDir
-        $out = & $LdmCmd run $proj --node $node -y -t 2026.q1.7-lts --no-wait 2>&1 | Out-String
+        $out = & $LdmCmd run $proj --node $node -y -t 2026.q1.7-lts --no-wait 2>&1 | ConvertTo-LdmText
         if ($LASTEXITCODE -ne 0) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: could not start the pinned project.`n   Output was: ${out}" }
         }
 
-        $actual = (& docker inspect -f '{{range .NetworkSettings.Networks}}{{.MacAddress}}{{end}}' $proj 2>&1 | Out-String).Trim()
+        $actual = (& docker inspect -f '{{range .NetworkSettings.Networks}}{{.MacAddress}}{{end}}' $proj 2>&1 | ConvertTo-LdmText).Trim()
         if ($actual -ne $macA) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: the container did not take the pinned MAC (got '${actual}', wanted ${macA}). Compose accepted the request but the toolchain did not honour it (LDM-#1752)." }
         }
@@ -1285,7 +1323,7 @@ function Test-MacPinRefusal {
             return @{ Ok = $false; Message = "[ERROR] ERROR: could not change the configured MAC to ${macB}." }
         }
 
-        $restartOut = & $LdmCmd restart $proj 2>&1 | Out-String
+        $restartOut = & $LdmCmd restart $proj 2>&1 | ConvertTo-LdmText
         $restartCode = $LASTEXITCODE
 
         if ($restartCode -ne 3) {
@@ -1352,7 +1390,7 @@ function Test-ContainersRemovedVolumesIntact {
     Set-Location $runDir
 
     try {
-        $out = & $LdmCmd run $proj -y -t 2026.q1.7-lts --no-wait 2>&1 | Out-String
+        $out = & $LdmCmd run $proj -y -t 2026.q1.7-lts --no-wait 2>&1 | ConvertTo-LdmText
         if ($LASTEXITCODE -ne 0) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: could not start the project (exit ${LASTEXITCODE}).`n   Output was: ${out}" }
         }
@@ -1389,7 +1427,7 @@ function Test-ContainersRemovedVolumesIntact {
         }
 
         # 1. LDM-#1870: 'ldm list' must report "Not Created", not "Stopped".
-        $listOut = & $LdmCmd list 2>&1 | Out-String
+        $listOut = & $LdmCmd list 2>&1 | ConvertTo-LdmText
         if (-not $listOut.Contains('Not Created')) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm list' did not report 'Not Created' for a project whose containers were removed (LDM-#1870).`n   Output was: ${listOut}" }
         }
@@ -1400,7 +1438,7 @@ function Test-ContainersRemovedVolumesIntact {
         # 2. LDM-#1870: 'ldm start' must refuse up front (exit 1) naming
         #    'ldm run', rather than letting 'docker compose start' surface
         #    its own raw error.
-        $startOut = & $LdmCmd start $proj 2>&1 | Out-String
+        $startOut = & $LdmCmd start $proj 2>&1 | ConvertTo-LdmText
         $startCode = $LASTEXITCODE
         if ($startCode -ne 1) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm start' exited ${startCode} for a project with no containers; expected 1 (LDM-#1870).`n   Output was: ${startOut}" }
@@ -1411,7 +1449,7 @@ function Test-ContainersRemovedVolumesIntact {
 
         # 3. 'ldm run' must recreate the stack from the surviving named
         #    volume -- no data loss.
-        $out = & $LdmCmd run $proj -y -t 2026.q1.7-lts --no-wait 2>&1 | Out-String
+        $out = & $LdmCmd run $proj -y -t 2026.q1.7-lts --no-wait 2>&1 | ConvertTo-LdmText
         if ($LASTEXITCODE -ne 0) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm run' could not recreate '${proj}' after its containers were removed (exit ${LASTEXITCODE}).`n   Output was: ${out}" }
         }
@@ -1481,7 +1519,7 @@ function Test-LocalDeleteStaysLocal {
     $startLocation = Get-Location
     try {
         Set-Location $runDir
-        $out = & $LdmCmd run $proj --no-up -y 2>&1 | Out-String
+        $out = & $LdmCmd run $proj --no-up -y 2>&1 | ConvertTo-LdmText
         if ($LASTEXITCODE -ne 0) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: could not create the local project (exit ${LASTEXITCODE}).`n   Output was: ${out}" }
         }
@@ -1497,7 +1535,7 @@ function Test-LocalDeleteStaysLocal {
             return @{ Ok = $false; Message = "[ERROR] ERROR: no project directory was created under ${runDir}; nothing to delete." }
         }
 
-        $delOut = & $LdmCmd rm $proj --delete -y 2>&1 | Out-String
+        $delOut = & $LdmCmd rm $proj --delete -y 2>&1 | ConvertTo-LdmText
         $delCode = $LASTEXITCODE
         if ($delCode -ne 0) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm rm --delete' on a LOCAL project exited ${delCode}.`n   Output was: ${delOut}" }
@@ -1565,7 +1603,7 @@ function Test-NodeDeleteAnnouncesAndDegrades {
     $startLocation = Get-Location
     try {
         Set-Location $runDir
-        $out = & $LdmCmd run $proj --no-up -y 2>&1 | Out-String
+        $out = & $LdmCmd run $proj --no-up -y 2>&1 | ConvertTo-LdmText
         if ($LASTEXITCODE -ne 0) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: could not create the project for the node-delete check (exit ${LASTEXITCODE}).`n   Output was: ${out}" }
         }
@@ -1594,7 +1632,7 @@ function Test-NodeDeleteAnnouncesAndDegrades {
             return @{ Ok = $false; Message = "[ERROR] ERROR: the target was not written into ${metaFile}; the check would be vacuous." }
         }
 
-        $delOut = & $LdmCmd rm $proj --delete -y 2>&1 | Out-String
+        $delOut = & $LdmCmd rm $proj --delete -y 2>&1 | ConvertTo-LdmText
         $delCode = $LASTEXITCODE
 
         # 1. LDM-#2096: an unreachable node must not make the project
@@ -1669,7 +1707,7 @@ function Test-BringupTimeoutIsReadByTheBinary {
     $startLocation = Get-Location
     try {
         Set-Location $runDir
-        $out = & $LdmCmd run $proj -y -t 2026.q1.7-lts --no-wait 2>&1 | Out-String
+        $out = & $LdmCmd run $proj -y -t 2026.q1.7-lts --no-wait 2>&1 | ConvertTo-LdmText
         if ($LASTEXITCODE -ne 0) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: a malformed LDM_BRINGUP_TIMEOUT failed the run (exit ${LASTEXITCODE}).`n        It must warn and fall back to the default, not abort: a typo in an`n        environment variable should never stop a stack starting.`n   Output was: ${out}" }
         }
@@ -1746,7 +1784,7 @@ function Test-StopHintAndStartConfirmation {
     Set-Location $runDir
 
     try {
-        $out = & $LdmCmd run $proj -y -t 2026.q1.7-lts --no-wait 2>&1 | Out-String
+        $out = & $LdmCmd run $proj -y -t 2026.q1.7-lts --no-wait 2>&1 | ConvertTo-LdmText
         if ($LASTEXITCODE -ne 0) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: could not start the project (exit ${LASTEXITCODE}).`n   Output was: ${out}" }
         }
@@ -1762,7 +1800,7 @@ function Test-StopHintAndStartConfirmation {
         }
 
         # 1. LDM-#1937: the stop hint must name 'ldm start', not 'ldm run'.
-        $stopOut = & $LdmCmd -y stop $proj 2>&1 | Out-String
+        $stopOut = & $LdmCmd -y stop $proj 2>&1 | ConvertTo-LdmText
         $stopCode = $LASTEXITCODE
         if ($stopCode -ne 0) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm stop' exited ${stopCode} for a running project; expected 0.`n   Output was: ${stopOut}" }
@@ -1789,7 +1827,7 @@ function Test-StopHintAndStartConfirmation {
         # 3. LDM-#1937: 'ldm start' must say, at default verbosity, that it
         #    worked. Asserted on captured stdout rather than on an exit code,
         #    because the defect was exactly a success that exited 0 in silence.
-        $startOut = & $LdmCmd start $proj 2>&1 | Out-String
+        $startOut = & $LdmCmd start $proj 2>&1 | ConvertTo-LdmText
         $startCode = $LASTEXITCODE
         if ($startCode -ne 0) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm start' exited ${startCode} for a stopped-but-present project; expected 0.`n   Output was: ${startOut}" }
@@ -1885,7 +1923,7 @@ function Test-SslRenewalReissues {
     Set-Location $runDir
 
     try {
-        $out = & $LdmCmd renew-ssl 2>&1 | Out-String
+        $out = & $LdmCmd renew-ssl 2>&1 | ConvertTo-LdmText
         if ($LASTEXITCODE -ne 0) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm renew-ssl' exited ${LASTEXITCODE}.`n   Output was: ${out}" }
         }
@@ -1959,7 +1997,7 @@ function Test-MacAddressPersisted {
     $prevHome = $env:LDM_HOME
     $env:LDM_HOME = $isoHome
     try {
-        $out = & $LdmCmd -y target add $node --host 192.0.2.12 --mac-address $mac 2>&1 | Out-String
+        $out = & $LdmCmd -y target add $node --host 192.0.2.12 --mac-address $mac 2>&1 | ConvertTo-LdmText
         $code = $LASTEXITCODE
         docker context rm $node 2>&1 | Out-Null
 
@@ -2047,7 +2085,7 @@ function Test-LinkedWorkspacePath {
     $prev = Get-Location
     Set-Location $WorkDir
     try {
-        $out = & $LdmCmd -y link ".\linked-workspace-src" $ProjectName --no-monitor --no-run 2>&1 | Out-String
+        $out = & $LdmCmd -y link ".\linked-workspace-src" $ProjectName --no-monitor --no-run 2>&1 | ConvertTo-LdmText
         $code = $LASTEXITCODE
     } finally {
         Set-Location $prev
@@ -2123,7 +2161,7 @@ function Test-CloudWorkspaceImport {
     $prev = Get-Location
     Set-Location $WorkDir
     try {
-        $out = & $LdmCmd -y import ".\lcp-workspace-src" $ProjectName --no-run 2>&1 | Out-String
+        $out = & $LdmCmd -y import ".\lcp-workspace-src" $ProjectName --no-run 2>&1 | ConvertTo-LdmText
         $code = $LASTEXITCODE
     } finally {
         Set-Location $prev
@@ -2181,7 +2219,7 @@ function Test-CloudWorkspaceImport {
 
     Set-Location $WorkDir
     try {
-        $noIdOut = & $LdmCmd -y import ".\lcp-noid-src" $NoIdProjectName --no-run 2>&1 | Out-String
+        $noIdOut = & $LdmCmd -y import ".\lcp-noid-src" $NoIdProjectName --no-run 2>&1 | ConvertTo-LdmText
         $noIdCode = $LASTEXITCODE
     } finally {
         Set-Location $prev
@@ -2238,7 +2276,7 @@ function Test-WorkspaceProductPin {
         Set-Content -Path $gradlePath -Value $Pin -Encoding ascii
         Set-Location $WorkDir
         try {
-            $out = & $LdmCmd -y init $ProjectName @ExtraArgs 2>&1 | Out-String
+            $out = & $LdmCmd -y init $ProjectName @ExtraArgs 2>&1 | ConvertTo-LdmText
         } finally {
             Set-Location $prev
         }
@@ -2327,7 +2365,7 @@ with tarfile.open(out, 'w:gz') as tar:
     $prev = Get-Location
     Set-Location $WorkDir
     try {
-        $out = & $LdmCmd -y import $ldmp $ProjectName --no-run 2>&1 | Out-String
+        $out = & $LdmCmd -y import $ldmp $ProjectName --no-run 2>&1 | ConvertTo-LdmText
         $code = $LASTEXITCODE
     } finally {
         Set-Location $prev
@@ -3400,7 +3438,7 @@ zf.close()
     try {
         $env:LDM_HOME = $shareStoppedHome
         Set-Location $shareStoppedProj
-        $shareStoppedOut = & $LDM_CMD share start -y --no-color --subdomain e2e-stopped --domain lfr-demo.se 2>&1 | Out-String
+        $shareStoppedOut = & $LDM_CMD share start -y --no-color --subdomain e2e-stopped --domain lfr-demo.se 2>&1 | ConvertTo-LdmText
         $shareStoppedCode = $LASTEXITCODE
     } finally {
         Set-Location $shareStoppedOriginalLocation
@@ -3496,7 +3534,7 @@ zf.close()
 
     function Invoke-ShareDryRun {
         param([string[]]$ShareArgs)
-        $out = & $LDM_CMD share start --dry-run -y --no-color @ShareArgs 2>&1 | Out-String
+        $out = & $LDM_CMD share start --dry-run -y --no-color @ShareArgs 2>&1 | ConvertTo-LdmText
         return @{ Output = $out; Code = $LASTEXITCODE }
     }
 
@@ -3659,7 +3697,7 @@ zf.close()
 
     function Invoke-GwShare {
         param([string]$Domain)
-        return (& $LDM_CMD share start --dry-run -y --no-color --domain $Domain 2>&1 | Out-String)
+        return (& $LDM_CMD share start --dry-run -y --no-color --domain $Domain 2>&1 | ConvertTo-LdmText)
     }
 
     try {
@@ -3744,7 +3782,7 @@ zf.close()
     Write-Host ">> Verifying Share Flags on 'ldm start'..."
     $shareStartFailed = $false
 
-    $shareStartHelp = & $LDM_CMD start --help 2>&1 | Out-String
+    $shareStartHelp = & $LDM_CMD start --help 2>&1 | ConvertTo-LdmText
     foreach ($shareFlag in @("--share", "--share-subdomain", "--share-domain", "--share-url", "--share-provider")) {
         if (-not ($shareStartHelp -cmatch [regex]::Escape($shareFlag))) {
             Write-Verdict "[ERROR] ERROR: 'ldm start --help' does not offer $shareFlag (LDM-#2010)."
@@ -3754,7 +3792,7 @@ zf.close()
 
     # A tunnel leases one subdomain and forwards to one target, so this
     # combination is refused -- up front, before any project is started.
-    $shareAllOut = & $LDM_CMD start --all --share --share-subdomain e2e-all -y --no-color 2>&1 | Out-String
+    $shareAllOut = & $LDM_CMD start --all --share --share-subdomain e2e-all -y --no-color 2>&1 | ConvertTo-LdmText
     $shareAllCode = $LASTEXITCODE
     if ($shareAllCode -eq 0) {
         Write-Verdict "[ERROR] ERROR: 'ldm start --all --share' exited 0 instead of refusing."
@@ -4922,7 +4960,7 @@ echo "SEEN $seen BAD$bad"
     $fsPermB64 = [Convert]::ToBase64String(
         [Text.Encoding]::UTF8.GetBytes(($fsPermProbe -replace "`r", ""))
     )
-    $fsPermStat = & docker run --rm -v "${fsPermRoutes}:/w" alpine sh -c "echo $fsPermB64 | base64 -d | sh" 2>&1 | Out-String
+    $fsPermStat = & docker run --rm -v "${fsPermRoutes}:/w" alpine sh -c "echo $fsPermB64 | base64 -d | sh" 2>&1 | ConvertTo-LdmText
 
     # The probe runs inside a container so the mode semantics are the mount's
     # own, not Windows'. It is the same question either way: does a chmod here
@@ -5289,7 +5327,7 @@ json.dump({'jira': 'LDM-1264', 'introduced_in': sys.argv[1],
         # metadata values, offering names Docker cannot resolve. Asserted on the
         # command's OUTPUT, which is the contract a user consumes and the half
         # the file-level assertions cannot see. No boot needed.
-        $infoOut = (& $LDM_CMD info $raw 2>&1 | Out-String)
+        $infoOut = (& $LDM_CMD info $raw 2>&1 | ConvertTo-LdmText)
 
         # LDM-#1452 / LDM-#1484: this assertion depends on the name surviving
         # to the console, and it took two wrong diagnoses to find out where it
@@ -5493,7 +5531,7 @@ assert expected in liferay[0], (
         #     treats as wildcards, and -match is case-insensitive by default
         #     (LDM-#1855, LDM-#1860).
         if ($naOk) {
-            $probeOut = (& $LDM_CMD -y wait "$naRaw" --probe-url "http://127.0.0.1:1" --timeout 30 2>&1 | Out-String)
+            $probeOut = (& $LDM_CMD -y wait "$naRaw" --probe-url "http://127.0.0.1:1" --timeout 30 2>&1 | ConvertTo-LdmText)
             $probeRc = $LASTEXITCODE
             if ($probeRc -eq 0) {
                 Write-Host "[ERROR] 'ldm wait --probe-url http://127.0.0.1:1' succeeded -- the override was ignored (LDM-#1891)." -ForegroundColor Red
@@ -5969,7 +6007,7 @@ assert db_part == db_part.lower(), (
         }
         Write-Verdict "   --- docker's own view of $GlobalContainer ---"
         $inspectFmt = 'status={{.State.Status}} exitcode={{.State.ExitCode}} oomkilled={{.State.OOMKilled}} error={{.State.Error}} finished={{.State.FinishedAt}}'
-        $inspect = docker inspect $GlobalContainer --format $inspectFmt 2>&1 | Out-String
+        $inspect = docker inspect $GlobalContainer --format $inspectFmt 2>&1 | ConvertTo-LdmText
         Write-Verdict "   | $($inspect.Trim())"
     }
 
@@ -5988,7 +6026,7 @@ assert db_part == db_part.lower(), (
     # Idempotence: a second start must succeed and must say something. A command
     # that succeeds silently is indistinguishable from one that did nothing.
     if ($dbCmdOk) {
-        $dbAgain = & $LDM_CMD -y db start 2>&1 | Out-String
+        $dbAgain = & $LDM_CMD -y db start 2>&1 | ConvertTo-LdmText
         $dbAgainRc = $LASTEXITCODE
         if ($dbAgainRc -ne 0) {
             # LDM-#1615: a non-zero second start was previously indistinguishable
