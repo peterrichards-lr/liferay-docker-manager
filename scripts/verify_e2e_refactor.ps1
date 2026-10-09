@@ -1620,16 +1620,41 @@ function Test-NodeDeleteAnnouncesAndDegrades {
         if ($metaRaw.StartsWith("{")) {
             $metaObj = $metaRaw | ConvertFrom-Json
             $metaObj | Add-Member -NotePropertyName "target" -NotePropertyValue $node -Force
-            $metaObj | ConvertTo-Json -Depth 20 | Set-Content -Path $metaFile -Encoding UTF8
+            $metaText = ($metaObj | ConvertTo-Json -Depth 20)
         } else {
             $kept = @($metaRaw -split "`n" | Where-Object { -not $_.TrimStart().StartsWith("target=") })
-            ($kept + "target=$node") -join "`n" | Set-Content -Path $metaFile -Encoding UTF8
+            $metaText = (($kept + "target=$node") -join "`n")
         }
 
-        # Without this the whole check could pass vacuously against a LOCAL
-        # project, which is the failure mode it exists to detect.
-        if (-not ((Get-Content -Raw -Path $metaFile) -cmatch [regex]::Escape($node))) {
-            return @{ Ok = $false; Message = "[ERROR] ERROR: the target was not written into ${metaFile}; the check would be vacuous." }
+        # LDM-#2117: written WITHOUT a BOM, deliberately.
+        #
+        # `Set-Content -Encoding UTF8` emits a UTF-8 BOM on Windows
+        # PowerShell 5.1 (pwsh 7 does not). read_meta picks its parser with
+        # `content.strip().startswith("{")`, and str.strip() does NOT remove
+        # a BOM -- so BOM-prefixed JSON took the key=value branch, no line in
+        # a JSON document contains "=", and the meta came back EMPTY. The
+        # target vanished, `ldm rm --delete` took the local path, and this
+        # check failed against a binary that was behaving correctly.
+        [System.IO.File]::WriteAllText(
+            $metaFile, $metaText, (New-Object System.Text.UTF8Encoding $false))
+
+        # LDM-#2117: ask LDM what it RESOLVED, not what we wrote.
+        #
+        # The previous guard grepped the file for the node name. The bytes
+        # were there and it passed, while the only consumer that matters
+        # could not parse the document at all. Reading the file is testing
+        # the test; reading `ldm list --json` is testing the thing under
+        # test.
+        $seenTarget = $null
+        try {
+            $listRaw = & $LdmCmd list --json 2>$null | ConvertTo-LdmText
+            $rows = ConvertTo-LdmArray -Value (ConvertFrom-LdmJson -Raw $listRaw -Label "list --json")
+            $seenTarget = ($rows | Where-Object { $_.project -eq $proj } | Select-Object -First 1).target
+        } catch {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: could not read 'ldm list --json' to confirm the target was applied: $($_.Exception.Message)" }
+        }
+        if ($seenTarget -ne $node) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: LDM does not see '${proj}' as targeting the node (LDM-#2117).`n        wrote: ${node}`n        LDM resolved: '${seenTarget}'`n        The check would be vacuous -- it would assert a node removal on a LOCAL project." }
         }
 
         $delOut = & $LdmCmd rm $proj --delete -y 2>&1 | ConvertTo-LdmText
