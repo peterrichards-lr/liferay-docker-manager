@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.5-pre.1] - 2026-10-09
+
+### Fixed
+
+- **`ldm rm --delete` can no longer hang forever against a compute node** (LDM-#2094). The node removal added in v2.26.4 issued `ssh` with no `BatchMode=yes`, no `ConnectTimeout` and no timeout on the call, while the two other ssh call sites in the same module have had both since they were written. Without `BatchMode`, ssh falls back to an interactive password prompt when the key is missing, rejected, or the host key unknown -- so `ldm rm --delete -y` waits on a prompt nobody can answer, and in CI there is no terminal at all. Without `ConnectTimeout`, the "node may be unreachable" warning that already existed could not be reached promptly. This is the one defect v2.26.4 introduced rather than inherited, and it is why anyone automating `--delete` against a node should take this release.
+
+- **A project whose target node is gone can be removed again** (LDM-#2096). If the node was decommissioned, renamed or `ldm target rm`'d, `ldm rm <project> --delete` exited 1 during teardown and left the containers, volumes, local directory and registry entry in place, with no flag to get past it. `ldm rm --all --delete` had always degraded gracefully through the branch directly below; the single-project form died on the identical condition. A non-local target now warns that containers on the node are not removed, and continues with the local removal. Local projects still fail fast, because a local `compose down` that fails means containers on this machine and deleting anyway would orphan them.
+
+- **A restored site initializer no longer deploys before Liferay is ready** (LDM-#2105). A snapshot restore writes the project tree whole, so a site-initializer client extension sat in `osgi/client-extensions/` before the container started. Liferay processed it during startup and `SiteInitializerClientExtension` threw on a null `Layout` -- 48 times on the reported run -- leaving the bundle STARTED, no group initialised, and `/web/<site>` returning 404. The deferral built for exactly this (LDM-#1779) was wired into `ldm import` only and had never covered restore, so this affected every `ldm quickstart` of a package carrying one since v2.23.0. The zip is now held in `.ldm/deferred-client-extensions/` and deployed once the portal is healthy. The "Gave up waiting for page specifications" and "No matching fragments found" warnings such a run ended with were downstream of this.
+
+- **The automatic search volume repair refuses to destroy a running project's index** (LDM-#2083). It deleted the *shared* Elasticsearch data directory with no prompt and no `--force`, destroying every project's index on the machine -- silently, because a project's healthcheck is an HTTP probe that never touches search. The far less destructive SSL proxy recreate, in the same file, already refused while projects were live. The repair now applies the same guard, names the projects at risk, gives the exact `ldm stop` commands, fails closed when it cannot tell what is running, and captures the failing container's logs to `~/.ldm/infra/search/search-failure-<timestamp>.log` before removing it -- the repair previously destroyed the only evidence of why it ran.
+
+- **`infra setup --force-recreate` no longer mistakes its own container for a port conflict** (LDM-#2101). It removed the global proxy and checked port availability immediately; `docker rm -f` returns before the host releases the bindings, so LDM reallocated to the next free port and -- because a later `infra setup` adopts the running container's ports by design -- fixed the machine on non-standard ports permanently. Measured in a verification report: created on 80/443/18080, then both 80 and 18080 reported "in use" and bumped to 81 and 18081 seconds later. Ports LDM has just released are now awaited; a port genuinely held by other software still reallocates exactly as before.
+
+- **`ldm infra setup` no longer asks which project** (LDM-#2102). It resolved a project to read two values and, with nothing in the working directory, reached the interactive picker -- where the answer silently decided whether the whole machine got a shared database and with which engine, from a list ordered by discovery. It now uses the project the working directory implies, or defaults and explicit flags, and is scriptable.
+
+- **An expired `GITHUB_PAT` is reported as a rejected credential, not a missing package** (LDM-#2098). `ldm quickstart` answered "No compiled LDM Package found in GitHub Releases" against a release that had one and was readable anonymously: the 401 was written at debug level and invisible by default. The warning now names which source supplied the credential, says the release may be readable without it, and states that this is a credential problem. A 403 sent with a credential no longer claims a rate limit, which it usually is not.
+
+- **The verification suites restore the shared state they change** (LDM-#2100, LDM-#2103). The custom SSL port check moved the global proxy to 8443 and nothing put it back, so every project created on that machine afterwards inherited it. The shared-database boot check could leave its workspace directory behind on an abort. Both are now restored from the exit trap, which an early exit cannot skip -- and the port is recorded before the change rather than reset to a hardcoded 443.
+
+- **Promotion keeps a CHANGELOG bullet's continuation paragraphs** (LDM-#2087). `--promote` carried only the first paragraph of each pre-release bullet forward, silently dropping the rest. v2.26.4's notes lost the caveat saying LDM-#2083 was still open, so they read as though it had been fixed.
+
+- **Verification reports can be synced after a release** (LDM-#2090). Staleness was measured against `HEAD` rather than the release, so the first commit landing after a promote invalidated every report from that cycle.
+
+### Changed
+
+- The E2E suites now exercise the node half of `ldm rm --delete` (LDM-#2080), which previously had no end-to-end coverage in either half. Writing and running that check is what found LDM-#2096.
+
 ## [v2.26.4] - 2026-10-08
 
 ### Fixed
