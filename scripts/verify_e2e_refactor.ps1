@@ -386,6 +386,23 @@ function Invoke-Cleanup {
     }
 }
 
+function Write-TrapNote {
+    # LDM-#2111 / LDM-#2112: anything the finalizer says must reach the
+    # report, not just the console. The finalizer runs on both sides of
+    # report finalisation, so this writes to whichever file exists:
+    # RESULTS_FILE_TMP before the move, FINAL_REPORT_PATH after it.
+    #
+    # Not cosmetic: a restore that cannot be seen in the artifact is how the
+    # broken one survived three green verification runs.
+    param([string]$Message)
+    Write-Host $Message
+    if ($RESULTS_FILE_TMP -and (Test-Path $RESULTS_FILE_TMP)) {
+        $Message | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
+    } elseif ($script:FINAL_REPORT_PATH -and (Test-Path $script:FINAL_REPORT_PATH)) {
+        $Message | Out-File -FilePath $script:FINAL_REPORT_PATH -Append -Encoding utf8
+    }
+}
+
 function Restore-SharedInfrastructure {
     # LDM-#2100 / LDM-#2103: parity with restore_shared_infrastructure in
     # verify_e2e_refactor.sh.
@@ -408,8 +425,23 @@ function Restore-SharedInfrastructure {
             $current = $null
         }
         if ($current -and $current -ne $script:ORIGINAL_SSL_PORT) {
-            Write-Host "[INFO]  Restoring the global proxy to SSL port $($script:ORIGINAL_SSL_PORT) (was $current)."
-            Invoke-Cleanup $LDM_CMD "-y infra setup --ssl-port $($script:ORIGINAL_SSL_PORT) --force-recreate"
+            Write-TrapNote "[INFO]  Restoring the global proxy to SSL port $($script:ORIGINAL_SSL_PORT) (was $current)."
+            # --force as well as -y: -y is --non-interactive, and the recreate
+            # guard honours --force only (LDM-#2112).
+            Invoke-Cleanup $LDM_CMD "-y --force infra setup --ssl-port $($script:ORIGINAL_SSL_PORT) --force-recreate"
+            $now = $null
+            try {
+                $now = (& docker inspect liferay-proxy-global `
+                    --format '{{(index (index .NetworkSettings.Ports "443/tcp") 0).HostPort}}' 2>$null |
+                    Out-String).Trim()
+            } catch {
+                $now = $null
+            }
+            if ($now -eq $script:ORIGINAL_SSL_PORT) {
+                Write-TrapNote "[SUCCESS] Global proxy restored to SSL port $($script:ORIGINAL_SSL_PORT)."
+            } else {
+                Write-TrapNote "[WARN]  Could not restore the global proxy to port $($script:ORIGINAL_SSL_PORT) (it is on '$now'); run 'ldm infra setup --ssl-port $($script:ORIGINAL_SSL_PORT) --force-recreate' by hand."
+            }
         }
     }
 
@@ -454,10 +486,6 @@ function Remove-Ldm1383Artifacts {
 
 function Finalize-Verification {
     param($ExitCode)
-
-    # LDM-#2100 / LDM-#2103: before the report is written, so a failed
-    # restore is visible in it.
-    Restore-SharedInfrastructure
 
     # LDM-#1465: put the user's console back as we found it. `chcp 65001`
     # changes the console itself, not just this process's view of it, so
@@ -510,13 +538,16 @@ function Finalize-Verification {
             }
         }
         Move-Item $RESULTS_FILE_TMP (Join-Path $ORIGINAL_PWD $FinalName) -Force
+        # LDM-#2112: the late restore appends here; the report is finalised
+        # before the restore can safely run.
+        $script:FINAL_REPORT_PATH = (Join-Path $ORIGINAL_PWD $FinalName)
         # LDM-#1486: the marker must follow $status. This printed
         # "[SUCCESS] Verification Complete (fail)" on a failing run, and the
         # tail of the output is what a human actually reads.
         if ($status -eq "pass") {
             Write-Host "`n[SUCCESS] Verification Complete ($status)`n[RESULTS] Results: $FinalName"
         } else {
-            Write-Host "`n[FAILED] Verification FAILED ($status)" -ForegroundColor Red
+            Write-TrapNote "`n[FAILED] Verification FAILED ($status)"
             Write-Host "[RESULTS] Results: $FinalName"
         }
         # LDM-#1975: only a FULL run is archived. references\verification-results
@@ -530,7 +561,32 @@ function Finalize-Verification {
         }
     }
     Remove-Ldm1383Artifacts
-    Invoke-Cleanup "docker" "rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy"
+
+    # LDM-#2113: this was UNCONDITIONAL, where the bash half has always
+    # checked first. A verification run on Docker Desktop destroyed the
+    # shared proxy and search node out from under any other LDM project on
+    # the machine -- its containers keep running, so nothing reports a
+    # failure and the symptom is a site that stops being reachable and a
+    # search index served by a node that no longer exists. The same silent
+    # shape as LDM-#2083.
+    #
+    # Mirrors verify_e2e_refactor.sh deliberately, grep included: the defect
+    # is that the two halves disagreed, and agreeing is the smallest fix.
+    # That grep also matches non-LDM containers, so it can skip cleanup for
+    # something unrelated -- the safe direction, and noted on LDM-#2113
+    # rather than changed here.
+    $otherContainers = @(
+        & docker ps --format '{{.Names}}' 2>$null |
+            Where-Object {
+                $_ -and $_ -notmatch "^(liferay-proxy-global|liferay-search-global|liferay-docker-proxy|$([regex]::Escape($PROJECT_NAME))|$([regex]::Escape($PROJECT_NAME))-db-1)$"
+            }
+    )
+    if ($otherContainers.Count -eq 0) {
+        Write-TrapNote "[INFO]  No other LDM projects running. Cleaning up global infrastructure..."
+        Invoke-Cleanup "docker" "rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy"
+    } else {
+        Write-TrapNote "[INFO]  Other LDM projects are running ($($otherContainers -join ', ')). Skipping global infrastructure cleanup."
+    }
 
     # LDM-#1436: this used Invoke-Cleanup, which discards stdout, stderr AND the
     # exit code -- so a failed project removal was completely invisible here,
@@ -592,6 +648,11 @@ function Finalize-Verification {
     if (-not (Test-Path "pyproject.toml")) {
         if (Test-Path $LDM_WORKSPACE) { Remove-Item -Recurse -Force $LDM_WORKSPACE -ErrorAction SilentlyContinue }
     }
+
+    # LDM-#2112: LAST, after the project teardown above. Running it first is
+    # what made it fail on all three platforms -- the recreate is refused
+    # while LDM projects are running.
+    Restore-SharedInfrastructure
 }
 
 function ConvertFrom-LdmJson {
