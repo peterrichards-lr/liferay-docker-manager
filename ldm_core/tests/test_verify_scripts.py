@@ -1,6 +1,7 @@
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -3050,3 +3051,335 @@ class TheProxyRestoreSurvivesAFailingFinalizer(unittest.TestCase):
             - 1,  # minus the definition itself
             "Invoke-FinalizerBody should be called exactly once, by the wrapper",
         )
+
+
+def _ps_code_for_variable_scan(text):
+    """The script with comments and single-quoted string bodies removed.
+
+    A single-quoted PowerShell string does not interpolate, so `$f` inside one
+    is not a variable read. This script embeds whole bash programs that way --
+    `$p`, `$f`, `$m`, `$back`, `$bad` all live inside single-quoted payloads
+    passed to `docker exec` -- and treating them as PowerShell reads would
+    bury the one finding that matters under five that do not exist.
+
+    A literal single quote inside such a string is written by doubling it,
+    which the scanner has to honour or the rest of the file is swallowed as
+    string content.
+    """
+    out = []
+    i, n = 0, len(text)
+    quote = None
+    while i < n:
+        ch = text[i]
+        if quote == "'":
+            if ch == "'":
+                if i + 1 < n and text[i + 1] == "'":
+                    i += 2
+                    continue
+                quote = None
+                out.append(ch)
+            i += 1
+            continue
+        if quote == '"':
+            out.append(ch)
+            if ch == '"':
+                quote = None
+            i += 1
+            continue
+        if ch == "'":
+            quote = "'"
+            out.append(ch)
+            i += 1
+            continue
+        if ch == '"':
+            quote = '"'
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "#":
+            while i < n and text[i] != "\n":
+                i += 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+# PowerShell's own variables, which no script assigns.
+_PS_AUTOMATIC_VARIABLES = frozenset(
+    [
+        "_",
+        "args",
+        "confirmpreference",
+        "consolefilename",
+        "debugpreference",
+        "enabledexperimentalfeatures",
+        "erroractionpreference",
+        "error",
+        "executioncontext",
+        "false",
+        "foreach",
+        "home",
+        "informationpreference",
+        "input",
+        "iscoreclr",
+        "islinux",
+        "ismacos",
+        "iswindows",
+        "lastexitcode",
+        "matches",
+        "myinvocation",
+        "nestedpromptlevel",
+        "null",
+        "ofs",
+        "outputencoding",
+        "profile",
+        "progresspreference",
+        "psboundparameters",
+        "pscommandpath",
+        "psculture",
+        "psemailserver",
+        "pshome",
+        "psitem",
+        "psnativecommanduseerroractionpreference",
+        "psscriptroot",
+        "psuiculture",
+        "psversiontable",
+        "pwd",
+        "shellid",
+        "stacktrace",
+        "switch",
+        "true",
+        "verbosepreference",
+        "warningpreference",
+        "host",
+        "pid",
+    ]
+)
+
+
+def _ps_unassigned_variables(text):
+    """Every PowerShell variable the script reads and never assigns."""
+    code = _ps_code_for_variable_scan(text)
+
+    assigned = {
+        m.group(1).lower()
+        for m in re.finditer(
+            r"\$(?:script:|global:|local:|private:)?([A-Za-z_]\w*)\s*=", code
+        )
+    }
+    for pm in re.finditer(r"\bparam\s*\(", code, re.I):
+        depth, i = 1, pm.end()
+        while i < len(code) and depth:
+            if code[i] == "(":
+                depth += 1
+            elif code[i] == ")":
+                depth -= 1
+            i += 1
+        assigned |= {
+            v.group(1).lower()
+            for v in re.finditer(r"\$([A-Za-z_]\w*)", code[pm.end() : i - 1])
+        }
+    assigned |= {
+        m.group(1).lower()
+        for m in re.finditer(r"\bforeach\s*\(\s*\$([A-Za-z_]\w*)", code, re.I)
+    }
+
+    env = {m.group(1).lower() for m in re.finditer(r"\$env:([A-Za-z_]\w*)", code)}
+
+    findings: dict[str, int] = {}
+    # `env:` belongs in the prefix list, not the allowlist: without it
+    # `$env:FOO` reads as a variable literally named `env`.
+    for m in re.finditer(
+        r"\$(?:script:|global:|local:|private:|using:|env:)?([A-Za-z_]\w*)", code
+    ):
+        name = m.group(1).lower()
+        if name in assigned or name in env or name in _PS_AUTOMATIC_VARIABLES:
+            continue
+        findings.setdefault(name, code.count("\n", 0, m.start()) + 1)
+    return sorted(findings.items())
+
+
+class EveryPowerShellVariableReadIsAssigned(unittest.TestCase):
+    """LDM-#2135: `$PROJECT_NAME` was read four times and assigned never.
+
+    PowerShell does not error on an unassigned variable. It yields `$null`,
+    which stringifies to empty, so each reader silently did something
+    plausible and wrong:
+
+    - the finalizer excluded nothing, counted the run's own project as another
+      project, and skipped the shared teardown on EVERY Windows run;
+    - two LDM-#1944 checks watched `<workspace>\\routes` rather than the
+      project directory, so they reported `SKIPPED (not run)` after a 180s
+      wait and had never actually run on Windows -- which also refutes the
+      recorded diagnosis that those skips isolated to the Docker Desktop
+      backend, since the WSL2 run that "passed" them executes the bash half;
+    - the LDM-#2084 image sweep filtered on `reference=-*` and matched
+      nothing.
+
+    One missing assignment, four broken checks, three verification cycles, and
+    every run reported pass.
+    """
+
+    def test_no_variable_is_read_without_being_assigned(self):
+        findings = _ps_unassigned_variables(PS1_SCRIPT.read_text(encoding="utf-8"))
+        self.assertEqual(
+            [],
+            findings,
+            "read but never assigned (PowerShell yields $null, it does not "
+            "error): "
+            + "; ".join(f"${name} at line {line}" for name, line in findings),
+        )
+
+    def test_the_scanner_sees_a_missing_assignment(self):
+        sample = (
+            '$KNOWN = "yes"\n'
+            "function Use-It {\n"
+            "    param($Given)\n"
+            '    Write-Host "$KNOWN $Given $MISSING"\n'
+            "}\n"
+        )
+        self.assertEqual([("missing", 4)], _ps_unassigned_variables(sample))
+
+    def test_the_scanner_ignores_single_quoted_payloads(self):
+        """The five false positives this file would otherwise carry.
+
+        Single-quoted strings do not interpolate, and this script passes whole
+        bash programs through them.
+        """
+        sample = "$KNOWN = 'literal $notavariable here'\n"
+        self.assertEqual([], _ps_unassigned_variables(sample))
+
+        doubled = "$KNOWN = 'it''s fine $nope'\n$OTHER = $KNOWN\n"
+        self.assertEqual([], _ps_unassigned_variables(doubled))
+
+    def test_the_project_name_matches_the_one_passed_to_ldm(self):
+        """The assignment is only right while it agrees with the literal the
+        script already hands to `ldm rm`; nothing else ties them together."""
+        text = PS1_SCRIPT.read_text(encoding="utf-8")
+        assigned = re.search(r'^\$PROJECT_NAME = "([^"]+)"', text, re.M)
+        assert assigned is not None, "$PROJECT_NAME is not assigned"
+        removed = re.findall(r"-y rm (\S+) --delete", text)
+        self.assertTrue(removed, "the script no longer removes any project")
+        self.assertIn(
+            assigned.group(1),
+            removed,
+            f"$PROJECT_NAME is '{assigned.group(1)}' but the script removes "
+            f"{removed} -- the variable names a project nothing tears down",
+        )
+
+
+def _occupied_port():
+    """A port held open for the lifetime of the caller's `with` block."""
+    s = socket.socket()
+    s.bind(("", 0))
+    s.listen(1)
+    return s, s.getsockname()[1]
+
+
+def _run_bash_pick_free_port(preferred):
+    func = _extract_function(
+        BASH_SCRIPT, re.compile(r"^pick_free_port\s*\(\)\s*\{.*?^\}", re.M | re.S)
+    )
+    script = f'VENV_PYTHON=""\n{func}\npick_free_port {preferred}\n'
+    res = subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, check=False
+    )
+    return res, res.stdout.strip()
+
+
+def _run_ps_free_port(binary, preferred):
+    func = _extract_function(
+        PS1_SCRIPT, re.compile(r"^function Get-FreeSslTestPort\s*\{.*?^\}", re.M | re.S)
+    )
+    script = f"{func}\nWrite-Output (Get-FreeSslTestPort -Preferred {preferred})\n"
+    res = subprocess.run(
+        [binary, "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return res, res.stdout.strip()
+
+
+class TheSslPortCheckDoesNotDemandAnOccupiedPort(unittest.TestCase):
+    """LDM-#2136: the suite asked for 8443 and then demanded 8443.
+
+    When something else holds it, LDM detects the conflict and selects 8444 --
+    correct behaviour, and the same mechanism that prints "Global HTTP proxy
+    port 80 is in use on the host. Using 81 instead." The check had no branch
+    for it and exited 1, so the suite reported a product failure that had not
+    happened. It aborted the WSL2 verification of v2.26.5-pre.5 at section 2.
+
+    Not hypothetical: on that host `docker ps -a` was empty while ports 80 and
+    18080 were permanently LISTENing, held by a non-Docker listener on the
+    Windows side. A machine where LDM's own defaults are routinely taken is
+    the machine where a hand-picked 8443 is taken sooner or later. Same shape
+    as LDM-#2122 and LDM-#2123.
+
+    The assertion stays strict deliberately -- accepting whatever LDM reported
+    would pass if LDM ignored `--ssl-port` altogether, which is the thing
+    being verified.
+    """
+
+    def test_neither_half_still_demands_the_literal_port(self):
+        for path in (BASH_SCRIPT, PS1_SCRIPT):
+            text = path.read_text(encoding="utf-8")
+            body = "\n".join(
+                ln for ln in text.splitlines() if not ln.strip().startswith("#")
+            )
+            self.assertNotIn(
+                '"HostPort": "8443"',
+                body,
+                f"{path.name} still asserts the literal port",
+            )
+
+    def test_both_halves_resolve_a_port_before_asking_for_it(self):
+        bash = BASH_SCRIPT.read_text(encoding="utf-8")
+        self.assertLess(
+            bash.index("SSL_TEST_PORT=$(pick_free_port 8443)"),
+            bash.index('--ssl-port "$SSL_TEST_PORT"'),
+            "the bash half asks before it resolves",
+        )
+        ps1 = PS1_SCRIPT.read_text(encoding="utf-8")
+        self.assertLess(
+            ps1.index("$SSL_TEST_PORT = Get-FreeSslTestPort -Preferred 8443"),
+            ps1.index("--ssl-port $SSL_TEST_PORT"),
+            "the PowerShell half asks before it resolves",
+        )
+
+    def test_bash_prefers_the_requested_port_when_it_is_free(self):
+        sock, port = _occupied_port()
+        sock.close()  # free again, and unlikely to be retaken immediately
+        res, got = _run_bash_pick_free_port(port)
+        self.assertEqual(str(port), got, f"stderr={res.stderr!r}")
+
+    def test_bash_moves_off_a_port_that_is_held(self):
+        sock, port = _occupied_port()
+        try:
+            res, got = _run_bash_pick_free_port(port)
+            self.assertNotEqual(str(port), got, f"stderr={res.stderr!r}")
+            self.assertTrue(got.isdigit(), f"got {got!r}, stderr={res.stderr!r}")
+        finally:
+            sock.close()
+
+    @unittest.skipUnless(_powershell_binaries(), "no PowerShell on this machine")
+    def test_powershell_prefers_the_requested_port_when_it_is_free(self):
+        sock, port = _occupied_port()
+        sock.close()
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                res, got = _run_ps_free_port(binary, port)
+                self.assertEqual(str(port), got, f"stderr={res.stderr!r}")
+
+    @unittest.skipUnless(_powershell_binaries(), "no PowerShell on this machine")
+    def test_powershell_moves_off_a_port_that_is_held(self):
+        sock, port = _occupied_port()
+        try:
+            for name, binary in _powershell_binaries():
+                with self.subTest(shell=name):
+                    res, got = _run_ps_free_port(binary, port)
+                    self.assertNotEqual(str(port), got, f"stderr={res.stderr!r}")
+                    self.assertTrue(got.isdigit(), f"got {got!r}")
+        finally:
+            sock.close()

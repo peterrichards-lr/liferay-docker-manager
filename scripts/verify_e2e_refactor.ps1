@@ -115,6 +115,15 @@ $ErrorActionPreference = "Continue"
 $PSNativeCommandUseErrorActionPreference = $false
 $TEST_PORT = "8082"
 if ($env:LDM_TEST_PORT) { $TEST_PORT = $env:LDM_TEST_PORT }
+# LDM-#2135: this was READ in four places and assigned in none, so every
+# reader got an empty string. The finalizer excluded nothing and counted
+# the run's own project as somebody else's, skipping the shared teardown on
+# every run; the two LDM-#1944 checks watched "<workspace>\routes" instead
+# of the project directory and had therefore never run on Windows at all;
+# and the LDM-#2084 image sweep filtered on "reference=-*", matching
+# nothing. The literal below is the one the script already passes to
+# `ldm rm`, and a test asserts the two agree so they cannot drift.
+$PROJECT_NAME = "ldm-smoke-test"
 $TARGET_TEST_NODE = "e2e-target-${TEST_PORT}"
 $ANNOUNCE_TEST_NODE = "announce-node-${TEST_PORT}"
 $ANNOUNCE_TEST_PROJ = "announce-proj-${TEST_PORT}"
@@ -401,6 +410,35 @@ function Write-TrapNote {
     } elseif ($script:FINAL_REPORT_PATH -and (Test-Path $script:FINAL_REPORT_PATH)) {
         $Message | Out-File -FilePath $script:FINAL_REPORT_PATH -Append -Encoding utf8
     }
+}
+
+function Get-FreeSslTestPort {
+    # LDM-#2136: the suite asked for a hardcoded 8443 and then DEMANDED 8443.
+    # When something already holds it, LDM detects the conflict and selects
+    # 8444 -- correct, documented behaviour, the same mechanism behind "Global
+    # HTTP proxy port 80 is in use on the host. Using 81 instead." The check
+    # had no branch for that and exited 1, reporting a product failure that had
+    # not happened.
+    #
+    # The assertion stays strict on purpose: accepting "whatever LDM reported"
+    # would pass if LDM ignored --ssl-port altogether, which is the thing being
+    # verified. This only stops the check failing over a port the machine was
+    # never going to give us.
+    param([Parameter(Mandatory = $true)][int]$Preferred)
+    foreach ($candidate in @($Preferred, 0)) {
+        try {
+            $listener = [System.Net.Sockets.TcpListener]::new(
+                [System.Net.IPAddress]::Any, $candidate)
+            $listener.Start()
+            $port = $listener.LocalEndpoint.Port
+            $listener.Stop()
+            return $port
+        } catch {
+            # Occupied, or refused outright -- a Windows reserved range answers
+            # a bind with EACCES (LDM-#2123), which is equally "not ours".
+        }
+    }
+    return $Preferred
 }
 
 function Get-RunningProjectsExcept {
@@ -2634,12 +2672,20 @@ try {
     }
 
     Write-Host ">> Verifying Custom SSL Port & Recreate..."
-    Log-AndRun "Custom SSL Port Setup" $LDM_CMD "-y infra setup --ssl-port 8443 --force-recreate"
+    # LDM-#2136: resolved immediately before the check, not at the top of the
+    # run -- the image pulls sit in between, and a port free then can be taken
+    # by now.
+    $SSL_TEST_PORT = Get-FreeSslTestPort -Preferred 8443
+    Log-AndRun "Custom SSL Port Setup" $LDM_CMD "-y infra setup --ssl-port $SSL_TEST_PORT --force-recreate"
     $dockerInspect = & docker inspect liferay-proxy-global
-    if ($dockerInspect -cmatch '"HostPort": "8443"') {
-        Write-Verdict "[SUCCESS] Custom SSL Port & Recreate verified."
+    # Built as a literal and escaped, rather than interpolated into a regex:
+    # the port is a number here, but a pattern assembled by hand is how a
+    # metacharacter gets into one later.
+    $sslPortPattern = [regex]::Escape('"HostPort": "' + $SSL_TEST_PORT + '"')
+    if ($dockerInspect -cmatch $sslPortPattern) {
+        Write-Verdict "[SUCCESS] Custom SSL Port & Recreate verified (port $SSL_TEST_PORT)."
     } else {
-        Write-Host "[ERROR] ERROR: Traefik proxy was not recreated on custom port 8443!" -ForegroundColor Red
+        Write-Host "[ERROR] ERROR: Traefik proxy was not recreated on custom port $SSL_TEST_PORT!" -ForegroundColor Red
         exit 1
     }
 
