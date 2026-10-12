@@ -74,6 +74,22 @@ ldm restore demo --index 1 # Restore to index 1
 ldm restore demo --name "post-setup-gold-standard" # Restore by name
 ```
 
+**What a restore does to the search indices.** A restore always clears the
+project's indices on the shared search node first, then restores the
+snapshot's search indices if it carries any. A snapshot taken while search ran
+as a sidecar, taken before search existed, or whose search snapshot failed,
+carries none — the indices are still cleared, and the reindex LDM schedules
+for the next boot rebuilds them from the restored database.
+
+This matters because a reindex alone cannot repair a stale index. It re-adds
+documents for classes that still have indexers; documents whose classes no
+longer have one are exactly the ones it leaves behind. Before LDM-#2119 the
+clearing step was skipped whenever there was no search snapshot to put back,
+and those documents survived the restore invisibly.
+
+If the shared search service is not running, LDM says so and leaves the
+indices alone rather than reporting a clean restore it did not perform.
+
 ## What `ldm rm --delete` keeps
 
 `ldm rm --delete` removes the containers, the volumes, the registry entry and
@@ -238,21 +254,34 @@ ldm re-seed [project]             # Wipe ALL data and re-apply vanilla seed
 
 **Available Targets (for `reset`):**
 
-- **`state`** (Default): Clears the `osgi/state` folder.
-- **`search`**: Clears internal Sidecar indices.
-- **`db`**: Clears the database (e.g. PostgreSQL or Hypersonic).
-- **`global-search`**: Deletes the project's indices from the shared Global Search container.
-- **`all`**: Performs all of the above.
+- **`state`** (Default): Clears the `osgi/state` folder and its named volume.
+- **`db`**: Removes the project's database volume (`<project>-db-db-data`).
+- **`all`**: Clears `state`, `data`, `logs` and `db`, and tears the stack down
+  with `docker compose down -v` so anonymous volumes go too.
+- **`search`**, **`global-search`**: **Not currently implemented.** These are
+  accepted and report success without clearing any index — see
+  [LDM-#2127](https://github.com/peterrichards-lr/liferay-docker-manager/issues/2127).
+  To clear indices today, use `ldm reindex` or remove the project's indices on
+  the search node directly.
+
+Only one target may be given. A comma-separated list is not parsed — it is
+read as a single unknown target, which is also covered by LDM-#2127.
 
 **Examples:**
 
 ```bash
 ldm reset demo state          # Clear OSGi state for 'demo'
-ldm reset demo search,db      # Clear local search and DB
-ldm reset demo all            # Total project data wipe
+ldm reset demo db             # Remove the database volume only
+ldm reset demo all            # Total project data wipe, database included
 ldm re-seed demo              # Total project reset to Day Zero (Seeded)
 ```
 
+> **`all` includes the database.** Before LDM-#2118 it did not: the teardown
+> omitted `-v` and the volume sweep looked for `<project>-data` and
+> `<project>-state`, never `<project>-db-db-data`. The command reported
+> success, the project showed as `Not Created`, and the next start quietly
+> booted the old database.
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-14* | *Last Reviewed: 2026-09-14*
+*Last Updated: 2026-10-12* | *Last Reviewed: 2026-10-12*

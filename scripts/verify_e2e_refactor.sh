@@ -449,6 +449,45 @@ trap_report() {
     fi
 }
 
+# LDM-#2121: the running LDM projects other than the one named.
+#
+# `ldm list --json` is authoritative about what is an LDM project; `docker ps`
+# is authoritative only about what is a container, which is why matching names
+# against a hand-maintained pattern drifted the moment the suite grew two more
+# services.
+list_running_projects_except() {
+    local mine="$1"
+
+    # The EXIT trap is registered long before VENV_PYTHON is assigned, so an
+    # early failure reaches this with no interpreter. Falling back to the
+    # system python3 covers that; if even that is missing, the answer is
+    # UNKNOWN and must not be read as "nothing else is running" -- that would
+    # tear down the shared proxy and search node on the strength of a question
+    # that was never asked. The caller treats any non-empty value as "skip",
+    # so the sentinel fails safe in the same direction the old grep did.
+    local py="${VENV_PYTHON:-}"
+    if [ -z "$py" ] || [ ! -x "$py" ]; then
+        py=$(command -v python3 2>/dev/null || true)
+    fi
+    if [ -z "$py" ]; then
+        echo "__unknown__"
+        return 0
+    fi
+
+    "$LDM_CMD" list --json 2>/dev/null \
+        | "$py" -c 'import json,sys
+mine = sys.argv[1]
+try:
+    rows = json.load(sys.stdin)
+except Exception:
+    rows = []
+print(" ".join(
+    r.get("project", "?") for r in rows
+    if str(r.get("status", "")).lower() == "running"
+    and r.get("project") != mine
+))' "$mine" 2>/dev/null || true
+}
+
 restore_shared_infrastructure() {
     # LDM-#2112: called at the very END of the trap, after this run's project
     # has been torn down. The first version ran at the TOP and was refused on
@@ -576,10 +615,23 @@ cleanup_test_projects() {
     cleanup_1383_artifacts
 
     if [ "$KEEP_ARTIFACTS" != "true" ]; then
-        # Check if other LDM project containers are running before tearing down global Traefik/proxy
+        # LDM-#2121: ask LDM which PROJECTS are running, not `docker ps` which
+        # containers exist.
+        #
+        # The exclusion list named `${PROJECT_NAME}` and `${PROJECT_NAME}-db-1`
+        # and nothing else, but a run also creates `${PROJECT_NAME}-db`,
+        # `${PROJECT_NAME}-syntheticsvc` and `${PROJECT_NAME}-derivedsvc`. So
+        # the suite saw its own containers as "other projects",
+        # `other_containers` was never empty, and the global cleanup was
+        # skipped on EVERY run -- including on a machine with nothing else on
+        # it. Both pre.4 reports show exactly that, and both passed.
+        #
+        # The LDM-#2085 pre-flight already asks the right question of the right
+        # source, and its comment even names this call site as the one that
+        # does not. Same question, same source, asked twice.
         local other_containers
-        other_containers=$(docker ps --format '{{.Names}}' | grep -vE "^(liferay-proxy-global|liferay-search-global|liferay-docker-proxy|${PROJECT_NAME}|${PROJECT_NAME}-db-1)$" || true)
-        if [ -z "$other_containers" ]; then
+        other_containers=$(list_running_projects_except "$PROJECT_NAME")
+        if [ -z "${other_containers// /}" ]; then
             trap_report "ℹ  No other LDM projects running. Cleaning up global infrastructure..."
             docker rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy 2>/dev/null || true
         else
@@ -1124,9 +1176,21 @@ if section_enabled guardrails; then
 # the suite exits from dozens of points between here and the end, and an
 # inline restore would be skipped by exactly the failing runs that leave
 # the machine mutated.
-ORIGINAL_SSL_PORT=$(docker inspect liferay-proxy-global \
-    --format '{{(index (index .NetworkSettings.Ports "443/tcp") 0).HostPort}}' \
-    2>/dev/null | tr -d '\r' || true)
+# LDM-#2121: read the port LDM would CHOOSE, not the port the machine happens
+# to be on.
+#
+# This used to `docker inspect` the live proxy. On a machine already polluted
+# by an earlier run the proxy was ALREADY on 8443 when the capture happened, so
+# the restore compared 8443 against 8443, correctly concluded there was nothing
+# to do, and left the machine exactly as wrong as it found it. The restore did
+# nothing precisely when it was most needed, and both reporting machines had
+# been on 8443 since earlier pre-release runs.
+#
+# A live container cannot distinguish a deliberate choice from this bug's own
+# residue. LDM's own answer can: `handlers/infra.py` resolves the proxy's SSL
+# port from --ssl-port, else LDM_SSL_PORT, else 443. There is no persisted
+# global default, so that is the whole of the intent.
+ORIGINAL_SSL_PORT="${LDM_SSL_PORT:-443}"
 case "$ORIGINAL_SSL_PORT" in
     ''|*[!0-9]*) ORIGINAL_SSL_PORT=443 ;;
 esac

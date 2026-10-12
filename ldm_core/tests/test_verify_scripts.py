@@ -1850,6 +1850,26 @@ class TheSuiteRemovesTheImagesItBuilds(unittest.TestCase):
                 )
 
 
+def _preflight_offset(text):
+    """Where the LDM-#2085 pre-flight actually begins.
+
+    LDM-#2121: these tests used `text.index("LDM-#2085")`, the FIRST mention of
+    the tag anywhere in the file. That is not an anchor, it is a coincidence --
+    any later comment that cites the issue moves it. LDM-#2121 added one in the
+    cleanup path, several hundred lines earlier, and the breakage was not
+    symmetric: one test failed loudly while `test_the_pre_flight_runs_before_the_pulls`
+    started PASSING for the wrong reason, comparing a comment's position
+    against the image pulls instead of the guard's.
+
+    A silent false pass in a test that exists to police ordering is worse than
+    the failure beside it, so all three now anchor on the sentence that opens
+    the pre-flight in both halves. It is unique to that block, and it sits
+    ahead of the parsing the array test needs to see -- which the refusal
+    message, tried first, does not.
+    """
+    return text.index("refuse to run while another LDM project is live.")
+
+
 class TheSuiteRefusesToRunBesideLiveProjects(unittest.TestCase):
     """LDM-#2085: the suite reconfigures shared infrastructure.
 
@@ -1877,7 +1897,7 @@ class TheSuiteRefusesToRunBesideLiveProjects(unittest.TestCase):
         for path in (BASH_SCRIPT, PS1_SCRIPT):
             text = path.read_text(encoding="utf-8")
             with self.subTest(script=path.name):
-                guard = text.index("LDM-#2085")
+                guard = _preflight_offset(text)
                 pull = text.index("Pre-pulling required Docker images")
                 self.assertLess(
                     guard, pull, f"{path.name} checks only after pulling images"
@@ -1891,7 +1911,7 @@ class TheSuiteRefusesToRunBesideLiveProjects(unittest.TestCase):
         have its index destroyed -- LDM-#1300 in a new place.
         """
         text = PS1_SCRIPT.read_text(encoding="utf-8")
-        guard = text.index("LDM-#2085")
+        guard = _preflight_offset(text)
         block = text[guard : guard + 2500]
         self.assertIn(
             "ConvertTo-LdmArray",
@@ -1906,7 +1926,7 @@ class TheSuiteRefusesToRunBesideLiveProjects(unittest.TestCase):
         """
         for path in (BASH_SCRIPT, PS1_SCRIPT):
             text = path.read_text(encoding="utf-8")
-            guard = text.index("LDM-#2085")
+            guard = _preflight_offset(text)
             block = text[guard : guard + 3500]
             with self.subTest(script=path.name):
                 self.assertIn("ldm stop", block, "no actionable remedy given")
@@ -1951,13 +1971,99 @@ class TheSuiteRestoresTheSharedStateItChanges(unittest.TestCase):
             "function Restore-SharedInfrastructure", self._code_only(PS1_SCRIPT)
         )
 
-    def test_both_halves_record_the_port_before_changing_it(self):
-        """Restoring to a hardcoded 443 would be wrong on a machine that was
-        deliberately on another port."""
-        self.assertIn(
-            "ORIGINAL_SSL_PORT=$(docker inspect", self._code_only(BASH_SCRIPT)
+    def test_the_port_to_restore_comes_from_config_not_the_live_container(self):
+        """LDM-#2121 inverts what this test used to assert, deliberately.
+
+        It required `ORIGINAL_SSL_PORT=$(docker inspect`, reasoning that
+        restoring to a hardcoded 443 would be wrong on a machine deliberately
+        on another port. The concern is real; reading the live container is
+        not a way to meet it.
+
+        On a machine already polluted by an earlier run the proxy is ALREADY
+        on 8443 when the capture happens. The suite then sets 8443, the two
+        match, and the restore correctly concludes there is nothing to do --
+        leaving the machine exactly as wrong as it found it. A container
+        cannot distinguish a deliberate choice from this bug's own residue.
+
+        LDM's own resolution can: `handlers/infra.py` takes --ssl-port, else
+        LDM_SSL_PORT, else 443, and no global default is persisted. So an
+        operator who means it exports LDM_SSL_PORT, and everyone else gets
+        443 -- the documented default, and what the suite found on a clean
+        machine anyway.
+        """
+        bash = self._code_only(BASH_SCRIPT)
+        self.assertIn('ORIGINAL_SSL_PORT="${LDM_SSL_PORT:-443}"', bash)
+        self.assertNotIn(
+            "ORIGINAL_SSL_PORT=$(docker inspect",
+            bash,
+            "reading the live proxy is the defect: on a polluted machine it "
+            "captures 8443 and the restore becomes a no-op",
         )
-        self.assertIn("script:ORIGINAL_SSL_PORT", self._code_only(PS1_SCRIPT))
+
+        ps1 = self._code_only(PS1_SCRIPT)
+        self.assertIn("$env:LDM_SSL_PORT", ps1)
+        self.assertNotIn("$probed = (& docker inspect liferay-proxy-global", ps1)
+
+    def test_neither_half_identifies_other_projects_by_container_name(self):
+        """LDM-#2121 defect 1: the exclusion pattern could not keep up.
+
+        It named `${PROJECT_NAME}` and `${PROJECT_NAME}-db-1`, but a run also
+        creates `-db`, `-syntheticsvc` and `-derivedsvc`. So the suite counted
+        its own containers as other projects, `other_containers` was never
+        empty, and the global cleanup was skipped on EVERY run -- including on
+        a machine with nothing else on it. Both pre.4 reports show it, and
+        both passed.
+
+        `ldm list --json` is authoritative about what is an LDM project; the
+        LDM-#2085 pre-flight already asks it, and its comment names this call
+        site as the one that does not.
+        """
+        for path in (BASH_SCRIPT, PS1_SCRIPT):
+            self.assertNotIn(
+                "liferay-docker-proxy|",
+                self._code_only(path),
+                f"{path.name} still filters docker ps output by a "
+                f"hand-maintained name pattern",
+            )
+        self.assertIn("list_running_projects_except", self._code_only(BASH_SCRIPT))
+        self.assertIn("Get-RunningProjectsExcept", self._code_only(PS1_SCRIPT))
+
+    def test_an_unknown_answer_does_not_license_a_teardown(self):
+        """LDM-#2121: the EXIT trap can run before VENV_PYTHON is assigned.
+
+        The trap is registered around line 729; VENV_PYTHON is set around line
+        874. An early failure in between reaches the cleanup with no
+        interpreter, and an empty answer there would read as "nothing else is
+        running" -- licensing the removal of the shared proxy and search node
+        on the strength of a question that was never asked.
+
+        Both halves return a sentinel instead, and the caller treats any
+        non-empty value as "skip", which fails safe in the same direction the
+        old grep did.
+        """
+        func = _extract_function(
+            BASH_SCRIPT,
+            re.compile(r"^list_running_projects_except\s*\(\)\s*\{.*?^\}", re.M | re.S),
+        )
+        script = (
+            "set -e\n"
+            'VENV_PYTHON=""\n'
+            'LDM_CMD="ldm"\n'
+            'PATH="/nonexistent"\n'
+            f"{func}\n"
+            'list_running_projects_except "mine"\n'
+        )
+        res = subprocess.run(
+            ["bash", "-c", script], capture_output=True, text=True, check=False
+        )
+        self.assertEqual(
+            res.stdout.strip(),
+            "__unknown__",
+            "with no interpreter the helper returned an empty answer, which "
+            "the caller reads as 'nothing else is running'",
+        )
+
+        self.assertIn("__unknown__", self._code_only(PS1_SCRIPT))
 
     def test_the_restore_runs_after_the_project_teardown(self):
         """LDM-#2112: it ran FIRST in the trap and was refused every time.
@@ -2280,3 +2386,108 @@ class TheNodeTargetGuardAsksLdmNotTheFile(unittest.TestCase):
         ):
             body = self._fn(path, start)
             self.assertIn("LDM resolved", body, path.name)
+
+
+class TestTheProxyRestoreCorrectsAPollutedMachine(unittest.TestCase):
+    """LDM-#2121, behaviourally. The starting condition IS the bug.
+
+    An assertion that the restore RAN would not have caught this: it ran, and
+    correctly did nothing, because it had been told the machine's current
+    (wrong) port was the original one. So these tests begin where the reports
+    began -- a proxy already on 8443 before the suite touches anything.
+
+    Both v2.26.5-pre.4 reports contain no restore lines at all, and both
+    passed.
+    """
+
+    def _run_restore(self, env, proxy_port):
+        """Runs the real restore_shared_infrastructure against a fake docker.
+
+        The fake reports the port from a file and lets the fake `ldm` rewrite
+        it, so it behaves like a recreate rather than always agreeing. A stub
+        that echoed a constant could not tell a restore that worked from one
+        that was skipped -- which is the distinction this whole issue turns
+        on.
+        """
+        func = _extract_function(
+            BASH_SCRIPT,
+            re.compile(
+                r"^restore_shared_infrastructure\s*\(\)\s*\{.*?^\}", re.M | re.S
+            ),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            bin_dir = tmp_path / "bin"
+            bin_dir.mkdir()
+            state = tmp_path / "port"
+            state.write_text(str(proxy_port))
+
+            docker = bin_dir / "docker"
+            docker.write_text(
+                f'#!/bin/bash\nif [ "$1" = "inspect" ]; then cat "{state}"; fi\n'
+            )
+            # lint: executable-stub -- bash must exec it; "docker" is not a watched name
+            docker.chmod(0o755)
+
+            # NOT named "ldm". LDM-#1898: a test stub called lfr-tunnel was
+            # spawned from a temporary directory and endpoint protection killed
+            # two developer sessions before anyone connected the two, and "ldm"
+            # is on the same watched list (scripts/check_test_binary_stubs.py).
+            # The function under test invokes "$LDM_CMD", so the name is ours
+            # to choose and there is no reason to choose a watched one.
+            ldm = tmp_path / "fake-ldm-cli"
+            ldm.write_text(
+                "#!/bin/bash\n"
+                'prev=""\n'
+                'for a in "$@"; do\n'
+                f'  if [ "$prev" = "--ssl-port" ]; then printf %s "$a" > "{state}"; fi\n'
+                '  prev="$a"\n'
+                "done\n"
+                "exit 0\n"
+            )
+            # lint: executable-stub -- bash must exec it; renamed off the watched list
+            ldm.chmod(0o755)
+
+            script = (
+                "set -u\n"
+                'trap_report() { echo "$*"; }\n'
+                f'LDM_CMD="{ldm}"\n'
+                "LDM_WORKSPACE=\n"
+                f"{func}\n"
+                "restore_shared_infrastructure\n"
+            )
+            run_env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+            run_env.update(env)
+            res = subprocess.run(
+                ["bash", "-c", script],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=run_env,
+            )
+            return res, state.read_text()
+
+    def test_a_machine_already_on_8443_is_corrected(self):
+        """The reported machines. Previously a silent no-op."""
+        res, final = self._run_restore({"ORIGINAL_SSL_PORT": "443"}, proxy_port=8443)
+        self.assertEqual(
+            final,
+            "443",
+            f"the proxy was left on {final}; stdout was:\n{res.stdout}",
+        )
+        self.assertIn("Global proxy restored to SSL port 443", res.stdout)
+
+    def test_a_clean_machine_is_left_alone(self):
+        """Already correct means nothing to do, and nothing to report."""
+        res, final = self._run_restore({"ORIGINAL_SSL_PORT": "443"}, proxy_port=443)
+        self.assertEqual(final, "443")
+        self.assertNotIn("Restoring the global proxy", res.stdout)
+
+    def test_a_deliberate_non_default_port_is_honoured(self):
+        """The old test's concern, met through configuration instead.
+
+        An operator who genuinely runs the proxy elsewhere exports
+        LDM_SSL_PORT, and the suite puts it back there rather than on 443.
+        """
+        res, final = self._run_restore({"ORIGINAL_SSL_PORT": "9443"}, proxy_port=8443)
+        self.assertEqual(final, "9443", res.stdout)
