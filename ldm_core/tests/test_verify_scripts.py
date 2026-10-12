@@ -2491,3 +2491,562 @@ class TestTheProxyRestoreCorrectsAPollutedMachine(unittest.TestCase):
         """
         res, final = self._run_restore({"ORIGINAL_SSL_PORT": "9443"}, proxy_port=8443)
         self.assertEqual(final, "9443", res.stdout)
+
+
+def _ps_strip_comments(line):
+    """Remove a trailing PowerShell `#` comment, respecting quotes."""
+    out: list[str] = []
+    quote = None
+    for ch in line:
+        if quote:
+            out.append(ch)
+            if ch == quote:
+                quote = None
+            continue
+        if ch in "'\"":
+            quote = ch
+            out.append(ch)
+            continue
+        if ch == "#":
+            break
+        out.append(ch)
+    return "".join(out)
+
+
+def _ps_split_top_level(text, sep=","):
+    """Split on `sep` at bracket depth 0, outside quotes."""
+    parts: list[str] = []
+    buf: list[str] = []
+    depth, quote = 0, None
+    for ch in text:
+        if quote:
+            buf.append(ch)
+            if ch == quote:
+                quote = None
+            continue
+        if ch in "'\"":
+            quote = ch
+        elif ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif ch == sep and depth == 0:
+            parts.append("".join(buf))
+            buf = []
+            continue
+        buf.append(ch)
+    parts.append("".join(buf))
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _ps_param_blocks(text):
+    """Map each PowerShell function name -> ordered list of parameter dicts.
+
+    Each entry is {"name", "mandatory", "switch"}. Only the function's own
+    `param(...)` block is read -- the first one after the `function` keyword,
+    which is the only form this script uses.
+    """
+    blocks: dict[str, list[dict[str, object]]] = {}
+    for m in re.finditer(r"^function\s+([A-Za-z][\w-]*)\s*\{", text, re.M):
+        name = m.group(1)
+        rest = text[m.end() :]
+        pm = re.search(r"\bparam\s*\(", rest)
+        if not pm:
+            blocks[name] = []
+            continue
+        # The param block must belong to THIS function, not a later one.
+        nxt = re.search(r"^function\s+[A-Za-z][\w-]*\s*\{", rest, re.M)
+        if nxt and nxt.start() < pm.start():
+            blocks[name] = []
+            continue
+        depth, i = 1, pm.end()
+        while i < len(rest) and depth:
+            if rest[i] == "(":
+                depth += 1
+            elif rest[i] == ")":
+                depth -= 1
+            i += 1
+        body = rest[pm.end() : i - 1]
+        params = []
+        for decl in _ps_split_top_level(body):
+            # Separate the attribute brackets from the variable itself before
+            # looking for either. Taking the first `$` in the declaration finds
+            # the `$true` inside `[Parameter(Mandatory = $true)]`, names the
+            # parameter "true", and -- because the attribute text is then cut
+            # short of its own `$true` -- reports every mandatory parameter as
+            # optional. The sweep below passes vacuously when that happens,
+            # which is what test_the_binder_can_see_a_missing_mandatory_
+            # parameter exists to catch.
+            attrs: list[str] = []
+            bare: list[str] = []
+            depth = 0
+            for ch in decl:
+                if ch == "[":
+                    depth += 1
+                (attrs if depth else bare).append(ch)
+                if ch == "]":
+                    depth -= 1
+            attr_text = "".join(attrs)
+            vm = re.search(r"\$([A-Za-z_]\w*)", "".join(bare))
+            if not vm:
+                continue
+            params.append(
+                {
+                    "name": vm.group(1),
+                    "mandatory": bool(
+                        re.search(r"Mandatory\s*=\s*\$true", attr_text, re.I)
+                    ),
+                    "switch": "[switch]" in attr_text.replace(" ", "").lower(),
+                }
+            )
+        blocks[name] = params
+    return blocks
+
+
+def _ps_call_arguments(text, index):
+    """Tokenise the arguments of a call beginning at `index` (just past the
+    function name), stopping at the end of the command."""
+    tokens: list[str] = []
+    buf: list[str] = []
+    depth, quote = 0, None
+    i = index
+    while i < len(text):
+        ch = text[i]
+        if quote:
+            buf.append(ch)
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in "'\"":
+            quote = ch
+            buf.append(ch)
+            i += 1
+            continue
+        if ch == "`" and i + 1 < len(text) and text[i + 1] == "\n":
+            i += 2  # line continuation: the command carries on
+            continue
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            if depth == 0:
+                break
+            depth -= 1
+        elif depth == 0 and ch in "|;\n#":
+            break  # end of this command, or the start of a trailing comment
+        if depth == 0 and ch in " \t":
+            if buf:
+                tokens.append("".join(buf))
+                buf = []
+            i += 1
+            continue
+        buf.append(ch)
+        i += 1
+    if buf:
+        tokens.append("".join(buf))
+    return tokens
+
+
+def _ps_unbound_mandatory(text):
+    """Every in-script call that leaves a Mandatory parameter unsupplied.
+
+    Returns a list of (function, line number, missing parameter names).
+    """
+    blocks = _ps_param_blocks(text)
+    interesting = {n: p for n, p in blocks.items() if any(q["mandatory"] for q in p)}
+    findings = []
+    for name, params in interesting.items():
+        for m in re.finditer(rf"(?<![\w-]){re.escape(name)}(?![\w-])", text):
+            line_start = text.rfind("\n", 0, m.start()) + 1
+            prefix = _ps_strip_comments(text[line_start : m.start()])
+            if len(prefix) != m.start() - line_start:
+                continue  # the name sits inside a comment
+            if re.search(r"(function|filter)\s*$", prefix):
+                continue  # the definition itself
+            args = _ps_call_arguments(text, m.end())
+            if any(a.startswith("@") for a in args):
+                continue  # splatted: not statically analysable
+            named, positional, idx = set(), 0, 0
+            lookup = {p["name"].lower(): p for p in params}
+            while idx < len(args):
+                tok = args[idx]
+                key = tok[1:].lower() if tok.startswith("-") else None
+                if key and key in lookup:
+                    named.add(lookup[key]["name"])
+                    if not lookup[key]["switch"]:
+                        idx += 1
+                elif tok.startswith("-") and re.match(r"^-[A-Za-z]", tok):
+                    idx += 1  # an unrecognised named argument; skip its value
+                else:
+                    positional += 1
+                idx += 1
+            remaining = [p for p in params if p["name"] not in named]
+            missing = [
+                p["name"]
+                for pos, p in enumerate(remaining)
+                if p["mandatory"] and pos >= positional
+            ]
+            if missing:
+                findings.append((name, text.count("\n", 0, m.start()) + 1, missing))
+    return findings
+
+
+class EveryPowerShellCallSuppliesItsMandatoryParameters(unittest.TestCase):
+    """LDM-#2132: a missing Mandatory parameter is an interactive PROMPT.
+
+    `Get-RunningProjectsExcept` called `ConvertFrom-LdmJson $raw`, binding the
+    one positional argument to `-Raw` and leaving `-Label` -- declared
+    `Mandatory = $true` -- unsupplied. PowerShell does not fail on that; it
+    stops and asks:
+
+        cmdlet ConvertFrom-LdmJson at command pipeline position 1
+        Supply values for the following parameters:
+        Label:
+
+    The call sits in `Finalize-Verification`, which runs on every exit path,
+    so EVERY PowerShell run of v2.26.5-pre.5 stopped there -- pass or fail.
+    Unattended, it hangs until the harness kills it.
+
+    Nothing existing could see it. PSScriptAnalyzer does not check a call
+    against a local function's parameter block; the suite's own test asserted
+    only that the string "Get-RunningProjectsExcept" appeared in the file,
+    which a broken call site preserves perfectly; and the bash twin -- the
+    half that IS executed by a test -- was correct. This is the Behaviour
+    Coverage Gate's first tell, applied to the half that was convenient to
+    run.
+
+    So this test reads the parameter blocks and binds every call site the way
+    PowerShell would: named arguments first, then positional arguments
+    filling what remains in declaration order.
+    """
+
+    def test_no_call_site_leaves_a_mandatory_parameter_unsupplied(self):
+        findings = _ps_unbound_mandatory(PS1_SCRIPT.read_text(encoding="utf-8"))
+        self.assertEqual(
+            [],
+            findings,
+            "these calls would stop for an interactive prompt: "
+            + "; ".join(
+                f"{name} at line {line} is missing {', '.join(missing)}"
+                for name, line, missing in findings
+            ),
+        )
+
+    def test_the_binder_can_see_a_missing_mandatory_parameter(self):
+        """The probe, inline: the checker must fail on the shape it exists for.
+
+        Without this, a parser that silently found no functions at all would
+        report a clean result forever.
+        """
+        sample = (
+            "function Get-Thing {\n"
+            "    param(\n"
+            "        [Parameter(Mandatory = $true)][AllowNull()]$Raw,\n"
+            "        [Parameter(Mandatory = $true)][string]$Label\n"
+            "    )\n"
+            "    return $Raw\n"
+            "}\n"
+            "$x = Get-Thing $data\n"
+        )
+        self.assertEqual(
+            [("Get-Thing", 8, ["Label"])],
+            _ps_unbound_mandatory(sample),
+        )
+
+    def test_the_binder_accepts_a_correctly_supplied_call(self):
+        """And it must not cry wolf -- named, positional and switch forms."""
+        sample = (
+            "function Get-Thing {\n"
+            "    param(\n"
+            "        [Parameter(Mandatory = $true)][AllowNull()]$Raw,\n"
+            "        [Parameter(Mandatory = $true)][string]$Label,\n"
+            "        [switch]$Quiet\n"
+            "    )\n"
+            "    return $Raw\n"
+            "}\n"
+            '$a = Get-Thing -Raw $data -Label "list --json"\n'
+            '$b = Get-Thing $data "list --json"\n'
+            '$c = Get-Thing -Quiet -Raw $data -Label "list --json"\n'
+            '$d = (Get-Thing -Raw $data -Label "x") | ForEach-Object { $_ }\n'
+            '$e = Get-Thing -Label "x" $data\n'
+        )
+        self.assertEqual([], _ps_unbound_mandatory(sample))
+
+    def test_the_helper_that_shipped_broken_is_now_bound_by_name(self):
+        """LDM-#2132, specifically: the call that caused it.
+
+        Pinned separately from the sweep so the reason survives if the sweep
+        is ever narrowed -- and because `-Label` is what names the helper in
+        its own error output, so a positional fix would be worse than none.
+        """
+        text = PS1_SCRIPT.read_text(encoding="utf-8")
+        func = re.search(
+            r"^function Get-RunningProjectsExcept\s*\{.*?^\}", text, re.M | re.S
+        )
+        assert func is not None, "Get-RunningProjectsExcept is gone"
+        body = func.group(0)
+        self.assertIn('ConvertFrom-LdmJson -Raw $raw -Label "list --json"', body)
+
+    def test_the_parse_failure_returns_the_sentinel_rather_than_throwing(self):
+        """LDM-#2132: the second half. ConvertFrom-LdmJson ends its catch with
+        a bare `throw`, so a parse outside the try defeated the whole point of
+        the function -- its contract is to answer "__unknown__" when it cannot
+        tell, and `Finalize-Verification` has no handler, so the throw skipped
+        `Restore-SharedInfrastructure` on its last line. That is exactly the
+        outcome LDM-#2121 exists to prevent, reached by a different route, and
+        it is what a run with Docker stopped actually did.
+        """
+        text = PS1_SCRIPT.read_text(encoding="utf-8")
+        found = re.search(
+            r"^function Get-RunningProjectsExcept\s*\{.*?^\}", text, re.M | re.S
+        )
+        assert found is not None, "Get-RunningProjectsExcept is gone"
+        try_body = re.search(r"try\s*\{(.*?)\}\s*catch", found.group(0), re.S)
+        assert try_body is not None, "the helper no longer guards its probe"
+        self.assertIn(
+            "ConvertFrom-LdmJson",
+            try_body.group(1),
+            "the JSON parse sits outside the try, so an unparseable answer "
+            "propagates instead of returning the __unknown__ sentinel",
+        )
+
+
+_PS_JSON_HELPERS = (
+    r"^function ConvertTo-LdmText\s*\{.*?^\}",
+    r"^function ConvertFrom-LdmJson\s*\{.*?^\}",
+    r"^function ConvertTo-LdmArray\s*\{.*?^\}",
+    r"^function Get-RunningProjectsExcept\s*\{.*?^\}",
+)
+
+
+def _run_get_running_projects_except(binary, payload):
+    """Drives the REAL Get-RunningProjectsExcept against a fake CLI.
+
+    `-NonInteractive` is the whole point: it turns PowerShell's
+    missing-mandatory-parameter PROMPT into an error, so LDM-#2132 shows up as
+    a failure here instead of as a hung run on someone's Windows box.
+    """
+    funcs = "\n".join(
+        _extract_function(PS1_SCRIPT, re.compile(p, re.M | re.S))
+        for p in _PS_JSON_HELPERS
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        # A PowerShell script, not a compiled stub: nothing is chmod'd and
+        # nothing is named `ldm`. LDM-#1898 -- a stub called lfr-tunnel run
+        # from a temporary directory had endpoint protection kill two
+        # developer sessions, and `ldm` is on the same watched list
+        # (scripts/check_test_binary_stubs.py).
+        stub = Path(tmp) / "fake-ldm-cli.ps1"
+        stub.write_text(payload, encoding="utf-8")
+        script = (
+            f"{funcs}\n"
+            f"$LDM_CMD = '{stub.as_posix()}'\n"
+            "$r = @(Get-RunningProjectsExcept 'mine')\n"
+            "Write-Output ('RESULT:' + ($r -join ','))\n"
+        )
+        res = subprocess.run(
+            [binary, "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    marker = [ln for ln in res.stdout.splitlines() if ln.startswith("RESULT:")]
+    return res, (marker[-1][len("RESULT:") :] if marker else None)
+
+
+@unittest.skipUnless(_powershell_binaries(), "no PowerShell on this machine")
+class TheRunningProjectProbeAnswersWithoutAskingTheOperator(unittest.TestCase):
+    """LDM-#2132, behaviourally -- the static sweep's executed counterpart.
+
+    `Get-RunningProjectsExcept` is the finalizer's gate on tearing down the
+    shared proxy and search node, and its contract is that it answers
+    `__unknown__` when it cannot tell. Two defects shipped in v2.26.5-pre.5
+    broke that contract in opposite directions:
+
+    - `ConvertFrom-LdmJson $raw` left the Mandatory `-Label` unsupplied, so
+      PowerShell stopped and asked the operator for it on EVERY run;
+    - the parse sat outside the `try`, and `ConvertFrom-LdmJson` ends its
+      catch with a bare `throw`, so unparseable output escaped the function
+      entirely. `Finalize-Verification` has no handler and calls
+      `Restore-SharedInfrastructure` on its last line, so the proxy was left
+      on whatever port the run had moved it to -- the exact outcome
+      LDM-#2121 exists to prevent.
+
+    Both are invisible to a test that greps the file for a function name,
+    which is what the suite had. These drive the real function.
+    """
+
+    def _assert_no_prompt(self, res):
+        """Both faces of the same defect.
+
+        Interactively PowerShell PRINTS the first phrase and waits, which is
+        what the operator saw. Under -NonInteractive it never asks: it writes
+        the second phrase to stderr and leaves the variable `$null`, so the
+        function returns `__unknown__` and the shared teardown is skipped on
+        every run with nothing in the report to say why. Asserting only on the
+        prompt would therefore pass against the broken script in exactly the
+        mode CI runs in.
+        """
+        combined = res.stdout + res.stderr
+        self.assertNotIn(
+            "Supply values for the following parameters",
+            combined,
+            "the helper stopped to ask the operator for a parameter",
+        )
+        self.assertNotIn(
+            "missing mandatory parameters",
+            combined,
+            "a call site left a Mandatory parameter unsupplied; the answer "
+            "below is the binder failing, not the helper deciding",
+        )
+
+    def test_unparseable_output_answers_unknown_instead_of_throwing(self):
+        """Docker stopped is not an exotic case -- it is how #2132 was found.
+
+        `ldm list --json` printed a connection error, which is not JSON. The
+        answer must be the sentinel, not an exception.
+        """
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                res, result = _run_get_running_projects_except(
+                    binary,
+                    "Write-Output 'failed to connect to the docker API'\n",
+                )
+                self._assert_no_prompt(res)
+                self.assertEqual(
+                    "__unknown__",
+                    result,
+                    f"stdout={res.stdout!r} stderr={res.stderr!r}",
+                )
+
+    def test_no_output_at_all_answers_unknown(self):
+        """ConvertFrom-LdmJson throws its own error on empty input, so this
+        reaches the catch by a different route from the one above."""
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                res, result = _run_get_running_projects_except(binary, "\n")
+                self._assert_no_prompt(res)
+                self.assertEqual(
+                    "__unknown__",
+                    result,
+                    f"stdout={res.stdout!r} stderr={res.stderr!r}",
+                )
+
+    def test_another_running_project_is_named(self):
+        """And it must still do its job: the sentinel is not a way to pass."""
+        payload = (
+            'Write-Output \'[{"project":"other","status":"Running"},'
+            '{"project":"mine","status":"Running"}]\'' + "\n"
+        )
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                res, result = _run_get_running_projects_except(binary, payload)
+                self._assert_no_prompt(res)
+                self.assertEqual(
+                    "other", result, f"stdout={res.stdout!r} stderr={res.stderr!r}"
+                )
+
+    def test_only_our_own_project_running_licenses_the_cleanup(self):
+        """An empty answer is what permits the shared teardown, so it has to
+        be reachable -- a helper that always said `__unknown__` would pass the
+        two tests above and never clean up anything."""
+        payload = 'Write-Output \'[{"project":"mine","status":"Running"}]\'\n'
+        for name, binary in _powershell_binaries():
+            with self.subTest(shell=name):
+                res, result = _run_get_running_projects_except(binary, payload)
+                self._assert_no_prompt(res)
+                self.assertEqual(
+                    "", result, f"stdout={res.stdout!r} stderr={res.stderr!r}"
+                )
+
+
+@unittest.skipUnless(_powershell_binaries(), "no PowerShell on this machine")
+class TheProxyRestoreSurvivesAFailingFinalizer(unittest.TestCase):
+    """LDM-#2132: the restore is in a `finally`, not merely on the last line.
+
+    Three issues have now surfaced as "the proxy restore did not run":
+    LDM-#2112 (it ran first and the recreate was refused), LDM-#2121 (it
+    compared the machine's polluted port against itself), and LDM-#2132 (a
+    terminating parameter-binding error above it). Each was fixed as an
+    instance. Being last is what LDM-#2112 required and is also what made it
+    fragile, so the ordering stays and the guarantee is added around it.
+
+    The bash half has always had this: `cleanup_test_projects` opens with
+    `set +e`, so no failure in the EXIT trap can abort it before
+    `restore_shared_infrastructure`. PowerShell's
+    `$ErrorActionPreference = "Continue"` covers ordinary cmdlet errors but
+    not an explicit `throw`, so the halves did not really agree.
+    """
+
+    def _run_finalizer(self, body):
+        func = _extract_function(
+            PS1_SCRIPT,
+            re.compile(r"^function Finalize-Verification\s*\{.*?^\}", re.M | re.S),
+        )
+        script = (
+            f"function Invoke-FinalizerBody {{ param($ExitCode) {body} }}\n"
+            "function Restore-SharedInfrastructure { Write-Output 'RESTORED' }\n"
+            f"{func}\n"
+            "try { Finalize-Verification 0 } catch { Write-Output 'THREW' }\n"
+        )
+        results = []
+        for name, binary in _powershell_binaries():
+            res = subprocess.run(
+                [binary, "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            results.append((name, res))
+        return results
+
+    def test_a_throwing_body_still_reaches_the_restore(self):
+        """The failing case. Without the `finally` the restore is skipped and
+        the operator's proxy is left on whatever port the run moved it to."""
+        for name, res in self._run_finalizer("throw 'boom'"):
+            with self.subTest(shell=name):
+                self.assertIn(
+                    "RESTORED",
+                    res.stdout,
+                    f"the finalizer threw and never restored the proxy: "
+                    f"stdout={res.stdout!r} stderr={res.stderr!r}",
+                )
+
+    def test_a_clean_body_still_reaches_the_restore(self):
+        """And the ordinary path is unchanged -- a `finally` that only ran on
+        failure would be worse than none."""
+        for name, res in self._run_finalizer("Write-Output 'BODY'"):
+            with self.subTest(shell=name):
+                self.assertIn("BODY", res.stdout, res.stderr)
+                self.assertIn("RESTORED", res.stdout, res.stderr)
+
+    def test_the_restore_still_runs_after_the_body_not_before(self):
+        """LDM-#2112 is still load-bearing: the recreate is refused while this
+        run's project is up, so the restore must follow the teardown."""
+        for name, res in self._run_finalizer("Write-Output 'BODY'"):
+            with self.subTest(shell=name):
+                lines = [
+                    ln.strip()
+                    for ln in res.stdout.splitlines()
+                    if ln.strip() in ("BODY", "RESTORED")
+                ]
+                self.assertEqual(["BODY", "RESTORED"], lines, res.stdout)
+
+    def test_the_body_is_not_also_called_from_the_old_name(self):
+        """The rename has to be complete: a surviving call to the body under
+        its old name would run the teardown twice."""
+        text = PS1_SCRIPT.read_text(encoding="utf-8")
+        self.assertEqual(
+            1,
+            len(re.findall(r"^function Finalize-Verification\s*\{", text, re.M)),
+        )
+        self.assertEqual(
+            1,
+            len(re.findall(r"^function Invoke-FinalizerBody\s*\{", text, re.M)),
+        )
+        self.assertEqual(
+            1,
+            len(re.findall(r"(?<![\w-])Invoke-FinalizerBody(?![\w-])", text))
+            - 1,  # minus the definition itself
+            "Invoke-FinalizerBody should be called exactly once, by the wrapper",
+        )
