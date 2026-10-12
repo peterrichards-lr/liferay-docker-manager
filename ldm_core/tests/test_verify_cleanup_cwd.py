@@ -49,19 +49,27 @@ class TestCleanupLeavesProjectDir(unittest.TestCase):
         )
 
     def test_powershell_cleanup_returns_before_removing(self):
-        """The PS1 restore lived in `finally`, which runs *after* cleanup."""
+        """The PS1 restore lived in `finally`, which runs *after* cleanup.
+
+        LDM-#2132 moved the finalizer's body into `Invoke-FinalizerBody` so
+        that `Finalize-Verification` could wrap it in a try/finally without
+        re-indenting 165 lines. Both orderings this asserts live in the body,
+        so that is what it reads; slicing from the wrapper finds neither and
+        the test fails with "Finalize-Verification never returns", which is
+        how the rename was caught.
+        """
         src = PS1.read_text()
-        body = src[src.index("function Finalize-Verification {") :]
+        body = src[src.index("function Invoke-FinalizerBody {") :]
 
         setloc_at = body.find("Set-Location $ORIGINAL_PWD")
         rm_at = body.find("--delete")
 
-        self.assertNotEqual(-1, setloc_at, "Finalize-Verification never returns")
+        self.assertNotEqual(-1, setloc_at, "Invoke-FinalizerBody never returns")
         self.assertNotEqual(-1, rm_at, "cleanup no longer removes the project")
         self.assertLess(
             setloc_at,
             rm_at,
-            "Finalize-Verification removes the project before leaving its "
+            "Invoke-FinalizerBody removes the project before leaving its "
             "directory (LDM-#1436).",
         )
 
