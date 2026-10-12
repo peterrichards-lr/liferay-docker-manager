@@ -72,6 +72,44 @@ def _volume_sizes(manager, docker_prefix):
         return {}
 
 
+# LDM-#2118: every target a bare `reset all` is responsible for. `db` was
+# absent, so the database volume was never considered -- see
+# `_reset_volume_for` for why its name does not follow the others'.
+_RESET_ALL_TARGETS = ("data", "logs", "state", "db")
+
+
+def _reset_volume_for(target, container_name, meta):
+    """The named volume a reset target owns, or None if it owns none.
+
+    LDM-#2118. `data` and `state` follow `<container>-<target>`, which is
+    LDM-369's hybrid mount strategy. The database does not: `_build_db_service`
+    names its volume `<db_container>-db-data`, where db_container is
+    `db_container_name` or `<project>-db`. For a project `devcon2026` that is
+    `devcon2026-db-db-data`.
+
+    Nothing in the reset path matched that shape. `reset all` removed
+    `<project>-data` and `<project>-state`, reported success, and left the
+    full PGDATA behind; `reset db` -- advertised in the CLI help -- did
+    nothing at all, because `setup_paths` has no `db` key either, so neither
+    the volume branch nor the directory branch had anything to act on.
+
+    Returned regardless of database mode. The caller probes Docker for the
+    volume before removing it, and a shared-database project simply has none,
+    so resolving the mode here would add a second thing to keep in step with
+    the composer for no gain.
+    """
+    if target in ("data", "state"):
+        return f"{container_name}-{target}"
+    if target == "db":
+        from ldm_core.utils import sanitize_id
+
+        db_container = sanitize_id(
+            (meta or {}).get("db_container_name") or f"{container_name}-db"
+        )
+        return f"{db_container}-db-data"
+    return None
+
+
 def _sweep_project_volumes(manager, docker_prefix, project_name, project_uuid=None):
     """Removes the volumes belonging to a project being deleted (LDM-#1414).
 
@@ -703,7 +741,7 @@ class OrchestrationService(BaseHandler):
         except Exception:  # nosec B110 - a prompt detail must never block the prompt
             return None
 
-    def cmd_down(  # noqa: C901, PLR0912, PLR0915
+    def cmd_down(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self,
         project_id=None,
         service=None,
@@ -713,8 +751,22 @@ class OrchestrationService(BaseHandler):
         clean_hosts=False,
         volumes=False,
         keep_credentials=False,
+        sweep_volumes=True,
     ):
-        """Tears down project containers and volumes."""
+        """Tears down project containers and volumes.
+
+        `sweep_volumes` controls only the NO-COMPOSE-FILE fallback below, not
+        the `-v` on the compose command (LDM-#2118).
+
+        The fallback identifies a project's volumes partly by the name prefix
+        `<project>-`, which is a heuristic, not an identity: a project called
+        `demo-staging` has volumes that match a sweep of `demo`. That is an
+        accepted trade for `--delete` -- deliberate, confirmed, and documented
+        on `_sweep_project_volumes` -- but not for `reset`, which is a routine
+        operation on a project the user intends to keep. `compose down -v`
+        needs no such guess: it removes the volumes the compose file itself
+        declares.
+        """
         is_dry_run = getattr(self.manager, "dry_run", False)
 
         if infra:
@@ -965,7 +1017,7 @@ class OrchestrationService(BaseHandler):
                 # Only on an explicit delete/volumes request: `ldm down` on its
                 # own must keep the data, which is the whole point of stopping
                 # rather than deleting.
-                if delete or volumes:
+                if (delete or volumes) and sweep_volumes:
                     _sweep_project_volumes(
                         self.manager,
                         docker_prefix,
@@ -1384,10 +1436,10 @@ class OrchestrationService(BaseHandler):
                     f"  {UI.BYELLOW}- Would stop project stack if running.{UI.COLOR_OFF}"
                 )
 
-            targets = ["data", "logs", "state"] if target == "all" else [target]
+            targets = list(_RESET_ALL_TARGETS) if target == "all" else [target]
             for t in targets:
-                if t in ["data", "state"]:
-                    volume_name = f"{c_name}-{t}"
+                volume_name = _reset_volume_for(t, c_name, meta)
+                if volume_name:
                     UI.detail(
                         f"  {UI.BYELLOW}- Would delete Docker named volume: {volume_name}{UI.COLOR_OFF}"
                     )
@@ -1418,23 +1470,35 @@ class OrchestrationService(BaseHandler):
         docker_prefix = DockerService.get_docker_cmd_prefix(node_target)
 
         # LDM-388: If target is 'all', we must 'down -v' to destroy anonymous DB volumes
+        #
+        # LDM-#2118: `volumes=True` is what actually produces the `-v`.
+        # `cmd_down` appends it only when `volumes or delete`, and this passed
+        # `delete=False` and nothing else -- so for the entire life of this
+        # comment the command it describes was never the command that ran, and
+        # compose kept every named volume it had declared.
+        #
+        # `sweep_volumes=False` because the same flag also enables cmd_down's
+        # no-compose-file fallback, which matches volumes on the name prefix
+        # `<project>-`. Measured: a reset of `devcon2026` removed
+        # `devcon2026-staging-data`, which belongs to a different project.
+        # A reset must not be able to do that; `--delete` still can, and still
+        # asks first.
         if target == "all":
-            self.cmd_down(root.name, delete=False)
+            self.cmd_down(root.name, delete=False, volumes=True, sweep_volumes=False)
         elif is_running:
             # LDM-#1410: internal step of a reset, which then wipes directories.
             self.cmd_stop(root.name, emit_hint=False)
 
         # 2. Wipe directories
         paths = self.manager.setup_paths(root)
-        targets = []
-        targets = ["data", "logs", "state"] if target == "all" else [target]
+        targets = list(_RESET_ALL_TARGETS) if target == "all" else [target]
 
         for t in targets:
             path = paths.get(t)
 
             # LDM-369: Handle Named Volumes (Hybrid Mount Strategy)
-            if t in ["data", "state"]:
-                volume_name = f"{c_name}-{t}"
+            volume_name = _reset_volume_for(t, c_name, meta)
+            if volume_name:
                 # Check if this volume exists in Docker
                 try:
                     res = self.manager.run_command(

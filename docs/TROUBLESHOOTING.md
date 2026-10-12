@@ -550,9 +550,18 @@ If you want to keep your database intact but rebuild the broken search indices f
 
 ```bash
 ldm stop <project>
-ldm reset <project> global-search
+ldm reindex <project>
 ldm run <project>
 ```
+
+> **Do not use `ldm reset <project> global-search` for this.** It is accepted
+> and reports success without deleting a single index
+> ([LDM-#2127](https://github.com/peterrichards-lr/liferay-docker-manager/issues/2127)),
+> so following it leaves the broken indices exactly where they were. Note also
+> that a reindex rebuilds what Liferay can index; it does not purge documents
+> whose classes no longer have an indexer
+> ([LDM-#2119](https://github.com/peterrichards-lr/liferay-docker-manager/issues/2119)).
+> For those, remove the project's indices on the search node directly.
 
 #### **Solution 2: Total Project Reseed**
 
@@ -787,4 +796,4 @@ Projects are discovered from the current folder, its parent, `~/ldm`, the LDM in
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-08* | *Last Reviewed: 2026-10-08*
+*Last Updated: 2026-10-12* | *Last Reviewed: 2026-10-12*

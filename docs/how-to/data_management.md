@@ -238,21 +238,34 @@ ldm re-seed [project]             # Wipe ALL data and re-apply vanilla seed
 
 **Available Targets (for `reset`):**
 
-- **`state`** (Default): Clears the `osgi/state` folder.
-- **`search`**: Clears internal Sidecar indices.
-- **`db`**: Clears the database (e.g. PostgreSQL or Hypersonic).
-- **`global-search`**: Deletes the project's indices from the shared Global Search container.
-- **`all`**: Performs all of the above.
+- **`state`** (Default): Clears the `osgi/state` folder and its named volume.
+- **`db`**: Removes the project's database volume (`<project>-db-db-data`).
+- **`all`**: Clears `state`, `data`, `logs` and `db`, and tears the stack down
+  with `docker compose down -v` so anonymous volumes go too.
+- **`search`**, **`global-search`**: **Not currently implemented.** These are
+  accepted and report success without clearing any index — see
+  [LDM-#2127](https://github.com/peterrichards-lr/liferay-docker-manager/issues/2127).
+  To clear indices today, use `ldm reindex` or remove the project's indices on
+  the search node directly.
+
+Only one target may be given. A comma-separated list is not parsed — it is
+read as a single unknown target, which is also covered by LDM-#2127.
 
 **Examples:**
 
 ```bash
 ldm reset demo state          # Clear OSGi state for 'demo'
-ldm reset demo search,db      # Clear local search and DB
-ldm reset demo all            # Total project data wipe
+ldm reset demo db             # Remove the database volume only
+ldm reset demo all            # Total project data wipe, database included
 ldm re-seed demo              # Total project reset to Day Zero (Seeded)
 ```
 
+> **`all` includes the database.** Before LDM-#2118 it did not: the teardown
+> omitted `-v` and the volume sweep looked for `<project>-data` and
+> `<project>-state`, never `<project>-db-db-data`. The command reported
+> success, the project showed as `Not Created`, and the next start quietly
+> booted the old database.
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-14* | *Last Reviewed: 2026-09-14*
+*Last Updated: 2026-10-12* | *Last Reviewed: 2026-10-12*
