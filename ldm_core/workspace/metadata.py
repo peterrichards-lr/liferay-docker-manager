@@ -305,6 +305,31 @@ def _resolve_and_persist_cx_port(self, ext_info, ext_id, meta, root_dir):
     # see the docstring there. Returning it removes the shared-dict assumption
     # rather than trying to satisfy it.
     meta_port_key = f"port_{ext_id}"
+
+    # LDM-#2123: a persisted port is sticky, which is right -- the extension's
+    # own container holds it while the project runs, and re-resolving on mere
+    # unavailability would move the port on every `ldm run`.
+    #
+    # It is wrong for exactly one case. Windows reserved ranges MOVE when the
+    # host or WinNAT restarts, so a port chosen and stored on a day it was free
+    # can be inside a reservation the next day. Nothing can bind it then, and
+    # because the stored value was never re-examined the project failed at
+    # `docker compose up` on every subsequent run with no way out but editing
+    # meta by hand.
+    #
+    # `port_is_reserved` answers the narrow question and not the broad one: a
+    # busy port is left alone, only an outright refusal clears the entry.
+    persisted_port = meta.get(meta_port_key)
+    # The wildcard address, for the reason given on `find_available_port`:
+    # Docker publishes on 0.0.0.0, so that is the bind whose answer matters.
+    if persisted_port is not None and self.manager.port_is_reserved("", persisted_port):
+        UI.warning(
+            f"Host port {persisted_port} for client extension '{ext_id}' is "
+            "now inside a range the OS has reserved, so Docker cannot bind "
+            "it. Choosing another."
+        )
+        del meta[meta_port_key]
+
     if meta_port_key not in meta:
         # LDM-#1969: exclude the ports already assigned to OTHER extensions in
         # this project, or two of them get the same one.
