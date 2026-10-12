@@ -19,6 +19,12 @@ from ldm_core.constants import SCRIPT_DIR
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, helper_container_flags, safe_cwd
 
+# LDM-#2123: the boundary between the two things EACCES can mean on a bind.
+# Below it, an unprivileged process is being refused a privileged port and
+# Docker's daemon can still bind it. At or above it, the refusal is about the
+# port itself -- on Windows, a WinNAT-reserved range -- and nothing can bind it.
+PRIVILEGED_PORT_CEILING = 1024
+
 
 class BaseHandler:
     """Base mixin for LiferayManager containing shared core logic."""
@@ -516,6 +522,100 @@ class BaseHandler:
         except Exception:
             pass
 
+    @staticmethod
+    def _eacces_means_unprivileged(port):
+        """Is this EACCES the privileged-port one, or the port itself?
+
+        LDM-#2123. `check_port` decides availability by binding, and EACCES on
+        a bind has two causes that need OPPOSITE answers:
+
+          * below 1024 -- an unprivileged process cannot bind a privileged
+            port, but Docker's daemon binds them routinely. LDM's own
+            inability is not evidence about the port, so the right question is
+            whether anything is LISTENING. That fallback is preserved, and it
+            is what makes `ldm infra setup --ssl-port 443` work.
+
+          * at or above 1024 -- on Windows this is WSAEACCES, raised for a
+            bind inside a range WinNAT has reserved for Hyper-V or WSL. The
+            port is unusable by anything, Docker included.
+
+        Only the first was handled. The listener check was applied to both, and
+        NOTHING EVER LISTENS ON A RESERVED PORT, so the second was reported
+        free: `find_available_port` settled on it, `_resolve_and_persist_cx_port`
+        wrote it into the project meta, and Docker refused the publish with the
+        exact text `reserved_port_tip` was added to explain (LDM-#2036). LDM
+        was diagnosing a port it had chosen itself.
+
+        Found on 2026-10-09 verifying v2.26.5-pre.4 on Windows 11 /
+        PowerShell 5.1, where the `syntheticsvc` client extension declares
+        container port 3001 and WinNAT had reserved that range that day. The
+        same suite passed on the same machine the day before -- the ranges move
+        when the host or WinNAT restarts, which is why this surfaced as a
+        sudden regression in software that had not changed.
+
+        Deliberately not platform-gated. EACCES on a high port means "something
+        outside this process has claimed it" on every platform, and gating on
+        `platform.system()` would leave the logic untested everywhere but
+        Windows -- which is where it is hardest to run.
+        """
+        try:
+            return int(port) < PRIVILEGED_PORT_CEILING
+        except (TypeError, ValueError):
+            # An unparseable port cannot be shown to be reserved. Leave the
+            # verdict to the existing fallback rather than inventing one.
+            return True
+
+    def _eacces_verdict(self, ip, port):
+        """Availability when the bind was refused with EACCES.
+
+        LDM-#2123. Below 1024 this is the familiar unprivileged-bind refusal
+        and says nothing about whether Docker's daemon can bind the port, so
+        the question becomes whether anything is LISTENING. At or above 1024
+        the refusal is about the port itself -- a Windows reserved range --
+        and nothing can bind it.
+        """
+        import socket
+
+        if not self._eacces_means_unprivileged(port):
+            return False
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conn_s:
+            conn_s.settimeout(0.5)
+            return conn_s.connect_ex((ip, int(port))) != 0
+
+    def port_is_reserved(self, ip, port):
+        """True only when the OS refuses the bind OUTRIGHT, never when it is busy.
+
+        LDM-#2123. This is deliberately NOT `not check_port(...)`, and the
+        difference is the whole point.
+
+        A port held by a running container is UNAVAILABLE but not RESERVED, and
+        only the second justifies throwing away a persisted choice. A project's
+        client extension holds its own published port for as long as it runs --
+        that is the normal steady state -- so re-resolving on mere
+        unavailability would hand the extension a different host port on every
+        single `ldm run`, which is a worse bug than the one being fixed.
+
+        A WinNAT-reserved range answers EACCES instead of EADDRINUSE, and
+        nothing can bind it: not LDM, not Docker, not next week. That is the
+        one case where a stored value is known to be dead.
+        """
+        import socket
+
+        if self._eacces_means_unprivileged(port):
+            return False
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            try:
+                s.bind((ip, int(port)))
+            except PermissionError:
+                return True
+            except (OSError, OverflowError, ValueError):
+                # Busy, unreachable or unparseable. None of those is evidence
+                # that the port can never be bound, so the stored value stands.
+                return False
+        return False
+
     def check_port(self, ip, port):
         """Checks if a port is available on a specific IP."""
         import errno
@@ -555,12 +655,11 @@ class BaseHandler:
                 s.bind((ip, int(port)))
                 return True
             except PermissionError:
-                # EACCES: non-root trying to bind to privileged port (< 1024).
-                # Fall back to connect_ex check to see if a process is already listening.
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conn_s:
-                    conn_s.settimeout(0.5)
-                    res = conn_s.connect_ex((ip, int(port)))
-                    return res != 0
+                # Caught by CLASS, not by errno. Windows reports WSAEACCES
+                # (10013) rather than EACCES (13) on a socket, and CPython
+                # still raises PermissionError for it -- so matching the class
+                # is what makes this reachable on the platform it is for.
+                return self._eacces_verdict(ip, port)
             except OSError as e:
                 if e.errno in (errno.EACCES, errno.EPERM, errno.EADDRINUSE):
                     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conn_s:
@@ -572,10 +671,30 @@ class BaseHandler:
                 return False
 
     def find_available_port(self, ip, start_port, exclude=None):
-        """Finds the next available port starting from a given number."""
+        """Finds the next available port starting from a given number.
+
+        LDM-#2123 adds the reservation probe, and it probes the WILDCARD
+        address rather than `ip`. That is deliberate and is the point of it.
+
+        Callers pass `127.0.0.1` here, but Docker publishes on `0.0.0.0`, and
+        the two are not interchangeable for this question. Whether Windows
+        refuses a loopback bind inside a WinNAT-reserved range or only the
+        wildcard one, binding the wildcard is what Docker will actually do --
+        so asking the same question Docker asks cannot be wrong about the
+        answer Docker gets.
+
+        Ordering is load-bearing. `check_port` runs first because it short-
+        circuits on anything already occupied and carries the connect timeout;
+        the bind probe only runs for a candidate that has otherwise been
+        accepted.
+        """
         port = int(start_port)
         exclude_ports = exclude or []
-        while port in exclude_ports or not self.check_port(ip, port):
+        while (
+            port in exclude_ports
+            or not self.check_port(ip, port)
+            or self.port_is_reserved("", port)
+        ):
             port += 1
             if port > 65535:
                 UI.die("No available ports found.")
