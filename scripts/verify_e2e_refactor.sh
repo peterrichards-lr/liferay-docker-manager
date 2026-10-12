@@ -455,6 +455,45 @@ trap_report() {
 # is authoritative only about what is a container, which is why matching names
 # against a hand-maintained pattern drifted the moment the suite grew two more
 # services.
+pick_free_port() {
+    # LDM-#2136: the suite asked for a hardcoded 8443 and then DEMANDED 8443.
+    # When something already holds it, LDM detects the conflict and selects
+    # 8444 -- correct, documented behaviour, the same mechanism that prints
+    # "Global HTTP proxy port 80 is in use on the host. Using 81 instead."
+    # The check had no branch for that and exited 1, reporting a product
+    # failure that had not happened. It aborted the WSL2 verification of
+    # v2.26.5-pre.5 at section 2, on a host where ports 80 and 18080 are
+    # permanently held by a non-Docker listener.
+    #
+    # So ask for a port that is free RIGHT NOW and assert on that one. The
+    # assertion stays strict on purpose: asserting merely "whatever LDM
+    # reported" would pass if LDM ignored --ssl-port altogether, which is the
+    # thing being verified. If LDM moves off a port that was free moments
+    # before, that is still a failure and still exits 1.
+    local preferred="$1"
+    local py="${VENV_PYTHON:-}"
+    if [ -z "$py" ] || [ ! -x "$py" ]; then
+        py=$(command -v python3 2>/dev/null || true)
+    fi
+    if [ -z "$py" ]; then
+        echo "$preferred"
+        return 0
+    fi
+    "$py" -c 'import socket, sys
+pref = int(sys.argv[1])
+s = socket.socket()
+try:
+    s.bind(("", pref))
+    port = pref
+except OSError:
+    s.close()
+    s = socket.socket()
+    s.bind(("", 0))
+    port = s.getsockname()[1]
+print(port)
+s.close()' "$preferred" 2>/dev/null || echo "$preferred"
+}
+
 list_running_projects_except() {
     local mine="$1"
 
@@ -1197,11 +1236,15 @@ esac
 export ORIGINAL_SSL_PORT
 
 echo ">> Verifying Custom SSL Port & Recreate..."
-log_and_run "Custom SSL Port Setup" "$LDM_CMD" -y infra setup --ssl-port 8443 --force-recreate
-if docker inspect liferay-proxy-global | grep -q '"HostPort": "8443"'; then
-    report_ok "✅ Custom SSL Port & Recreate verified."
+# LDM-#2136: resolved immediately before the check, not at the top of the run
+# -- the image pulls sit in between, and a port free then can be taken by now.
+SSL_TEST_PORT=$(pick_free_port 8443)
+export SSL_TEST_PORT
+log_and_run "Custom SSL Port Setup" "$LDM_CMD" -y infra setup --ssl-port "$SSL_TEST_PORT" --force-recreate
+if docker inspect liferay-proxy-global | grep -qF "\"HostPort\": \"${SSL_TEST_PORT}\""; then
+    report_ok "✅ Custom SSL Port & Recreate verified (port ${SSL_TEST_PORT})."
 else
-    echo "❌ ERROR: Traefik proxy was not recreated on custom port 8443!" && exit 1
+    echo "❌ ERROR: Traefik proxy was not recreated on custom port ${SSL_TEST_PORT}!" && exit 1
 fi
 
 
