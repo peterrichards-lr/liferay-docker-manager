@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.5-pre.5] - 2026-10-12
+
+### Fixed
+
+- **LDM no longer hands Docker a port Windows has reserved** (LDM-#2123). `check_port` decides availability by binding, and Windows refuses a bind inside a WinNAT-reserved range with `EACCES` -- the same error an unprivileged process gets for a port below 1024. Both were treated as the privileged-port case, which falls back to asking whether anything is *listening*; nothing ever listens on a reserved port, so it was reported free. LDM then selected it, wrote it into the project metadata as a client extension's host port, published it, and Docker refused with exactly the message LDM-#2036 added a tip to explain. LDM was diagnosing a port it had chosen itself.
+
+  Above 1024 a refused bind now means unavailable and the search moves on. The sub-1024 fallback is kept, because there `EACCES` says only that *LDM* cannot bind it while Docker's daemon still can -- which is what makes `ldm infra setup --ssl-port 443` work. A stored port is also re-examined now: reserved ranges move when the host or WinNAT restarts, so a port recorded on a day it was free could fall inside a reservation later, and the project then failed on every subsequent run with no remedy but hand-editing metadata. Only an outright refusal clears it -- a port merely in use is left alone, since the extension's own container holds it while the project runs and re-resolving on that would move the host port on every `ldm run` (LDM-#1969). The probe binds the wildcard address rather than loopback, because `0.0.0.0` is what Docker publishes on.
+
+  Found verifying v2.26.5-pre.4 on Windows 11 / PowerShell 5.1, where the suite's client-extension fixture declares container port 3001 and WinNAT had reserved that range that day. The same suite had passed on the same machine the day before, against the same binary.
+
+- **`ldm reset <project> all` no longer leaves the database behind** (LDM-#2118). It reported success and left the project's database volume intact; the project then showed `Not Created`, so the surviving data was invisible until the next start quietly booted it. Reported against v2.26.5-pre.1 on isolated PostgreSQL, with the full PGDATA still in place.
+
+  Two independent gaps. The `down -v` the code documents was never performed -- `cmd_down` appends `-v` only when asked, and the call site asked for neither, so the comment above it described an intention the call did not carry out. And the explicit sweep removed `<project>-data` and `<project>-state` while the database volume is named `<db_container>-db-data`, which nothing matched. The same omission is why `ldm reset <project> db`, a documented target, did nothing at all.
+
+  `reset` deliberately does **not** enable the no-compose-file volume sweep, which identifies volumes partly by the name prefix `<project>-`: measured, a reset of `devcon2026` would otherwise have removed `devcon2026-staging-data`, belonging to a different project. That heuristic remains available to `--delete`, which is deliberate and asks first.
+
+- **A restore no longer leaves the previous build's search documents behind** (LDM-#2119). Restoring a snapshot that carries no search snapshot left the project's existing indices untouched: the database was replaced and the old documents survived beside it. Reported after a restore that left 189 object-entry documents for classes that no longer exist.
+
+  Three defects, and the third made the other two moot. The index deletion was reachable only on the branch that restores a search snapshot; it asked for `<container_name>-*` rather than the `ldm-<name>-` prefix LDM actually configures; and it issued a wildcard DELETE, which Elasticsearch 8 rejects with 400 by default while the call discarded the rejection. Taken together the function had never deleted an index, on either branch -- and the reindex LDM schedules made it look handled, because a reindex re-adds documents for classes that still have indexers and an orphaned document is precisely one whose class no longer has one.
+
+  Clearing is now a property of restoring rather than of having something to put back, indices are resolved by name and deleted explicitly, and a failure warns instead of passing silently.
+
+- **The verification suites restore the shared state they change** (LDM-#2121). LDM-#2100 and LDM-#2112 did not actually stop the global proxy being left on a non-standard port, and both v2.26.5-pre.4 reports show it while reporting pass.
+
+  The suite mistook its own containers for other projects -- the exclusion pattern named two of the five containers a run creates -- so the global infrastructure cleanup was skipped on every run, including on an otherwise empty machine. And the proxy port to restore was read from the live container, so on a machine already polluted by an earlier run the capture returned the wrong port, the restore compared it against itself and correctly concluded there was nothing to do. A machine that reached 8443 once stayed there.
+
+  Both halves now ask `ldm list --json`, which is authoritative about what is an LDM project, and take the port from `LDM_SSL_PORT` or the documented default rather than from the machine's current state.
+
+### Changed
+
+- `mcp` 2.2.0 -> 2.3.0 and `pytest-playwright` 0.9.0 -> 0.10.0. The MCP bump was verified against the real library rather than the suite's mocked one, and each of 2.3.0's breaking changes checked against this codebase.
+
+### Known issues
+
+- `ldm reset <project> search` and `global-search`, and the comma-separated target form shown in the documentation, are accepted and report success while doing nothing (LDM-#2127). The documentation now marks them, and `docs/TROUBLESHOOTING.md` no longer recommends `reset global-search` as a remedy.
+
+- The E2E verification suite does not exercise `ldm reset`, what a restore does to the search indices, or a successful `.ldmp` round-trip (LDM-#2131). Every fix above is covered by unit tests confirmed with neuter probes, but a Windows reserved-port regression in particular could only be caught by a human run.
+
 ## [v2.26.5-pre.4] - 2026-10-09
 
 ### Fixed
