@@ -111,50 +111,81 @@ class SearchSnapshotService:
         search_name = "liferay-search-global"
         docker_prefix = self._resolve_docker_prefix(meta)
 
-        if search_snapshot_name and search_snapshot_name != "None":
-            if self.manager.run_command(
+        search_running = bool(
+            self.manager.run_command(
                 [*docker_prefix, "ps", "-q", "-f", f"name={search_name}"]
-            ):
-                UI.detail(
-                    f"Triggering orchestrated search restore: {search_snapshot_name}..."
-                )
+            )
+        )
 
-                self._delete_project_indices(container_name, docker_prefix)
+        # LDM-#2119: clearing the project's indices is a property of RESTORING,
+        # not of having a search snapshot to put back.
+        #
+        # This used to sit inside the branch below, so a snapshot taken while
+        # search was a sidecar, taken before search existed, or whose search
+        # snapshot failed, skipped it entirely. The database was replaced and
+        # the previous build's documents survived beside it -- 189 orphaned
+        # object-entry documents on the reported run.
+        #
+        # The reindex scheduled by `handlers/snapshot.py` is what made this
+        # look handled. It is not the same thing: a reindex re-adds documents
+        # for classes that still have indexers, and an orphaned document is
+        # precisely one whose class no longer has one.
+        if search_running:
+            self._delete_project_indices(container_name, docker_prefix)
+        elif search_snapshot_name and search_snapshot_name != "None":
+            UI.error(
+                "Global search service not running. Could not restore search indices."
+            )
+            return
+        else:
+            # Nothing to restore and nothing reachable to clear. Say so rather
+            # than returning silently: the indices, wherever they are, still
+            # hold the previous build's documents.
+            UI.warning(
+                "Global search service not running; this project's existing "
+                "indices were not cleared. Documents from the previous build "
+                "may survive this restore."
+            )
+            return
 
-                self.manager.run_command(
-                    [
-                        *docker_prefix,
-                        "exec",
-                        search_name,
-                        "curl",
-                        "-s",
-                        "-X",
-                        "POST",
-                        f"localhost:9200/_snapshot/liferay_backup/{search_snapshot_name}/_restore",
-                        "-H",
-                        "Content-Type: application/json",
-                        "-d",
-                        json.dumps(
-                            {
-                                "indices": f"{search_index_prefix(container_name)}*",
-                                "include_global_state": False,
-                            }
-                        ),
-                    ]
-                )
+        if not (search_snapshot_name and search_snapshot_name != "None"):
+            # Indices cleared, nothing to put back. The reindex scheduled by
+            # `handlers/snapshot.py` rebuilds what Liferay can index, which is
+            # now the whole of it rather than a layer over stale documents.
+            return
 
-                if self._wait_for_search_restore(
-                    search_snapshot_name, container_name, docker_prefix=docker_prefix
-                ):
-                    UI.success("Search restore completed.")
-                else:
-                    UI.warning(
-                        "Search restore timed out or might be still in progress. Verify index status later."
-                    )
-            else:
-                UI.error(
-                    "Global search service not running. Could not restore search indices."
-                )
+        UI.detail(f"Triggering orchestrated search restore: {search_snapshot_name}...")
+
+        self.manager.run_command(
+            [
+                *docker_prefix,
+                "exec",
+                search_name,
+                "curl",
+                "-s",
+                "-X",
+                "POST",
+                f"localhost:9200/_snapshot/liferay_backup/{search_snapshot_name}/_restore",
+                "-H",
+                "Content-Type: application/json",
+                "-d",
+                json.dumps(
+                    {
+                        "indices": f"{search_index_prefix(container_name)}*",
+                        "include_global_state": False,
+                    }
+                ),
+            ]
+        )
+
+        if self._wait_for_search_restore(
+            search_snapshot_name, container_name, docker_prefix=docker_prefix
+        ):
+            UI.success("Search restore completed.")
+        else:
+            UI.warning(
+                "Search restore timed out or might be still in progress. Verify index status later."
+            )
 
     def _wait_for_search_snapshot(self, snapshot_name, timeout=120, docker_prefix=None):
         docker_prefix = docker_prefix or self._resolve_docker_prefix()
@@ -193,7 +224,11 @@ class SearchSnapshotService:
                     search_name,
                     "curl",
                     "-s",
-                    f"localhost:9200/{container_name}-*/_recovery",
+                    # LDM-#2119: the same wrong pattern `_delete_project_indices`
+                    # carried. Liferay's indices are `ldm-<name>-*`, so
+                    # `<container_name>-*` matched nothing and this loop could
+                    # only ever time out into "Search restore timed out".
+                    f"localhost:9200/{search_index_prefix(container_name)}*/_recovery",
                 ],
                 check=False,
             )
@@ -203,19 +238,84 @@ class SearchSnapshotService:
             time.sleep(5)
         return False
 
-    def _delete_project_indices(self, container_name, docker_prefix=None):
+    def _project_index_names(self, container_name, docker_prefix=None):
+        """The concrete indices this project owns on the shared search node.
+
+        LDM-#2119. Resolved by name, deliberately, because a wildcard cannot be
+        deleted: LDM runs `elasticsearch:8.x`, which defaults
+        `action.destructive_requires_name` to true and answers a wildcard
+        DELETE with 400. Nothing in `handlers/infra.py` sets that to false.
+
+        The pattern comes from `search_index_prefix`, which is the single
+        source for what LDM writes into `indexNamePrefix` (`composer.py`) and
+        what the snapshot and restore calls in this module already match on.
+        `_delete_project_indices` used to build its own -- `<container_name>-*`
+        -- with no `ldm-` prefix and no lowercasing, so it named indices that
+        do not exist. Both faults were independently sufficient to make the
+        delete a no-op, which is why it had never removed an index on either
+        branch.
+        """
         docker_prefix = docker_prefix or self._resolve_docker_prefix()
-        search_name = "liferay-search-global"
-        self.manager.run_command(
+        pattern = f"{search_index_prefix(container_name)}*"
+        res = self.manager.run_command(
             [
                 *docker_prefix,
                 "exec",
-                search_name,
+                "liferay-search-global",
+                "curl",
+                "-s",
+                f"localhost:9200/_cat/indices/{pattern}?h=index",
+            ],
+            check=False,
+        )
+        if not res:
+            return []
+
+        names = []
+        for line in str(res).splitlines():
+            name = line.strip()
+            # `_cat` answers an unmatched pattern with a JSON error document on
+            # some versions and an empty body on others. An index name contains
+            # neither whitespace nor a brace, so this rejects the error shape
+            # without having to parse it.
+            if not name or " " in name or name.startswith(("{", "[")):
+                continue
+            names.append(name)
+        return names
+
+    def _delete_project_indices(self, container_name, docker_prefix=None):
+        """Removes this project's search indices. Returns what it removed.
+
+        LDM-#2119. Previously issued a wildcard DELETE with `check=False`, so
+        Elasticsearch's 400 was discarded and the caller could not tell a
+        successful purge from a rejected one. A restore then proceeded onto
+        indices that were still there.
+        """
+        docker_prefix = docker_prefix or self._resolve_docker_prefix()
+        names = self._project_index_names(container_name, docker_prefix)
+        if not names:
+            return []
+
+        res = self.manager.run_command(
+            [
+                *docker_prefix,
+                "exec",
+                "liferay-search-global",
                 "curl",
                 "-s",
                 "-X",
                 "DELETE",
-                f"localhost:9200/{container_name}-*",
+                f"localhost:9200/{','.join(names)}",
             ],
             check=False,
         )
+        if not self._snapshot_accepted(res):
+            UI.warning(
+                f"Could not clear {len(names)} search index(es) for "
+                f"{container_name}; documents from the previous build may "
+                f"survive this restore. Response: {res}"
+            )
+            return []
+
+        UI.detail(f"  - Cleared {len(names)} stale search index(es).")
+        return names
