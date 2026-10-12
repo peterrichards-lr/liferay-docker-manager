@@ -416,13 +416,23 @@ function Get-RunningProjectsExcept {
     # obtained must NOT say that, so a failure returns a sentinel: the caller
     # treats any non-empty value as "skip", which fails safe in the same
     # direction the old pattern did.
+    #
+    # LDM-#2132: the parse lives INSIDE the try, and passes -Label.
+    # ConvertFrom-LdmJson takes a Mandatory -Label and ends its catch with a
+    # bare `throw`, so the original `ConvertFrom-LdmJson $raw` outside the try
+    # was wrong twice over: PowerShell stopped for an interactive `Label:`
+    # prompt on EVERY run, and once answered, any unparseable output
+    # propagated out of a function whose entire contract is that it returns a
+    # sentinel instead of failing. Finalize-Verification has no handler, so
+    # the throw skipped Restore-SharedInfrastructure on its last line -- the
+    # exact outcome LDM-#2121 exists to prevent, reached by a different route.
     param([string]$Mine)
     try {
         $raw = ConvertTo-LdmText (& $LDM_CMD list --json 2>&1)
+        $rows = ConvertFrom-LdmJson -Raw $raw -Label "list --json"
     } catch {
         return @("__unknown__")
     }
-    $rows = ConvertFrom-LdmJson $raw
     if ($null -eq $rows) { return @("__unknown__") }
     return @(
         ConvertTo-LdmArray $rows |
@@ -516,7 +526,7 @@ function Remove-Ldm1383Artifacts {
     }
 }
 
-function Finalize-Verification {
+function Invoke-FinalizerBody {
     param($ExitCode)
 
     # LDM-#1465: put the user's console back as we found it. `chcp 65001`
@@ -677,11 +687,35 @@ function Finalize-Verification {
     if (-not (Test-Path "pyproject.toml")) {
         if (Test-Path $LDM_WORKSPACE) { Remove-Item -Recurse -Force $LDM_WORKSPACE -ErrorAction SilentlyContinue }
     }
+}
 
-    # LDM-#2112: LAST, after the project teardown above. Running it first is
-    # what made it fail on all three platforms -- the recreate is refused
-    # while LDM projects are running.
-    Restore-SharedInfrastructure
+function Finalize-Verification {
+    # LDM-#2132: the restore is in a `finally`, so nothing that happens above
+    # it can skip it.
+    #
+    # LDM-#2112 established that it must run LAST, after this run's project is
+    # torn down -- the recreate is refused while LDM projects are running --
+    # and being last is exactly what made it fragile. Three issues have now
+    # surfaced as "the proxy restore did not run": #2112 (it ran first and was
+    # refused), #2121 (it compared the polluted port against itself), and
+    # #2132 (a terminating binder error above it). Each was fixed as an
+    # instance; this fixes the class.
+    #
+    # The bash half has had this guarantee since it was written:
+    # cleanup_test_projects opens with `set +e`, so no failure in the trap can
+    # abort it before restore_shared_infrastructure on its last line.
+    # PowerShell's $ErrorActionPreference = "Continue" covers ordinary cmdlet
+    # errors but not an explicit `throw` or a terminating parameter-binding
+    # error, so the two halves did not actually agree.
+    #
+    # The body is a separate function rather than an indented block so the
+    # diff carries the change and not 165 lines of re-indentation.
+    param($ExitCode)
+    try {
+        Invoke-FinalizerBody $ExitCode
+    } finally {
+        Restore-SharedInfrastructure
+    }
 }
 
 function ConvertTo-LdmText {
