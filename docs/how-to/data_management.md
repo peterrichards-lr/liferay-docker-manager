@@ -74,6 +74,22 @@ ldm restore demo --index 1 # Restore to index 1
 ldm restore demo --name "post-setup-gold-standard" # Restore by name
 ```
 
+**What a restore does to the search indices.** A restore always clears the
+project's indices on the shared search node first, then restores the
+snapshot's search indices if it carries any. A snapshot taken while search ran
+as a sidecar, taken before search existed, or whose search snapshot failed,
+carries none — the indices are still cleared, and the reindex LDM schedules
+for the next boot rebuilds them from the restored database.
+
+This matters because a reindex alone cannot repair a stale index. It re-adds
+documents for classes that still have indexers; documents whose classes no
+longer have one are exactly the ones it leaves behind. Before LDM-#2119 the
+clearing step was skipped whenever there was no search snapshot to put back,
+and those documents survived the restore invisibly.
+
+If the shared search service is not running, LDM says so and leaves the
+indices alone rather than reporting a clean restore it did not perform.
+
 ## What `ldm rm --delete` keeps
 
 `ldm rm --delete` removes the containers, the volumes, the registry entry and
