@@ -403,6 +403,38 @@ function Write-TrapNote {
     }
 }
 
+function Get-RunningProjectsExcept {
+    # LDM-#2121: the running LDM projects other than the one named.
+    #
+    # `ldm list --json` is authoritative about what is an LDM project; docker
+    # ps is authoritative only about what is a container, which is why a
+    # hand-maintained name pattern drifted the moment the suite grew two more
+    # services.
+    #
+    # An empty result means "nothing else is running" and licenses tearing
+    # down the shared proxy and search node. A result that could not be
+    # obtained must NOT say that, so a failure returns a sentinel: the caller
+    # treats any non-empty value as "skip", which fails safe in the same
+    # direction the old pattern did.
+    param([string]$Mine)
+    try {
+        $raw = ConvertTo-LdmText (& $LDM_CMD list --json 2>&1)
+    } catch {
+        return @("__unknown__")
+    }
+    $rows = ConvertFrom-LdmJson $raw
+    if ($null -eq $rows) { return @("__unknown__") }
+    return @(
+        ConvertTo-LdmArray $rows |
+            Where-Object {
+                $_.status -and
+                ([string]$_.status).ToLower() -eq "running" -and
+                $_.project -ne $Mine
+            } |
+            ForEach-Object { $_.project }
+    )
+}
+
 function Restore-SharedInfrastructure {
     # LDM-#2100 / LDM-#2103: parity with restore_shared_infrastructure in
     # verify_e2e_refactor.sh.
@@ -570,17 +602,14 @@ function Finalize-Verification {
     # search index served by a node that no longer exists. The same silent
     # shape as LDM-#2083.
     #
-    # Mirrors verify_e2e_refactor.sh deliberately, grep included: the defect
-    # is that the two halves disagreed, and agreeing is the smallest fix.
-    # That grep also matches non-LDM containers, so it can skip cleanup for
-    # something unrelated -- the safe direction, and noted on LDM-#2113
-    # rather than changed here.
-    $otherContainers = @(
-        & docker ps --format '{{.Names}}' 2>$null |
-            Where-Object {
-                $_ -and $_ -notmatch "^(liferay-proxy-global|liferay-search-global|liferay-docker-proxy|$([regex]::Escape($PROJECT_NAME))|$([regex]::Escape($PROJECT_NAME))-db-1)$"
-            }
-    )
+    # LDM-#2121: ask LDM which PROJECTS are running, not `docker ps` which
+    # containers exist. LDM-#2113 made the two halves agree on a pattern that
+    # was already wrong: it excluded $PROJECT_NAME and $PROJECT_NAME-db-1 but
+    # not $PROJECT_NAME-db, -syntheticsvc or -derivedsvc, so the suite counted
+    # its own containers as other projects and skipped the global cleanup on
+    # every run. Mirrors the bash half, which is now the same question asked
+    # of the same source.
+    $otherContainers = @(Get-RunningProjectsExcept $PROJECT_NAME)
     if ($otherContainers.Count -eq 0) {
         Write-TrapNote "[INFO]  No other LDM projects running. Cleaning up global infrastructure..."
         Invoke-Cleanup "docker" "rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy"
@@ -2557,14 +2586,17 @@ try {
     # Liferay/Docker boundary. Body deliberately not re-indented.
     if (Test-SectionEnabled "guardrails") {
     # LDM-#2100: recorded BEFORE the change, restored by the finalizer.
-    $script:ORIGINAL_SSL_PORT = $null
-    try {
-        $probed = (& docker inspect liferay-proxy-global `
-            --format '{{(index (index .NetworkSettings.Ports "443/tcp") 0).HostPort}}' 2>$null |
-            Out-String).Trim()
-        if ($probed -match '^\d+$') { $script:ORIGINAL_SSL_PORT = $probed } else { $script:ORIGINAL_SSL_PORT = "443" }
-    } catch {
-        $script:ORIGINAL_SSL_PORT = "443"
+    #
+    # LDM-#2121: read the port LDM would CHOOSE, not the port the machine
+    # happens to be on. This used to docker inspect the live proxy, so on a
+    # machine already polluted by an earlier run it captured 8443, compared
+    # 8443 against 8443 at restore time, and correctly concluded there was
+    # nothing to do -- leaving the machine exactly as wrong as it found it.
+    # handlers/infra.py resolves this from --ssl-port, else LDM_SSL_PORT, else
+    # 443, and there is no persisted global default.
+    $script:ORIGINAL_SSL_PORT = "443"
+    if ($env:LDM_SSL_PORT -match '^\d+$') {
+        $script:ORIGINAL_SSL_PORT = $env:LDM_SSL_PORT
     }
 
     Write-Host ">> Verifying Custom SSL Port & Recreate..."
