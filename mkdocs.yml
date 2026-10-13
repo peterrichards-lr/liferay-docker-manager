@@ -138,6 +138,7 @@ nav:
     - explanation/index.md
     - Architecture: explanation/architecture.md
     - Remote Node Architecture: explanation/remote-node-architecture.md
+    - Permissions & the Reclaim Helper: explanation/permissions-and-reclaim.md
     - Properties: explanation/properties.md
     - Key Features: explanation/conventions.md
     - Conventions & Configuration: explanation/conventions_and_config.md

@@ -2767,7 +2767,30 @@ class ExecutionStage(PipelineStage):
             if target_context is not None and target_context.is_remote:
                 from ldm_core.utils import reclaim_volume_permissions
 
-                for p_key in ["deploy", "logs", "osgi", "files"]:
+                # LDM-#2144: `routes` joined this list. Liferay publishes
+                # into `routes/default/<project>` as uid 1000 under its own
+                # umask, and `_scaffold_routes_tree` uses
+                # `safe_mkdir(..., exist_ok=True)`, which sets no mode on a
+                # directory that already exists. A `routes/default` created
+                # before the UMASK=0022 fix (LDM-#1944) therefore kept mode
+                # 750 indefinitely: nothing re-moded it, and Liferay's own
+                # `_deleteRoutes` removes only the per-project child beneath
+                # it. Measured on a node where the three client-extension
+                # children were correctly 755 and their parent was still 750
+                # from before the upgrade.
+                #
+                # A 750 directory owned by uid 1000 cannot be traversed by the
+                # SSH user doing the remote sync, so rsync failed on it every
+                # run -- and rsync abandons `--delete` for the WHOLE transfer
+                # after an I/O error, so the node accumulated stale files
+                # indefinitely (LDM-#2139 is why that is now audible).
+                #
+                # This is the only mechanism positioned to repair it. rsync's
+                # own `-p`/`-g` cannot: it attempts the chgrp and is refused,
+                # because the SSH user does not own the directory. Nor can any
+                # in-process step, for the same reason. Only a root helper
+                # container can, which is what this is.
+                for p_key in ["deploy", "logs", "osgi", "files", "routes"]:
                     if p_key in paths:
                         reclaim_volume_permissions(
                             target_context.map_path(paths[p_key]),
@@ -2779,7 +2802,9 @@ class ExecutionStage(PipelineStage):
             ):
                 from ldm_core.utils import reclaim_volume_permissions
 
-                for p_key in ["deploy", "logs", "osgi", "files"]:
+                # LDM-#2144: `routes` as above. The local branch is guarded by
+                # the existence check inside reclaim_volume_permissions.
+                for p_key in ["deploy", "logs", "osgi", "files", "routes"]:
                     if p_key in paths:
                         reclaim_volume_permissions(paths[p_key], chmod_val="777")
 
