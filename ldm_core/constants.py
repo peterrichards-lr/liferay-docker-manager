@@ -2,8 +2,8 @@ import os
 from pathlib import Path
 
 # --- Constants & Configuration ---
-# LDM_MAGIC_VERSION: 2.26.4
-VERSION = "2.26.4"
+# LDM_MAGIC_VERSION: 2.26.5
+VERSION = "2.26.5"
 
 # Release commit v2.11.30
 
@@ -102,6 +102,36 @@ PIP_INSTALL_TIMEOUT = 600  # 10 min -- plugin/completion dependency installs
 RELEASE_ANNOUNCEMENTS = {
     # LDM-#1663: a patch needs its OWN key, or the banner falls back to the
     # minor series and re-prints highlights the user has already seen.
+    "2.26.5": [
+        (
+            "A port Windows had reserved is no longer offered to Docker",
+            "Windows refuses a bind inside a WinNAT-reserved range with the "
+            "same error an unprivileged process gets below port 1024, and LDM "
+            "treated both the same way -- falling back to asking whether "
+            "anything was listening. Nothing ever listens on a reserved port, "
+            "so it was reported free, written into the project metadata as a "
+            "client extension's host port, and handed to Docker, which "
+            "refused it. LDM was diagnosing a port it had chosen itself. "
+            "Above 1024 a refused bind now means unavailable. A port stored "
+            "earlier is re-examined too: reserved ranges move when the host "
+            "or WinNAT restarts, so a port recorded on a day it was free "
+            "could fall inside a reservation later and fail every run "
+            "thereafter with no remedy but hand-editing metadata.",
+        ),
+        (
+            "Two ways a reset or restore could leave data behind",
+            "'ldm reset <project> all' reported success while leaving the "
+            "database volume intact, so the project showed 'Not Created' and "
+            "the surviving data stayed invisible until the next start quietly "
+            "booted it -- and 'reset <project> db', a documented target, did "
+            "nothing at all. Separately, restoring a snapshot that carries no "
+            "search snapshot left the previous build's documents in place "
+            "beside the replaced database; one report found 189 orphaned "
+            "entries for classes that no longer existed. Clearing the indices "
+            "is now a property of restoring rather than of having something "
+            "to put back.",
+        ),
+    ],
     "2.26.4": [
         (
             "'ldm rm --delete' now clears the node's copy too",

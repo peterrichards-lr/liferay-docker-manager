@@ -5,6 +5,182 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.5] - 2026-10-13
+
+### Changed
+
+- The E2E suites now exercise the node half of `ldm rm --delete` (LDM-#2080), which previously had no end-to-end coverage in either half. Writing and running that check is what found LDM-#2096.
+
+- `mcp` 2.2.0 -> 2.3.0 and `pytest-playwright` 0.9.0 -> 0.10.0. The MCP bump was verified against the real library rather than the suite's mocked one, and each of 2.3.0's breaking changes checked against this codebase.
+
+### Fixed
+
+- **`ldm rm --delete` can no longer hang forever against a compute node** (LDM-#2094). The node removal added in v2.26.4 issued `ssh` with no `BatchMode=yes`, no `ConnectTimeout` and no timeout on the call, while the two other ssh call sites in the same module have had both since they were written. Without `BatchMode`, ssh falls back to an interactive password prompt when the key is missing, rejected, or the host key unknown -- so `ldm rm --delete -y` waits on a prompt nobody can answer, and in CI there is no terminal at all. Without `ConnectTimeout`, the "node may be unreachable" warning that already existed could not be reached promptly. This is the one defect v2.26.4 introduced rather than inherited, and it is why anyone automating `--delete` against a node should take this release.
+
+- **A project whose target node is gone can be removed again** (LDM-#2096). If the node was decommissioned, renamed or `ldm target rm`'d, `ldm rm <project> --delete` exited 1 during teardown and left the containers, volumes, local directory and registry entry in place, with no flag to get past it. `ldm rm --all --delete` had always degraded gracefully through the branch directly below; the single-project form died on the identical condition. A non-local target now warns that containers on the node are not removed, and continues with the local removal. Local projects still fail fast, because a local `compose down` that fails means containers on this machine and deleting anyway would orphan them.
+
+- **A restored site initializer no longer deploys before Liferay is ready** (LDM-#2105). A snapshot restore writes the project tree whole, so a site-initializer client extension sat in `osgi/client-extensions/` before the container started. Liferay processed it during startup and `SiteInitializerClientExtension` threw on a null `Layout` -- 48 times on the reported run -- leaving the bundle STARTED, no group initialised, and `/web/<site>` returning 404. The deferral built for exactly this (LDM-#1779) was wired into `ldm import` only and had never covered restore, so this affected every `ldm quickstart` of a package carrying one since v2.23.0. The zip is now held in `.ldm/deferred-client-extensions/` and deployed once the portal is healthy. The "Gave up waiting for page specifications" and "No matching fragments found" warnings such a run ended with were downstream of this.
+
+- **The automatic search volume repair refuses to destroy a running project's index** (LDM-#2083). It deleted the *shared* Elasticsearch data directory with no prompt and no `--force`, destroying every project's index on the machine -- silently, because a project's healthcheck is an HTTP probe that never touches search. The far less destructive SSL proxy recreate, in the same file, already refused while projects were live. The repair now applies the same guard, names the projects at risk, gives the exact `ldm stop` commands, fails closed when it cannot tell what is running, and captures the failing container's logs to `~/.ldm/infra/search/search-failure-<timestamp>.log` before removing it -- the repair previously destroyed the only evidence of why it ran.
+
+- **`infra setup --force-recreate` no longer mistakes its own container for a port conflict** (LDM-#2101). It removed the global proxy and checked port availability immediately; `docker rm -f` returns before the host releases the bindings, so LDM reallocated to the next free port and -- because a later `infra setup` adopts the running container's ports by design -- fixed the machine on non-standard ports permanently. Measured in a verification report: created on 80/443/18080, then both 80 and 18080 reported "in use" and bumped to 81 and 18081 seconds later. Ports LDM has just released are now awaited; a port genuinely held by other software still reallocates exactly as before.
+
+- **`ldm infra setup` no longer asks which project** (LDM-#2102). It resolved a project to read two values and, with nothing in the working directory, reached the interactive picker -- where the answer silently decided whether the whole machine got a shared database and with which engine, from a list ordered by discovery. It now uses the project the working directory implies, or defaults and explicit flags, and is scriptable.
+
+- **An expired `GITHUB_PAT` is reported as a rejected credential, not a missing package** (LDM-#2098). `ldm quickstart` answered "No compiled LDM Package found in GitHub Releases" against a release that had one and was readable anonymously: the 401 was written at debug level and invisible by default. The warning now names which source supplied the credential, says the release may be readable without it, and states that this is a credential problem. A 403 sent with a credential no longer claims a rate limit, which it usually is not.
+
+- **The verification suites restore the shared state they change** (LDM-#2100, LDM-#2103). The custom SSL port check moved the global proxy to 8443 and nothing put it back, so every project created on that machine afterwards inherited it. The shared-database boot check could leave its workspace directory behind on an abort. Both are now restored from the exit trap, which an early exit cannot skip -- and the port is recorded before the change rather than reset to a hardcoded 443.
+
+- **Promotion keeps a CHANGELOG bullet's continuation paragraphs** (LDM-#2087). `--promote` carried only the first paragraph of each pre-release bullet forward, silently dropping the rest. v2.26.4's notes lost the caveat saying LDM-#2083 was still open, so they read as though it had been fixed.
+
+- **Verification reports can be synced after a release** (LDM-#2090). Staleness was measured against `HEAD` rather than the release, so the first commit landing after a promote invalidated every report from that cycle.
+
+- **The verification suites now actually restore the global proxy port** (LDM-#2112). The restore added for LDM-#2100 never ran. It was the first statement in the exit trap, where the run's own project is still up, and `ldm infra setup --force-recreate` is refused while LDM projects are running -- `-y` is `--non-interactive`, not `--force`. Three verification runs on three platforms reported pass with the proxy still on 8443. It now runs last, after the teardown, passes `--force`, and re-inspects the port afterwards rather than trusting the command's exit code: "reported success" is not "is on 443".
+
+- **A verification run on Windows no longer destroys the shared proxy out from under other projects** (LDM-#2113). The PowerShell half removed `liferay-proxy-global` and `liferay-search-global` unconditionally at the end of every run, where the bash half has always checked for other running projects first. Those projects' containers keep running, so nothing reported a failure -- the symptom was a site that stopped being reachable and a search index served by a node that no longer existed. The same silent shape as LDM-#2083. The two halves now agree.
+
+- **The exit trap's decisions reach the verification report** (LDM-#2111). Three lines went to the console only: the `VERIFICATION FAILED (Exit Code: N)` banner and both global-infrastructure cleanup decisions. One of them -- "Other LDM projects are running ... Skipping global infrastructure cleanup" -- is the line that explains why the proxy survived on a non-standard port rather than being removed, and it was printed on three runs and recorded on none. Having it would have identified LDM-#2112 on the first run instead of the fourth. A restore or a cleanup that cannot be seen in the artifact is indistinguishable from one that never happened.
+
+- **The PowerShell suite no longer fails on output the binary got right** (LDM-#2115). Windows PowerShell 5.1 turns a native command's stderr into error objects and then *formats* them, hard-wrapping at the console width before the script can read the text. A phrase split across that wrap stopped matching, so an assertion reported `'ldm start' refused but did not name 'ldm run'` against a message that says exactly that -- the wrap had landed between `'ldm` and `run'`. It was console-width dependent: the same script, binary and message passed in a wide terminal and failed in a narrow one. Native captures now take each error object's own message, so no formatter runs and nothing is wrapped. Applied to all 40 capture sites rather than to the nine assertions that happened to be caught, because the next multi-word assertion written would have been exposed again. PowerShell 7 renders errors differently and never showed the fault, which is why Linux, macOS and WSL2 runs always passed.
+
+- **The node-delete verification check works on Windows** (LDM-#2117). It writes a target into the project's metadata to exercise the node half of `ldm rm --delete`, and wrote it with `Set-Content -Encoding UTF8` -- which emits a UTF-8 BOM on Windows PowerShell 5.1, where pwsh 7 does not. `read_meta` chooses its parser with `content.strip().startswith("{")`, and a BOM is not whitespace, so BOM-prefixed JSON fell through to key=value parsing, no line in a JSON document contains `=`, and the metadata came back empty. With no target, the removal took the local path and the announcement the check asserts never happened -- against a binary that was behaving correctly.
+
+  The metadata is now written without a BOM. More importantly, the check's own guard was asking the wrong question: it confirmed the node name was present **in the file**, which it was, rather than whether LDM could read it -- and the only consumer that matters could not parse the document at all. Both halves now read `ldm list --json` and require LDM to resolve the project to the node before relying on it, reporting `wrote: X` against `LDM resolved: Y` when they disagree. The bash half never had the BOM problem but carried the same weak guard, and the two are kept identical so they cannot drift apart.
+
+- **LDM no longer hands Docker a port Windows has reserved** (LDM-#2123). `check_port` decides availability by binding, and Windows refuses a bind inside a WinNAT-reserved range with `EACCES` -- the same error an unprivileged process gets for a port below 1024. Both were treated as the privileged-port case, which falls back to asking whether anything is *listening*; nothing ever listens on a reserved port, so it was reported free. LDM then selected it, wrote it into the project metadata as a client extension's host port, published it, and Docker refused with exactly the message LDM-#2036 added a tip to explain. LDM was diagnosing a port it had chosen itself.
+
+  Above 1024 a refused bind now means unavailable and the search moves on. The sub-1024 fallback is kept, because there `EACCES` says only that *LDM* cannot bind it while Docker's daemon still can -- which is what makes `ldm infra setup --ssl-port 443` work. A stored port is also re-examined now: reserved ranges move when the host or WinNAT restarts, so a port recorded on a day it was free could fall inside a reservation later, and the project then failed on every subsequent run with no remedy but hand-editing metadata. Only an outright refusal clears it -- a port merely in use is left alone, since the extension's own container holds it while the project runs and re-resolving on that would move the host port on every `ldm run` (LDM-#1969). The probe binds the wildcard address rather than loopback, because `0.0.0.0` is what Docker publishes on.
+
+  Found verifying v2.26.5-pre.4 on Windows 11 / PowerShell 5.1, where the suite's client-extension fixture declares container port 3001 and WinNAT had reserved that range that day. The same suite had passed on the same machine the day before, against the same binary.
+
+- **`ldm reset <project> all` no longer leaves the database behind** (LDM-#2118). It reported success and left the project's database volume intact; the project then showed `Not Created`, so the surviving data was invisible until the next start quietly booted it. Reported against v2.26.5-pre.1 on isolated PostgreSQL, with the full PGDATA still in place.
+
+  Two independent gaps. The `down -v` the code documents was never performed -- `cmd_down` appends `-v` only when asked, and the call site asked for neither, so the comment above it described an intention the call did not carry out. And the explicit sweep removed `<project>-data` and `<project>-state` while the database volume is named `<db_container>-db-data`, which nothing matched. The same omission is why `ldm reset <project> db`, a documented target, did nothing at all.
+
+  `reset` deliberately does **not** enable the no-compose-file volume sweep, which identifies volumes partly by the name prefix `<project>-`: measured, a reset of `devcon2026` would otherwise have removed `devcon2026-staging-data`, belonging to a different project. That heuristic remains available to `--delete`, which is deliberate and asks first.
+
+- **A restore no longer leaves the previous build's search documents behind** (LDM-#2119). Restoring a snapshot that carries no search snapshot left the project's existing indices untouched: the database was replaced and the old documents survived beside it. Reported after a restore that left 189 object-entry documents for classes that no longer exist.
+
+  Three defects, and the third made the other two moot. The index deletion was reachable only on the branch that restores a search snapshot; it asked for `<container_name>-*` rather than the `ldm-<name>-` prefix LDM actually configures; and it issued a wildcard DELETE, which Elasticsearch 8 rejects with 400 by default while the call discarded the rejection. Taken together the function had never deleted an index, on either branch -- and the reindex LDM schedules made it look handled, because a reindex re-adds documents for classes that still have indexers and an orphaned document is precisely one whose class no longer has one.
+
+  Clearing is now a property of restoring rather than of having something to put back, indices are resolved by name and deleted explicitly, and a failure warns instead of passing silently.
+
+- **The verification suites restore the shared state they change** (LDM-#2121). LDM-#2100 and LDM-#2112 did not actually stop the global proxy being left on a non-standard port, and both v2.26.5-pre.4 reports show it while reporting pass.
+
+  The suite mistook its own containers for other projects -- the exclusion pattern named two of the five containers a run creates -- so the global infrastructure cleanup was skipped on every run, including on an otherwise empty machine. And the proxy port to restore was read from the live container, so on a machine already polluted by an earlier run the capture returned the wrong port, the restore compared it against itself and correctly concluded there was nothing to do. A machine that reached 8443 once stayed there.
+
+  Both halves now ask `ldm list --json`, which is authoritative about what is an LDM project, and take the port from `LDM_SSL_PORT` or the documented default rather than from the machine's current state.
+
+- **The PowerShell suite no longer stops to ask the operator for a parameter** (LDM-#2132). `Get-RunningProjectsExcept` called `ConvertFrom-LdmJson $raw` positionally, leaving that function's `Mandatory` `-Label` unsupplied. Interactively PowerShell does not treat that as an error -- it *prompts*, so every run halted at a bare `Label:` with the suite apparently hung. Under `-NonInteractive` it does not ask: it writes `missing mandatory parameters` to stderr, leaves the variable `$null`, and the function returns its `__unknown__` sentinel, which skips the shared-infrastructure teardown silently. The parse also sat outside the `try`, so a terminating error escaped a function whose entire contract is to answer `__unknown__` rather than throw.
+
+  The restore is now wrapped in a `finally`, so a finalizer that fails part-way cannot take the proxy restore down with it. Three issues had already surfaced as "the restore did not run" -- LDM-#2112 (it ran first and was refused), LDM-#2121 (it compared the polluted port against itself) and this one. Being last is what LDM-#2112 required and is also what made it fragile, so the ordering stays and the guarantee wraps it. The bash half has had this since it was written, via `set +e`.
+
+  Caught by executing the PowerShell half rather than grepping it. A name-grep passes against a call site that cannot run, which is how this shipped in v2.26.5-pre.5.
+
+- **The PowerShell suite assigns the project name it tests with** (LDM-#2135). `$PROJECT_NAME` was read four times -- for the running-project probe, two route-directory paths and an image filter -- and assigned nowhere. PowerShell yields `$null` for an unassigned variable, stringifies it to empty and never errors, so `Join-Path (Join-Path $LDM_WORKSPACE $PROJECT_NAME) "routes/default"` resolved to a path that cannot exist and the LDM-#1944 client-extension assertions reported `SKIPPED (not run)` on every Windows run. They had never executed there. The bash half assigns it and had been running them all along, which is why this looked like a Docker Desktop backend difference and was recorded as one.
+
+- **The suites no longer demand a port that may be occupied** (LDM-#2136). Both halves asked `ldm infra setup --ssl-port 8443` and then asserted the proxy was on 8443. When something already held that port LDM did the right thing and allocated 8444, and the suite failed the run -- reporting the product broken for behaving correctly. Each half now picks a free port first and asserts on the port it actually asked for. Observed on WSL2 against v2.26.5-pre.5.
+
+### Known issues
+
+- `ldm reset <project> search` and `global-search`, and the comma-separated target form shown in the documentation, are accepted and report success while doing nothing (LDM-#2127). The documentation now marks them, and `docs/TROUBLESHOOTING.md` no longer recommends `reset global-search` as a remedy.
+
+- The E2E verification suite does not exercise `ldm reset`, what a restore does to the search indices, or a successful `.ldmp` round-trip (LDM-#2131). Every fix above is covered by unit tests confirmed with neuter probes, but a Windows reserved-port regression in particular could only be caught by a human run.
+
+- A failed `rsync` to a remote compute node is discarded by all four callers of `sync_project_to_target()` (LDM-#2139). The function reports the failure correctly; nothing reads it. The worst case is project migration, where the target metadata is reassigned whether or not the files arrived. Reported by the AICA team from their own node trace.
+
+- On a snapshot restore, the MySQL/MariaDB schema wipe is unchecked (LDM-#2140) and the post-restore `virtualhost` hostname UPDATE is discarded (LDM-#2141). The PostgreSQL wipe in the same function retries and warns; the MySQL one does neither. A restore that leaves the source machine's hostname in the database prints the same output as one that succeeded.
+
+## [v2.26.5-pre.5] - 2026-10-12
+
+### Fixed
+
+- **LDM no longer hands Docker a port Windows has reserved** (LDM-#2123). `check_port` decides availability by binding, and Windows refuses a bind inside a WinNAT-reserved range with `EACCES` -- the same error an unprivileged process gets for a port below 1024. Both were treated as the privileged-port case, which falls back to asking whether anything is *listening*; nothing ever listens on a reserved port, so it was reported free. LDM then selected it, wrote it into the project metadata as a client extension's host port, published it, and Docker refused with exactly the message LDM-#2036 added a tip to explain. LDM was diagnosing a port it had chosen itself.
+
+  Above 1024 a refused bind now means unavailable and the search moves on. The sub-1024 fallback is kept, because there `EACCES` says only that *LDM* cannot bind it while Docker's daemon still can -- which is what makes `ldm infra setup --ssl-port 443` work. A stored port is also re-examined now: reserved ranges move when the host or WinNAT restarts, so a port recorded on a day it was free could fall inside a reservation later, and the project then failed on every subsequent run with no remedy but hand-editing metadata. Only an outright refusal clears it -- a port merely in use is left alone, since the extension's own container holds it while the project runs and re-resolving on that would move the host port on every `ldm run` (LDM-#1969). The probe binds the wildcard address rather than loopback, because `0.0.0.0` is what Docker publishes on.
+
+  Found verifying v2.26.5-pre.4 on Windows 11 / PowerShell 5.1, where the suite's client-extension fixture declares container port 3001 and WinNAT had reserved that range that day. The same suite had passed on the same machine the day before, against the same binary.
+
+- **`ldm reset <project> all` no longer leaves the database behind** (LDM-#2118). It reported success and left the project's database volume intact; the project then showed `Not Created`, so the surviving data was invisible until the next start quietly booted it. Reported against v2.26.5-pre.1 on isolated PostgreSQL, with the full PGDATA still in place.
+
+  Two independent gaps. The `down -v` the code documents was never performed -- `cmd_down` appends `-v` only when asked, and the call site asked for neither, so the comment above it described an intention the call did not carry out. And the explicit sweep removed `<project>-data` and `<project>-state` while the database volume is named `<db_container>-db-data`, which nothing matched. The same omission is why `ldm reset <project> db`, a documented target, did nothing at all.
+
+  `reset` deliberately does **not** enable the no-compose-file volume sweep, which identifies volumes partly by the name prefix `<project>-`: measured, a reset of `devcon2026` would otherwise have removed `devcon2026-staging-data`, belonging to a different project. That heuristic remains available to `--delete`, which is deliberate and asks first.
+
+- **A restore no longer leaves the previous build's search documents behind** (LDM-#2119). Restoring a snapshot that carries no search snapshot left the project's existing indices untouched: the database was replaced and the old documents survived beside it. Reported after a restore that left 189 object-entry documents for classes that no longer exist.
+
+  Three defects, and the third made the other two moot. The index deletion was reachable only on the branch that restores a search snapshot; it asked for `<container_name>-*` rather than the `ldm-<name>-` prefix LDM actually configures; and it issued a wildcard DELETE, which Elasticsearch 8 rejects with 400 by default while the call discarded the rejection. Taken together the function had never deleted an index, on either branch -- and the reindex LDM schedules made it look handled, because a reindex re-adds documents for classes that still have indexers and an orphaned document is precisely one whose class no longer has one.
+
+  Clearing is now a property of restoring rather than of having something to put back, indices are resolved by name and deleted explicitly, and a failure warns instead of passing silently.
+
+- **The verification suites restore the shared state they change** (LDM-#2121). LDM-#2100 and LDM-#2112 did not actually stop the global proxy being left on a non-standard port, and both v2.26.5-pre.4 reports show it while reporting pass.
+
+  The suite mistook its own containers for other projects -- the exclusion pattern named two of the five containers a run creates -- so the global infrastructure cleanup was skipped on every run, including on an otherwise empty machine. And the proxy port to restore was read from the live container, so on a machine already polluted by an earlier run the capture returned the wrong port, the restore compared it against itself and correctly concluded there was nothing to do. A machine that reached 8443 once stayed there.
+
+  Both halves now ask `ldm list --json`, which is authoritative about what is an LDM project, and take the port from `LDM_SSL_PORT` or the documented default rather than from the machine's current state.
+
+### Changed
+
+- `mcp` 2.2.0 -> 2.3.0 and `pytest-playwright` 0.9.0 -> 0.10.0. The MCP bump was verified against the real library rather than the suite's mocked one, and each of 2.3.0's breaking changes checked against this codebase.
+
+### Known issues
+
+- `ldm reset <project> search` and `global-search`, and the comma-separated target form shown in the documentation, are accepted and report success while doing nothing (LDM-#2127). The documentation now marks them, and `docs/TROUBLESHOOTING.md` no longer recommends `reset global-search` as a remedy.
+
+- The E2E verification suite does not exercise `ldm reset`, what a restore does to the search indices, or a successful `.ldmp` round-trip (LDM-#2131). Every fix above is covered by unit tests confirmed with neuter probes, but a Windows reserved-port regression in particular could only be caught by a human run.
+
+## [v2.26.5-pre.4] - 2026-10-09
+
+### Fixed
+
+- **The node-delete verification check works on Windows** (LDM-#2117). It writes a target into the project's metadata to exercise the node half of `ldm rm --delete`, and wrote it with `Set-Content -Encoding UTF8` -- which emits a UTF-8 BOM on Windows PowerShell 5.1, where pwsh 7 does not. `read_meta` chooses its parser with `content.strip().startswith("{")`, and a BOM is not whitespace, so BOM-prefixed JSON fell through to key=value parsing, no line in a JSON document contains `=`, and the metadata came back empty. With no target, the removal took the local path and the announcement the check asserts never happened -- against a binary that was behaving correctly.
+
+  The metadata is now written without a BOM. More importantly, the check's own guard was asking the wrong question: it confirmed the node name was present **in the file**, which it was, rather than whether LDM could read it -- and the only consumer that matters could not parse the document at all. Both halves now read `ldm list --json` and require LDM to resolve the project to the node before relying on it, reporting `wrote: X` against `LDM resolved: Y` when they disagree. The bash half never had the BOM problem but carried the same weak guard, and the two are kept identical so they cannot drift apart.
+
+## [v2.26.5-pre.3] - 2026-10-09
+
+### Fixed
+
+- **The PowerShell suite no longer fails on output the binary got right** (LDM-#2115). Windows PowerShell 5.1 turns a native command's stderr into error objects and then *formats* them, hard-wrapping at the console width before the script can read the text. A phrase split across that wrap stopped matching, so an assertion reported `'ldm start' refused but did not name 'ldm run'` against a message that says exactly that -- the wrap had landed between `'ldm` and `run'`. It was console-width dependent: the same script, binary and message passed in a wide terminal and failed in a narrow one. Native captures now take each error object's own message, so no formatter runs and nothing is wrapped. Applied to all 40 capture sites rather than to the nine assertions that happened to be caught, because the next multi-word assertion written would have been exposed again. PowerShell 7 renders errors differently and never showed the fault, which is why Linux, macOS and WSL2 runs always passed.
+
+## [v2.26.5-pre.2] - 2026-10-09
+
+### Fixed
+
+- **The verification suites now actually restore the global proxy port** (LDM-#2112). The restore added for LDM-#2100 never ran. It was the first statement in the exit trap, where the run's own project is still up, and `ldm infra setup --force-recreate` is refused while LDM projects are running -- `-y` is `--non-interactive`, not `--force`. Three verification runs on three platforms reported pass with the proxy still on 8443. It now runs last, after the teardown, passes `--force`, and re-inspects the port afterwards rather than trusting the command's exit code: "reported success" is not "is on 443".
+
+- **A verification run on Windows no longer destroys the shared proxy out from under other projects** (LDM-#2113). The PowerShell half removed `liferay-proxy-global` and `liferay-search-global` unconditionally at the end of every run, where the bash half has always checked for other running projects first. Those projects' containers keep running, so nothing reported a failure -- the symptom was a site that stopped being reachable and a search index served by a node that no longer existed. The same silent shape as LDM-#2083. The two halves now agree.
+
+- **The exit trap's decisions reach the verification report** (LDM-#2111). Three lines went to the console only: the `VERIFICATION FAILED (Exit Code: N)` banner and both global-infrastructure cleanup decisions. One of them -- "Other LDM projects are running ... Skipping global infrastructure cleanup" -- is the line that explains why the proxy survived on a non-standard port rather than being removed, and it was printed on three runs and recorded on none. Having it would have identified LDM-#2112 on the first run instead of the fourth. A restore or a cleanup that cannot be seen in the artifact is indistinguishable from one that never happened.
+
+## [v2.26.5-pre.1] - 2026-10-09
+
+### Fixed
+
+- **`ldm rm --delete` can no longer hang forever against a compute node** (LDM-#2094). The node removal added in v2.26.4 issued `ssh` with no `BatchMode=yes`, no `ConnectTimeout` and no timeout on the call, while the two other ssh call sites in the same module have had both since they were written. Without `BatchMode`, ssh falls back to an interactive password prompt when the key is missing, rejected, or the host key unknown -- so `ldm rm --delete -y` waits on a prompt nobody can answer, and in CI there is no terminal at all. Without `ConnectTimeout`, the "node may be unreachable" warning that already existed could not be reached promptly. This is the one defect v2.26.4 introduced rather than inherited, and it is why anyone automating `--delete` against a node should take this release.
+
+- **A project whose target node is gone can be removed again** (LDM-#2096). If the node was decommissioned, renamed or `ldm target rm`'d, `ldm rm <project> --delete` exited 1 during teardown and left the containers, volumes, local directory and registry entry in place, with no flag to get past it. `ldm rm --all --delete` had always degraded gracefully through the branch directly below; the single-project form died on the identical condition. A non-local target now warns that containers on the node are not removed, and continues with the local removal. Local projects still fail fast, because a local `compose down` that fails means containers on this machine and deleting anyway would orphan them.
+
+- **A restored site initializer no longer deploys before Liferay is ready** (LDM-#2105). A snapshot restore writes the project tree whole, so a site-initializer client extension sat in `osgi/client-extensions/` before the container started. Liferay processed it during startup and `SiteInitializerClientExtension` threw on a null `Layout` -- 48 times on the reported run -- leaving the bundle STARTED, no group initialised, and `/web/<site>` returning 404. The deferral built for exactly this (LDM-#1779) was wired into `ldm import` only and had never covered restore, so this affected every `ldm quickstart` of a package carrying one since v2.23.0. The zip is now held in `.ldm/deferred-client-extensions/` and deployed once the portal is healthy. The "Gave up waiting for page specifications" and "No matching fragments found" warnings such a run ended with were downstream of this.
+
+- **The automatic search volume repair refuses to destroy a running project's index** (LDM-#2083). It deleted the *shared* Elasticsearch data directory with no prompt and no `--force`, destroying every project's index on the machine -- silently, because a project's healthcheck is an HTTP probe that never touches search. The far less destructive SSL proxy recreate, in the same file, already refused while projects were live. The repair now applies the same guard, names the projects at risk, gives the exact `ldm stop` commands, fails closed when it cannot tell what is running, and captures the failing container's logs to `~/.ldm/infra/search/search-failure-<timestamp>.log` before removing it -- the repair previously destroyed the only evidence of why it ran.
+
+- **`infra setup --force-recreate` no longer mistakes its own container for a port conflict** (LDM-#2101). It removed the global proxy and checked port availability immediately; `docker rm -f` returns before the host releases the bindings, so LDM reallocated to the next free port and -- because a later `infra setup` adopts the running container's ports by design -- fixed the machine on non-standard ports permanently. Measured in a verification report: created on 80/443/18080, then both 80 and 18080 reported "in use" and bumped to 81 and 18081 seconds later. Ports LDM has just released are now awaited; a port genuinely held by other software still reallocates exactly as before.
+
+- **`ldm infra setup` no longer asks which project** (LDM-#2102). It resolved a project to read two values and, with nothing in the working directory, reached the interactive picker -- where the answer silently decided whether the whole machine got a shared database and with which engine, from a list ordered by discovery. It now uses the project the working directory implies, or defaults and explicit flags, and is scriptable.
+
+- **An expired `GITHUB_PAT` is reported as a rejected credential, not a missing package** (LDM-#2098). `ldm quickstart` answered "No compiled LDM Package found in GitHub Releases" against a release that had one and was readable anonymously: the 401 was written at debug level and invisible by default. The warning now names which source supplied the credential, says the release may be readable without it, and states that this is a credential problem. A 403 sent with a credential no longer claims a rate limit, which it usually is not.
+
+- **The verification suites restore the shared state they change** (LDM-#2100, LDM-#2103). The custom SSL port check moved the global proxy to 8443 and nothing put it back, so every project created on that machine afterwards inherited it. The shared-database boot check could leave its workspace directory behind on an abort. Both are now restored from the exit trap, which an early exit cannot skip -- and the port is recorded before the change rather than reset to a hardcoded 443.
+
+- **Promotion keeps a CHANGELOG bullet's continuation paragraphs** (LDM-#2087). `--promote` carried only the first paragraph of each pre-release bullet forward, silently dropping the rest. v2.26.4's notes lost the caveat saying LDM-#2083 was still open, so they read as though it had been fixed.
+
+- **Verification reports can be synced after a release** (LDM-#2090). Staleness was measured against `HEAD` rather than the release, so the first commit landing after a promote invalidated every report from that cycle.
+
+### Changed
+
+- The E2E suites now exercise the node half of `ldm rm --delete` (LDM-#2080), which previously had no end-to-end coverage in either half. Writing and running that check is what found LDM-#2096.
+
 ## [v2.26.4] - 2026-10-08
 
 ### Fixed
