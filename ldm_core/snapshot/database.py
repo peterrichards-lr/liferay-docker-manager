@@ -338,6 +338,11 @@ class DatabaseSnapshotService:
             db_name = shared_database_name(paths["root"].name)
 
         def _wipe_db():
+            # LDM-#2140: hoisted so BOTH engines report the same way. It used
+            # to live inside the PostgreSQL branch, which is why the MySQL one
+            # below had no verdict to set and no warning to reach.
+            wipe_success = False
+
             # 1. Clean Slate (LDM-410)
             # Cloud dumps often lack DROP TABLE commands. We must wipe the target DB first.
             if db_type == "postgresql":
@@ -374,7 +379,6 @@ class DatabaseSnapshotService:
                 # LDM-418: Execute via stdin instead of -c to prevent multi-line parsing failures across docker exec
                 # We wrap this in a retry loop because a freshly created Postgres container
                 # will initialize and then restart itself, causing temporary connection refusals.
-                wipe_success = False
                 for _wipe_attempt in range(6):  # Up to ~30 seconds wait
                     try:
                         subprocess.run(
@@ -417,26 +421,63 @@ class DatabaseSnapshotService:
                         UI.warning(f"  ! Wipe encountered an error: {e}")
                         break
 
-                if not wipe_success:
-                    UI.warning(
-                        "  ! Could not confirm successful schema wipe. Restore may fail."
-                    )
-
             elif db_type in ["mysql", "mariadb"]:
                 UI.detail("  - Wiping existing MySQL database...")
-                self.manager.run_command(
-                    [
-                        *docker_prefix,
-                        "exec",
-                        db_container,
-                        "mysql",
-                        "-u",
-                        "lportal",
-                        "-ptest",
-                        "-e",
-                        f"DROP DATABASE IF EXISTS {db_name}; CREATE DATABASE {db_name};",
-                    ],
-                    check=False,
+                # LDM-#2140: this fired once with check=False and read nothing,
+                # while the PostgreSQL branch above retried, classified the
+                # error and reported a verdict. The retry is not a PostgreSQL
+                # concern: its own comment says a freshly created container
+                # "will initialize and then restart itself, causing temporary
+                # connection refusals", which is a container-lifecycle
+                # property. The official MySQL and MariaDB entrypoints do the
+                # same -- a temporary server runs initialisation, then stops
+                # and restarts. So this branch was exposed to exactly the race
+                # the one above was built to survive, and could not report
+                # losing it: the import then landed on a schema that was never
+                # emptied, with "Wiping existing MySQL database..." printed
+                # either way because the detail line precedes the command.
+                wipe_cmd = [
+                    *docker_prefix,
+                    "exec",
+                    db_container,
+                    "mysql",
+                    "-u",
+                    "lportal",
+                    "-ptest",
+                    "-e",
+                    f"DROP DATABASE IF EXISTS {db_name}; CREATE DATABASE {db_name};",
+                ]
+                for _wipe_attempt in range(6):  # Up to ~30 seconds wait
+                    try:
+                        subprocess.run(wipe_cmd, check=True, capture_output=True)
+                        wipe_success = True
+                        break
+                    except subprocess.CalledProcessError as e:
+                        # Same handling as the PostgreSQL branch (LDM-423):
+                        # the client does not reliably use stderr.
+                        raw_err = (e.stderr or b"").decode(errors="ignore")
+                        raw_out = (e.stdout or b"").decode(errors="ignore")
+                        err_out = f"{raw_err} {raw_out}".lower()
+
+                        if (
+                            "can't connect" in err_out
+                            or "connection refused" in err_out
+                            or "server has gone away" in err_out
+                            or "is starting" in err_out
+                            or "no such file or directory" in err_out
+                        ):
+                            UI.debug(f"DB initializing, waiting... ({err_out.strip()})")
+                            time.sleep(5)
+                        else:
+                            UI.warning(f"  ! Non-fatal wipe error: {err_out.strip()}")
+                            break  # Other SQL error, stop retrying
+                    except Exception as e:
+                        UI.warning(f"  ! Wipe encountered an error: {e}")
+                        break
+
+            if db_type in ("postgresql", "mysql", "mariadb") and not wipe_success:
+                UI.warning(
+                    "  ! Could not confirm successful schema wipe. Restore may fail."
                 )
 
         # 2. Build Import Command as a list

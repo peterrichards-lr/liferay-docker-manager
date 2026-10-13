@@ -145,6 +145,33 @@ ldm rm <project> --volumes
 ldm run <project>
 ```
 
+### **"Could not confirm successful schema wipe. Restore may fail."**
+
+A snapshot restore empties the target schema before importing, because a dump
+that lacks `DROP TABLE` statements would otherwise land on top of the data
+already there. This warning means that step did not complete.
+
+**What it means for your data.** The import still runs, so the result may be a
+database that merged two schemas rather than replaced one -- typically showing
+up later as duplicate-key errors, or as rows from a build you thought you had
+replaced. If you see this, treat the restored database as suspect rather than
+assuming the warning was cosmetic.
+
+**The usual cause is timing.** A freshly created database container starts a
+temporary server to run its initialisation, then stops and restarts it, and
+refuses connections in between. LDM retries for about 30 seconds to ride that
+out. Seeing this warning means the wipe was still failing after all of them.
+
+**What to do.** Check the container is healthy (`ldm status`), then re-run the
+restore -- on a container that is already up, the wipe succeeds immediately.
+If it persists, the error from the database client itself is recorded in
+`~/.ldm/last-command.log`, and it is usually a credentials or disk-space
+problem rather than a timing one.
+
+Until LDM-#2140 this warning could only appear for PostgreSQL. The MySQL and
+MariaDB wipe was issued once and its result discarded, so the same failure was
+silent on those engines.
+
 ---
 
 ## 🐳 Docker Filesystem Errors
@@ -796,4 +823,4 @@ Projects are discovered from the current folder, its parent, `~/ldm`, the LDM in
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-12* | *Last Reviewed: 2026-10-12*
+*Last Updated: 2026-10-13* | *Last Reviewed: 2026-10-13*
