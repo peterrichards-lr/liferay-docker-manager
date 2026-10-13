@@ -587,6 +587,36 @@ def _apply_package_tag(self, manifest, is_quickstart):
     UI.interruptible_pause(3, "Press CTRL+C to cancel ")
 
 
+def _die_if_the_pipeline_failed(result, what):
+    """Stop when a pipeline answered `False` (LDM-#2155).
+
+    `Pipeline.run` returns `False` after an unexpected exception in a stage:
+    it rolls back and leaves the verdict to the caller
+    (`pipelines/base.py`). On the import paths the caller is here, and nothing
+    read it -- so `ldm import` returned a project name, and exited 0, for a
+    package whose hydration had been undone or whose stack never started.
+
+    `UI.die` rather than a returned code because every caller uses the name
+    this function's callers return as if it named a working project:
+    `cmd_link`, `cmd_clone` and `cmd_init_from` pass it straight on, and
+    `cmd_quickstart` goes on to configure and boot it.
+
+    Exit 4 -- Orchestration/Deployment Error, per
+    `.agents/skills/ldm-architecture/SKILL.md`. A stage that refuses through
+    `UI.die` is unaffected: its `SystemExit` carries its own code out of
+    `Pipeline.run` and never reaches this check, the idempotent 5 included.
+    """
+    from ldm_core.utils import UI
+
+    if result is False:
+        UI.die(
+            f"{what} did not complete, and the work was rolled back. The error "
+            f"above says which stage failed; '~/.ldm/last-command.log' has the "
+            f"detail.",
+            exit_code=4,
+        )
+
+
 def _import_ldm_package(
     self,
     ldmp_asset,
@@ -649,7 +679,12 @@ def _import_ldm_package(
                 True,
                 "true",
             ]:
-                self.manager.runtime.cmd_run(project_id=project_name, is_restart=True)
+                _die_if_the_pipeline_failed(
+                    self.manager.runtime.cmd_run(
+                        project_id=project_name, is_restart=True
+                    ),
+                    "The package was imported, but starting it",
+                )
         finally:
             if temp_extract_dir.exists():
                 shutil.rmtree(temp_extract_dir)
@@ -778,7 +813,10 @@ def _clone_remote_repository(
             shutil.rmtree(temp_git_dir)
 
     if not should_no_run:
-        self.manager.runtime.cmd_run(project_id=project_name, is_restart=True)
+        _die_if_the_pipeline_failed(
+            self.manager.runtime.cmd_run(project_id=project_name, is_restart=True),
+            "The repository was cloned, but starting the project",
+        )
 
     return project_name
 
@@ -900,7 +938,7 @@ def cmd_import(
         no_run=should_no_run,
     )
     pipeline = ImportPipeline()
-    pipeline.run(context)
+    _die_if_the_pipeline_failed(pipeline.run(context), "Import")
 
     return context.get("project_name")
 
