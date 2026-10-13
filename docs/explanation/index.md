@@ -11,6 +11,9 @@ that, see the [How-To guides](../how-to/index.md) or
   and how the pieces fit.
 - **[Remote Node Architecture](remote-node-architecture.md)** — how a command
   finds the right machine, and how target resolution works.
+- **[Permissions & the Reclaim Helper](permissions-and-reclaim.md)** — why
+  short-lived Alpine containers appear during a run, which directories they
+  change, and why the mode is `777`.
 
 ## What LDM gives you out of the box
 
@@ -40,4 +43,4 @@ They are unrelated, and picking the wrong one wastes a reader's time:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-19* | *Last Reviewed: 2026-09-19*
+*Last Updated: 2026-10-13* | *Last Reviewed: 2026-10-13*

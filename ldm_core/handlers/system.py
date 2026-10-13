@@ -371,7 +371,11 @@ class SystemService(BaseHandler):
                 # and `osgi/state`, and the helper's chown targets the host
                 # uid, so at `750` the repair would leave the container worse
                 # off than it found it (LDM-#645, `6861e26e`).
-                for p_key in ["deploy", "logs", "osgi", "files"]:
+                # LDM-#2144: `routes` added here too. This is the repair
+                # path -- `ldm start --fix-permissions` -- and a routes tree
+                # stuck at 750 from before the UMASK=0022 fix is exactly the
+                # wedged state it exists to undo.
+                for p_key in ["deploy", "logs", "osgi", "files", "routes"]:
                     if p_key in paths and paths[p_key].exists():
                         reclaim_volume_permissions(paths[p_key], chmod_val="777")
             except Exception as e:

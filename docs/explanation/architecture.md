@@ -183,9 +183,28 @@ An extension reads both, via `LIFERAY_ROUTES_DXP` and
 `LIFERAY_ROUTES_CLIENT_EXTENSION`, and custom services share the DXP half.
 
 Because Liferay writes these at boot, everything that mounts a subtree waits
-for it (`depends_on: liferay, condition: service_healthy`). See *The Routes
-Tree* in `.agents/skills/ldm-architecture/SKILL.md` for the full contract and
-the rule against mounting over `/opt/liferay/routes` in an extension container.
+for it (`depends_on: liferay, condition: service_healthy`). A container that
+starts first reads an empty directory.
+
+> **Never mount over `/opt/liferay/routes` in a client-extension container.**
+> That path is correct for Liferay, which writes its trees there. But an
+> extension built on `liferay/node-runner` does `COPY . /opt/liferay`, so for
+> that container the same path holds the application's own route handlers.
+> Mounting over it shadows the app and the container will not start
+> (LDM-#1911 — sixteen `.cjs` handlers sat there on the deployment that
+> reported it). The two images do not share a filesystem convention, and every
+> regression here has come from assuming they do.
+>
+> A client extension addresses the trees it needs as subdirectories of its own
+> mount at `/etc/liferay/lxc/routes`, via `LIFERAY_ROUTES_DXP` and
+> `LIFERAY_ROUTES_CLIENT_EXTENSION`, both of which LDM sets for you.
+
+Because that tree is bind-mounted and written by a container running as a
+different uid than yours, LDM occasionally corrects its ownership with a
+short-lived helper container. See
+[Permissions, Bind Mounts and the Reclaim Helper](permissions-and-reclaim.md)
+— particularly if you have a project created before v2.26.0, whose
+`routes/default` may still carry a mode that blocks a remote sync.
 
 ---
 
@@ -377,4 +396,4 @@ sequenceDiagram
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-23* | *Last Reviewed: 2026-09-23*
+*Last Updated: 2026-10-13* | *Last Reviewed: 2026-10-13*

@@ -253,22 +253,52 @@ is why `marketplace` had no creator at all (LDM-#1917). It runs in
 deny Docker the chance to create a bind-mount source itself, which it does as
 root (the LDM-#1134 hazard).
 
-| path key | created by | pre-boot reclaim | snapshot reclaim |
-|---|---|---|---|
-| `data` | `verify_runtime_environment` | yes | host uid, `755` |
-| `state` | `verify_runtime_environment` | yes | host uid, `755` |
-| `deploy` | both | yes | uid 1000, `777` |
-| `files` | both | yes | uid 1000, `777` |
-| `configs` | both | yes | uid 1000, `777` |
-| `modules` | both | no | uid 1000, `777` |
-| `cx` | both | yes | no |
-| `backups` | `verify_runtime_environment` | yes | no |
-| `scripts` | `validate_properties` | no | no |
-| `logs` | `validate_properties` | yes | uid 1000, `777` |
-| `log4j` | `validate_properties` | yes | no |
-| `portal_log4j` | `validate_properties` | yes | no |
-| `routes` | `validate_properties` | yes | no |
-| `marketplace` | `migrate_layout` | no | uid 1000, `777` (LDM-#1941) |
+**There is no single "pre-boot reclaim".** LDM-#2143: this table used to show
+one such column, and the code has FOUR reclaim loops carrying two different
+lists. A reader took "yes" as unconditional, found `routes` unreclaimed on the
+path their command actually took, and spent a day concluding something exotic
+was happening on their node. One column per site, so disagreement is visible
+rather than averaged away.
+
+`pipelines/run.py` holds two loops -- the remote-target branch and the local
+one -- with identical lists, shown here as one column.
+
+| path key | created by | `base.py` pre-boot | `run.py` pre-`up` | `rescue` | snapshot reclaim |
+|---|---|---|---|---|---|
+| `data` | `verify_runtime_environment` | yes | no | no | host uid, `755` |
+| `state` | `verify_runtime_environment` | yes | no | no | host uid, `755` |
+| `deploy` | both | yes | yes | yes | uid 1000, `777` |
+| `files` | both | yes | yes | yes | uid 1000, `777` |
+| `configs` | both | yes | via `osgi` | via `osgi` | uid 1000, `777` |
+| `modules` | both | no | via `osgi` | via `osgi` | uid 1000, `777` |
+| `osgi` | -- | no | **yes** | **yes** | no |
+| `cx` | both | yes | no | no | no |
+| `backups` | `verify_runtime_environment` | yes | no | no | no |
+| `scripts` | `validate_properties` | no | no | no | no |
+| `logs` | `validate_properties` | yes | yes | yes | uid 1000, `777` |
+| `log4j` | `validate_properties` | yes | no | no | no |
+| `portal_log4j` | `validate_properties` | yes | no | no | no |
+| `routes` | `validate_properties` | yes | **yes** (LDM-#2144) | **yes** (LDM-#2144) | no |
+| `marketplace` | `migrate_layout` | no | via `osgi` | via `osgi` | uid 1000, `777` (LDM-#1941) |
+
+`osgi` is the parent of `configs`, `state`, `modules` and `marketplace`, and the
+helper is recursive -- so the `run.py` and `rescue` lists name the parent where
+the pre-boot list names the children. "via `osgi`" means covered, not skipped.
+
+**Gates, which the old table did not record.** The `run.py` loops are not
+unconditional: the remote branch runs whenever the target is remote, and the
+local branch only `if platform.system() == "linux" or --fix-permissions`. On
+macOS without that flag, nothing in the run pipeline reclaims anything.
+
+`ldm_core/tests/test_routes_is_reclaimed.py` parses these lists from source and
+asserts they agree. Change a list without changing this table and the test still
+passes -- it compares the lists to each other, not to this document. Keeping
+them in step is still manual, which is the remaining half of LDM-#2143.
+
+The user-facing explanation of all this -- what the helper container is, why the
+mode is `777`, and the `routes` special case -- is
+`docs/explanation/permissions-and-reclaim.md`. Prefer extending that; this table
+is the implementation detail behind it.
 
 "Both" means `verify_runtime_environment` (`handlers/base.py`) and the Missing
 Mount Paths check in `validate_properties` (`handlers/config.py`). The two
@@ -691,4 +721,4 @@ When LDM generates, deploys, or reasons about Client Extensions:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-25* | *Last Reviewed: 2026-09-25*
+*Last Updated: 2026-10-13* | *Last Reviewed: 2026-10-13*
