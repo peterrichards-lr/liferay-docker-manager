@@ -127,6 +127,52 @@ Docker Desktop on Windows stores data in a WSL2 VHDX file. To move it:
 
 ## 🗄️ Database Issues
 
+### **"Could not synchronize Virtual Host entries to ..."**
+
+A restore rewrites Liferay's `virtualhost` table so the project answers on this
+machine's hostname rather than the one the snapshot was taken on. This warning
+means that rewrite did not land.
+
+**The restore itself succeeded.** The data is in place and the project will
+start. What is wrong is the hostname Liferay believes it serves.
+
+**What you will see later.** The site does not resolve at the address you
+expect, or resolves but behaves oddly -- OAuth2 redirect URIs for client
+extensions are registered against the hostname in this table, so they point at
+the snapshot's origin machine and authorisation round-trips fail. None of that
+is obviously connected to a restore that reported success, which is why the
+warning exists.
+
+**What to do.** Re-running the restore is the supported fix, and is usually
+enough -- the sync runs again at the end of it.
+
+To confirm the problem first:
+
+```bash
+ldm db query <project> -s "SELECT hostname FROM virtualhost;"
+```
+
+`ldm db query` is deliberately SELECT-only, so it will show you the wrong
+hostname but cannot correct it. If you need to change it by hand rather than
+re-running the restore, go through the container directly:
+
+```bash
+# PostgreSQL
+docker exec <project>-db-1 psql -U lportal -d lportal \
+  -c "UPDATE virtualhost SET hostname = '<your-host>';"
+
+# MySQL / MariaDB
+docker exec <project>-db-1 mysql -u lportal -ptest \
+  -e "UPDATE lportal.virtualhost SET hostname = '<your-host>';"
+```
+
+Restart the project afterwards so Liferay re-reads it. The database client's own
+error is recorded in `~/.ldm/last-command.log`.
+
+Until LDM-#2141 this failure was silent: the UPDATE's result was discarded, and
+the line announcing the sync was printed before the statement ran, so a restore
+that left the wrong hostname looked identical to one that worked.
+
 ### **MySQL: Initialization Crash / "The designated data directory is unusable"**
 
 If your database container (`<project>-db-1`) continuously crashes with logs indicating `Table 'mysql.plugin' doesn't exist` or `The designated data directory /var/lib/mysql/ is unusable`, the initial database setup was interrupted or failed (often due to an incorrect configuration flag for that specific version).
@@ -796,4 +842,4 @@ Projects are discovered from the current folder, its parent, `~/ldm`, the LDM in
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-12* | *Last Reviewed: 2026-10-12*
+*Last Updated: 2026-10-13* | *Last Reviewed: 2026-10-13*
