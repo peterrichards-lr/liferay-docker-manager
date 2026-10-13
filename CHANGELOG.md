@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.6-pre.1] - 2026-10-13
+
+### Fixed
+
+- **`ldm import` can now read the checksum `ldm package` writes** (LDM-#2159). `ldm package` produces the sidecar `.sha256` in `sha256sum` format -- `"<digest>  <filename>"` -- and the local import path compared that whole line against a bare digest, so it could never match. Every locally produced `.ldmp` was refused as "corrupted or tampered with" while being bit-for-bit correct. The remote path, which is what imports from a GitHub release, has parsed the same format correctly all along; only the local branch was missing `.split()[0]`. Anyone moving a project between machines by file, archiving a demo, or verifying a package before upload was affected, and the message sent them hunting a damaged file. Found by performing a `.ldmp` round trip by hand -- the first one this project has ever done -- which is now part of the E2E suite.
+
+- **A failed pipeline no longer exits 0** (LDM-#2155). When a stage raises an unexpected exception, `Pipeline.run` rolls back and returns `False`, leaving the verdict to the caller. Every caller discarded it: `ldm run`, `ldm up`, `ldm import` and `ldm quickstart` all reported success after a boot that had been undone. `ldm quickstart` discarded it twice over, never returning what `cmd_run` answered. The CLI now converts that into exit 4 (Orchestration/Deployment Error) and the import paths stop in place, because every caller uses the project name they return as if it named a working project. A `UI.die` inside a stage is untouched and still carries its own code, the idempotent 5 included.
+
+- **The MCP `start_project` tool no longer answers `Success` after a boot that rolled back** (LDM-#2156). It wrapped `cmd_run` in a `try`/`except` and returned success from the else path, but `Pipeline.run` catches the exception and returns `False`, so the `except` never fired. The caller is an AI agent with no exit code to read and no containers to look at -- the string is the entire result -- so it would go on to poll a URL that never answers.
+
+- **A failed `rsync` to a remote compute node is reported** (LDM-#2139), the **MySQL/MariaDB schema wipe is confirmed before importing over it** (LDM-#2140), and **a post-restore virtual-host update that did not land is reported** (LDM-#2141). One defect family in three subsystems: a result computed correctly and read by nobody. The node-migration case was the most serious -- step 3 of 5 could fail while step 4 reassigned the project's target regardless. Reported by the AICA team from their own node trace.
+
+- **`routes` is reclaimed on every path, and the permission model is documented** (LDM-#2143, LDM-#2144). The reclaim table described one list where the code had four, and `routes` was absent from three of them -- so a `routes/default` created before the UMASK fix kept mode 750 indefinitely, and nothing could repair it: `rsync -a` attempts the `chgrp` and is refused, and no process running as the SSH user can fix a directory owned by another uid. The pre-boot reclaim helper is the only mechanism that can, which made the documentation defect the blocking one.
+
+### Changed
+
+- **The E2E suite now performs a `.ldmp` round trip** (LDM-#2131, first of its three proposals): it packs the project, imports the result under a new name, boots it, and asserts the portal actually serves. Every previous `.ldmp` assertion in the suite was refusal testing -- an unparseable manifest and a saved HTTP error page -- so nothing in the verification record could contradict a report that the path was broken. It was broken (LDM-#2159), and it failed *as a refusal*, which refusal testing cannot distinguish from working.
+
+- **The suite now asserts what Liferay published into the DXP config tree**, not merely that the files exist (toward LDM-#2154). Three existing assertions walk `routes/default/dxp` -- scaffolding, mount anchoring and readability -- and none read a byte of the contents, so a tree carrying the wrong domain passed all three. All four published values are now recorded in the verification report whether the assertion passes or fails.
+
 ## [v2.26.5] - 2026-10-13
 
 ### Changed
