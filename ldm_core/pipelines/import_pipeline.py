@@ -63,7 +63,32 @@ class ImportValidationStage(PipelineStage):
                 if sha_file.exists():
                     UI.detail(f"Verifying integrity of {source.name}...")
                     actual_sha = calculate_sha256(source)
-                    expected_sha = sha_file.read_text().strip()
+                    # LDM-#2159: `sha256sum` format is "<digest>  <filename>",
+                    # and that is exactly what `ldm package` writes
+                    # (handlers/snapshot.py). Comparing the whole line against
+                    # a bare digest can never match, so EVERY locally produced
+                    # package was reported corrupt -- with a message blaming
+                    # corruption, which sent people hunting a damaged file.
+                    #
+                    # The remote path has parsed this correctly all along
+                    # (workspace/importer.py, the same file format from a
+                    # GitHub release). This is that parse, on the branch that
+                    # was missing it.
+                    #
+                    # A bare digest with no filename still verifies: that is
+                    # what a hand-written checksum usually looks like, and
+                    # taking the first field accepts both.
+                    sha_text = sha_file.read_text().strip()
+                    expected_sha = sha_text.split()[0] if sha_text else ""
+                    if not expected_sha:
+                        # `"".split()[0]` raises, and a checksum file beside an
+                        # archive is untrusted input, so this says what is
+                        # wrong rather than failing with an IndexError.
+                        UI.die(
+                            f"Integrity checksum file is empty: {sha_file.name}\n"
+                            "Delete it to import without verification, or "
+                            "restore a valid checksum."
+                        )
                     if actual_sha != expected_sha:
                         UI.die(
                             f"Integrity check failed for archive: {source.name}\n"

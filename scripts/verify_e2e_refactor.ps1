@@ -132,6 +132,11 @@ $SSHFAIL_TEST_PROJ = "sshfail-proj-${TEST_PORT}"
 $PORTCONFLICT_PROJ = "portconflict-${TEST_PORT}"
 $PORT_HOLDER = "ldm-e2e-port-holder-${TEST_PORT}"
 $LDMP_REFUSAL_PROJECT = "ldmp-refusal-${TEST_PORT}"
+# LDM-#2131: the round trip's project and package directory, named here
+# so the finalizer can remove them if the run is killed part-way. The
+# package is ~1 GB.
+$ROUNDTRIP_PROJECT = "${PROJECT_NAME}-roundtrip"
+$ROUNDTRIP_PKG_DIR = Join-Path $LDM_WORKSPACE ".ldm-roundtrip-pkg"
 $CLOUD_IMPORT_PROJECT = "cloud-import-${TEST_PORT}"
 $CLOUD_NOID_PROJECT = "cloud-noid-${TEST_PORT}"
 $PRODUCT_PIN_PROJECT = "product-pin-${TEST_PORT}"
@@ -561,6 +566,13 @@ function Remove-Ldm1383Artifacts {
     Invoke-Cleanup $LDM_CMD "-y rm $LDMP_REFUSAL_PROJECT --delete"
     foreach ($stale in @((Join-Path $LDM_WORKSPACE $LDMP_REFUSAL_PROJECT), (Join-Path $LDM_WORKSPACE ".ldm_temp"))) {
         if (Test-Path $stale) { Remove-Item -Recurse -Force $stale -ErrorAction SilentlyContinue }
+    }
+    # LDM-#2131: parity with cleanup_1383_artifacts in the bash half. A run
+    # killed between packing and the teardown would otherwise leave ~1 GB
+    # behind on a machine that may already be short of space.
+    Invoke-Cleanup $LDM_CMD "-y rm $ROUNDTRIP_PROJECT --delete"
+    foreach ($stale in @((Join-Path $LDM_WORKSPACE $ROUNDTRIP_PROJECT), $ROUNDTRIP_PKG_DIR)) {
+        if ($stale -and (Test-Path $stale)) { Remove-Item -Recurse -Force $stale -ErrorAction SilentlyContinue }
     }
 }
 
@@ -6419,6 +6431,106 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     } else {
         throw "Shared search mode verification failed."
     }
+    # LDM-#2131: a .ldmp ROUND TRIP -- pack this project, import the result
+    # under a new name, boot it, and assert it serves. Parity with the bash
+    # half; the rationale is recorded there and applies identically.
+    #
+    # Performing this by hand is what found LDM-#2159: the local integrity
+    # check compared the whole first line of the `.sha256` -- digest AND
+    # filename -- against a bare digest, so no package `ldm package` produced
+    # could ever be imported. It failed as a REFUSAL, which is exactly what
+    # this suite's only other .ldmp assertions test for, so refusal testing
+    # could not see it.
+    Write-Host ">> Verifying a .ldmp round trip: pack, import, boot, serve (LDM-#2131)..."
+    $roundTripPort = $TEST_PORT + 6
+    $roundTripOk = $true
+    if (Test-Path $ROUNDTRIP_PKG_DIR) { Remove-Item -Recurse -Force $ROUNDTRIP_PKG_DIR -ErrorAction SilentlyContinue }
+    New-Item -ItemType Directory -Path $ROUNDTRIP_PKG_DIR -Force | Out-Null
+
+    # `--repo` is REQUIRED: with no git origin to resolve, `ldm package` builds
+    # the snapshot and then refuses without it. It is only recorded in the
+    # manifest as `github_repository`, so a synthetic value keeps this offline.
+    # `--use-latest` is deliberately NOT passed -- it resolves a tag from
+    # GitHub releases, which would make this a network test.
+    & $LDM_CMD -y package $PROJECT_NAME -o $ROUNDTRIP_PKG_DIR --repo ldm-e2e/roundtrip 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Verdict "[ERROR] 'ldm package' failed, so the round trip could not start (LDM-#2131)."
+        $roundTripOk = $false
+    }
+
+    $roundTripPkg = Join-Path $ROUNDTRIP_PKG_DIR "$PROJECT_NAME.ldmp"
+    if ($roundTripOk -and -not (Test-Path $roundTripPkg)) {
+        Write-Verdict "[ERROR] 'ldm package' reported success but produced no $PROJECT_NAME.ldmp."
+        $roundTripOk = $false
+    }
+    # The sidecar checksum is the artefact LDM-#2159 was about: it exists, it
+    # is correct, and the importer could not read it.
+    if ($roundTripOk -and -not (Test-Path "$roundTripPkg.sha256")) {
+        Write-Verdict "[ERROR] The package carries no .sha256, so its integrity cannot be verified on import."
+        $roundTripOk = $false
+    }
+
+    # `--no-run` and an explicit port: the package carries the SOURCE
+    # project's port and that project is still running on it, so an import
+    # that booted would die on a port conflict. Split so a failed import and a
+    # failed boot are distinguishable.
+    if ($roundTripOk) {
+        & $LDM_CMD -y import $roundTripPkg $ROUNDTRIP_PROJECT --port $roundTripPort --no-run 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Verdict "[ERROR] 'ldm import' refused a package LDM itself produced (LDM-#2159/#2131)."
+            Write-Verdict "[ERROR] The integrity check is the first suspect: 'ldm package' writes '<digest>  <filename>'."
+            $roundTripOk = $false
+        }
+    }
+
+    if ($roundTripOk) {
+        & $LDM_CMD -y run $ROUNDTRIP_PROJECT --port $roundTripPort 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Verdict "[ERROR] The imported project did not boot (LDM-#2131)."
+            $roundTripOk = $false
+        }
+    }
+
+    # Serving is the assertion. `ldm run` returning 0 means LDM believes it is
+    # ready; this asks the portal itself, which is the difference between "the
+    # command succeeded" and "the demo works".
+    #
+    # Invoke-WebRequest, not curl: on Windows PowerShell 5.1 `curl` is an alias
+    # for it and curl's `-w '%{http_code}'` is unavailable. A non-2xx arrives
+    # as an exception carrying the status; a refused connection as one with no
+    # Response at all. -TimeoutSec is mandatory -- neither bounds this by
+    # default and a hung probe would burn a CI job rather than fail it.
+    if ($roundTripOk) {
+        $roundTripStatus = "000"
+        try {
+            $resp = Invoke-WebRequest -Uri "http://localhost:$roundTripPort/c/portal/layout" `
+                -TimeoutSec 30 -UseBasicParsing -MaximumRedirection 0 -ErrorAction Stop
+            $roundTripStatus = [string][int]$resp.StatusCode
+        }
+        catch {
+            if ($_.Exception.Response) {
+                $roundTripStatus = [string][int]$_.Exception.Response.StatusCode
+            }
+        }
+        if ($roundTripStatus -eq "200" -or $roundTripStatus -eq "302") {
+            Write-Verdict "[SUCCESS] .ldmp round trip verified: packed, imported as '$ROUNDTRIP_PROJECT', booted and serving HTTP $roundTripStatus on $roundTripPort (LDM-#2131)."
+        }
+        else {
+            Write-Verdict "[ERROR] The imported project booted but does not serve -- HTTP '$roundTripStatus' on port $roundTripPort (LDM-#2131)."
+            $roundTripOk = $false
+        }
+    }
+
+    # Removed whether or not it passed: ~1 GB per run, across six environments.
+    Invoke-Cleanup $LDM_CMD "-y rm $ROUNDTRIP_PROJECT --delete"
+    foreach ($leftover in @((Join-Path $LDM_WORKSPACE $ROUNDTRIP_PROJECT), $ROUNDTRIP_PKG_DIR)) {
+        if ($leftover -and (Test-Path $leftover)) { Remove-Item -Recurse -Force $leftover -ErrorAction SilentlyContinue }
+    }
+
+    if (-not $roundTripOk) {
+        throw "The .ldmp round trip failed (LDM-#2131). The failing step is recorded above."
+    }
+
     } # LDM-#1975 end section: extras
 
 
