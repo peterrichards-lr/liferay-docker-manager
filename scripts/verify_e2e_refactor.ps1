@@ -5145,6 +5145,40 @@ echo "SEEN $seen BAD$bad"
         throw "Could not probe the routes filesystem for LDM-#1944/#1946. Output was: $fsPermStat"
     }
 
+    # LDM-#2154: parity with the bash half. The three assertions above walk
+    # this tree and never read it -- scaffolding (#1928), mount anchoring
+    # (#1944) and readability (#1946) all passed against a tree whose domain
+    # was wrong, measured 2026-10-13 on a project configured
+    # `--host-name aica-e2e.demo` that published `localhost:8080`.
+    #
+    # The check is the same shared module the bash half runs, so the two
+    # cannot drift (LDM-#1982).
+    Write-Host ">> Verifying WHAT Liferay published into the dxp tree, not just that it exists (LDM-#2154)..."
+    # Captured BEFORE any pipeline: $LASTEXITCODE is the verdict (0 asserted,
+    # 1 disagreement, 2 nothing to evaluate) and must be read from the native
+    # call itself, not from whatever a pipeline ended with.
+    $dxpDomainRaw = & $VENV_PYTHON (Join-Path $PSScriptRoot "check_published_dxp_domain.py") (Join-Path $LDM_WORKSPACE $PROJECT_NAME) 2>&1
+    $dxpDomainRc = $LASTEXITCODE
+    $dxpDomainText = $dxpDomainRaw | ConvertTo-LdmText
+    foreach ($dxpLine in ($dxpDomainText -split "`n")) {
+        if ($dxpLine.Trim()) { Write-Verdict $dxpLine.TrimEnd() }
+    }
+    if ($dxpDomainRc -eq 0) {
+        Write-Verdict "[SUCCESS] The portal published the configured host name into routes/default/dxp (LDM-#2154)."
+    }
+    elseif ($dxpDomainRc -eq 3) {
+        Write-Verdict "[WARNING] SKIPPED (not run): the published DXP domain was NOT evaluated -- see the reason above. This is not a pass."
+    }
+    elseif ($dxpDomainRc -eq 1) {
+        throw "The portal published a DXP main domain that is not the host name LDM was configured with (LDM-#2154). The values are recorded above."
+    }
+    else {
+        # Not a product verdict: the check itself did not run. `python` exits 2
+        # when it cannot open the checker, and the first execution of this call
+        # site reported exactly that as SKIPPED (LDM-#2135 shape).
+        throw "The published-domain check could not run (exit $dxpDomainRc). The LDM-#2154 assertion was NOT evaluated, and this is not a skip."
+    }
+
     } # LDM-#1975 end section: boundary (2 of 2)
 
     # LDM-#1975 section: extras -- portal patch overlay, non-ASCII naming, shared

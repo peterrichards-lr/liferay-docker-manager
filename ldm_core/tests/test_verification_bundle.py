@@ -49,6 +49,7 @@ def _fake_repo(
     with_ps1=True,
     with_harness=True,
     with_realism=True,
+    with_published_domain=True,
 ):
     (root / "scripts").mkdir(parents=True, exist_ok=True)
     (root / "scripts" / "verify_e2e_refactor.sh").write_text("#!/bin/bash\n")
@@ -57,6 +58,10 @@ def _fake_repo(
     if with_realism:
         # LDM-#2017: required, because both verify scripts shell out to it.
         (root / "scripts" / "check_cx_fixture_realism.py").write_text("# realism\n")
+    if with_published_domain:
+        # LDM-#2154: the same -- both halves shell out to it, so a bundle
+        # without it fails a from-assets run on a missing file.
+        (root / "scripts" / "check_published_dxp_domain.py").write_text("# domain\n")
     if with_harness:
         (root / "scripts" / "fragment_override_harness.py").write_text("# harness\n")
     if with_common:
