@@ -134,6 +134,32 @@ def test_start_project(mock_manager):
     mock_manager.runtime.cmd_run.assert_called_with(project_id="project1")
 
 
+def test_start_project_reports_a_boot_that_rolled_back(mock_manager):
+    """LDM-#2155: `Pipeline.run` returns False rather than raising.
+
+    So the `except Exception` this tool relied on never fired, and an agent
+    was told the project had started. Asserted on the answer the agent reads,
+    which is the whole of what it gets.
+    """
+    from ldm_core.handlers.mcp import start_project
+
+    mock_manager.runtime.cmd_run.return_value = False
+
+    res = start_project("liferay-project1")
+
+    assert res.startswith("Error")
+    assert "liferay-project1" in res
+    mock_manager.runtime.cmd_run.assert_called_with(project_id="project1")
+
+
+def test_start_project_still_reports_a_boot_that_worked(mock_manager):
+    from ldm_core.handlers.mcp import start_project
+
+    mock_manager.runtime.cmd_run.return_value = True
+
+    assert start_project("liferay-project1").startswith("Success")
+
+
 def test_stop_project(mock_manager):
     from ldm_core.handlers.mcp import stop_project
 

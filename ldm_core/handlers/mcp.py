@@ -259,7 +259,19 @@ def start_project(project_id: str) -> str:
         return f"Error: Project '{project_id}' not found."
 
     try:
-        _manager.runtime.cmd_run(project_id=project_path.name)
+        # LDM-#2155: `Pipeline.run` catches the exception, rolls back and
+        # returns False, so the `except` below never fires for the failure it
+        # looks like it covers -- and this answered "Success: Started project"
+        # for a stack that never came up. The caller is an AI agent: it has no
+        # exit code to read and no containers to look at, so this string is the
+        # entire result. `sys.exit` is not available here the way it is on the
+        # CLI path, because it would stop the MCP server.
+        if _manager.runtime.cmd_run(project_id=project_path.name) is False:
+            return (
+                f"Error: Failed to start project '{project_id}': a stage did "
+                f"not complete and its work was rolled back. "
+                f"See '~/.ldm/last-command.log'."
+            )
         return f"Success: Started project '{project_id}'."
     except Exception as e:
         return f"Error: Failed to start project '{project_id}': {e}"

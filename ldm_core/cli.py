@@ -3228,23 +3228,58 @@ def _share_options_from_args(args):
     }
 
 
+def _exit_code_for_pipeline(result):
+    """Turn a pipeline's ``False`` into the exit-code contract (LDM-#2155).
+
+    ``Pipeline.run`` returns ``False`` when a stage raised an unexpected
+    exception: it rolls back and leaves the verdict to the caller
+    (``pipelines/base.py``). The caller is this dispatcher -- and it ignores
+    bools deliberately (see ``_execute_command``), so every such failure
+    exited 0 with the work undone. `ldm quickstart aica` reporting success to
+    a CI job over a stack that never came up is what made it worth fixing.
+
+    Converted here rather than in ``cmd_run``, which 27 call sites read as a
+    bool -- including ``handlers/mcp.py``, where a ``sys.exit`` would stop the
+    server rather than report a failed boot. The CLI owns exit codes; the
+    handler keeps its signature.
+
+    ``UI.die`` is untouched: it raises ``SystemExit`` and ``Pipeline.run``
+    re-raises it with the stage's own code, the idempotent 5 included.
+    """
+    if result is False:
+        UI.error(
+            "The command did not complete: a stage failed and its work was "
+            "rolled back. The error above says which, and "
+            "'~/.ldm/last-command.log' has the detail."
+        )
+        # 4 -- Orchestration/Deployment Error, per the contract in
+        # .agents/skills/ldm-architecture/SKILL.md. The failure is LDM's own
+        # orchestration layer, not user input (1) or an external API (3).
+        return 4
+    return result
+
+
 def _build_command_map(args, manager):
     from collections.abc import Callable
     from typing import Any
 
     cmds: dict[tuple[str, str | None], Callable[..., Any]] = {
-        ("run", None): lambda: (
-            manager.runtime.cmd_run(getattr(args, "project", None)),
-            manager.runtime.cmd_browser(getattr(args, "project", None))
-            if getattr(args, "open", False)
-            else None,
-        )[0],
-        ("up", None): lambda: (
-            manager.runtime.cmd_run(getattr(args, "project", None)),
-            manager.runtime.cmd_browser(getattr(args, "project", None))
-            if getattr(args, "open", False)
-            else None,
-        )[0],
+        ("run", None): lambda: _exit_code_for_pipeline(
+            (
+                manager.runtime.cmd_run(getattr(args, "project", None)),
+                manager.runtime.cmd_browser(getattr(args, "project", None))
+                if getattr(args, "open", False)
+                else None,
+            )[0]
+        ),
+        ("up", None): lambda: _exit_code_for_pipeline(
+            (
+                manager.runtime.cmd_run(getattr(args, "project", None)),
+                manager.runtime.cmd_browser(getattr(args, "project", None))
+                if getattr(args, "open", False)
+                else None,
+            )[0]
+        ),
         ("dashboard", None): lambda: manager.dashboard.cmd_dashboard(
             port=getattr(args, "port", 19000),
             host=getattr(args, "host", "127.0.0.1"),
@@ -3266,10 +3301,12 @@ def _build_command_map(args, manager):
         ("mcp", None): manager.mcp.cmd_mcp,
         ("ai", None): lambda: manager.ai.cmd_ai(args.query),
         ("guide", None): manager.workspace.cmd_guide,
-        ("quickstart", None): lambda: manager.workspace.cmd_quickstart(
-            args.template,
-            share=args.share,
-            share_subdomain=args.share_subdomain,
+        ("quickstart", None): lambda: _exit_code_for_pipeline(
+            manager.workspace.cmd_quickstart(
+                args.template,
+                share=args.share,
+                share_subdomain=args.share_subdomain,
+            )
         ),
         ("package", None): lambda: manager.snapshot.cmd_package(
             getattr(args, "project", None),

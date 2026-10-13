@@ -34,7 +34,7 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
     name_lower = template_name.lower()
     if name_lower not in templates:
         UI.die(f"Unrecognized quickstart template: {template_name}")
-        return
+        return None
     template_info = templates[name_lower]
     repo_url = template_info["repo"]
     project_name = template_info["default_name"]
@@ -68,7 +68,7 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
     project_path = self.manager.detect_project_path(project_name)
     if not project_path or not project_path.exists():
         UI.die(f"Failed to locate imported workspace directory for {project_name}.")
-        return
+        return None
 
     project_meta = self.manager.read_meta(project_path)
 
@@ -161,4 +161,8 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
         UI.detail("Exposing quickstart tunnel...")
         self.manager.share.cmd_start(project_name, subdomain=share_subdomain)
 
-    self.manager.runtime.cmd_run(project_name, browser=True)
+    # LDM-#2155: returned, not discarded. `cmd_run` answers with the run
+    # pipeline's own verdict, and this was the last statement in the function
+    # -- so a quickstart whose stack never came up returned None and exited 0.
+    # The CLI turns a False into exit 4 (`_exit_code_for_pipeline`).
+    return self.manager.runtime.cmd_run(project_name, browser=True)
