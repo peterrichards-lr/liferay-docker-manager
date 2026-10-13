@@ -33,6 +33,25 @@ class AssetService:
         repo_url = GITHUB_REPO_URL
         download_url = f"{repo_url}/releases/download/{tag_name}/{seed_filename}"
 
+        # LDM-#2164: the mode is part of the NAME, and only `-shared-` has ever
+        # been published -- 21 assets on the `seeded-states` release, none of
+        # them sidecar. So `--sidecar` asked for a file that does not exist and
+        # was told "No seed found for tag", which reads as "this tag has no
+        # seed" and is not what happened. The project then built its schema
+        # from scratch: measured at 9m57s and 9m31s against 2m37s for the same
+        # tag on the same machine when the seed was found.
+        #
+        # The shared seed works in a sidecar project -- four of them on that
+        # machine took it and booted normally -- and LDM already strips search
+        # settings that do not match the resolved mode (LDM-#1773/#1786). So
+        # the fallback is to the variant that exists rather than to no seed at
+        # all. The mode-specific name is still tried first, so publishing
+        # sidecar seeds later needs no change here.
+        fallback_filename = f"seeded-{tag}-{db_type}-shared-v{SEED_VERSION}.tar.gz"
+        seed_candidates = [seed_filename]
+        if fallback_filename != seed_filename:
+            seed_candidates.append(fallback_filename)
+
         UI.detail(
             f"Checking for pre-warmed seed: {UI.CYAN}{seed_filename}{UI.COLOR_OFF}"
         )
@@ -47,6 +66,16 @@ class AssetService:
         cache_dir.mkdir(parents=True, exist_ok=True)
         cached_seed = cache_dir / seed_filename
 
+        # A seed cached under either name is still a seed. Without this, a
+        # machine that had already downloaded the shared variant would
+        # re-resolve and re-download it under the sidecar name.
+        for candidate in seed_candidates:
+            if os.path.exists(cache_dir / candidate):
+                seed_filename = candidate
+                cached_seed = cache_dir / candidate
+                download_url = f"{repo_url}/releases/download/{tag_name}/{candidate}"
+                break
+
         tmp_path = None
         if os.path.exists(cached_seed):
             UI.detail(f"Using cached seed: {seed_filename}")
@@ -60,9 +89,27 @@ class AssetService:
             # trip. Same reasoning as LDM-#1074 in _ensure_seeded below, which
             # skips the lookup for nightly/master rather than prompting for a
             # seed that can never exist.
-            resolved_url = self._resolve_seed_url(
-                download_url, tag, tag_name, seed_filename, headers
-            )
+            resolved_url = None
+            for candidate in seed_candidates:
+                candidate_url = f"{repo_url}/releases/download/{tag_name}/{candidate}"
+                resolved_url = self._resolve_seed_url(
+                    candidate_url,
+                    tag,
+                    tag_name,
+                    candidate,
+                    headers,
+                    warn=(candidate == seed_candidates[-1]),
+                )
+                if resolved_url:
+                    if candidate != seed_filename:
+                        UI.detail(
+                            f"No '{search_mode}' seed is published for {tag}; "
+                            f"using the shared one, which carries the same "
+                            f"database and OSGi state (LDM-#2164)."
+                        )
+                    seed_filename = candidate
+                    cached_seed = cache_dir / candidate
+                    break
             if not resolved_url:
                 return False
             download_url = resolved_url
@@ -170,7 +217,9 @@ class AssetService:
             # the warning above already told the user what happened.
             return False
 
-    def _resolve_seed_url(self, download_url, tag, tag_name, seed_filename, headers):
+    def _resolve_seed_url(
+        self, download_url, tag, tag_name, seed_filename, headers, warn=True
+    ):
         """Return a usable download URL for the seed, or None if there is none.
 
         LDM-#1534: split out of _fetch_seed so that availability is settled
@@ -217,7 +266,12 @@ class AssetService:
                         if asset:
                             download_url = asset.get("browser_download_url")
                         else:
-                            UI.warning(f"No seed found for tag: {tag}")
+                            # LDM-#2164: only the LAST candidate announces
+                            # absence. An earlier one failing means "not in
+                            # this mode", which is not what the user needs to
+                            # hear when the fallback is about to succeed.
+                            if warn:
+                                UI.warning(f"No seed found for tag: {tag}")
                             return None
                     else:
                         UI.warning(f"Release not found for tag: {tag_name}")
