@@ -1957,6 +1957,47 @@ class ComposerStage(PipelineStage):
         if use_shared_db or use_shared_search:
             UI.detail("Utilizing Global Shared Infrastructure")
 
+        # LDM-#2154: tell the PORTAL its own domain, not just the extensions.
+        #
+        # Liferay publishes `com.liferay.lxc.dxp.main.domain` into
+        # `routes/default/dxp`, and every client extension resolves the portal
+        # through that file -- but it derives the value from its own company
+        # virtual host, which nothing set. So a project created with
+        # `--host-name` published `localhost`, measured 2026-10-13, and an
+        # extension served on the real host name was sent to localhost while
+        # the portal registered its OAuth redirect URIs against the same wrong
+        # value.
+        #
+        # `LIFERAY_LXC_DXP_MAIN_DOMAIN` does NOT do this. It is set on the
+        # extension containers (composer.py) and the portal ignores it --
+        # measured by setting it on the liferay service, deleting the tree and
+        # recreating the container, which republished `localhost:8080`
+        # unchanged.
+        #
+        # These two are Liferay's own mechanism, from its portal.properties:
+        # the first sets the default company's virtual host, the second
+        # re-applies it on EVERY startup. The second is what covers a project
+        # whose database already carries the wrong value -- seeded, imported,
+        # or restored from a snapshot taken on another host -- where setting
+        # the name alone would be ignored because the company already exists.
+        #
+        # Measured: a fresh project with both set published
+        # `aica-e2e.demo:8080` on its FIRST boot, with the virtualhost row
+        # written by Liferay itself and no restart.
+        #
+        # Deliberately applied for localhost too, so the published value is
+        # LDM's to predict on every project rather than only on custom-host
+        # ones. It does mean LDM owns the default company's virtual host: a
+        # value set by hand in the Control Panel is re-applied on the next
+        # boot. That is the right trade for demo and testbed environments,
+        # which is what LDM builds.
+        liferay_env.extend(
+            [
+                f"LIFERAY_COMPANY_PERIOD_DEFAULT_PERIOD_VIRTUAL_PERIOD_HOST_PERIOD_NAME={host_name}",
+                "LIFERAY_COMPANY_PERIOD_DEFAULT_PERIOD_VIRTUAL_PERIOD_HOST_PERIOD_SYNC_PERIOD_ON_PERIOD_STARTUP=true",
+            ]
+        )
+
         if host_name != "localhost":
             liferay_env.extend(
                 [
