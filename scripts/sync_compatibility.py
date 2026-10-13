@@ -784,7 +784,11 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
         "apple-silicon-macos-16-tahoe-orbstack": "v2.1.1",
         "apple-intel-macos-12-monterey-orbstack": "v1.5.1",
         "windows-pc-windows-11-docker-desktop": "v4.35.0",
-        "windows-pc-windows-11-native-wsl2": "WSL 2.4.4",
+        # Updated 2026-10-13: the lab machine took a WSL upgrade that
+        # morning, mid-run, and the v2.26.5-pre.5 verification that
+        # followed ran on 3.0.3.0. The reports carry no WSL version of
+        # their own, so this table is the only place it can come from.
+        "windows-pc-windows-11-native-wsl2": "WSL 3.0.3.0",
     }
 
     arch = "Unknown"
