@@ -415,6 +415,11 @@ remove_workspace_dir() {
 # this suite would then resolve `docker --context` against an unroutable
 # TEST-NET-1 address and block on an SSH connect timeout, turning one failed
 # check into a suite that appears to hang.
+# LDM-#2131: named here, above the trap helper that removes them, so a run
+# killed part-way cleans up as well as one that completes.
+ROUNDTRIP_PROJECT="${PROJECT_NAME}-roundtrip"
+ROUNDTRIP_PKG_DIR="${LDM_WORKSPACE}/.ldm-roundtrip-pkg"
+
 cleanup_1383_artifacts() {
     "$LDM_CMD" -y target rm "$ANNOUNCE_TEST_NODE" >/dev/null 2>&1 || true
     docker context rm "$ANNOUNCE_TEST_NODE" >/dev/null 2>&1 || true
@@ -428,6 +433,11 @@ cleanup_1383_artifacts() {
     # and that cleanup. Nothing is created when the control is working.
     "$LDM_CMD" -y rm "$LDMP_REFUSAL_PROJECT" --delete >/dev/null 2>&1 || true
     rm -rf "${LDM_WORKSPACE:?}/${LDMP_REFUSAL_PROJECT}" "${LDM_WORKSPACE:?}/.ldm_temp"
+    # LDM-#2131: the round trip's own artefacts. The package is ~1 GB, so a
+    # run killed between packing and the teardown below would leave a
+    # gigabyte behind on a machine that may already be short of space.
+    "$LDM_CMD" -y rm "$ROUNDTRIP_PROJECT" --delete >/dev/null 2>&1 || true
+    rm -rf "${LDM_WORKSPACE:?}/${ROUNDTRIP_PROJECT}" "${ROUNDTRIP_PKG_DIR:-/nonexistent}"
 }
 
 # LDM-#2111: anything the EXIT trap says must reach the report, not just the
@@ -6481,6 +6491,96 @@ else
     echo "❌ ERROR: shared search mode verification failed." | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
+# LDM-#2131: a .ldmp ROUND TRIP -- pack this project, import the result under a
+# new name, boot it, and assert it serves.
+#
+# Every other .ldmp assertion in this suite is refusal testing: an unparseable
+# manifest and a saved HTTP error page, both asserting LDM correctly REFUSES a
+# bad package. Nothing packed a project and imported it back, so nothing in the
+# verification record could contradict a report that the path was broken.
+#
+# It was broken. Performing this round trip by hand found LDM-#2159: the local
+# integrity check compared the whole first line of the `.sha256` -- digest AND
+# filename -- against a bare digest, so no package `ldm package` produced could
+# ever be imported. It failed as a REFUSAL, which is why refusal testing could
+# not see it.
+#
+# Measured on macOS/Colima 2026-10-13: the package is ~1 GB and takes about a
+# minute; import, restore and boot about four more.
+echo ">> Verifying a .ldmp round trip: pack, import, boot, serve (LDM-#2131)..."
+ROUNDTRIP_PORT=$((TEST_PORT + 6))
+ROUNDTRIP_OK=true
+rm -rf "$ROUNDTRIP_PKG_DIR"
+mkdir -p "$ROUNDTRIP_PKG_DIR"
+
+# `--repo` is REQUIRED: with no git origin to resolve, `ldm package` builds the
+# snapshot and then refuses without it. The value is only recorded in the
+# manifest as `github_repository`, so a synthetic one keeps this offline.
+# `--use-latest` is deliberately NOT passed -- it resolves a tag from GitHub
+# releases, which would make this a network test.
+if ! "$LDM_CMD" -y package "$PROJECT_NAME" -o "$ROUNDTRIP_PKG_DIR" \
+        --repo ldm-e2e/roundtrip >/dev/null 2>&1; then
+    echo "❌ ERROR: 'ldm package' failed, so the round trip could not start (LDM-#2131)." | tee -a "$RESULTS_FILE_TMP"
+    ROUNDTRIP_OK=false
+fi
+
+ROUNDTRIP_PKG="${ROUNDTRIP_PKG_DIR}/${PROJECT_NAME}.ldmp"
+if [ "$ROUNDTRIP_OK" = true ] && [ ! -f "$ROUNDTRIP_PKG" ]; then
+    echo "❌ ERROR: 'ldm package' reported success but produced no ${PROJECT_NAME}.ldmp." | tee -a "$RESULTS_FILE_TMP"
+    ROUNDTRIP_OK=false
+fi
+# The sidecar checksum is the artefact LDM-#2159 was about: it exists, it is
+# correct, and the importer could not read it.
+if [ "$ROUNDTRIP_OK" = true ] && [ ! -f "${ROUNDTRIP_PKG}.sha256" ]; then
+    echo "❌ ERROR: the package carries no .sha256, so its integrity cannot be verified on import." | tee -a "$RESULTS_FILE_TMP"
+    ROUNDTRIP_OK=false
+fi
+
+# `--no-run` and an explicit port: the package carries the SOURCE project's
+# port and that project is still running on it, so an import that booted would
+# die on a port conflict. Split so a failed import and a failed boot are
+# distinguishable rather than one opaque failure.
+if [ "$ROUNDTRIP_OK" = true ]; then
+    if ! "$LDM_CMD" -y import "$ROUNDTRIP_PKG" "$ROUNDTRIP_PROJECT" \
+            --port "$ROUNDTRIP_PORT" --no-run >/dev/null 2>&1; then
+        echo "❌ ERROR: 'ldm import' refused a package LDM itself produced (LDM-#2159/#2131)." | tee -a "$RESULTS_FILE_TMP"
+        echo "   The integrity check is the first suspect: 'ldm package' writes '<digest>  <filename>'." | tee -a "$RESULTS_FILE_TMP"
+        ROUNDTRIP_OK=false
+    fi
+fi
+
+if [ "$ROUNDTRIP_OK" = true ]; then
+    if ! "$LDM_CMD" -y run "$ROUNDTRIP_PROJECT" --port "$ROUNDTRIP_PORT" >/dev/null 2>&1; then
+        echo "❌ ERROR: the imported project did not boot (LDM-#2131)." | tee -a "$RESULTS_FILE_TMP"
+        ROUNDTRIP_OK=false
+    fi
+fi
+
+# Serving is the assertion. `ldm run` returning 0 already means LDM believes it
+# is ready; this asks the portal itself, independently, which is the whole
+# difference between "the command succeeded" and "the demo works".
+if [ "$ROUNDTRIP_OK" = true ]; then
+    ROUNDTRIP_STATUS=$(http_status "http://localhost:${ROUNDTRIP_PORT}/c/portal/layout")
+    case "$ROUNDTRIP_STATUS" in
+        200 | 302)
+            report_ok "✅ .ldmp round trip verified: packed, imported as '${ROUNDTRIP_PROJECT}', booted and serving HTTP ${ROUNDTRIP_STATUS} on ${ROUNDTRIP_PORT} (LDM-#2131)."
+            ;;
+        *)
+            echo "❌ ERROR: the imported project booted but does not serve -- HTTP '${ROUNDTRIP_STATUS}' on port ${ROUNDTRIP_PORT} (LDM-#2131)." | tee -a "$RESULTS_FILE_TMP"
+            ROUNDTRIP_OK=false
+            ;;
+    esac
+fi
+
+# Removed whether or not it passed: ~1 GB per run, across six environments.
+"$LDM_CMD" -y rm "$ROUNDTRIP_PROJECT" --delete >/dev/null 2>&1 || true
+rm -rf "${LDM_WORKSPACE:?}/${ROUNDTRIP_PROJECT}" "$ROUNDTRIP_PKG_DIR"
+
+if [ "$ROUNDTRIP_OK" != true ]; then
+    exit 1
+fi
+
+
 fi # LDM-#1975 end section: extras
 
 
