@@ -644,9 +644,20 @@ class DatabaseSnapshotService:
                 if db_mode == "shared":
                     db_name = shared_database_name(paths["root"].name)
 
+                # LDM-#2141: both branches below discarded what run_command
+                # returned. `UI.detail` announces the sync BEFORE the statement
+                # runs, and `+ Database restored successfully.` is printed
+                # directly above -- so a restore that left the SOURCE machine's
+                # hostname in the database looked exactly like one that worked.
+                # This is also the last statement in the method and the caller
+                # reads nothing back, so there was no later chance to notice.
+                vh_result = None
+                vh_attempted = False
+
                 if db_type == "postgresql":
                     UI.detail(f"  - Synchronizing Virtual Host entries to: {host_name}")
-                    self.manager.run_command(
+                    vh_attempted = True
+                    vh_result = self.manager.run_command(
                         [
                             *docker_prefix,
                             "exec",
@@ -663,7 +674,8 @@ class DatabaseSnapshotService:
                     )
                 elif db_type in ["mysql", "mariadb"]:
                     UI.detail(f"  - Synchronizing Virtual Host entries to: {host_name}")
-                    self.manager.run_command(
+                    vh_attempted = True
+                    vh_result = self.manager.run_command(
                         [
                             *docker_prefix,
                             "exec",
@@ -676,4 +688,18 @@ class DatabaseSnapshotService:
                             f"UPDATE {db_name}.virtualhost SET hostname = '{host_name}';",  # nosec B608
                         ],
                         check=False,
+                    )
+
+                # A warning, not a failure: the dump IS restored and the
+                # database is usable. But the symptom of a stale hostname --
+                # a site that will not resolve, or OAuth redirect URIs
+                # registered against the wrong host -- appears far from this
+                # point and with nothing connecting it back.
+                if vh_attempted and vh_result is None:
+                    UI.warning(
+                        f"  ! Could not synchronize Virtual Host entries to "
+                        f"'{host_name}'. The project may still answer on the "
+                        f"hostname it was snapshotted from. See "
+                        f"'~/.ldm/last-command.log' for the database client's "
+                        f"own error."
                     )
