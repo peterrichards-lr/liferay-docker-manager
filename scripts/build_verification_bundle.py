@@ -72,6 +72,10 @@ REQUIRED_FILES = (
     # `test_every_helper_the_verify_scripts_invoke_is_bundled` derives this
     # requirement from the scripts rather than trusting this tuple.
     "scripts/check_cx_fixture_realism.py",
+    # LDM-#2154: the same shape as the helper above, and caught by the same
+    # test rather than by a from-assets run that would have failed on a
+    # missing file.
+    "scripts/check_published_dxp_domain.py",
 )
 REQUIRED_DIRS = ("common",)
 OPTIONAL_FILES = ("scripts/fragment_override_harness.py",)

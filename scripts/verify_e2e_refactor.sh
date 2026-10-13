@@ -5368,6 +5368,42 @@ else
     fi
 fi
 
+# LDM-#2154: the three assertions above WALK this tree and never read it.
+# Scaffolding (#1928), mount anchoring (#1944) and readability (#1946) all
+# passed against a tree whose domain was wrong -- measured 2026-10-13, where a
+# project configured `--host-name aica-e2e.demo` published `localhost:8080`
+# and every existing check was satisfied. An extension reading that is sent to
+# localhost, and the portal registers its OAuth redirect URIs against the same
+# wrong value.
+#
+# The check is a shared module rather than a heredoc so the two halves cannot
+# drift (LDM-#1982) and so ruff and mypy cover it. It records every published
+# value in the report whether it passes or fails, which is what the reporting
+# team asked for: the value was previously only inferable from a failure.
+echo ">> Verifying WHAT Liferay published into the dxp tree, not just that it exists (LDM-#2154)..."
+DXP_DOMAIN_RC=0
+# Captured, not piped: `cmd | tee` reports tee's status, and the exit code IS
+# the verdict here -- 0 asserted, 1 disagreement, 2 nothing to evaluate.
+DXP_DOMAIN_OUT=$("$VENV_PYTHON" \
+    "${E2E_SCRIPT_DIR}/check_published_dxp_domain.py" \
+    "${LDM_WORKSPACE}/${PROJECT_NAME}" 2>&1) || DXP_DOMAIN_RC=$?
+printf '%s\n' "$DXP_DOMAIN_OUT" | tee -a "$RESULTS_FILE_TMP"
+if [ "$DXP_DOMAIN_RC" -eq 0 ]; then
+    report_ok "✅ The portal published the configured host name into routes/default/dxp (LDM-#2154)."
+elif [ "$DXP_DOMAIN_RC" -eq 3 ]; then
+    echo "⚠️  SKIPPED (not run): the published DXP domain was NOT evaluated -- see the reason above. This is not a pass." | tee -a "$RESULTS_FILE_TMP"
+elif [ "$DXP_DOMAIN_RC" -eq 1 ]; then
+    echo "❌ ERROR: the portal published a DXP main domain that is not the host name LDM was configured with (LDM-#2154)." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+else
+    # Not a product verdict: the check itself did not run. Distinguished from
+    # the skip above deliberately -- `python` exits 2 when it cannot open the
+    # checker, and reporting that as either a pass or a skip is how a check
+    # that silently stopped running survives (LDM-#2135).
+    echo "❌ ERROR: the published-domain check could not run (exit ${DXP_DOMAIN_RC}). The assertion was NOT evaluated and this is not a skip." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
 fi # LDM-#1975 end section: boundary (2 of 2)
 
 # LDM-#1975 section: extras -- portal patch overlay, non-ASCII naming, shared
