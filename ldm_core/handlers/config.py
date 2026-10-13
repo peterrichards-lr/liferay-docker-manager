@@ -2948,8 +2948,24 @@ class ConfigService:
         self.manager.runtime.cmd_down()
 
         UI.detail("3/5 Syncing workspace state to destination node...")
-        if dest_target != "local":
-            sync_project_to_target(root, dest_target)
+        if dest_target != "local" and not sync_project_to_target(root, dest_target):
+            # LDM-#2139: step 4 below records the project as living on
+            # dest_target, and step 5 starts it there. Doing either on the
+            # strength of a transfer that failed is what turns a network error
+            # into a project pointing at a node missing its files.
+            #
+            # Refusing is safe precisely here: step 1 took a snapshot, step 2
+            # only stopped the stack, and the source node still holds
+            # everything. Nothing has been destroyed yet, and the metadata
+            # still names the source -- so the operator can retry or start the
+            # old node back up. That stops being true one line further down.
+            UI.die(
+                f"Could not sync '{root.name}' to '{dest_target}'. The project "
+                f"has NOT been migrated: it still belongs to '{source_target}' "
+                f"and its files are intact there. Fix the transfer and re-run "
+                f"the migration.",
+                exit_code=3,
+            )
 
         UI.detail("4/5 Reassigning project target metadata...")
         meta["target"] = dest_target

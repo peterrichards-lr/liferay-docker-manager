@@ -242,6 +242,20 @@ ldm target migrate prod-node aws-west
 5. **Target Metadata Reassignment**: Updates `.liferay-docker.meta` to point to the destination target.
 6. **Workload Launch**: Spins up containers and verifies health on the destination compute node.
 
+> **If the sync in step 4 fails, the migration stops there and exits `3`.**
+> The project keeps its original target, its files on the source node are
+> untouched, and the snapshot from step 2 is still available -- so you can fix
+> the transfer and run the migration again. Nothing is reassigned or started on
+> the destination, because a project recorded as living on a node that never
+> received its files is far harder to diagnose than a migration that refused.
+>
+> A failed sync outside migration -- an `ldm run` against a remote target, say
+> -- warns rather than refusing, and the node may then be missing recent
+> changes or holding files the project no longer has. The transfer's own error
+> output is in `~/.ldm/last-command.log`. Note that `rsync` abandons `--delete`
+> for the **whole** transfer after an I/O error, so a node that hits this
+> repeatedly accumulates stale files until the cause is fixed.
+
 ---
 
 ## 6. Compute Node Sizing & Hardware Recommendations
@@ -297,4 +311,4 @@ ldm run my-project --target prod-node --share --share-provider lfr-tunnel-docker
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-18* | *Last Reviewed: 2026-09-18*
+*Last Updated: 2026-10-13* | *Last Reviewed: 2026-10-13*

@@ -476,7 +476,7 @@ def sync_project_to_target(
             rsync_cmd.extend(["-e", f"ssh -i {target.key_path}"])
         rsync_cmd.extend([f"{project_path!s}/", f"{target_spec}:{dest_dir}/"])
         res = run_command(rsync_cmd, check=False)
-        return res is not None
+        return _report_sync_outcome(res is not None, target.name, "rsync")
 
     # Fallback to SSH tar stream
     tar_cmd = ["tar", "-czf", "-", "-C", str(project_path), "."]
@@ -484,7 +484,42 @@ def sync_project_to_target(
         [*tar_cmd, "|", "ssh", *ssh_opts, target_spec, f"tar -xzf - -C {dest_dir}"],
         check=False,
     )
-    return res is not None
+    return _report_sync_outcome(res is not None, target.name, "tar stream")
+
+
+def _report_sync_outcome(ok: bool, target_name: str, how: str) -> bool:
+    """Warns when a transfer to a node failed, and returns the same verdict.
+
+    LDM-#2139. `sync_project_to_target` has always computed this correctly --
+    `check=False` makes `run_command` return `None` for any non-zero exit, so
+    `res is not None` is already `False` for an rsync that failed. All four
+    callers then discarded it, calling the function as a bare statement.
+
+    Reporting here rather than at each call site is deliberate: the function is
+    what knows the transfer failed, and a fifth caller cannot reintroduce the
+    defect by forgetting to check. Callers needing more than a warning -- the
+    migration in `handlers/config.py`, which records the project as living on
+    the destination -- still read the boolean.
+
+    A warning rather than a refusal, because a partial transfer leaves a usable
+    node and refusing every `ldm run` on one would be its own hazard. What is
+    not acceptable is silence: rsync abandons `--delete` for the *entire*
+    transfer after an I/O error, so a node that trips this accumulates stale
+    files indefinitely. Reported from a node where that had been happening on
+    every run since before anyone noticed.
+    """
+    if ok:
+        return True
+
+    from ldm_core.ui import UI
+
+    UI.warning(
+        f"Could not fully sync this project to '{target_name}' over {how}. "
+        f"The node may be missing recent changes, or holding files this "
+        f"project no longer has. See '~/.ldm/last-command.log' for the "
+        f"transfer's own error output."
+    )
+    return False
 
 
 def push_artifact_to_target(
