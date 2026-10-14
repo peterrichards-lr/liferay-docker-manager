@@ -29,6 +29,10 @@ CHECKER = SCRIPTS_DIR / "check_startup_phases.py"
 ASSERTED, NOT_RECORDED, CHECK_DID_NOT_RUN, NOTHING_TO_EVALUATE = 0, 1, 2, 3
 
 # Offsets from a real 2026.q3.7 boot, relative to container start.
+#: The checker now also asserts the boot's outcome (LDM-#2187), so a fixture
+#: that only carries phases is an incomplete boot by definition.
+READY = "ready"
+
 REAL_BOOT = {
     "Tomcat Initializing": 1.0,
     "Database Schema Initializing": 6.0,
@@ -63,14 +67,18 @@ class _Project:
 class TestARealBootIsAccepted(unittest.TestCase):
     def test_the_phases_of_a_real_boot_pass(self):
         with tempfile.TemporaryDirectory() as tmp:
-            code, out = _Project(tmp, {"milestone_seconds": REAL_BOOT}).check()
+            code, out = _Project(
+                tmp, {"status": READY, "milestone_seconds": REAL_BOOT}
+            ).check()
         self.assertEqual(code, ASSERTED, out)
 
     def test_every_recorded_phase_reaches_the_report(self):
         """A failure elsewhere in the run should be readable from the report
         without re-running the boot, which takes minutes."""
         with tempfile.TemporaryDirectory() as tmp:
-            code, out = _Project(tmp, {"milestone_seconds": REAL_BOOT}).check()
+            code, out = _Project(
+                tmp, {"status": READY, "milestone_seconds": REAL_BOOT}
+            ).check()
         self.assertEqual(code, ASSERTED, out)
         for name in REAL_BOOT:
             self.assertIn(name, out)
@@ -80,7 +88,9 @@ class TestARealBootIsAccepted(unittest.TestCase):
         must read as a timeline regardless."""
         shuffled = dict(reversed(list(REAL_BOOT.items())))
         with tempfile.TemporaryDirectory() as tmp:
-            _, out = _Project(tmp, {"milestone_seconds": shuffled}).check()
+            _, out = _Project(
+                tmp, {"status": READY, "milestone_seconds": shuffled}
+            ).check()
         positions = [out.index(name) for name in REAL_BOOT]
         self.assertEqual(positions, sorted(positions))
 
@@ -223,6 +233,46 @@ class TestBothHalvesCallIt(unittest.TestCase):
             f"never assigned in the script -- it expands to empty and the run "
             f"fails with exit 127",
         )
+
+
+class TestTheBootsOutcomeIsAsserted(unittest.TestCase):
+    """LDM-#2187: `"starting"` was the only status ever written, and only from
+    inside the poll loop -- so a boot that succeeded left a file
+    indistinguishable from one that stalled. The suite always boots, so this
+    assertion costs nothing and catches a state the dashboard and the MCP tools
+    would read as "still starting" forever."""
+
+    def test_a_boot_still_marked_starting_is_a_failure(self):
+        """The defect exactly: phases recorded, portal serving, status frozen."""
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out = _Project(
+                tmp, {"status": "starting", "milestone_seconds": REAL_BOOT}
+            ).check()
+        self.assertEqual(code, NOT_RECORDED, out)
+        self.assertIn("starting", out)
+
+    def test_a_missing_status_is_a_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out = _Project(tmp, {"milestone_seconds": REAL_BOOT}).check()
+        self.assertEqual(code, NOT_RECORDED, out)
+
+    def test_ready_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out = _Project(
+                tmp, {"status": "ready", "milestone_seconds": REAL_BOOT}
+            ).check()
+        self.assertEqual(code, ASSERTED, out)
+
+    def test_a_terminal_failure_is_still_a_recorded_verdict(self):
+        """`timeout` and `failed` pass this check deliberately. It asserts that
+        an outcome was RECORDED, not which one -- a boot that genuinely timed
+        out fails the suite long before this runs."""
+        for status in ("timeout", "failed"):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as tmp:
+                code, out = _Project(
+                    tmp, {"status": status, "milestone_seconds": REAL_BOOT}
+                ).check()
+                self.assertEqual(code, ASSERTED, out)
 
 
 if __name__ == "__main__":
