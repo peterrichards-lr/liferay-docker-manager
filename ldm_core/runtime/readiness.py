@@ -1032,7 +1032,21 @@ class ReadinessService(BaseHandler):
                         for phase_line in format_startup_phases(
                             reached_milestones, duration_total
                         ):
-                            UI.detail(phase_line)
+                            # UI.raw, NOT UI.detail. `detail` prints only under
+                            # `--info`/`--verbose` (LDM-#1036), so the first
+                            # shipped version of this computed the breakdown
+                            # correctly and printed it at a verbosity nobody
+                            # running `--benchmark` has. Measured on Windows
+                            # against v2.26.6-pre.2: the Benchmark Report
+                            # appeared and the phases did not.
+                            #
+                            # LDM-#1790 fixed exactly this for the pin
+                            # announcement, and `test_compatibility_claim.py`
+                            # carries a named test for it on another message.
+                            # The user has explicitly asked for this output by
+                            # passing the flag; hiding it behind a second flag
+                            # is never what they meant.
+                            UI.raw(phase_line)
 
                     if UI.NON_INTERACTIVE:
                         UI.raw(f"✅  Liferay ready: {access_url}  ({duration_str})")
