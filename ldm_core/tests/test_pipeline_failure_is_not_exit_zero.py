@@ -24,7 +24,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ldm_core.cli import _build_command_map, _execute_command, _exit_code_for_pipeline
-from ldm_core.workspace.importer import _die_if_the_pipeline_failed
+from ldm_core.pipelines.base import die_if_the_pipeline_failed
 
 ORCHESTRATION = 4
 
@@ -154,12 +154,12 @@ class TestQuickstartReturnsTheBootVerdict(unittest.TestCase):
 class TestImportDoesNotNameAProjectThatWasRolledBack(unittest.TestCase):
     def test_the_guard_exits_four(self):
         with self.assertRaises(SystemExit) as ctx:
-            _die_if_the_pipeline_failed(False, "Import")
+            die_if_the_pipeline_failed(False, "Import")
         self.assertEqual(ctx.exception.code, ORCHESTRATION)
 
     def test_the_guard_passes_a_success_through(self):
-        _die_if_the_pipeline_failed(True, "Import")
-        _die_if_the_pipeline_failed(None, "Import")
+        die_if_the_pipeline_failed(True, "Import")
+        die_if_the_pipeline_failed(None, "Import")
 
     def _import_local_dir(self, pipeline_run):
         from ldm_core.workspace.importer import cmd_import

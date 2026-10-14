@@ -256,6 +256,47 @@ reduce what the stack asks for:
 LDM reports the kill on the node the project actually runs on, not the
 operator's laptop.
 
+## Where a single slow boot spent its time
+
+`scripts/boot_timing.sh` below compares *versions*. When the question is
+instead "this one boot took ten minutes -- doing what?", run the command with
+`--benchmark`:
+
+```bash
+ldm run myproject --benchmark
+```
+
+LDM watches the container log for the phases of a Liferay startup and reports
+the gap between them, so the longest pole is visible rather than inferred:
+
+```text
+Startup phases:
+  Tomcat Initializing           +    1s  (at 1s)
+  Database Schema Initializing  +    5s  (at 6s)
+  OSGi Framework Starting       +   23s  (at 29s)
+  OSGi Framework Started        +    0s  (at 29s)
+  Portal Startup Progress       +   11s  (at 41s)
+  Verify Processes Running      + 1m 3s  (at 1m 44s)
+  Tomcat Server Ready           +3m 47s  (at 5m 31s)
+  Site Initializer Running      +    6s  (at 5m 37s)
+  after the last milestone      +4m 15s
+```
+
+That is a real 9m57s boot of `2026.q3.7` on a Windows 11 host with 7.6 GB
+allocated to Docker Desktop. It reads as two blocks worth attention: **3m 47s**
+between the verify processes starting and Tomcat reporting ready, and **4m 15s**
+after the site initializer began. Neither produces any log output while it
+runs, which is why a boot like this looks like a hang.
+
+The timings are written to `<project>/.liferay-docker/startup-status.json`
+under `milestone_seconds` on **every** boot, whether or not `--benchmark` was
+passed, so a slow start can be decomposed afterwards without reproducing it.
+
+**Check the allocation before concluding anything about LDM.** `ldm doctor
+--detailed` reports `Docker CPUs` and `Docker Memory`; a boot time is not
+comparable between machines without them. The example above is not evidence
+about a Liferay version or a search mode -- it is one host with one allocation.
+
 ## Measuring boot time
 
 Several of the open questions above end in "worth benchmarking". The
@@ -318,4 +359,4 @@ Two cautions that example illustrates:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-02* | *Last Reviewed: 2026-10-02*
+*Last Updated: 2026-10-14* | *Last Reviewed: 2026-10-14*
