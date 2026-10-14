@@ -274,5 +274,51 @@ class TestTheCounterItselfStopsReCounting(unittest.TestCase):
         self.assertEqual(select_new_errors([line], seen), [line])
 
 
+class TestTheBreakdownReachesTheScreen(unittest.TestCase):
+    """Computing it is not printing it (LDM-#2169).
+
+    The first shipped version called `UI.detail`, which prints only under
+    `--info`/`--verbose` (LDM-#1036). Measured on Windows against
+    v2.26.6-pre.2: `ldm run --benchmark -y` printed the Benchmark Report and
+    no phases at all. The breakdown was correct and invisible.
+
+    LDM-#1790 fixed this for the pin announcement and
+    `test_compatibility_claim.py` carries a named test for it on another
+    message, so this is a known failure mode in this codebase rather than an
+    unlucky choice.
+
+    The tests above call `format_startup_phases` directly and cannot see it --
+    which is why it shipped. This asserts the call site, not the formatter.
+    """
+
+    def _readiness_source(self):
+        import inspect
+
+        from ldm_core.runtime import readiness
+
+        return inspect.getsource(readiness)
+
+    def test_the_breakdown_is_not_printed_through_detail(self):
+        """`UI.detail` is gated on a verbosity flag the user has not passed."""
+        source = self._readiness_source()
+        window = source[source.index("if Benchmarker.is_active:") :][:1400]
+        self.assertNotIn(
+            "UI.detail(phase_line)",
+            window,
+            "the phase breakdown prints through UI.detail, which is hidden "
+            "unless --info/--verbose is also passed (LDM-#1036)",
+        )
+
+    def test_the_breakdown_is_printed_unconditionally(self):
+        source = self._readiness_source()
+        window = source[source.index("if Benchmarker.is_active:") :][:1400]
+        self.assertIn(
+            "UI.raw(phase_line)",
+            window,
+            "the phase breakdown must print at default verbosity: the user "
+            "asked for it by passing --benchmark",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

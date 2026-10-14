@@ -158,16 +158,102 @@ LDM is designed to be **self-healing**. Even if you do not use a `common/` folde
 
 ## Docker Resource Alignment (Windows/WSL2/macOS)
 
-If `ldm doctor` reports insufficient memory or CPU cores:
+Run `ldm doctor --detailed` and read two lines:
 
-1. **Align Docker Settings**:
-   - **Docker Desktop**: Go to **Settings > Resources** and ensure the slider is at least **8GB** and **4 CPUs**.
-   - **Colima**: Restart with higher limits: `colima stop && colima start --cpu 4 --memory 8`.
+```text
+Docker CPUs                         ✅  12 Cores
+Docker Memory                       ✅  7.6 GB
+```
 
-2. **The "Lenient" Threshold (LDM v1.6.36+)**:
-   - LDM is now more lenient for older hardware.
-   - **2-3 CPUs** or **4GB-7.5GB RAM** will now trigger a **Warning (⚠️)** instead of a hard failure.
-   - This allows LDM to function on dual-core Intel Macs, though performance may be degraded.
+A green tick on `Docker Memory` does **not** mean the allocation is a good one
+for Liferay. See _Why 7.6 GB is the number to watch_ below.
+
+### Where the allocation is actually configured
+
+Docker Desktop on Windows has two backends, and they are configured in
+different places. **Check which one you have before changing anything**:
+open **Docker Desktop → Settings → Resources**. If the CPU and memory sliders
+are greyed out and it says resource allocation is managed by Windows, you are
+on the **WSL2 backend** and the sliders will do nothing.
+
+| Backend / provider | Where you change it |
+| --- | --- |
+| Docker Desktop, **WSL2** (the Windows default) | `%UserProfile%\.wslconfig` |
+| Docker Desktop, Hyper-V | Settings → Resources sliders |
+| Docker Desktop, macOS | Settings → Resources sliders |
+| Colima | `colima stop && colima start --cpu 4 --memory 8` |
+
+### Windows with the WSL2 backend
+
+`.wslconfig` does not exist until you create it, and its absence is why the
+default applies. WSL2 with no config file takes **50% of host RAM**, which is
+how a 16 GB machine ends up reporting 7.6 GB to Docker.
+
+Create `C:\Users\<you>\.wslconfig` — in the **Windows** user profile, not
+inside WSL:
+
+```ini
+[wsl2]
+memory=11GB
+```
+
+Then apply it:
+
+```powershell
+wsl --shutdown
+# restart Docker Desktop, then:
+ldm doctor --detailed
+```
+
+`Docker Memory` should move. If it does not, the backend is not WSL2 and the
+Docker Desktop sliders are the right control after all.
+
+**Do not set `processors` lower than the host has.** WSL2 already gives the VM
+every logical processor by default, so adding `processors=8` on a 12-core
+machine _removes_ four cores. Leave the line out unless you specifically want
+to restrict it.
+
+**Leave RAM for Windows.** On a 16 GB host, `memory=11GB` leaves about 4.7 GB,
+which is workable on a machine dedicated to this and tight on a daily driver.
+`memory=12GB` or higher starts to starve the OS.
+
+### Why 7.6 GB is the number to watch
+
+LDM sizes the Liferay JVM heap in tiers from whichever is smaller, the host RAM
+or the Docker allocation. There is a step change at 8 GB:
+
+| Docker reports | `-Xmx` | `-Xms` |
+| --- | --- | --- |
+| 7.6 GB | 3072m | 2048m |
+| 8.0 GB | 3072m | 2048m |
+| 9.7 GB | 4096m | 2048m |
+| 10.7 GB | 5120m | 2048m |
+
+At or below 8 GB the heap is a flat **3 GB that does not scale**, and in
+sidecar search mode an embedded Elasticsearch shares that same container, with
+a database container alongside it.
+
+Note also that Docker reports slightly **less** than you allocate, after VM
+overhead — `memory=10GB` showed as 9.7 GB and `memory=11GB` as 10.7 GB. Since
+the tier is derived from the reported figure, the difference can be a whole
+gigabyte of heap.
+
+**Measured**, same Windows 11 machine, same Liferay tag, same cached seed:
+
+| `.wslconfig` | Docker reports | `-Xmx` | Time to `Liferay ready` |
+| --- | --- | --- | --- |
+| _(absent — the default)_ | 7.6 GB | 3072m | **9m 31s** |
+| `memory=11GB` | 10.7 GB | 5120m | **2m 42s** |
+
+One file that did not exist, and `ldm doctor` reported a green tick throughout.
+
+### The "Lenient" Threshold (LDM v1.6.36+)
+
+- **2-3 CPUs** or **4GB-7.5GB RAM** trigger a **Warning (⚠️)** rather than a
+  hard failure, so LDM still runs on older hardware with degraded performance.
+- Because that warning stops at 7.5 GB, a WSL2 default of 7.6 GB passes it
+  silently while sitting on the lowest heap tier. Read the figure itself
+  rather than the tick.
 
 ## 🛠️ Troubleshooting: Version Loop & Integrity Issues
 
@@ -607,4 +693,4 @@ LDM binaries use **"Magic Byte" detection** to accurately report their checksum 
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-22*
+*Last Updated: 2026-10-14* | *Last Reviewed: 2026-10-14*

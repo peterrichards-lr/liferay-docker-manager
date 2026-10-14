@@ -479,7 +479,15 @@ class ProjectSetupStage(PipelineStage):
         into a claimant overnight, which is LDM-#1782's mistake (silence read
         as success) rebuilt with more ceremony.
         """
-        from ldm_core.compatibility import CLAIM_KEY
+        from ldm_core.compatibility import CLAIM_KEY, PACKAGE_KEY
+
+        # LDM-#2179: record that a package was involved AT ALL, separately
+        # from whether it claimed anything. `describe()` addresses a reader
+        # holding someone else's package; without this marker `ldm run` could
+        # not tell that reader from someone who typed a tag on a project they
+        # created themselves, and announced "the package records ..." to both.
+        if manifest:
+            project_meta[PACKAGE_KEY] = True
 
         claim = (manifest or {}).get(CLAIM_KEY)
         if claim:

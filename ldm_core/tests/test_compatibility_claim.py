@@ -229,16 +229,31 @@ class TheOverrideIsExplicitAndRecorded(unittest.TestCase):
 
 class NoClaimIsTheDefaultAndIsAnnounced(unittest.TestCase):
     """Every package already in the wild inherits this. LDM-#1782 was silence
-    being read as success, so the default gets a line of its own."""
+    being read as success, so the default gets a line of its own.
+
+    LDM-#2179: these fixtures now carry `PACKAGE_KEY`, because that is what
+    they always MEANT. They said "a package with no claim" and passed a bare
+    project meta, which is the same conflation the defect itself made -- the
+    announcement went to every project because nothing distinguished one that
+    came from a package from one the user had just created. The intent here is
+    unchanged and still enforced: a package that declared nothing is announced,
+    not silent.
+    """
 
     def test_a_package_with_no_claim_still_works(self):
-        speaks, meta, _ = resolve("2026.q1.12-lts", {"tag": "2026.q1.7-lts"})
+        speaks, meta, _ = resolve(
+            "2026.q1.12-lts",
+            {"tag": "2026.q1.7-lts", compatibility.PACKAGE_KEY: True},
+        )
 
         self.assertNotIn(compatibility.OVERRIDE_KEY, meta)
         self.assertTrue(speaks.info, "no claim must not mean no output")
 
     def test_the_default_is_announced_not_silent(self):
-        speaks, _, _ = resolve("2026.q1.12-lts", {"tag": "2026.q1.7-lts"})
+        speaks, _, _ = resolve(
+            "2026.q1.12-lts",
+            {"tag": "2026.q1.7-lts", compatibility.PACKAGE_KEY: True},
+        )
 
         said = " ".join(speaks.info)
         self.assertIn("no compatibility claim", said.lower())
@@ -248,7 +263,10 @@ class NoClaimIsTheDefaultAndIsAnnounced(unittest.TestCase):
         """`UI.detail` prints only under `--info`/`--verbose` (LDM-#1036),
         which is not the verbosity CI runs at -- the exact defect LDM-#1790
         fixed for the pin announcement."""
-        speaks, _, _ = resolve("2026.q1.12-lts", {"tag": "2026.q1.7-lts"})
+        speaks, _, _ = resolve(
+            "2026.q1.12-lts",
+            {"tag": "2026.q1.7-lts", compatibility.PACKAGE_KEY: True},
+        )
 
         self.assertTrue(speaks.info)
         self.assertNotIn(
@@ -484,9 +502,15 @@ class TheseTestsCanActuallyFail(unittest.TestCase):
         def says_nothing(_claim, _tag):
             return ""
 
+        # LDM-#2179: the probe needs a PACKAGED project, because that is now
+        # the only kind that is announced to. Without the marker this test
+        # would pass for the wrong reason -- nothing said, because there was
+        # no package -- and would no longer prove the anchor is live.
+        packaged = {"tag": CEILING, compatibility.PACKAGE_KEY: True}
+
         compatibility.describe = says_nothing  # type: ignore[assignment]
         try:
-            speaks, _, _ = resolve("2026.q1.12-lts", {"tag": CEILING})
+            speaks, _, _ = resolve("2026.q1.12-lts", dict(packaged))
         finally:
             compatibility.describe = original  # type: ignore[assignment]
 
@@ -496,7 +520,7 @@ class TheseTestsCanActuallyFail(unittest.TestCase):
             "neutered code still announced -- the probe missed its anchor",
         )
 
-        speaks, _, _ = resolve("2026.q1.12-lts", {"tag": CEILING})
+        speaks, _, _ = resolve("2026.q1.12-lts", dict(packaged))
         self.assertIn("no compatibility claim", " ".join(speaks.info).lower())
 
 
