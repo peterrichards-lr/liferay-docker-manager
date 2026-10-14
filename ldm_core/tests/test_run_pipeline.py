@@ -972,3 +972,70 @@ class TestEveryBringupInTheStageIsBounded(unittest.TestCase):
             if any(f"'{v}'" in argv for v in self.ALLOWED_UNBOUNDED)
         ]
         self.assertTrue(allowed, "nothing matches ALLOWED_UNBOUNDED; drop it or fix it")
+
+
+class TestThePortalIsToldItsOwnDomain(unittest.TestCase):
+    """The portal must be given the host name, not only the extensions (LDM-#2154).
+
+    Liferay publishes `com.liferay.lxc.dxp.main.domain` into
+    `routes/default/dxp` and every client extension resolves the portal
+    through it -- but it derives that value from its own company virtual
+    host. Nothing set it, so a project created with `--host-name` published
+    `localhost`, and an extension served on the real host name was sent to
+    localhost while the portal registered its OAuth redirect URIs against the
+    same wrong value.
+
+    `LIFERAY_LXC_DXP_MAIN_DOMAIN` is NOT the mechanism: it is set on the
+    extension containers and the portal ignores it. Measured by setting it on
+    the liferay service, deleting the tree and recreating the container, which
+    republished `localhost:8080` unchanged.
+
+    Asserted on the environment the stage actually hands to the composer, not
+    on the source text.
+    """
+
+    NAME = "LIFERAY_COMPANY_PERIOD_DEFAULT_PERIOD_VIRTUAL_PERIOD_HOST_PERIOD_NAME"
+    SYNC = (
+        "LIFERAY_COMPANY_PERIOD_DEFAULT_PERIOD_VIRTUAL_PERIOD_HOST_PERIOD_"
+        "SYNC_PERIOD_ON_PERIOD_STARTUP"
+    )
+
+    def _liferay_env(self, host_name):
+        context = RunPipelineContext(MagicMock())
+        context.manager.non_interactive = True
+        context.set("project_id", "test-project")
+        context.set("is_new_project", False)
+        context.set("dry_run", True)
+        context.set("host_name", host_name)
+        context.set(
+            "project_meta",
+            {"container_name": "test-project", "ssl": "false", "port": 8080},
+        )
+        root_mock = MagicMock()
+        root_mock.__truediv__.return_value.exists.return_value = False
+        context.set("paths", {"root": root_mock, "configs": MagicMock()})
+        context.set("infra_ports", {})
+
+        with patch("ldm_core.pipelines.run.UI.warning"):
+            ComposerStage().execute(context)
+
+        kwargs = context.manager.composer.write_docker_compose.call_args.kwargs
+        return list(kwargs.get("liferay_env") or [])
+
+    def test_a_custom_host_name_reaches_the_portal(self):
+        env = self._liferay_env("aica-e2e.demo")
+        self.assertIn(f"{self.NAME}=aica-e2e.demo", env)
+
+    def test_the_value_is_re_applied_on_every_startup(self):
+        """The half that fixes a project whose database already holds the
+        wrong value -- seeded, imported, or restored from a snapshot taken on
+        another host. Setting the name alone is ignored once the company
+        exists."""
+        env = self._liferay_env("aica-e2e.demo")
+        self.assertIn(f"{self.SYNC}=true", env)
+
+    def test_localhost_is_told_too(self):
+        """Applied uniformly so the published domain is LDM's to predict on
+        every project, not only on custom-host ones."""
+        env = self._liferay_env("localhost")
+        self.assertIn(f"{self.NAME}=localhost", env)
