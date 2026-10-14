@@ -140,6 +140,30 @@ def select_new_errors(error_lines: list[str], seen_errors: set[str]) -> list[str
     return selected
 
 
+def log_window_args(last_poll_at: float | None, now: float) -> list[str]:
+    """The `docker logs` window to read on this poll (LDM-#2169).
+
+    `--tail 1000` was a sliding window, and `BundleSiteInitializer` emits
+    hundreds of lines in a burst -- so between two polls the
+    `Server startup in` line was pushed out of it and never seen. The E2E
+    check caught exactly that: six phases recorded, properly spread, and
+    `Tomcat Server Ready` missing while the marker that comes AFTER it was
+    found. Recording the later marker and missing the earlier one is only
+    possible if the window moved past it.
+
+    A relative duration rather than a timestamp, deliberately: `--since 45s`
+    is resolved by the daemon against its own clock, so a remote node whose
+    clock differs from this host's cannot silently return the wrong window.
+
+    The +5s overlap re-reads a few lines on purpose. Both consumers are
+    idempotent -- a milestone map keyed by title and a sticky flag -- so
+    re-reading costs nothing and a gap is not recoverable.
+    """
+    if last_poll_at is None:
+        return ["--tail", "2000"]
+    return ["--since", f"{max(int(now - last_poll_at) + 5, 5)}s"]
+
+
 def find_milestones(logs: str, milestones=STARTUP_MILESTONES) -> dict[str, str]:
     """Each milestone reached in `logs`, mapped to the line that announced it.
 
@@ -684,6 +708,12 @@ class ReadinessService(BaseHandler):
         ) as spinner:
             last_notified_time = 0.0
             seen_errors: set[str] = set()
+            # LDM-#2169: both outlive one poll on purpose. The log window is
+            # now incremental, so a marker seen in an earlier window must stay
+            # seen -- recomputing either from the current window is what let a
+            # busy boot lose `Server startup in` entirely.
+            last_log_poll_at: float | None = None
+            seen_server_startup = False
             while time.time() - start_time < timeout:
                 elapsed = time.time() - start_time
                 # Notify every 30 seconds (Robust timestamp check)
@@ -775,19 +805,25 @@ class ReadinessService(BaseHandler):
                 # LDM-385: Enhanced readiness check
                 # We look for the Tomcat 'Server startup' log marker as it's often
                 # faster/more reliable than the Docker healthcheck in CI.
-                ready_by_logs = False
+                now_poll = time.time()
+                log_window = log_window_args(last_log_poll_at, now_poll)
                 try:
                     logs = self.manager.run_command(
-                        [*docker_prefix, "logs", "--tail", "1000", container_name],
+                        [*docker_prefix, "logs", *log_window, container_name],
                         check=False,
                         capture_output=True,
                     )
+                    last_log_poll_at = now_poll
                     if logs:
                         if (
                             "org.apache.catalina.startup.Catalina.start Server startup in"
                             in logs
                         ):
-                            ready_by_logs = True
+                            # Sticky. Previously recomputed from each window,
+                            # so once the line scrolled out of `--tail 1000`
+                            # this flipped back to False and the readiness
+                            # shortcut silently stopped working too.
+                            seen_server_startup = True
 
                         # Milestone tracking
                         latest_milestone = None
@@ -829,6 +865,11 @@ class ReadinessService(BaseHandler):
                                 )
                 except Exception as e:
                     UI.detail(f"Warning checking log milestones: {e}")
+
+                # Derived from the sticky flag, so a window that happens not to
+                # contain the line cannot un-ready a portal that already
+                # started (LDM-#2169).
+                ready_by_logs = seen_server_startup
 
                 status = self.manager.run_command(
                     [

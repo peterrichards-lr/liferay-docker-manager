@@ -30,6 +30,7 @@ from ldm_core.runtime.readiness import (
     STARTUP_MILESTONES,
     find_milestones,
     format_startup_phases,
+    log_window_args,
     select_new_errors,
     strip_log_timestamps,
 )
@@ -318,6 +319,51 @@ class TestTheBreakdownReachesTheScreen(unittest.TestCase):
             "the phase breakdown must print at default verbosity: the user "
             "asked for it by passing --benchmark",
         )
+
+
+class TestTheLogWindowCannotSkipAMilestone(unittest.TestCase):
+    """`--tail 1000` is a sliding window (LDM-#2169).
+
+    `BundleSiteInitializer` emits hundreds of lines in a burst, so between two
+    polls the `Server startup in` line was pushed out of the window and never
+    seen. Measured in CI on the first real run of the E2E check: six phases
+    recorded, properly spread --
+
+        Database Schema Initializing = 10.1s
+        OSGi Framework Starting      = 10.1s
+        OSGi Framework Started       = 10.1s
+        Portal Startup Progress      = 25.3s
+        Verify Processes Running     = 40.5s
+        Site Initializer Running     = 60.8s
+
+    -- and `Tomcat Server Ready` missing, while `Site Initializer Running`,
+    which occurs AFTER it in every boot, was found. That is only possible if
+    the line existed and the window moved past it.
+    """
+
+    def test_the_first_poll_reads_a_backlog(self):
+        """Nothing has been read yet, so there is no 'since' to ask for."""
+        self.assertEqual(log_window_args(None, 100.0), ["--tail", "2000"])
+
+    def test_later_polls_read_only_what_is_new(self):
+        args = log_window_args(100.0, 145.0)
+        self.assertEqual(args[0], "--since")
+        self.assertNotIn("--tail", args)
+
+    def test_the_window_covers_the_whole_gap_with_overlap(self):
+        """A gap is not recoverable; a few re-read lines cost nothing, because
+        the milestone map is keyed by title and the startup flag is sticky."""
+        self.assertEqual(log_window_args(100.0, 145.0), ["--since", "50s"])
+
+    def test_a_very_fast_poll_still_asks_for_a_real_window(self):
+        """Two polls in the same second must not request '0s'."""
+        self.assertEqual(log_window_args(100.0, 100.1), ["--since", "5s"])
+
+    def test_a_relative_duration_is_used_not_a_timestamp(self):
+        """Resolved by the daemon against its own clock, so a remote node
+        whose clock differs from this host's cannot return the wrong window."""
+        value = log_window_args(100.0, 145.0)[1]
+        self.assertRegex(value, r"^\d+s$")
 
 
 if __name__ == "__main__":
