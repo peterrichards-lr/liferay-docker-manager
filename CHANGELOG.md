@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.6-pre.4] - 2026-10-14
+
+### Fixed
+
+- **Tomcat's own startup lines are read at last, and the log-based readiness check works for the first time** (LDM-#2188). The readiness scan went through a helper that returns stdout only, and Tomcat writes its startup lines through juli to **stderr** -- so `Catalina.load Server initialization` and `Catalina.start Server startup in` were invisible to LDM, while every Liferay log4j line on stdout was read fine. Measured on a 223-line container log, far inside any window, with both lines present under `docker logs ... 2>&1` and neither recorded.
+
+  Two visible consequences. The `--benchmark` phase breakdown was missing its Tomcat boundary, so it could show where time went between database init and the site initializer but not when the portal began serving. And `ready_by_logs` -- the log-based readiness shortcut added in LDM-385 on the grounds that it is "often faster and more reliable than the Docker healthcheck in CI" -- matched that same stderr string, so it has **never once fired**. Every boot has fallen through to the Docker healthcheck. Nothing failed, because the fallback is correct, which is exactly why it went unnoticed for its whole life.
+
+  **Expect `ldm run` to report ready sooner.** On the boot this was measured against, Tomcat finished starting at roughly 1m 54s while the healthcheck went green at 2m 54s; the work in between is largely `BundleSiteInitializer` building the DXP Welcome Page, a showcase site that is not needed to use Liferay. So the readiness figure has been reporting the time to finish a sample site rather than the time to a usable portal. The portal is not faster -- the number is finally measuring the right thing.
+
+  Stderr merging is opt-in and used at exactly one call site. Hundreds of callers parse that return value as clean stdout, and folding diagnostics into it by default would corrupt every one of them.
+
 ## [v2.26.6-pre.3] - 2026-10-14
 
 ### Fixed
