@@ -5191,6 +5191,35 @@ echo "SEEN $seen BAD$bad"
         throw "The published-domain check could not run (exit $dxpDomainRc). The LDM-#2154 assertion was NOT evaluated, and this is not a skip."
     }
 
+    # LDM-#2169: the suite has booted Liferay many times and never read what
+    # LDM recorded ABOUT the boot. Four of five startup milestones matched
+    # nothing in a real 2026.q3.7 log and the suite could not have noticed --
+    # the same shape as LDM-#2154, where three assertions walked the dxp tree
+    # without reading it.
+    #
+    # Asserted from startup-status.json, which LDM writes on EVERY boot,
+    # rather than from the --benchmark output: an assertion that only runs
+    # under a flag is one more thing that silently does not run (LDM-#2135).
+    Write-Verdict ">> Verifying LDM recorded the phases of the boot it just performed (LDM-#2169)..."
+    $phasesRaw = & $VENV_PYTHON (Join-Path $PSScriptRoot "check_startup_phases.py") (Join-Path $LDM_WORKSPACE $PROJECT_NAME) 2>&1
+    $phasesRc = $LASTEXITCODE
+    $phasesText = $phasesRaw | ConvertTo-LdmText
+    foreach ($phaseLine in ($phasesText -split "`n")) {
+        if ($phaseLine.Trim()) { Write-Verdict $phaseLine.TrimEnd() }
+    }
+    if ($phasesRc -eq 0) {
+        Write-Verdict "[SUCCESS] LDM recorded a decomposable startup phase breakdown (LDM-#2169)."
+    }
+    elseif ($phasesRc -eq 3) {
+        Write-Verdict "[WARNING] SKIPPED (not run): the startup phases were NOT evaluated -- see the reason above. This is not a pass."
+    }
+    elseif ($phasesRc -eq 1) {
+        throw "LDM did not record usable startup phases for this boot (LDM-#2169). What it did record is listed above."
+    }
+    else {
+        throw "The startup-phase check could not run (exit $phasesRc). The LDM-#2169 assertion was NOT evaluated, and this is not a skip."
+    }
+
     } # LDM-#1975 end section: boundary (2 of 2)
 
     # LDM-#1975 section: extras -- portal patch overlay, non-ASCII naming, shared

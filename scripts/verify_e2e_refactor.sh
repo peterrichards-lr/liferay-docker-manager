@@ -5414,6 +5414,32 @@ else
     exit 1
 fi
 
+# LDM-#2169: the suite has booted Liferay many times and never read what LDM
+# recorded ABOUT the boot. Four of five startup milestones matched nothing in a
+# real 2026.q3.7 log and the suite could not have noticed -- the same shape as
+# LDM-#2154, where three assertions walked the dxp tree without reading it.
+#
+# Asserted from startup-status.json, which LDM writes on EVERY boot, rather
+# than from the --benchmark output: an assertion that only runs under a flag is
+# one more thing that silently does not run (LDM-#2135).
+echo ">> Verifying LDM recorded the phases of the boot it just performed (LDM-#2169)..."
+PHASES_RC=0
+PHASES_OUT=$("$VENV_PYTHON" \
+    "${E2E_SCRIPT_DIR}/check_startup_phases.py" \
+    "${LDM_WORKSPACE}/${PROJECT_NAME}" 2>&1) || PHASES_RC=$?
+printf '%s\n' "$PHASES_OUT" | tee -a "$RESULTS_FILE_TMP"
+if [ "$PHASES_RC" -eq 0 ]; then
+    report_ok "✅ LDM recorded a decomposable startup phase breakdown (LDM-#2169)."
+elif [ "$PHASES_RC" -eq 3 ]; then
+    echo "⚠️  SKIPPED (not run): the startup phases were NOT evaluated -- see the reason above. This is not a pass." | tee -a "$RESULTS_FILE_TMP"
+elif [ "$PHASES_RC" -eq 1 ]; then
+    echo "❌ ERROR: LDM did not record usable startup phases for this boot (LDM-#2169)." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+else
+    echo "❌ ERROR: the startup-phase check could not run (exit ${PHASES_RC}). The assertion was NOT evaluated and this is not a skip." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
 fi # LDM-#1975 end section: boundary (2 of 2)
 
 # LDM-#1975 section: extras -- portal patch overlay, non-ASCII naming, shared

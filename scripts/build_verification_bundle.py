@@ -76,6 +76,7 @@ REQUIRED_FILES = (
     # test rather than by a from-assets run that would have failed on a
     # missing file.
     "scripts/check_published_dxp_domain.py",
+    "scripts/check_startup_phases.py",
 )
 REQUIRED_DIRS = ("common",)
 OPTIONAL_FILES = ("scripts/fragment_override_harness.py",)

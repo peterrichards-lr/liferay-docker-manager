@@ -161,6 +161,46 @@ components to the same dict by hand -- the one thing the real pipeline does not
 do -- so it reported "no collision" while CI collided. Where practical, drive the
 real wiring rather than a model of it.
 
+### Corollary: a test can supply the condition that keeps dead code alive
+
+The probe above asks whether a test observes the behaviour. This asks the
+opposite question: **does the behaviour exist outside the test?**
+
+A test that sets up the input production never supplies makes an unreachable
+branch look exercised. It passes, it covers the lines, and the code it proves
+runs only when a test is running. Nothing about coverage or a green suite can
+see this, and a neuter probe does not catch it either -- break the branch and
+the test correctly fails, because the test is the only thing that reaches it.
+
+Three instances found in one day, all long-lived:
+
+| | the test did | the production path |
+| --- | --- | --- |
+| `is_restore` | asserted `cmd_run` was called with it | `RunPipelineContext` sets a fixed key list; the argument was dropped. Born dead 2026-07-15, **with its asserting test added in the same commit** |
+| `args.total_start` | three tests assigned it `"900"` | nothing in `ldm_core` ever sets it -- `total_start` lives on the pipeline context. The branch reading it had never once run |
+| `--benchmark` breakdown | called `format_startup_phases` directly | the call site printed through `UI.detail`, hidden behind a verbosity flag nobody passes. The formatter was proven; its delivery was not |
+
+In each case the test was not wrong about what it asserted. It was asserting
+something that could not happen.
+
+**The tell is in the setup, not the assertion.** Ask of each line that
+configures the fixture: *what in production puts this value here?* If the
+answer is "nothing" or "I don't know", the test is describing a world rather
+than this one. `getattr(obj, "x", None)` on an object nothing assigns `x` to is
+the commonest form, because the default makes it silent.
+
+**When a probe cannot find a unique place to break, that is the signal.**
+Removing the behaviour from one of two identical call sites, or finding that
+every test constructs the value by hand, means the call site is uncovered --
+the thing that actually ships is not under test. That is how the missing
+`pre_readiness` call-site assertion was found (LDM-#2181), after two probes
+that reported green against broken code.
+
+**The remedy is to assert the call site separately from the helper.** Test the
+function for what it computes; test the caller for whether it calls it, with
+what, and whether the result reaches the user. The second half is the one that
+gets skipped, and it is the half that ships.
+
 ### Corollary: an unrealistic fixture disarms every assertion downstream of it
 
 A test can be well written, well targeted, and still prove nothing, because the
@@ -338,4 +378,4 @@ A release tag fires three to four workflows. Reporting "the" failure after readi
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-28* | *Last Reviewed: 2026-09-28*
+*Last Updated: 2026-10-14* | *Last Reviewed: 2026-10-14*

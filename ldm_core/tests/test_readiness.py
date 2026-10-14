@@ -214,7 +214,12 @@ class TestReadiness(unittest.TestCase):
                 return "healthy"
             return ""
 
-        self.handler.args.total_start = "900"
+        # LDM-#2181: `args.total_start` was set ONLY here. Nothing in
+        # production ever assigned it -- `total_start` lives on the pipeline
+        # context -- so the branch that read it was unreachable outside this
+        # file, and these tests made a dead path look exercised. Removed with
+        # the branch; the headline is the readiness wait and is asserted as
+        # such below.
         self.handler.args.browser = False
         with (
             patch("time.time") as mock_time,
@@ -234,7 +239,10 @@ class TestReadiness(unittest.TestCase):
                 "Auto-Thaw successful. Liferay should now proceed."
             )
             # Verify it completed successfully
-            mock_success.assert_any_call("Liferay is ready  (2m 15s)")
+            # LDM-#2181: the headline now names the span it measures. It
+            # always was the readiness wait and never said so, which is why
+            # "it took ten minutes" and "LDM said 2m 15s" never reconciled.
+            mock_success.assert_any_call("Liferay is ready  (35s awaiting readiness)")
 
     @patch("ldm_core.ui.UI.success")
     @patch("ldm_core.ui.UI.warning")
@@ -263,7 +271,6 @@ class TestReadiness(unittest.TestCase):
                 return "healthy"
             return ""
 
-        self.handler.args.total_start = "900"
         self.handler.args.browser = False
         with (
             patch("time.time") as mock_time,
@@ -398,7 +405,6 @@ class TestReadiness(unittest.TestCase):
             return ""
 
         secret_password = "correct-horse-battery-staple"  # pragma: allowlist secret
-        self.handler.args.total_start = "900"
         self.handler.args.browser = False
         with (
             patch("time.time") as mock_time,
@@ -449,7 +455,6 @@ class TestReadiness(unittest.TestCase):
                 return "healthy"
             return ""
 
-        self.handler.args.total_start = None
         self.handler.args.browser = False
         with (
             patch("time.sleep"),
@@ -468,7 +473,7 @@ class TestReadiness(unittest.TestCase):
             self.handler.handler.readiness._wait_for_ready(project_meta, "test.local")
 
             # Verify we saw the reindex message
-            mock_success.assert_any_call("Liferay is ready  (0s)")
+            mock_success.assert_any_call("Liferay is ready  (0s awaiting readiness)")
             # Metadata should have been updated to clear flag
             self.assertEqual(project_meta["reindex_required"], "false")
 
@@ -496,7 +501,6 @@ class TestReadiness(unittest.TestCase):
         def mock_run_command_side_effect(cmd, **kwargs):
             return "healthy" if "inspect" in " ".join(cmd) else ""
 
-        self.handler.args.total_start = None
         self.handler.args.browser = False
         with (
             patch("time.sleep"),
@@ -1648,7 +1652,6 @@ class TestAccessUrlAgreement(unittest.TestCase):
         self.handler = MockRuntime()
         self.handler.detect_project_path = MagicMock(return_value=self.tmp_dir)  # type: ignore[method-assign]
         self.handler.args.browser = False
-        self.handler.args.total_start = None
         self.handler.args.share = False
         # `--ssl` is `action="store_true", default=None` (cli.py), and this is
         # the quickstart path where it was not passed. Metadata therefore
