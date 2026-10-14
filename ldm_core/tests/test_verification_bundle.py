@@ -62,6 +62,7 @@ def _fake_repo(
         # LDM-#2154: the same -- both halves shell out to it, so a bundle
         # without it fails a from-assets run on a missing file.
         (root / "scripts" / "check_published_dxp_domain.py").write_text("# domain\n")
+        (root / "scripts" / "check_startup_phases.py").write_text("# phases\n")
     if with_harness:
         (root / "scripts" / "fragment_override_harness.py").write_text("# harness\n")
     if with_common:
