@@ -94,10 +94,26 @@ class TestEveryExitPathWritesOne(unittest.TestCase):
     def test_the_success_path_records_ready(self):
         src = self._wait_source()
         before_return = src[: src.index("                    return True")]
+        # Matched on substance, not layout: an earlier version pinned the
+        # exact indentation and broke when the call gained an argument, while
+        # the behaviour was unchanged.
+        self.assertIn("write_startup_status(", before_return)
+        self.assertIn('"ready"', before_return.rsplit("write_startup_status(", 1)[1])
+
+    def test_the_success_path_records_the_pre_readiness_span(self):
+        """LDM-#2181. The writer accepting the span proves nothing about
+        whether the ready path supplies it -- which is the same call-site blind
+        spot that let LDM-#2188 and the `total_start` lookup survive. Found by
+        a neuter probe that could not find a single place to break."""
+        src = self._wait_source()
+        before_return = src[: src.index("                    return True")]
+        ready_call = before_return.rsplit("write_startup_status(", 1)[1]
         self.assertIn(
-            'write_startup_status(\n                        status_file, "ready"',
-            before_return,
-            "the success path returns without recording that the boot finished",
+            "pre_readiness",
+            ready_call,
+            "the ready write does not pass the pre-readiness span, so "
+            "startup-status.json cannot reconcile the headline with the wall "
+            "clock",
         )
 
     def test_the_timeout_path_records_a_terminal_state(self):

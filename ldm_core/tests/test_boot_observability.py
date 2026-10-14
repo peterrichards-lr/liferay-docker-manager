@@ -366,5 +366,72 @@ class TestTheLogWindowCannotSkipAMilestone(unittest.TestCase):
         self.assertRegex(value, r"^\d+s$")
 
 
+class TestTheSpanBeforeTheReadinessWaitIsAccounted(unittest.TestCase):
+    """LDM-#2181. `_wait_for_ready` accepted a `total_start`, the caller passed
+    it, and the function read `self.manager.args.total_start` instead -- which
+    nothing ever sets. So it fell through to the loop's own start for its whole
+    life, and the time before the wait was invisible.
+
+    Measured against v2.26.6-pre.4 on Windows: `Liferay ready` reported
+    1m 47s while the Benchmark Report totalled 2m 51s. The missing 1m 4s is
+    asset sync, compose render and container start, and `--benchmark` filed all
+    of it under "LDM Processing".
+
+    The headline stays the readiness wait by decision (@peterrichards): the
+    portal is usable at that moment, and changing its meaning would make every
+    previously quoted figure incomparable. The parameter earns its place by
+    measuring the span before the wait instead.
+    """
+
+    REAL: ClassVar[dict[str, float]] = {
+        "Tomcat Initializing": 5.0,
+        "Tomcat Server Ready": 105.0,
+    }
+
+    def test_the_pre_readiness_span_appears_first(self):
+        lines = format_startup_phases(self.REAL, 107.0, pre_readiness=64.0)
+        self.assertIn("before the readiness wait", lines[1])
+
+    def test_the_breakdown_sums_to_the_whole_command(self):
+        """1m 4s before + 1m 47s wait = the 2m 51s the Benchmark Report shows.
+        A breakdown that does not reconcile with the total is why the gap read
+        as unexplained."""
+        rendered = "\n".join(
+            format_startup_phases(self.REAL, 107.0, pre_readiness=64.0)
+        )
+        self.assertIn("1m 4s", rendered)
+
+    def test_it_is_omitted_when_not_measured(self):
+        """A caller that cannot supply it must not get a zero row claiming the
+        span was nothing."""
+        rendered = "\n".join(format_startup_phases(self.REAL, 107.0))
+        self.assertNotIn("before the readiness wait", rendered)
+
+    def test_a_zero_span_is_omitted_rather_than_shown_as_zero(self):
+        rendered = "\n".join(format_startup_phases(self.REAL, 107.0, pre_readiness=0.0))
+        self.assertNotIn("before the readiness wait", rendered)
+
+
+class TestTheHeadlineSaysWhatItMeasures(unittest.TestCase):
+    """The number was never the whole run, and never said so."""
+
+    def _source(self):
+        import inspect
+
+        from ldm_core.runtime import readiness
+
+        return inspect.getsource(readiness)
+
+    def test_the_ready_line_names_the_span(self):
+        src = self._source()
+        self.assertIn("awaiting readiness", src)
+
+    def test_the_dead_args_lookup_is_gone(self):
+        """`getattr(self.manager.args, "total_start", None)` returned None every
+        time, because total_start is set on the pipeline context and never on
+        args."""
+        self.assertNotIn('self.manager.args, "total_start"', self._source())
+
+
 if __name__ == "__main__":
     unittest.main()

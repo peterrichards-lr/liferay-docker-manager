@@ -146,6 +146,7 @@ def write_startup_status(
     milestone_seconds: dict[str, float],
     elapsed: float,
     latest_milestone: str | None = None,
+    pre_readiness: float | None = None,
 ) -> None:
     """Record what the boot is doing, or what it ended as (LDM-#2187).
 
@@ -176,6 +177,14 @@ def write_startup_status(
                 title: round(at, 1) for title, at in milestone_seconds.items()
             },
             "elapsed_seconds": int(elapsed),
+            # LDM-#2181: asset sync, compose render and container start -- the
+            # span BEFORE the readiness wait. `elapsed_seconds` has never
+            # included it, so a reader could not reconcile the headline with
+            # the wall clock. Recorded here so the dashboard and the MCP tools
+            # can account for the whole command, not just the part LDM waited.
+            "pre_readiness_seconds": (
+                round(pre_readiness, 1) if pre_readiness is not None else None
+            ),
             # So a reader can tell a file written a minute ago from one written
             # last week. `elapsed_seconds` alone cannot answer that.
             "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -226,7 +235,9 @@ def find_milestones(logs: str, milestones=STARTUP_MILESTONES) -> dict[str, str]:
 
 
 def format_startup_phases(
-    milestone_seconds: dict[str, float], total: float
+    milestone_seconds: dict[str, float],
+    total: float,
+    pre_readiness: float | None = None,
 ) -> list[str]:
     """The boot as a timeline of phases, longest-pole visible.
 
@@ -242,8 +253,16 @@ def format_startup_phases(
     if not reached:
         return []
 
+    # LDM-#2181: the span BEFORE the readiness wait -- asset sync, compose
+    # render, container start. It was invisible, and `--benchmark` filed all of
+    # it under "LDM Processing", which reads as though LDM spent minutes
+    # thinking. With this row the breakdown sums to the whole command.
     trailing_label = "after the last milestone"
     rows: list[tuple[str, str, float | None]] = []
+    if pre_readiness is not None and pre_readiness > 0:
+        rows.append(
+            ("before the readiness wait", UI.format_duration(pre_readiness), None)
+        )
     previous = 0.0
     for title, at in reached:
         rows.append((title, UI.format_duration(max(at - previous, 0.0)), at))
@@ -1026,9 +1045,24 @@ class ReadinessService(BaseHandler):
                     if status != "healthy":
                         time.sleep(2)
 
-                    ts = getattr(self.manager.args, "total_start", None)
-                    duration_total = (
-                        time.time() - float(ts) if ts else time.time() - start_time
+                    # LDM-#2181: the headline is the READINESS WAIT, and says
+                    # so. It always was -- `getattr(self.manager.args,
+                    # "total_start")` returned None every time, because
+                    # `total_start` is set on the pipeline CONTEXT
+                    # (`pipelines/run.py`), never on `args`, so this silently
+                    # fell through to `start_time` for its whole life. The
+                    # parameter was accepted, passed correctly by the caller,
+                    # and read from the wrong object.
+                    #
+                    # Kept as the readiness wait deliberately
+                    # (@peterrichards): the portal is usable at that moment,
+                    # and changing the meaning of the number would make every
+                    # previously quoted figure incomparable. The parameter now
+                    # earns its place by measuring the span BEFORE the wait
+                    # instead of being discarded.
+                    duration_total = time.time() - start_time
+                    pre_readiness = (
+                        start_time - float(total_start) if total_start else None
                     )
 
                     duration_str = UI.format_duration(duration_total)
@@ -1118,7 +1152,9 @@ class ReadinessService(BaseHandler):
 
                     if Benchmarker.is_active:
                         for phase_line in format_startup_phases(
-                            reached_milestones, duration_total
+                            reached_milestones,
+                            duration_total,
+                            pre_readiness=pre_readiness,
                         ):
                             # UI.raw, NOT UI.detail. `detail` prints only under
                             # `--info`/`--verbose` (LDM-#1036), so the first
@@ -1137,10 +1173,15 @@ class ReadinessService(BaseHandler):
                             UI.raw(phase_line)
 
                     if UI.NON_INTERACTIVE:
-                        UI.raw(f"✅  Liferay ready: {access_url}  ({duration_str})")
+                        UI.raw(
+                            f"✅  Liferay ready: {access_url}  "
+                            f"({duration_str} awaiting readiness)"
+                        )
                     else:
                         UI.raw("")
-                        UI.success(f"Liferay is ready  ({duration_str})")
+                        UI.success(
+                            f"Liferay is ready  ({duration_str} awaiting readiness)"
+                        )
                         UI.raw("")
                         UI.raw(f"  🌐  {UI.CYAN}{UI.BOLD}{access_url}{UI.COLOR_OFF}")
                         root_path_str = self.manager.detect_project_path(
@@ -1264,7 +1305,11 @@ class ReadinessService(BaseHandler):
                     # it the file says "starting" forever and a finished boot
                     # cannot be told from a stalled one.
                     write_startup_status(
-                        status_file, "ready", reached_milestones, duration_total
+                        status_file,
+                        "ready",
+                        reached_milestones,
+                        duration_total,
+                        pre_readiness=pre_readiness,
                     )
                     return True
 

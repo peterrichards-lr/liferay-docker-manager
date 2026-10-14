@@ -68,7 +68,12 @@ class TestARealBootIsAccepted(unittest.TestCase):
     def test_the_phases_of_a_real_boot_pass(self):
         with tempfile.TemporaryDirectory() as tmp:
             code, out = _Project(
-                tmp, {"status": READY, "milestone_seconds": REAL_BOOT}
+                tmp,
+                {
+                    "status": READY,
+                    "milestone_seconds": REAL_BOOT,
+                    "pre_readiness_seconds": 64.0,
+                },
             ).check()
         self.assertEqual(code, ASSERTED, out)
 
@@ -77,7 +82,12 @@ class TestARealBootIsAccepted(unittest.TestCase):
         without re-running the boot, which takes minutes."""
         with tempfile.TemporaryDirectory() as tmp:
             code, out = _Project(
-                tmp, {"status": READY, "milestone_seconds": REAL_BOOT}
+                tmp,
+                {
+                    "status": READY,
+                    "milestone_seconds": REAL_BOOT,
+                    "pre_readiness_seconds": 64.0,
+                },
             ).check()
         self.assertEqual(code, ASSERTED, out)
         for name in REAL_BOOT:
@@ -89,7 +99,12 @@ class TestARealBootIsAccepted(unittest.TestCase):
         shuffled = dict(reversed(list(REAL_BOOT.items())))
         with tempfile.TemporaryDirectory() as tmp:
             _, out = _Project(
-                tmp, {"status": READY, "milestone_seconds": shuffled}
+                tmp,
+                {
+                    "status": READY,
+                    "milestone_seconds": shuffled,
+                    "pre_readiness_seconds": 64.0,
+                },
             ).check()
         positions = [out.index(name) for name in REAL_BOOT]
         self.assertEqual(positions, sorted(positions))
@@ -259,7 +274,12 @@ class TestTheBootsOutcomeIsAsserted(unittest.TestCase):
     def test_ready_passes(self):
         with tempfile.TemporaryDirectory() as tmp:
             code, out = _Project(
-                tmp, {"status": "ready", "milestone_seconds": REAL_BOOT}
+                tmp,
+                {
+                    "status": "ready",
+                    "milestone_seconds": REAL_BOOT,
+                    "pre_readiness_seconds": 64.0,
+                },
             ).check()
         self.assertEqual(code, ASSERTED, out)
 
@@ -273,6 +293,55 @@ class TestTheBootsOutcomeIsAsserted(unittest.TestCase):
                     tmp, {"status": status, "milestone_seconds": REAL_BOOT}
                 ).check()
                 self.assertEqual(code, ASSERTED, out)
+
+
+class TestTheSpanBeforeTheWaitIsRecorded(unittest.TestCase):
+    """LDM-#2181: the headline figure has never included asset sync, compose
+    render and container start, so a report could not be reconciled with the
+    wall clock a user experienced. Measured on v2.26.6-pre.4: `Liferay ready`
+    said 1m 47s while the command took 2m 51s."""
+
+    def test_a_ready_boot_without_the_span_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out = _Project(
+                tmp, {"status": "ready", "milestone_seconds": REAL_BOOT}
+            ).check()
+        self.assertEqual(code, NOT_RECORDED, out)
+        self.assertIn("pre_readiness_seconds", out)
+
+    def test_a_ready_boot_with_the_span_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out = _Project(
+                tmp,
+                {
+                    "status": "ready",
+                    "milestone_seconds": REAL_BOOT,
+                    "pre_readiness_seconds": 64.0,
+                },
+            ).check()
+        self.assertEqual(code, ASSERTED, out)
+
+    def test_a_timeout_is_exempt(self):
+        """A boot that never reached ready may end before the span is known.
+        Demanding it there would fail the suite for the wrong reason."""
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out = _Project(
+                tmp, {"status": "timeout", "milestone_seconds": REAL_BOOT}
+            ).check()
+        self.assertEqual(code, ASSERTED, out)
+
+    def test_a_zero_span_is_still_a_recorded_span(self):
+        """Zero is a measurement. Only absence is a failure."""
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out = _Project(
+                tmp,
+                {
+                    "status": "ready",
+                    "milestone_seconds": REAL_BOOT,
+                    "pre_readiness_seconds": 0,
+                },
+            ).check()
+        self.assertEqual(code, ASSERTED, out)
 
 
 if __name__ == "__main__":
