@@ -208,3 +208,38 @@ class Pipeline:
                     f"Error during rollback of stage {stage.name}: {e}", exc_info=True
                 )
                 # Keep rolling back other stages even if one fails
+
+
+def die_if_the_pipeline_failed(result, what):
+    """Stop when a pipeline answered `False` (LDM-#2155, LDM-#2171).
+
+    `Pipeline.run` above returns `False` after an unexpected exception in a
+    stage: it rolls back and leaves the verdict to the caller. Every caller
+    discarded it, so a boot that had been undone was reported as success.
+
+    Lives here, beside the `return False` it interprets, because the callers
+    are now in two packages -- `workspace/importer.py` and
+    `handlers/snapshot.py`. It was private to the importer when `ldm restore`
+    was found to have the identical defect, and a second copy is how the two
+    would drift.
+
+    `UI.die` rather than a returned code because callers use what they return
+    as if it named a working project: `cmd_link`, `cmd_clone` and
+    `cmd_init_from` pass an import's name straight on, `cmd_quickstart` goes
+    on to configure and boot it, and `cmd_restore` has already printed
+    "Restore complete." by the time it boots.
+
+    Exit 4 -- Orchestration/Deployment Error, per
+    `.agents/skills/ldm-architecture/SKILL.md`. A stage that refuses through
+    `UI.die` is unaffected: its `SystemExit` carries its own code out of
+    `Pipeline.run` and never reaches this check, the idempotent 5 included.
+    """
+    from ldm_core.utils import UI
+
+    if result is False:
+        UI.die(
+            f"{what} did not complete, and the work was rolled back. The error "
+            f"above says which stage failed; '~/.ldm/last-command.log' has the "
+            f"detail.",
+            exit_code=4,
+        )
