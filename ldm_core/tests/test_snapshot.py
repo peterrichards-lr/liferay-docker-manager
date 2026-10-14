@@ -1225,12 +1225,21 @@ class TestSnapshotService(unittest.TestCase):
         ):
             self.manager.snapshot.cmd_restore("test")
 
-            # Verify that cmd_run was triggered on self.manager.runtime to rebuild config
+            # Verify that cmd_run was triggered on self.manager.runtime to
+            # rebuild config.
+            #
+            # LDM-#2171: `is_restore=True` was asserted here and removed from
+            # both sides. It was never read -- `RunPipelineContext` sets a
+            # fixed list of keys and that was not one of them -- and this
+            # assertion was added in the SAME commit as the argument
+            # (b1ff1bcd), so it has guarded a no-op from birth. Asserting a
+            # call signature says nothing about whether the call does
+            # anything, which is the shape the Behaviour Coverage Gate exists
+            # to catch.
             self.manager.runtime.cmd_run.assert_called_with(
                 project_id=self.test_dir.name,
                 no_up=True,
                 show_summary=False,
-                is_restore=True,
                 paths=mock_paths.return_value,
                 project_meta=ANY,
             )
@@ -1738,6 +1747,102 @@ class TestSnapshotService(unittest.TestCase):
             self._assert_has_remote_context(
                 [c.args[0] for c in mock_run.call_args_list]
             )
+
+
+class TestRestoreDoesNotReportSuccessAfterAFailedBoot(unittest.TestCase):
+    """LDM-#2171. `Pipeline.run` returns False after a stage raises and its
+    work is rolled back. The post-restore boot discarded that, so `ldm restore`
+    exited 0 for a project that was not running -- and "Restore complete." is
+    printed BEFORE the boot is attempted, so nothing on screen contradicted it.
+
+    Same family as LDM-#2155/#2156; this was the call site missed when those
+    were fixed. It matters most to the callers that cannot see containers: an
+    agent or a script reads the exit code and goes on to poll a URL that never
+    answers.
+
+    The failure is injected ONLY into the final boot. The two earlier
+    `cmd_run` calls pass `no_up=True` and scaffold the compose without
+    starting anything, so their result is correctly not a verdict on the
+    project -- a check placed on those would be wrong, and returning False
+    from every call could not tell the two apart.
+    """
+
+    def setUp(self):
+        self.manager = MockSnapshotManager()
+        self.test_dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.test_dir, True)
+
+    def _restore(self, boot_result):
+        """Drive cmd_restore to the boot, with the boot answering as given."""
+        (self.test_dir / "snapshots" / "20260512_120000").mkdir(parents=True)
+        (self.test_dir / "snapshots" / "20260512_120000" / "volume.tgz").touch()
+        (self.test_dir / "snapshots" / "20260512_120000" / "meta").touch()
+        (self.test_dir / "docker-compose.yml").touch()
+
+        self.manager.args.latest = True
+        self.manager.args.verify = False
+        self.manager.args.list = False
+        self.manager.args.backup_dir = None
+        # Reaches the boot: non_interactive skips the confirm, so without this
+        # restore stops at "Run 'ldm run ...' to start the project."
+        self.manager.args.up = True
+        self.manager.args.no_run = False
+
+        boots = []
+
+        def cmd_run(*args, **kwargs):
+            if kwargs.get("no_up"):
+                return True
+            boots.append((args, kwargs))
+            return boot_result
+
+        with (
+            patch.object(self.manager.snapshot.volumes, "_hydrate_named_volumes"),
+            patch.object(self.manager.runtime, "cmd_run", side_effect=cmd_run),
+            patch.object(
+                MockSnapshotManager, "read_meta", return_value={"tag": "2026.q3.7"}
+            ),
+            patch.object(MockSnapshotManager, "write_meta"),
+            patch.object(
+                MockSnapshotManager,
+                "setup_paths",
+                return_value={
+                    "root": self.test_dir,
+                    "backups": self.test_dir / "snapshots",
+                    "state": self.test_dir / "osgi" / "state",
+                    "data": self.test_dir / "data",
+                },
+            ),
+            patch.object(
+                MockSnapshotManager, "detect_project_path", return_value=self.test_dir
+            ),
+            patch("ldm_core.ui.UI.detail"),
+            patch("ldm_core.ui.UI.success"),
+            patch("ldm_core.ui.UI.warning"),
+            patch("ldm_core.ui.UI.phase"),
+        ):
+            self.manager.snapshot.cmd_restore("test")
+        return boots
+
+    def test_a_rolled_back_boot_is_not_reported_as_success(self):
+        with self.assertRaises(SystemExit) as caught:
+            self._restore(boot_result=False)
+        self.assertEqual(
+            caught.exception.code,
+            4,
+            "a failed post-restore boot must exit 4 (Orchestration/Deployment "
+            "Error), not 0",
+        )
+
+    def test_a_successful_boot_is_left_alone(self):
+        """The check must not turn a working restore into a failure."""
+        boots = self._restore(boot_result=True)
+        self.assertEqual(len(boots), 1)
+
+    def test_a_handler_returning_none_is_not_treated_as_failure(self):
+        """`None` means the caller said nothing. Only an explicit False is a
+        rolled-back pipeline, and conflating them would break every restore."""
+        self._restore(boot_result=None)
 
 
 class TestVolumesSnapshotService(unittest.TestCase):

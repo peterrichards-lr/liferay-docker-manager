@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ldm_core.handlers.base import BaseHandler
+from ldm_core.pipelines.base import die_if_the_pipeline_failed
 from ldm_core.snapshot.archive import ArchiveSnapshotService
 from ldm_core.snapshot.custom_containers import CustomContainersSnapshotService
 from ldm_core.snapshot.database import DatabaseSnapshotService
@@ -548,11 +549,17 @@ class SnapshotService(BaseHandler):
             project_meta["tag"] = snap_tag
             project_meta["last_run_liferay_version"] = snap_tag
             self.manager.write_meta(paths["root"], project_meta)
+            # LDM-#2171: `is_restore=True` used to be passed here and has
+            # never been read. `RunPipelineContext.__init__` sets a fixed list
+            # of keys and that is not one of them, so it landed in **kwargs and
+            # was discarded -- born that way in b1ff1bcd (2026-07-15), together
+            # with the test that asserts it is passed. Removed rather than
+            # wired up: there is no branch waiting for it, and inventing a
+            # restore-specific semantic to justify the argument is backwards.
             self.manager.runtime.cmd_run(
                 project_id=project_meta.get("container_name") or paths["root"].name,
                 no_up=True,
                 show_summary=False,
-                is_restore=True,
                 paths=paths,
                 project_meta=project_meta,
             )
@@ -582,7 +589,15 @@ class SnapshotService(BaseHandler):
                 not self.manager.non_interactive
                 and UI.confirm("Do you want to start the project now?", "Y")
             ):
-                self.manager.runtime.cmd_run(project_id)
+                # LDM-#2171: the verdict was discarded here, so a boot that
+                # failed and rolled back still exited 0 -- and "Restore
+                # complete." is printed above, BEFORE the boot is attempted,
+                # so nothing on screen contradicted it either. Same defect
+                # family as LDM-#2155/#2156; this was the call site missed
+                # when those were fixed.
+                die_if_the_pipeline_failed(
+                    self.manager.runtime.cmd_run(project_id), "The restored project"
+                )
             else:
                 UI.detail(
                     f"Run {UI.CYAN}ldm run {paths['root'].name}{UI.COLOR_OFF} to start the project."
