@@ -1091,6 +1091,7 @@ class BaseHandler:
         capture_output=True,
         stdout_file=None,
         timeout=None,
+        merge_stderr=False,
     ):
         """Thin wrapper over utils.run_command.
 
@@ -1116,6 +1117,7 @@ class BaseHandler:
             verbose=self.verbose,
             stdout_file=stdout_file,
             timeout=timeout,
+            merge_stderr=merge_stderr,
         )
 
     def require_compose(self, root_path, silent=False):
