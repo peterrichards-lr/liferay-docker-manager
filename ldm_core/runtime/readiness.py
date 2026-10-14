@@ -1,7 +1,9 @@
 import contextlib
 import os
+import re
 import time
 from datetime import datetime
+from typing import NamedTuple
 
 from ldm_core.config import resolve_target_context
 from ldm_core.docker_service import DockerService
@@ -12,6 +14,189 @@ from ldm_core.utils import liferay_container_of, open_browser
 from ldm_core.workspace.site_initializers import (
     deploy_pending as deploy_pending_site_initializers,
 )
+
+
+class Milestone(NamedTuple):
+    """One recognisable phase of a Liferay boot (LDM-#2169).
+
+    `markers` holds alternatives rather than one string because the log line
+    that announces a phase differs between Liferay lines -- `OSGi run level`
+    appears in some, `Starting initial bundles` in others -- and a single
+    marker meant four of the five original milestones matched nothing at all
+    on 2026.q3.7. Alternatives make the list additive: a marker that stops
+    appearing costs nothing as long as a sibling still matches.
+
+    `excludes` rejects a line that would otherwise match. It exists for one
+    measured false positive, described on PORTAL_STARTING below.
+    """
+
+    title: str
+    markers: tuple[str, ...]
+    excludes: tuple[str, ...] = ()
+
+    def matches(self, line: str) -> bool:
+        if any(bad in line for bad in self.excludes):
+            return False
+        return any(marker in line for marker in self.markers)
+
+
+#: The container entrypoint prefixes its own shell output with this. Liferay's
+#: log lines never carry it, which is what makes it usable as a discriminator.
+ENTRYPOINT_PREFIX = "[LIFERAY]"
+
+#: Startup phases in the order they occur, so the reported breakdown reads as
+#: a timeline. Verified against a captured 2026.q3.7 boot log; markers that did
+#: not appear there are KEPT rather than removed, because they are what matches
+#: on other Liferay lines and this list must not regress a version it was not
+#: measured against.
+STARTUP_MILESTONES: tuple[Milestone, ...] = (
+    Milestone("Tomcat Initializing", ("Catalina.load Server initialization",)),
+    Milestone(
+        "Spring Web Context Initializing",
+        ("Initializing Spring root WebApplicationContext",),
+    ),
+    Milestone("Database Schema Initializing", ("DBInitUtil", "DialectDetector")),
+    Milestone(
+        "OSGi Framework Starting", ("Starting initial bundles", "OSGi run level")
+    ),
+    Milestone("OSGi Framework Started", ("Started initial bundles",)),
+    # The measured false positive. The entrypoint prints
+    #   [LIFERAY] Starting Liferay DXP. To stop the container with CTRL-C...
+    # 41 seconds before the portal prints
+    #   Starting Liferay Digital Experience Platform 2026.Q3.7
+    # so a bare "Starting Liferay" reported portal progress while the JVM was
+    # still loading, and made the quiet period that followed look like a stall
+    # after progress rather than the first phase.
+    Milestone("Portal Startup Progress", ("Starting Liferay",), (ENTRYPOINT_PREFIX,)),
+    # The largest single block of the boot that was measured -- 3m30s, 35% of
+    # the total -- produced no output at all and matched no milestone. Naming
+    # it is the difference between "LDM is stuck" and "Liferay is running
+    # verify processes".
+    Milestone("Verify Processes Running", ("Executing verify ",)),
+    Milestone("Available Contexts Registered", ("Available contexts",)),
+    Milestone("Tomcat Server Ready", ("Server startup in",)),
+    Milestone("Site Initializer Running", ("BundleSiteInitializer",)),
+)
+
+#: Leading timestamps, stripped before an error line is compared with the ones
+#: already seen. Four formats appear in a single boot log: the RFC3339 prefix
+#: `docker logs -t` adds, Liferay's own `2026-10-13 14:09:38.328`, Tomcat's
+#: `13-Oct-2026 14:07:05.573`, and the older bare `14:01:36,608`.
+_TIMESTAMP_PATTERNS = (
+    re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:[.,]\d+)?Z?\s*"),
+    re.compile(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?\s*"),
+    re.compile(r"^\d{1,2}-[A-Za-z]{3}-\d{4}\s+\d{2}:\d{2}:\d{2}(?:[.,]\d+)?\s*"),
+    re.compile(r"^\d{2}:\d{2}:\d{2}[.,]\d+\s*"),
+)
+
+
+def strip_log_timestamps(line: str) -> str:
+    """A log line with every leading timestamp removed (LDM-#2169).
+
+    The error counter deduped on the raw line, and every Liferay line begins
+    with its own timestamp, so no two occurrences of the same error were ever
+    equal: a single recurring error was announced as "1 new error(s)" on every
+    30-second poll for the whole boot.
+
+    Only LEADING timestamps are removed, and nothing else is normalised. A
+    message that genuinely differs must still compare as different -- the
+    counter's job is to report new errors, and over-normalising would trade a
+    counter that cries wolf for one that stays silent.
+    """
+    text = line.strip()
+    while True:
+        for pattern in _TIMESTAMP_PATTERNS:
+            stripped = pattern.sub("", text, count=1)
+            if stripped != text:
+                text = stripped
+                break
+        else:
+            return text.strip()
+
+
+def select_new_errors(error_lines: list[str], seen_errors: set[str]) -> list[str]:
+    """The error lines not already reported, deduped by message (LDM-#2169).
+
+    Extracted from the readiness loop so it is reachable without Docker. The
+    inline version was never exercised by anything: a call site that exists is
+    not a call site that runs (LDM-#2132).
+
+    `seen_errors` is updated in place with the keys of what is returned, so a
+    caller cannot report a batch and then forget to record it -- which is the
+    shape the original had, with the update written separately from the
+    comparison.
+
+    Deduped within the batch as well as against previous polls, because
+    `docker logs --tail 1000` returns the same recurring error many times in
+    one read.
+    """
+    selected = []
+    for line in error_lines:
+        key = strip_log_timestamps(line)
+        if key in seen_errors:
+            continue
+        seen_errors.add(key)
+        selected.append(line)
+    return selected
+
+
+def find_milestones(logs: str, milestones=STARTUP_MILESTONES) -> dict[str, str]:
+    """Each milestone reached in `logs`, mapped to the line that announced it.
+
+    Matched line by line rather than against the whole blob, because the
+    `excludes` rule cannot be expressed on a concatenation -- the entrypoint
+    banner and the portal's own line both contain "Starting Liferay", and a
+    substring test over the full log can only see that one of them is present.
+    """
+    found: dict[str, str] = {}
+    for line in logs.splitlines():
+        for milestone in milestones:
+            if milestone.title not in found and milestone.matches(line):
+                found[milestone.title] = line.strip()
+    return found
+
+
+def format_startup_phases(
+    milestone_seconds: dict[str, float], total: float
+) -> list[str]:
+    """The boot as a timeline of phases, longest-pole visible.
+
+    Reports the gap BETWEEN milestones, not the time at which each was
+    reached: "Tomcat Server Ready at 5m30s" does not say where those 5m30s
+    went, which is the only question being asked of it.
+    """
+    reached = [
+        (m.title, milestone_seconds[m.title])
+        for m in STARTUP_MILESTONES
+        if m.title in milestone_seconds
+    ]
+    if not reached:
+        return []
+
+    trailing_label = "after the last milestone"
+    rows: list[tuple[str, str, float | None]] = []
+    previous = 0.0
+    for title, at in reached:
+        rows.append((title, UI.format_duration(max(at - previous, 0.0)), at))
+        previous = at
+    trailing = total - previous
+    if trailing > 0:
+        rows.append((trailing_label, UI.format_duration(trailing), None))
+
+    title_width = max(len(title) for title, _, _ in rows)
+    gap_width = max(len(gap) for _, gap, _ in rows)
+
+    lines = ["Startup phases:"]
+    for title, gap, reached_seconds in rows:
+        reached_at = (
+            f"  (at {UI.format_duration(reached_seconds)})"
+            if reached_seconds is not None
+            else ""
+        )
+        lines.append(
+            f"  {title.ljust(title_width)}  +{gap.rjust(gap_width)}{reached_at}"
+        )
+    return lines
 
 
 class ReadinessService(BaseHandler):
@@ -475,17 +660,12 @@ class ReadinessService(BaseHandler):
             root_path / ".liferay-docker" / "startup-status.json" if root_path else None
         )
 
-        milestones = [
-            ("OSGi Framework Starting", "OSGi run level"),
-            (
-                "Spring Web Context Initializing",
-                "Initializing Spring root WebApplicationContext",
-            ),
-            ("Portal Startup Progress", "Starting Liferay"),
-            ("Available Contexts Registered", "Available contexts"),
-            ("Tomcat Server Ready", "Server startup in"),
-        ]
-        reached_milestones = set()
+        # LDM-#2169: the elapsed time at which each milestone was FIRST seen.
+        # This used to be a set, and the status file carried a single
+        # `elapsed_seconds` for the latest milestone, overwritten on every
+        # poll -- so by the time a boot finished, every intermediate timing
+        # had been discarded and "ready in 9m57s" could not be decomposed.
+        reached_milestones: dict[str, float] = {}
 
         @contextlib.contextmanager
         def null_spinner(msg):
@@ -503,7 +683,7 @@ class ReadinessService(BaseHandler):
             f"Waiting for Liferay to become healthy ({container_name})..."
         ) as spinner:
             last_notified_time = 0.0
-            seen_errors = set()
+            seen_errors: set[str] = set()
             while time.time() - start_time < timeout:
                 elapsed = time.time() - start_time
                 # Notify every 30 seconds (Robust timestamp check)
@@ -532,12 +712,17 @@ class ReadinessService(BaseHandler):
                                 or "CRITICAL" in line.upper()
                             ]
 
-                            new_error_lines = [
-                                line for line in error_lines if line not in seen_errors
-                            ]
+                            # LDM-#2169: compared with the leading timestamp
+                            # removed. `seen_errors` held raw lines, and every
+                            # Liferay line starts with its own timestamp, so
+                            # two occurrences of one error were never equal and
+                            # a single recurring error was reported as new on
+                            # every 30-second poll for the whole boot.
+                            new_error_lines = select_new_errors(
+                                error_lines, seen_errors
+                            )
 
                             if new_error_lines:
-                                seen_errors.update(new_error_lines)
                                 UI.warning(
                                     f"LDM detected {len(new_error_lines)} new error(s) in the logs."
                                 )
@@ -606,18 +791,17 @@ class ReadinessService(BaseHandler):
 
                         # Milestone tracking
                         latest_milestone = None
-                        for title, marker in milestones:
-                            if marker in logs:
-                                if title not in reached_milestones:
-                                    reached_milestones.add(title)
-                                    if stream_status:
-                                        UI.detail(f"[LDM] ⏳ Phase reached: {title}")
-                                    else:
-                                        UI.detail(
-                                            f"Startup Milestone Reached: {UI.CYAN}{title}{UI.COLOR_OFF}"
-                                        )
-                                        spinner.update(f"Liferay Startup: {title}...")
-                                latest_milestone = title
+                        for title in find_milestones(logs):
+                            if title not in reached_milestones:
+                                reached_milestones[title] = elapsed
+                                if stream_status:
+                                    UI.detail(f"[LDM] ⏳ Phase reached: {title}")
+                                else:
+                                    UI.detail(
+                                        f"Startup Milestone Reached: {UI.CYAN}{title}{UI.COLOR_OFF}"
+                                    )
+                                    spinner.update(f"Liferay Startup: {title}...")
+                            latest_milestone = title
 
                         if status_file and latest_milestone:
                             try:
@@ -626,6 +810,13 @@ class ReadinessService(BaseHandler):
                                     "status": "starting",
                                     "latest_milestone": latest_milestone,
                                     "milestones_reached": list(reached_milestones),
+                                    # LDM-#2169: kept per milestone, so a slow
+                                    # boot can be decomposed after the fact
+                                    # without re-running it.
+                                    "milestone_seconds": {
+                                        title: round(at, 1)
+                                        for title, at in reached_milestones.items()
+                                    },
                                     "elapsed_seconds": int(elapsed),
                                 }
                                 with open(status_file, "w") as f:
@@ -828,6 +1019,20 @@ class ReadinessService(BaseHandler):
                             ),
                             proxy_ports=proxy_ports,
                         )
+
+                    # LDM-#2169: printed under --benchmark rather than always,
+                    # so the default output is unchanged and no new CLI flag is
+                    # introduced (which would mean a man page and CLI reference
+                    # update to stay out of check-cli-drift). The timings are
+                    # persisted to startup-status.json on every boot either
+                    # way, so a slow start can still be decomposed afterwards.
+                    from ldm_core.utils import Benchmarker
+
+                    if Benchmarker.is_active:
+                        for phase_line in format_startup_phases(
+                            reached_milestones, duration_total
+                        ):
+                            UI.detail(phase_line)
 
                     if UI.NON_INTERACTIVE:
                         UI.raw(f"✅  Liferay ready: {access_url}  ({duration_str})")
