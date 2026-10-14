@@ -808,10 +808,25 @@ class ReadinessService(BaseHandler):
                 now_poll = time.time()
                 log_window = log_window_args(last_log_poll_at, now_poll)
                 try:
+                    # LDM-#2188: stderr merged. Tomcat writes its startup
+                    # lines through juli to STDERR, and `run_command` returns
+                    # stdout only -- so `Catalina.load Server initialization`
+                    # and `Catalina.start Server startup in` were invisible to
+                    # this scan while every Liferay log4j line on stdout was
+                    # read fine. Measured on a 223-line container log, far
+                    # inside any tail window, with both lines present and
+                    # neither recorded.
+                    #
+                    # That second string is also what sets `ready_by_logs`
+                    # below (LDM-385), so the log-based readiness shortcut has
+                    # never fired either. Every boot has fallen through to the
+                    # Docker healthcheck -- correct, and silently not the
+                    # behaviour that was written.
                     logs = self.manager.run_command(
                         [*docker_prefix, "logs", *log_window, container_name],
                         check=False,
                         capture_output=True,
+                        merge_stderr=True,
                     )
                     last_log_poll_at = now_poll
                     if logs:

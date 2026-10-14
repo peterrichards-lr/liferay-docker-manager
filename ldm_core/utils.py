@@ -1488,6 +1488,7 @@ class CommandRunner:
         verbose: bool = False,
         stdout_file: Any = None,
         timeout: float | None = None,
+        merge_stderr: bool = False,
         *,
         _ssh_deadline: float | None = None,
     ) -> str | None:
@@ -1538,7 +1539,23 @@ class CommandRunner:
                 if stdout_file
                 else (subprocess.PIPE if capture_output else None)
             )
-            stderr_dest = subprocess.PIPE if (capture_output or stdout_file) else None
+            # LDM-#2188: `merge_stderr` folds the child's stderr into the
+            # returned string. This function returns stdout only, and a caller
+            # scanning output for a marker has no way to know the marker is on
+            # the other stream -- Tomcat writes its startup lines through juli
+            # to stderr, so the readiness scan could not see
+            # `Catalina.start Server startup in` at all, and `ready_by_logs`
+            # has never fired since it was written.
+            #
+            # Opt-in, and deliberately not the default: hundreds of call sites
+            # parse the return value, and folding diagnostics into it would
+            # corrupt every one that expects clean stdout.
+            if merge_stderr and (capture_output or stdout_file):
+                stderr_dest: Any = subprocess.STDOUT
+            else:
+                stderr_dest = (
+                    subprocess.PIPE if (capture_output or stdout_file) else None
+                )
 
             # Bandit: B602 (shell=True) is used for complex commands where needed,
             # B603 (subprocess_without_shell_equals_true) is safe as we now use absolute paths.
@@ -1723,9 +1740,14 @@ class DryRunCommandRunner(CommandRunner):
         verbose: bool = False,
         stdout_file: Any = None,
         timeout: float | None = None,
+        merge_stderr: bool = False,
         *,
         _ssh_deadline: float | None = None,
     ) -> str | None:
+        # `merge_stderr` accepted and ignored for the same reason as
+        # `_ssh_deadline` below: a dry run produces no streams to merge
+        # (LDM-#2188).
+        del merge_stderr
         # Accepted and ignored: a dry run never executes, so it never reaches
         # the transport-retry path. It is in the signature because the
         # supertype has it -- a caller holding a CommandRunner must be able to
@@ -1776,6 +1798,7 @@ def run_command(  # noqa: PLR0913
     verbose: bool = False,
     stdout_file: Any = None,
     timeout: float | None = None,
+    merge_stderr: bool = False,
 ) -> str | None:
     return get_runner().run(
         cmd,
@@ -1787,6 +1810,7 @@ def run_command(  # noqa: PLR0913
         verbose=verbose,
         stdout_file=stdout_file,
         timeout=timeout,
+        merge_stderr=merge_stderr,
     )
 
 
