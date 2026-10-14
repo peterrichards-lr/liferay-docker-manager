@@ -955,7 +955,20 @@ class ConfigResolutionStage(PipelineStage):
                 f"'{compatibility.OVERRIDE_KEY}'."
             )
 
-        UI.info(compatibility.describe(claim, tag))
+        # LDM-#2179: announced only when there IS a package to announce it
+        # about. This fired for every resolved tag, so a project created from
+        # scratch was told what "the package records" when it had no package,
+        # no publisher, and nobody who could have made a claim. Lacking any
+        # other reading it lands as "this Liferay version is unsupported" --
+        # one user filed three of seven bug reports against this single line,
+        # and read it as an upgrade regression because it had been added in
+        # the release they upgraded to.
+        #
+        # LDM-#1782's reasoning is untouched: silence must not read as
+        # success, and for a package it still gets a line of its own. The
+        # defect was the audience, not the wording.
+        if compatibility.is_packaged(project_meta):
+            UI.info(compatibility.describe(claim, tag))
 
     @staticmethod
     def _apply_inert_flags(manager, project_meta) -> None:
