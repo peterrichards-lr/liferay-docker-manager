@@ -88,6 +88,30 @@ CLAIM_KEY = "compatibility"
 #: Project-meta key recording that a consumer overrode a declared ceiling.
 OVERRIDE_KEY = "compatibility_override"
 
+#: Project-meta key recording that this project came from a package, and so
+#: has a publisher who could have made a claim (LDM-#2179).
+#:
+#: Written on the `.ldmp` import path only. `describe()` addresses a reader
+#: holding someone else's package; a project created by `init`/`run` has no
+#: package, no publisher and nothing to announce, and the sentence read as a
+#: warning about the Liferay tag to everyone who saw it there.
+PACKAGE_KEY = "from_package"
+
+
+def is_packaged(meta: Any) -> bool:
+    """Whether there is a package to say anything about (LDM-#2179).
+
+    `CLAIM_KEY` is accepted as evidence too, so projects imported before
+    `PACKAGE_KEY` existed keep the announcement they have been getting. A
+    package that declared nothing and was imported before this change loses
+    it -- deliberately: the line's value in that case is low and its cost,
+    measured, was three bug reports from one user.
+    """
+    if not isinstance(meta, dict):
+        return False
+    return bool(meta.get(PACKAGE_KEY)) or CLAIM_KEY in meta
+
+
 #: The flag that performs that override. Named here so the refusal message,
 #: the CLI declaration and the tests cannot drift apart.
 OVERRIDE_FLAG = "--ignore-verified-ceiling"
