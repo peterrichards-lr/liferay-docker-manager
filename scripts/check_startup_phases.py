@@ -100,6 +100,21 @@ def judge(status: dict) -> tuple[int, list[str]]:
             f"nothing on a real log and this is what that looks like.",
         ]
 
+    # LDM-#2181: the span before the readiness wait. The headline figure has
+    # never included it -- asset sync, compose render and container start --
+    # so a report could not reconcile with the wall clock a user experienced.
+    # Asserted only on a `ready` boot: a timeout or a failure may end before
+    # the span is known.
+    pre = status.get("pre_readiness_seconds")
+    if status.get("status") == "ready" and not isinstance(pre, (int, float)):
+        return 1, [
+            *lines,
+            "ERROR: LDM recorded no 'pre_readiness_seconds' for a boot that "
+            "reached ready (LDM-#2181). Without it the published readiness "
+            "figure cannot be reconciled with how long the command actually "
+            "took, which is the gap that made the headline misleading.",
+        ]
+
     recorded = status.get("status")
     if recorded not in TERMINAL_STATUSES:
         return 1, [
