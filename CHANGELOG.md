@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.6-pre.2] - 2026-10-14
+
+### Fixed
+
+- **A project created with `--host-name` now publishes that host name to its client extensions** (LDM-#2154). Liferay derives the DXP config tree from its own `virtualhost` table, and the only thing in LDM that ever wrote that table was the post-restore `UPDATE` in `snapshot/database.py`. So `ldm init`, `ldm run`, a seeded project and an import without a database all published `localhost` however correct `--host-name` was -- and every client extension reads that value, with the portal registering its OAuth redirect URIs against it. A team running this against a custom host measured seventy `No redirectURI in http://localhost/o/oauth2/redirect matching origin https://...` failures in a single run, accounting for ten of their twelve failing specs. LDM now sets the default company's virtual host on every boot, using Liferay's own `company.default.virtual.host.name` and `sync.on.startup` properties, so a project whose database already carries the wrong value -- seeded, imported, or restored from a snapshot taken on another host -- is corrected without a restart or an API call. Note the consequence: LDM owns that value, so one set by hand in the Control Panel is re-applied on the next boot.
+
+- **`ldm restore` no longer exits 0 after a boot that failed and was rolled back** (LDM-#2171). The post-restore boot discarded the pipeline's verdict, and "Restore complete." is printed *before* the boot is attempted, so nothing contradicted it. This was the fourth call site of the defect family fixed for `run`, `up`, `quickstart` and the two `import` paths in pre.1, and the one that was missed. It matters most to callers that cannot see containers: an agent or a script reads exit 0 and goes on to poll a URL that never answers. The inert `is_restore` argument beside it -- passed since 2026-07-15, discarded by the pipeline context, and asserted by a test that could not tell -- is removed.
+
+- **A slow Liferay boot can now be decomposed** (LDM-#2169). Four of the five startup milestones LDM tracked never matched a real 2026.q3.7 log, and the fifth matched the container entrypoint's shell banner 41 seconds before the portal began starting -- so a ten-minute boot reported almost nothing, and the quiet stretch that followed read as a stall after progress. No phase durations were kept at all. Markers are now alternatives per milestone, verified against a captured boot log and kept additive so no Liferay line regresses; the verify phase -- the largest single block of the measured boot, 3m30s with no output whatsoever -- is named; and elapsed time is recorded per milestone, persisted to `startup-status.json` on every boot and printed as a phase breakdown under `--benchmark`.
+
+- **A recurring error is no longer reported as new on every poll** (LDM-#2169). The "N new error(s)" warning deduped against raw log lines, and every Liferay line carries its own timestamp, so no two occurrences of one error were ever equal: a single persistent error was announced as new every 30 seconds for an entire boot. Reported by a user watching a slow start, where it was the most prominent and least trustworthy thing on screen.
+
+- **`--sidecar` no longer forfeits the pre-warmed seed** (LDM-#2164). The search mode is part of a seed's filename and only `-shared-` has ever been published -- 21 assets on the `seeded-states` release, none sidecar -- so `--sidecar` asked for a file that does not exist and was told "No seed found for tag", which reads as "this tag has no seed". The mode-specific name is still tried first, so publishing sidecar seeds later needs no change. Narrower than it first appeared: the seed's mode is derived from `--sidecar` and the tag age rather than from the mode the project resolves to, so a no-flag project on a current tag was already finding the shared seed.
+
 ## [v2.26.6-pre.1] - 2026-10-13
 
 ### Fixed
