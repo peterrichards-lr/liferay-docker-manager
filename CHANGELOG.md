@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.6-pre.5] - 2026-10-14
+
+### Fixed
+
+- **A boot now records how it ended, not just that it started** (LDM-#2187). `"starting"` was the only status ever written to `startup-status.json`, and it was written only from inside the poll loop -- so a boot that finished successfully left a file indistinguishable from one that stalled. Captured on Windows against pre.3, from a portal that had been serving for minutes: `{"status": "starting", "latest_milestone": "Site Initializer Running", "elapsed_seconds": 174}`. That file is not debug output -- `ldm dashboard` and the MCP tools read it to answer "what is this project doing", and an agent has no containers to look at. One writer now serves the poll loop and all five exit paths: `ready` on success, `failed` on container exit and on an OOM kill, `timeout` on exhaustion. It also records `updated_at`, because `elapsed_seconds` alone cannot distinguish a file written a minute ago from one written last week. It never raises -- failing a boot because a diagnostics file could not be written would be the wrong trade.
+
+- **The readiness headline now says what it measures, and the span before it is accounted for** (LDM-#2181). `_wait_for_ready` accepted a `total_start`, the caller passed it correctly, and the function read `self.manager.args.total_start` instead -- which nothing in production ever sets. Measured on Windows against pre.4: `Liferay ready ... (1m 47s)` against a benchmark `Total Elapsed Time: 2m 51s`, with the missing 1m 4s -- asset sync, compose render, container start -- filed under "LDM Processing", which reads as though LDM spent minutes thinking. The headline deliberately stays the readiness wait: the portal is usable at that moment, and changing what the number means would make every previously quoted figure incomparable. It now **says** so -- `1m 47s awaiting readiness` -- and the breakdown opens with `before the readiness wait` so the phases reconcile with the total. `pre_readiness_seconds` is persisted to `startup-status.json` for the dashboard and the MCP tools.
+
+### Changed
+
+- **The verification suite now reads what LDM recorded about the boot, not merely that it booted** (LDM-#2177). LDM-#2169 shipped with unit tests that call the matcher and the renderer against a captured log, and nothing in either verification half asserted that a real boot on a real Liferay produces a usable breakdown -- a Feature Verification Script Gate miss, caught after pre.2 was cut. The new assertion reads `startup-status.json`, which LDM writes on every boot, rather than `--benchmark` output, because an assertion that only runs under a flag is one more thing that silently does not run (LDM-#2135). It fails on three distinct shapes: no milestones at all, fewer than three phases, and a set missing `Tomcat Server Ready` however full it otherwise looks. It earned itself on its first real CI run, catching the sliding-window defect that became LDM-#2169. `scripts/check_startup_phases.py` is shared by the `.sh` and `.ps1` halves, so the two cannot drift.
+
 ## [v2.26.6-pre.4] - 2026-10-14
 
 ### Fixed
