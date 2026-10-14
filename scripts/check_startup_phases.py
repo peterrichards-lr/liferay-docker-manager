@@ -21,8 +21,14 @@ that silently does not run (LDM-#2135).
 Usage:
     check_startup_phases.py <project_dir>
 
+It also asserts the boot's recorded OUTCOME (LDM-#2187). `"starting"` used to
+be the only status ever written, and only from inside the poll loop -- so a
+boot that succeeded left a file indistinguishable from one that stalled. The
+suite always boots, so this costs nothing and catches a state the dashboard and
+the MCP tools would otherwise read as "still starting" forever.
+
 Exit codes:
-    0  LDM recorded a usable set of phases for this boot
+    0  LDM recorded a usable set of phases, and a terminal outcome, for this boot
     1  it did not -- the message names what was recorded
     3  nothing to evaluate (no status file); the CALLER must announce this as
        SKIPPED, never as a pass
@@ -41,6 +47,11 @@ from pathlib import Path
 #: through, on every Liferay line and every search mode. If the recorded set
 #: does not contain it, the markers did not track this boot.
 REQUIRED = "Tomcat Server Ready"
+
+#: Statuses that mean the boot ENDED. `starting` is written while the readiness
+#: loop runs; seeing it after the suite has booted means no exit path recorded
+#: a verdict (LDM-#2187).
+TERMINAL_STATUSES = ("ready", "timeout", "failed")
 
 #: Below this, the breakdown cannot answer "where did the time go" -- which is
 #: the whole point. Two means a single gap and no interior detail. Chosen
@@ -89,10 +100,24 @@ def judge(status: dict) -> tuple[int, list[str]]:
             f"nothing on a real log and this is what that looks like.",
         ]
 
+    recorded = status.get("status")
+    if recorded not in TERMINAL_STATUSES:
+        return 1, [
+            *lines,
+            f"ERROR: the boot finished, and LDM recorded its status as "
+            f"'{recorded}' (LDM-#2187). One of {', '.join(TERMINAL_STATUSES)} "
+            f"is expected once the readiness loop ends. A file left saying "
+            f"'starting' is indistinguishable from a boot that stalled, and "
+            f"'ldm dashboard' and the MCP tools read this file to answer what "
+            f"the project is doing.",
+        ]
+
     return 0, [
         *lines,
         f"ASSERTED: LDM recorded {len(phases)} startup phases including "
-        f"'{REQUIRED}', so a slow boot on this platform can be decomposed.",
+        f"'{REQUIRED}', and the boot's outcome as '{recorded}', so a slow boot "
+        f"on this platform can be decomposed and a finished one can be told "
+        f"from a stalled one.",
     ]
 
 

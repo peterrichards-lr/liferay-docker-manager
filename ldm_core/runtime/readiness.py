@@ -140,6 +140,51 @@ def select_new_errors(error_lines: list[str], seen_errors: set[str]) -> list[str
     return selected
 
 
+def write_startup_status(
+    status_file,
+    status: str,
+    milestone_seconds: dict[str, float],
+    elapsed: float,
+    latest_milestone: str | None = None,
+) -> None:
+    """Record what the boot is doing, or what it ended as (LDM-#2187).
+
+    `"starting"` used to be the only value ever written, and it was written
+    only from inside the poll loop -- so a boot that finished successfully left
+    a file indistinguishable from one that stalled at the site initializer.
+    Measured against v2.26.6-pre.3: a portal serving for minutes, with
+    `"status": "starting"` and `elapsed_seconds` frozen at the last poll.
+
+    That file is not debug output. `ldm dashboard` and the MCP tools read it to
+    answer "what is this project doing", and an agent has no containers to look
+    at -- the file is the answer.
+
+    Never raises: a status file is diagnostics, and failing a boot because it
+    could not be written would be the wrong trade.
+    """
+    if not status_file:
+        return
+    try:
+        import json
+
+        status_file.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "status": status,
+            "latest_milestone": latest_milestone,
+            "milestones_reached": list(milestone_seconds),
+            "milestone_seconds": {
+                title: round(at, 1) for title, at in milestone_seconds.items()
+            },
+            "elapsed_seconds": int(elapsed),
+            # So a reader can tell a file written a minute ago from one written
+            # last week. `elapsed_seconds` alone cannot answer that.
+            "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        }
+        status_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except Exception as e:
+        UI.detail(f"Warning writing startup status: {e}")
+
+
 def log_window_args(last_poll_at: float | None, now: float) -> list[str]:
     """The `docker logs` window to read on this poll (LDM-#2169).
 
@@ -707,6 +752,9 @@ class ReadinessService(BaseHandler):
             f"Waiting for Liferay to become healthy ({container_name})..."
         ) as spinner:
             last_notified_time = 0.0
+            # LDM-#2187: the loop's last reading, kept so the timeout path
+            # can record how long it waited without a second clock read.
+            elapsed = 0.0
             seen_errors: set[str] = set()
             # LDM-#2169: both outlive one poll on purpose. The log window is
             # now incremental, so a marker seen in an earlier window must stay
@@ -855,29 +903,13 @@ class ReadinessService(BaseHandler):
                             latest_milestone = title
 
                         if status_file and latest_milestone:
-                            try:
-                                status_file.parent.mkdir(parents=True, exist_ok=True)
-                                status_data = {
-                                    "status": "starting",
-                                    "latest_milestone": latest_milestone,
-                                    "milestones_reached": list(reached_milestones),
-                                    # LDM-#2169: kept per milestone, so a slow
-                                    # boot can be decomposed after the fact
-                                    # without re-running it.
-                                    "milestone_seconds": {
-                                        title: round(at, 1)
-                                        for title, at in reached_milestones.items()
-                                    },
-                                    "elapsed_seconds": int(elapsed),
-                                }
-                                with open(status_file, "w") as f:
-                                    import json
-
-                                    json.dump(status_data, f, indent=2)
-                            except Exception as e:
-                                UI.detail(
-                                    f"Warning writing milestone status tracking file: {e}"
-                                )
+                            write_startup_status(
+                                status_file,
+                                "starting",
+                                reached_milestones,
+                                elapsed,
+                                latest_milestone,
+                            )
                 except Exception as e:
                     UI.detail(f"Warning checking log milestones: {e}")
 
@@ -1228,6 +1260,12 @@ class ReadinessService(BaseHandler):
                     if should_open_browser:
                         UI.detail(f"Launching browser: {access_url}/web/guest/home")
                         open_browser(f"{access_url}/web/guest/home")
+                    # LDM-#2187: a terminal state, on every exit path. Without
+                    # it the file says "starting" forever and a finished boot
+                    # cannot be told from a stalled one.
+                    write_startup_status(
+                        status_file, "ready", reached_milestones, duration_total
+                    )
                     return True
 
                 # Fail fast if container exited
@@ -1235,6 +1273,9 @@ class ReadinessService(BaseHandler):
                     container_name, target_name=target_name
                 )
                 if container_state == "exited":
+                    write_startup_status(
+                        status_file, "failed", reached_milestones, elapsed
+                    )
                     if self._report_oom_kill(container_name, target_name):
                         return False
                     UI.error(
@@ -1245,7 +1286,9 @@ class ReadinessService(BaseHandler):
                 time.sleep(5)  # Shorter sleep for more responsive status checks
 
         if self._report_oom_kill(container_name, target_name):
+            write_startup_status(status_file, "failed", reached_milestones, elapsed)
             return False
 
+        write_startup_status(status_file, "timeout", reached_milestones, elapsed)
         UI.error("\nTimed out waiting for Liferay to become healthy.")
         return False
