@@ -1,0 +1,16 @@
+# Verbatim excerpt of a real 2026.q3.7 boot on Windows 11 / Docker Desktop
+# (7.6 GB allocated), captured 2026-10-13. The run took 9m57s.
+# Lines are unmodified; only unrelated lines were removed. LDM-#2169.
+2026-10-13T14:01:34.768573367Z [LIFERAY] To SSH into this container, run: "docker exec -it ac3a723c7a63 /bin/bash".
+2026-10-13T14:01:34.868694102Z [LIFERAY] Starting Liferay DXP. To stop the container with CTRL-C, run this container with the option "-it".
+2026-10-13T14:01:35.773338725Z 13-Oct-2026 14:01:35.770 INFO [main] org.apache.catalina.startup.Catalina.load Server initialization in [581] milliseconds
+2026-10-13T14:01:40.956356004Z 2026-10-13 14:01:40.955 INFO  [SystemExecutorServiceUtil-1][DialectDetector:134] Using dialect org.hibernate.dialect.PostgreSQL10Dialect for PostgreSQL 16.2
+2026-10-13T14:01:41.036505472Z 2026-10-13 14:01:41.035 INFO  [SystemExecutorServiceUtil-1][DBInitUtil:140] Create tables and populate with default data
+2026-10-13T14:02:03.005542144Z 2026-10-13 14:02:03.003 INFO  [main][ModuleFrameworkImpl:1360] Starting initial bundles
+2026-10-13T14:02:03.784010645Z 2026-10-13 14:02:03.782 INFO  [main][ModuleFrameworkImpl:1650] Started initial bundles
+2026-10-13T14:02:15.234043955Z Starting Liferay Digital Experience Platform 2026.Q3.7 (October 09, 2026)
+2026-10-13T14:03:18.575587284Z Executing verify com.liferay.search.experiences.internal.verify.SXPServiceVerifyProcess
+2026-10-13T14:03:35.518476690Z Executing verify com.liferay.adaptive.media.document.library.thumbnails.internal.verify.DocumentLibraryThumbnailsConfigurationVerifyProcess
+2026-10-13T14:07:05.574179819Z 13-Oct-2026 14:07:05.573 INFO [main] org.apache.catalina.startup.Catalina.start Server startup in [329825] milliseconds
+2026-10-13T14:07:11.520007959Z 2026-10-13 14:07:11.518 INFO  [http-nio-8080-exec-1][BundleSiteInitializer:539] Initializing com.liferay.site.initializer.welcome for group 20126
+2026-10-13T14:07:22.058740388Z 2026-10-13 14:07:22.057 INFO  [http-nio-8080-exec-1][BundleSiteInitializer:5975] Invoking addFragmentEntries took 0 ms

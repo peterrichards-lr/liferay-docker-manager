@@ -525,7 +525,7 @@ containerised `lfr-tunnel-docker` provider, which needs no host binary.
 
 - **`--background`**: Run dashboard in background.
 - **`--backup-dir`**: Directory path to backup archives.
-- **`--benchmark`**: Display performance benchmark on execution.
+- **`--benchmark`**: Display performance benchmark on execution. On a command that boots Liferay this also prints a startup phase breakdown -- see [Where a single slow boot spent its time](../tuning.md#where-a-single-slow-boot-spent-its-time).
 - **`--build-info`**: Inject build metadata into the source.
 - **`--bump`**: Increment the version logically.
 - **`--clone-only`**: Force cloning the Git repository instead of downloading the LDM package (.ldmp).
@@ -760,4 +760,4 @@ ldm target migrate win-wsl aws-1
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-29* | *Last Reviewed: 2026-09-29*
+*Last Updated: 2026-10-14* | *Last Reviewed: 2026-10-14*
