@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.6-pre.3] - 2026-10-14
+
+### Fixed
+
+- **The `--benchmark` startup phase breakdown now actually prints** (LDM-#2180). It was emitted through `UI.detail`, which only appears under `--info`/`--verbose`, so `ldm run --benchmark` computed the breakdown correctly and showed nobody. Measured against pre.2 on Windows: the Benchmark Report appeared and the phases did not. This is a known failure mode here -- LDM-#1790 fixed exactly this for the pin announcement -- and the tests shipped with LDM-#2169 could not see it because they all call the formatter directly and none touches the call site. The new tests assert the call site.
+
+- **A startup phase can no longer be lost between log polls** (LDM-#2169). The milestone scan read `docker logs --tail 1000` on every poll, which is a sliding window -- and a chatty site initializer emits hundreds of lines in a burst, so `Server startup in` was pushed out of it and never seen. The breakdown silently dropped `Tomcat Server Ready` on exactly the boots it exists to explain: a fast one on a busy project. It now reads the lines *since* the last poll, as a relative duration so a remote node's clock cannot shift the window. The same bug had a latent second half: `ready_by_logs` was recomputed from each window, so once that line scrolled out of the tail the readiness shortcut silently stopped working too. Found by the end-to-end assertion written for this feature, on its first real run.
+
+- **A project with no package is no longer told what "the package records"** (LDM-#2179). The compatibility claim line was announced for every resolved tag, so a project created from scratch was told about a package it did not have, from a publisher who did not exist, and -- lacking any other reading -- it landed as "this Liferay version is unsupported". One user filed three of seven bug reports against this single line and read it as an upgrade regression, because it was added in the release they upgraded to. It now appears only for projects imported from a package, where it is doing the job LDM-#1782 gave it: a package that declares nothing still gets a line of its own, because silence must not read as success. The declared-ceiling refusal is unaffected.
+
+### Changed
+
+- **The quick-start guide now says where the Docker allocation actually lives on Windows** (toward LDM-#2176). The section was headed "Docker Resource Alignment (Windows/WSL2/macOS)" and covered Docker Desktop sliders and Colima, with no mention of `.wslconfig` -- and on the WSL2 backend, which is the Windows default, those sliders are inert. It now names the file, explains that it does not exist until you create it (which is why WSL2's default of 50% of host RAM applies), warns that setting `processors` can only remove cores, and records the measurement behind it: the same machine, tag and cached seed reached `Liferay ready` in **9m 31s** at the 7.6 GB default and **2m 42s** at `memory=11GB`. `ldm doctor` reported a green tick throughout, because the warning threshold stops at 7.5 GB and the WSL2 default presents as 7.6 -- just above the warning and just below the point where the heap stops being a flat 3 GB.
+
 ## [v2.26.6-pre.2] - 2026-10-14
 
 ### Fixed
