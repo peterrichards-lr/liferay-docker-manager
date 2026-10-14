@@ -3,8 +3,18 @@
 The seed's search mode is part of its filename, and only `-shared-` has ever
 been published -- 21 assets on the `seeded-states` release, none sidecar. So
 `--sidecar` asked for a file that does not exist, was told "No seed found for
-tag", and built its schema from scratch: 9m57s and 9m31s against 2m37s for the
-same tag on the same machine when a seed was found.
+tag", and built its schema from scratch.
+
+The reach is narrower than the issue first claimed. `_ensure_seeded` derives
+the seed's mode from `args.sidecar` and the tag age, not from the mode the
+project resolves to, so a no-flag project on a current tag asks for the shared
+name and finds it. Only an explicit `--sidecar`, or a pre-2025 tag, hits the
+name that was never published.
+
+The 9m57s/9m31s figures this docstring first carried are removed rather than
+restated: those runs DID bootstrap from the shared seed, on a Windows host with
+7.6 GB allocated to Docker Desktop, and the 2m37s was a different machine. They
+measured the host, not this defect.
 
 The shared seed works in a sidecar project -- four of them took it and booted
 normally -- and LDM already strips search settings that do not match the

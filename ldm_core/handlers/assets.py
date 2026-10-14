@@ -38,8 +38,21 @@ class AssetService:
         # them sidecar. So `--sidecar` asked for a file that does not exist and
         # was told "No seed found for tag", which reads as "this tag has no
         # seed" and is not what happened. The project then built its schema
-        # from scratch: measured at 9m57s and 9m31s against 2m37s for the same
-        # tag on the same machine when the seed was found.
+        # from scratch.
+        #
+        # Who this reaches is narrower than it first looks, and the original
+        # issue overstated it. `_ensure_seeded` derives the seed's mode from
+        # `args.sidecar` and the tag age (below), NOT from the mode the project
+        # resolves to -- so a no-flag project on a current tag asks for the
+        # shared name and finds it, even though it will run sidecar. Only an
+        # explicit `--sidecar`, or a pre-2025 tag, reaches the missing name.
+        #
+        # No timing is quoted here deliberately. The 9m57s and 9m31s originally
+        # cited were measured on runs that DID bootstrap from the shared seed
+        # (`Seed cached: seeded-2026.q3.7-postgresql-shared-v2.tar.gz`), on a
+        # Windows host with Docker Desktop allocated 7.6 GB; the 2m37s was a
+        # different machine. They measure the host, not this defect, and the
+        # cost of a missing seed on a like-for-like host has not been measured.
         #
         # The shared seed works in a sidecar project -- four of them on that
         # machine took it and booted normally -- and LDM already strips search
