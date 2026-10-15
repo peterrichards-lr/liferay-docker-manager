@@ -1,6 +1,6 @@
-# LDM Documentation Index
+# Liferay Docker Manager documentation
 
-Welcome to the Liferay Docker Manager (LDM) documentation index. Use the categorized guides below to explore installation, configuration, features, and developer tools.
+LDM runs, manages and develops Liferay DXP and Portal environments in Docker from a single CLI: declarative stacks, instant snapshots, and local workspaces linked to running containers.
 
 > 📰 **As featured on the Liferay Blog:** [*Effortless Liferay Orchestration: Advanced Docker Scripts for Local Development*](https://liferay.dev/b/liferay-docker-automation-python-scripts) — Peter Richards, March 2026.
 
@@ -13,17 +13,17 @@ Welcome to the Liferay Docker Manager (LDM) documentation index. Use the categor
 
 ---
 
-## 🧭 I want to…
+## I want to…
 
-| | |
+| I want to… | Go to |
 | :--- | :--- |
-| **…get Liferay running for the first time** | [The First 5 Minutes](tutorials/first_5_minutes.md) |
-| **…install LDM, or fix a broken setup** | [Installation & Setup](tutorials/quick_start.md) |
-| **…do a specific task** — import a workspace, move data, expose a demo | [How-To guides](how-to/index.md) |
-| **…look something up** — a flag, a setting, a port | [Reference](reference/index.md) |
-| **…understand why LDM behaves as it does** | [Explanation](explanation/index.md) |
-| **…fix something that is broken** | [Troubleshooting](TROUBLESHOOTING.md) |
-| **…contribute to LDM itself** | [Playbook](PLAYBOOK.md) · [Testing](TESTING.md) |
+| Get Liferay running for the first time | [The First 5 Minutes](tutorials/first_5_minutes.md) |
+| Install LDM, or fix a broken setup | [Installation & Setup](tutorials/quick_start.md) |
+| Do a specific task — import a workspace, move data, expose a demo | [How-To guides](how-to/index.md) |
+| Look something up — a flag, a setting, a port | [Reference](reference/index.md) |
+| Understand why LDM behaves as it does | [Explanation](explanation/index.md) |
+| Fix something that is broken | [Troubleshooting](TROUBLESHOOTING.md) |
+| Contribute to LDM itself | [Playbook](PLAYBOOK.md) · [Testing](TESTING.md) |
 
 Each section above opens on a page that groups its own contents and says when to
 pick each one. The categorised index further down lists every page in one place,
@@ -32,28 +32,9 @@ suits how you are looking.
 
 ---
 
-## 🧰 Related Liferay tools
+## By subject
 
-LDM is one of three community tools for working with Liferay. All three are
-unofficial, unsupported by Liferay, and maintained by the same author.
-
-| Tool | What it does |
-| :--- | :--- |
-| **[Liferay Docker Manager](https://peterrichards-lr.github.io/liferay-docker-manager/)** | You are here — run, manage and develop Liferay DXP and Portal in Docker. |
-| **[Liferay AI Commerce Accelerator](https://peterrichards-lr.github.io/liferay-ai-commerce-accelerator/)** | An AI-assisted commerce accelerator built on Liferay. |
-| **[lfr-tunnel](https://peterrichards-lr.github.io/lfr-tunnel/)** | Expose a local Liferay stack over a public URL for demos and webhooks. |
-
----
-
-## 🎥 Seeing is Believing (Showcase)
-
-Check out our **[Video Showcase](showcase/README.md)** to see short demonstrations of LDM in action, including Fast Provisioning, Cloud Hydration, and instant Snapshots & Restoration!
-
----
-
-## 📚 Full Index, by Subject
-
-### 1. Getting Started & Core Reference
+### Getting started and core reference
 
 - **[The First 5 Minutes](tutorials/first_5_minutes.md)** — **Start here.** From nothing to a running Liferay, with Client Extensions attached and logs streaming.
 - **[Installation & Setup](tutorials/quick_start.md)** — Step-by-step setup for macOS (Colima/OrbStack), Linux, and Windows (WSL2/Native). Reach for this if LDM is not installed yet, or something is broken.
@@ -63,7 +44,7 @@ Check out our **[Video Showcase](showcase/README.md)** to see short demonstratio
 - **[Compatibility Matrix](reference/compatibility.md)** — Verified host operating systems, Docker engines, and providers.
 - **[Troubleshooting & Diagnostics](TROUBLESHOOTING.md)** — Docker locks, port collisions, volume lag, and diagnostic commands.
 
-### 2. Local Development & Customization
+### Local development and customisation
 
 - **[Fresh Vanilla Start](how-to/vanilla_start.md)** — Launching empty Liferay instances for quick tests.
 - **[Liferay DXP Nightly & Master Builds Guide](how-to/nightly_master_builds.md)** — Orchestrating Liferay DXP nightly builds without compiling source code locally.
@@ -74,7 +55,7 @@ Check out our **[Video Showcase](showcase/README.md)** to see short demonstratio
 - **[Patching Core Portal JARs](how-to/portal_patches.md)** — Applying patched core JARs from `portal-patches/`, with version-drift protection.
 - **[Properties Hierarchy & Precedence](explanation/properties.md)** — Merging cascading properties and using `# !important` rules.
 
-### 3. Environment & Remote Infrastructure Operations
+### Environment and remote infrastructure
 
 - **[Multi-Node Orchestration & Remote Node Setup](how-to/multi_node_orchestration.md)** — Registering compute nodes, remote stack execution, and live workload migration (`ldm target`).
 - **[Portable Packages & Remote Repositories (.ldmp)](how-to/workspace_import.md)** — Exporting, sharing, and importing compiled `.ldmp` packages and GitHub repositories.
@@ -82,7 +63,7 @@ Check out our **[Video Showcase](showcase/README.md)** to see short demonstratio
 - **[Sharing & Tunnels](how-to/sharing_tunnels.md)** — Exposing local projects securely to public subdomains (lfr-tunnel, Ngrok).
 - **[Networking, DNS & Zero-Config SSL](reference/networking.md)** — Traefik proxy configurations, virtual hostnames, and HTTPS cert trust.
 
-### 4. Integration & Developer Resources
+### Integration and developer resources
 
 - **[AI Command Center & LDM MCP Server](how-to/ai_mcp_guide.md)** — Driving AI developer environments via FastMCP tools.
 - **[Advanced CLI Tuning](reference/advanced_cli.md)** — Sudo policy, global defaults, colorless outputs, and custom environment variables.
@@ -95,6 +76,25 @@ Check out our **[Video Showcase](showcase/README.md)** to see short demonstratio
 - **[Third-Party Tools List](reference/third_party_tools.md)** — Internal and external dependencies (mkcert, Traefik, etc.).
 - **[Future Roadmap](ROADMAP.md)** — Planned features and strategic milestones.
 
+---
+
+## Showcase
+
+Short demonstrations of LDM in action -- fast provisioning, cloud hydration, and snapshots and restoration: **[Video Showcase](showcase/README.md)**.
+
+---
+
+---
+
+## Related Liferay tools
+
+Three community tools from the same maintainer. None is an official Liferay product or covered by Liferay Support.
+
+| Tool | What it does |
+| :--- | :--- |
+| Liferay Docker Manager | You are here. Run, manage and develop Liferay DXP and Portal environments in Docker. |
+| [Liferay AI Commerce Accelerator](https://peterrichards-lr.github.io/liferay-ai-commerce-accelerator/) | Generate and manage AI-driven commerce data in Liferay DXP. |
+| [Liferay Tunnel](https://peterrichards-lr.github.io/lfr-tunnel/) | Securely expose a local Liferay environment on a public HTTPS subdomain. |
 <!-- markdownlint-disable MD049 -->
 ---
 *Last Updated: 2026-10-15* | *Last Reviewed: 2026-10-15*
