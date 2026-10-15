@@ -3528,3 +3528,94 @@ class TheSslPortCheckDoesNotDemandAnOccupiedPort(unittest.TestCase):
                     self.assertTrue(got.isdigit(), f"got {got!r}")
         finally:
             sock.close()
+
+
+class TheFailureLogsCoverTheContainerThatActuallyFailed(unittest.TestCase):
+    """LDM-#2216: a round-trip boot failure dumped the SOURCE project's logs.
+
+    On macOS at v2.26.6-pre.8 the `.ldmp` round trip failed with compose
+    reporting `dependency failed to start ... is unhealthy`. The report's
+    debug section carried three log dumps, none of them the container that
+    failed -- the round-trip project was absent from the capture list, so
+    what landed was the source project's log, stamped an hour before the
+    failure it was supposed to explain.
+
+    Three defects, each of which looked like it worked:
+
+    * ``${PROJECT_NAME}-db-1`` never matched. LDM sets an explicit
+      ``container_name`` (``composer.py``: ``f"{project_name}-db"``), so
+      compose does not append its ``-1`` index. Database logs had never been
+      captured on any platform.
+    * ``${ROUNDTRIP_PROJECT}`` was absent entirely.
+    * ``docker ps -a | grep -q "$container"`` matched a SUBSTRING, so
+      ``${PROJECT_NAME}`` was satisfied by ``${PROJECT_NAME}-roundtrip``.
+      The guard passed, ``docker logs`` resolved the exact name only, and
+      nothing looked wrong. The same family as LDM-#2197's anchoring bug.
+
+    And the PowerShell half captured nothing at all, which is why the pre.7
+    Windows round-trip failure had to be reproduced by hand.
+    """
+
+    @staticmethod
+    def _capture_body(path, start_marker):
+        code = path.read_text(encoding="utf-8")
+        at = code.find(start_marker)
+        assert at != -1, (
+            f"{path.name} has no {start_marker!r} -- the failure capture is "
+            "gone entirely, which is the state LDM-#2216 found the "
+            "PowerShell half in"
+        )
+        return code[at : at + 3000]
+
+    def _bodies(self):
+        return (
+            ("bash", self._capture_body(BASH_SCRIPT, "capture_logs_on_failure() {")),
+            (
+                "ps1",
+                self._capture_body(PS1_SCRIPT, "function Write-FailureDebugLogs {"),
+            ),
+        )
+
+    def test_both_halves_capture_the_round_trip_project(self):
+        for half, body in self._bodies():
+            self.assertIn("ROUNDTRIP_PROJECT", body, f"{half}: round trip not captured")
+
+    def test_neither_half_asks_for_a_db_container_that_cannot_exist(self):
+        """`-db-1` is the name compose picks when nothing sets container_name.
+
+        LDM always sets it, so this suffix matched nothing for the whole life
+        of the helper -- a capture list entry that silently captured nothing.
+        """
+        for half, body in self._bodies():
+            self.assertNotIn("-db-1", body, f"{half}: compose never names it that")
+            self.assertIn("-db", body, f"{half}: database not captured at all")
+
+    def test_both_halves_match_a_container_name_exactly(self):
+        """An unanchored match lets a project be satisfied by its own sibling."""
+        bash, ps1 = (b for _, b in self._bodies())
+        self.assertIn("--format '{{.Names}}'", bash)
+        self.assertIn("grep -qxF", bash)
+        self.assertNotIn("docker ps -a | grep", bash)
+        self.assertIn("-ceq", ps1)
+
+    def test_both_halves_record_the_state_not_only_the_log(self):
+        """`unhealthy` and `OOMKilled` appear nowhere in `docker logs`.
+
+        A portal killed for memory, and one still booting happily when compose
+        gave up waiting, produce the same log tail. The state line is the only
+        thing that separates them -- and that separation decides whether a fix
+        belongs in a script or in `ldm_core`.
+        """
+        for half, body in self._bodies():
+            self.assertIn("docker inspect", body, f"{half}: no state captured")
+            self.assertIn("OOMKilled", body, f"{half}: cannot see a memory kill")
+            self.assertIn("Health", body, f"{half}: cannot see the healthcheck")
+
+    def test_the_powershell_half_runs_it_on_the_failure_path(self):
+        """It is not enough to define it. LDM-#2135's family of defect."""
+        code = PS1_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            'if ($status -eq "fail") { Write-FailureDebugLogs }',
+            code,
+            "defined but never called",
+        )
