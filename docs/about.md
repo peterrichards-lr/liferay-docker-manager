@@ -1,8 +1,7 @@
 # About these docs
 
 Liferay Docker Manager is a community project maintained by Peter Richards. It
-is **not an official Liferay product** and is **not covered by Liferay
-Support**.
+is not an official Liferay product and is not covered by Liferay Support.
 
 This documentation is written with the help of AI coding agents, with the
 maintainer accountable for what ships. Each page shows when it was last
