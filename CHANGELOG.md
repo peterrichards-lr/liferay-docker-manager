@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.6-pre.6] - 2026-10-15
+
+### Fixed
+
+- **The verification suite's `.ldmp` round trip can run on Windows** (LDM-#2197). `scripts/verify_e2e_refactor.ps1` built `$ROUNDTRIP_PKG_DIR` from `$LDM_WORKSPACE` 66 lines before `$LDM_WORKSPACE` was assigned, so `Join-Path` bound a null `-Path` and threw. The throw is **non-terminating**, which is what it cost: the suite printed its banner and carried on with the variable left `$null`, and nothing read it again until the round trip some 6300 lines later -- the end of a multi-hour run, after a full Liferay boot. The outcome was settled in the first second and would have surfaced hours in. The finalizer removes that directory by name too, so a run killed part-way leaked it; it is ~1 GB. The round trip had **never run on Windows**: `git show v2.26.5:scripts/verify_e2e_refactor.ps1` contains no `ROUNDTRIP_PKG_DIR` at all, because the section arrived on 2026-10-13 with LDM-#2159, after that day's Windows verification and on the day v2.26.5 was promoted. The bash half had the two lines in the correct order throughout, so the halves disagreed silently and only Windows was broken.
+
+  No shipped behaviour changes -- this is the verification suite, not `ldm_core`, so the binary is identical to `v2.26.6-pre.5`. The release exists so the bundle a verifier downloads carries the fix.
+
+  A guard went in beside it. `EveryPowerShellVariableReadIsAssigned` (LDM-#2135) asks whether a variable is assigned *anywhere* in the file, and `$LDM_WORKSPACE` is -- 66 lines too late -- so it passed, which was confirmed by running that class against the unfixed script rather than assumed. The new scanner asks whether every **top-level** read is preceded by its own first assignment, using brace depth rather than line position as the boundary: a function body is deferred until something calls it, and the first `function` in that file sits at line 26, above the configuration block. A test pins that distinction so the looser positional scan cannot be substituted later. A full top-of-script scan finds line 139 was the only instance.
+
 ## [v2.26.6-pre.5] - 2026-10-14
 
 ### Fixed
