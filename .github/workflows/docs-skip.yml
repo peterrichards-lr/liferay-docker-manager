@@ -24,6 +24,7 @@ on:
       - "mkdocs_hooks/**"
       - "scripts/check_site_verification.py"
       - "scripts/check_social_card.py"
+      - "scripts/check_community_notice.py"
       - ".github/workflows/docs.yml"
 
 jobs:

@@ -49,21 +49,16 @@
  * light scheme rather than forcing one mode on every reader.
  * ------------------------------------------------------------------------ */
 [data-md-color-scheme="default"] {
-  /* LDM-#2215: navy chrome in LIGHT mode too, matching the shared family
-     palette. `.md-header` and `.md-tabs` below were already pinned to navy in
-     both schemes, so the visible header does not move -- what changes is every
-     OTHER element Material fills from `--md-primary-fg-color`: the mobile nav
-     drawer, the search field and the active nav item, which were blue against
-     a navy header and now agree with it.
-
-     `--md-primary-bg-color` is the text that sits ON that fill, so it moves
-     with it. Leaving it white would have been correct by accident here; naming
-     the token keeps the pair honest if the fill ever changes again. */
-  --md-primary-fg-color: var(--lfr-navy-deep);
-  --md-primary-fg-color--light: var(--lfr-navy-raised);
-  --md-primary-fg-color--dark: #0d1020;
-  --md-primary-bg-color: var(--lfr-text-main);
-  --md-primary-bg-color--light: var(--lfr-text-secondary);
+  /* LDM-#2215: Liferay blue chrome in light mode. An earlier pass made this
+     navy in both schemes; the family decision is blue on a white page and navy
+     on a dark one, because a bright blue bar is harsh against a dark page while
+     navy on a white one loses the Liferay identity the palette exists to carry.
+     White on #0b5fff measures 5.13:1 and clears AA. */
+  --md-primary-fg-color: var(--lfr-blue);
+  --md-primary-fg-color--light: #4a86ff;
+  --md-primary-fg-color--dark: var(--lfr-blue-hover);
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: rgba(255, 255, 255, 0.7);
 
   --md-accent-fg-color: var(--lfr-blue-hover);
   --md-accent-fg-color--transparent: rgba(11, 95, 255, 0.1);
@@ -129,15 +124,17 @@
   --md-warning-bg-color: var(--lfr-warning);
 }
 
-/* The header keeps the navy shell on both schemes: it is the one element that
-   reads as brand chrome, and flipping it to white in light mode loses the
-   Liferay identity the palette exists to carry. */
-.md-header {
+/* Dark scheme ONLY. Unscoped, these two rules won every cascade and forced a
+   navy header onto the light page regardless of what `--md-primary-fg-color`
+   said above -- so the light scheme's blue was declared and never seen. In
+   light mode Material now paints the header from the primary token, which is
+   the Liferay blue. */
+[data-md-color-scheme="slate"] .md-header {
   background-color: var(--lfr-navy-deep);
   color: var(--lfr-text-main);
 }
 
-.md-tabs {
+[data-md-color-scheme="slate"] .md-tabs {
   background-color: var(--lfr-navy);
   color: var(--lfr-text-main);
 }

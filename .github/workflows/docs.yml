@@ -16,6 +16,7 @@ on:
       - "mkdocs_hooks/**"
       - "scripts/check_site_verification.py"
       - "scripts/check_social_card.py"
+      - "scripts/check_community_notice.py"
       - ".github/workflows/docs.yml"
   # LDM-#2215: build on PRs too. Before this the docs built only AFTER a merge,
   # so a broken link or a bad template reached `master` and was discovered by
@@ -33,6 +34,7 @@ on:
       - "mkdocs_hooks/**"
       - "scripts/check_site_verification.py"
       - "scripts/check_social_card.py"
+      - "scripts/check_community_notice.py"
       - ".github/workflows/docs.yml"
   workflow_dispatch: # Allow manual trigger
 
@@ -98,6 +100,16 @@ jobs:
         run: |
           python3 scripts/check_social_card.py _site \
             --site-url=https://peterrichards-lr.github.io/liferay-docker-manager/
+
+      # LDM-#2215: the three Liferay tools docs sites must render the
+      # community-project notice identically, and for a while they did not --
+      # this one emitted `admonition note` titled "Note" while the others
+      # emitted `admonition info` titled "Community project". Every one of
+      # those was a valid build of a valid page, which is why it needs a check
+      # rather than a review. Neuter-probed: dropping the hook, the emoji or
+      # the em dash each reverts it, and each is caught.
+      - name: Verify the community-project notice renders as the shared form
+        run: python3 scripts/check_community_notice.py _site
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
