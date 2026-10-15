@@ -49,6 +49,25 @@ on:
       - "ldm_core/workspace/**"
       - "ldm_core/pipelines/**"
       - "scripts/verify_e2e_refactor.sh"
+      # LDM-#2199: the helpers the slice SHELLS OUT TO are part of the slice,
+      # by the same reasoning as the workflow file below. Their absence here
+      # is why the `pre_readiness_seconds` assertion shipped in pre.5 and
+      # pre.6 without ever meeting a Liferay: it lives in a file this filter
+      # did not watch, so PR #2195 ran lint, build and CodeQL and nothing that
+      # boots a portal.
+      - "scripts/check_startup_phases.py"
+      - "scripts/check_published_dxp_domain.py"
+      # The checkers above only READ startup-status.json. This is what writes
+      # it, and it is where both of the defects that reached a pre-release
+      # this cycle lived (LDM-#2188, LDM-#2181). Watching the readers while
+      # leaving the writer unwatched covers the cheaper half.
+      #
+      # On cost, measured rather than guessed -- commits in the last 90 days:
+      # ldm_core/pipelines 82 (already watched), ldm_core/runtime 81,
+      # handlers/composer.py 45, workspace 39. So this is parity with the
+      # busiest path already in the list, not a new cost profile. The per-ref
+      # concurrency group above collapses superseded runs on the same branch.
+      - "ldm_core/runtime/**"
       - ".github/workflows/pr-boundary-e2e.yml"
   workflow_dispatch: # Allow the slice to be run against any branch on demand
 

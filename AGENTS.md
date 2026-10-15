@@ -67,6 +67,18 @@ determine if updates are needed:
   (with timestamp footers) unless the information can be appropriately
   added as a new section to an existing document.
 
+> [!IMPORTANT]
+> **The public About page commits to this rule.** `docs/about.md` tells
+> readers that every page carries a last-updated and last-reviewed date, that
+> neither is ever more than 180 days old, and that the reviews behind those
+> dates are carried out by the agents as part of this rule.
+>
+> Changing or bypassing this rule -- including relaxing `--max-review-days`,
+> or making the timestamp hook rewrite an existing date -- **requires updating
+> `docs/about.md` in the same pull request**. A claim the tooling no longer
+> backs is worse than no claim: it is the exact defect LDM-#986 and LDM-#1833
+> each removed, a date advertising a review nobody performed.
+
 "The project documentation" is not only `docs/*.md`. The man page
 (`ldm_core/resources/ldm.1`) and the CLI help strings are user-facing too, and
 both ship inside the binary. See *Documentation Surfaces* in
