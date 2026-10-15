@@ -100,6 +100,18 @@ ignore = [
     "RUF059",  # Unused unpacked variable
 ]
 
+# LDM-#2215: U+2139 INFORMATION SOURCE is deliberate, not a typo for `i`.
+# It is the opt-in token the GitHub-alerts hook matches on -- the emoji is what
+# distinguishes a notice whose bold lead should become an admonition title from
+# the 29 ordinary alerts that merely start with bold text -- so the hook's
+# comments quote it, and RUF002/RUF003 flag every quotation.
+#
+# Allowed here rather than edited out of the comments, because
+# `mkdocs_hooks/github_alerts.py` is a SHARED file that must stay byte-identical
+# to lfr-tunnel's canonical copy. Rewording our copy to satisfy a linter would
+# guarantee the sync check fails on the character the file exists to explain.
+allowed-confusables = ["\u2139"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["ldm_core"]
 

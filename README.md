@@ -8,6 +8,7 @@ A professional command-line orchestrator for running, managing, and developing *
      blockquotes. Without this comment markdownlint reads the blank line
      between them as a blank line inside one quote, and some renderers
      merge the two into a single block. -->
+> [!NOTE]
 > ℹ️ **Community project** — not an official Liferay product and not covered by Liferay Support. [About this project](https://peterrichards-lr.github.io/liferay-docker-manager/about/)
 
 📚 **[Read the documentation](https://peterrichards-lr.github.io/liferay-docker-manager/)** — tutorials, how-to guides, CLI reference and architecture.
