@@ -21,6 +21,10 @@ that silently does not run (LDM-#2135).
 Usage:
     check_startup_phases.py <project_dir>
 
+The span before the wait (LDM-#2181) is asserted by KEY, not by value --
+`null` is correct after `ldm wait`, which is itself the readiness wait and so
+has no preceding boot to measure (LDM-#2199).
+
 It also asserts the boot's recorded OUTCOME (LDM-#2187). `"starting"` used to
 be the only status ever written, and only from inside the poll loop -- so a
 boot that succeeded left a file indistinguishable from one that stalled. The
@@ -68,6 +72,36 @@ def read_status(project_dir: Path):
         return None
 
 
+def pre_readiness_complaint(status: dict) -> str | None:
+    """What is wrong with the recorded span before the wait, if anything.
+
+    Separated from `judge` so the two failure shapes -- no key, and a key
+    holding something that is not a duration -- do not each cost a return
+    statement there.
+    """
+    if "pre_readiness_seconds" not in status:
+        return (
+            "ERROR: LDM recorded no 'pre_readiness_seconds' key at all for a "
+            "boot that reached ready (LDM-#2181). Every boot writes the key, "
+            "as null when the span is unknown, so its absence means this "
+            "binary predates the fix and the published readiness figure "
+            "cannot be reconciled with how long the command actually took."
+        )
+
+    pre = status["pre_readiness_seconds"]
+    if pre is None:
+        return None
+
+    if isinstance(pre, bool) or not isinstance(pre, (int, float)) or pre < 0:
+        return (
+            f"ERROR: LDM recorded 'pre_readiness_seconds' as {pre!r} "
+            f"(LDM-#2181). It is a duration in seconds, so it must be a "
+            f"non-negative number, or null where no span preceded the wait."
+        )
+
+    return None
+
+
 def judge(status: dict) -> tuple[int, list[str]]:
     """The verdict: 0 when the recorded phases could answer a slow boot."""
     phases = status.get("milestone_seconds")
@@ -100,20 +134,33 @@ def judge(status: dict) -> tuple[int, list[str]]:
             f"nothing on a real log and this is what that looks like.",
         ]
 
-    # LDM-#2181: the span before the readiness wait. The headline figure has
-    # never included it -- asset sync, compose render and container start --
-    # so a report could not reconcile with the wall clock a user experienced.
-    # Asserted only on a `ready` boot: a timeout or a failure may end before
-    # the span is known.
-    pre = status.get("pre_readiness_seconds")
-    if status.get("status") == "ready" and not isinstance(pre, (int, float)):
-        return 1, [
-            *lines,
-            "ERROR: LDM recorded no 'pre_readiness_seconds' for a boot that "
-            "reached ready (LDM-#2181). Without it the published readiness "
-            "figure cannot be reconciled with how long the command actually "
-            "took, which is the gap that made the headline misleading.",
-        ]
+    # LDM-#2181: the span before the readiness wait -- asset sync, compose
+    # render and container start -- which the headline figure has never
+    # included, so a report could not reconcile with the wall clock a user
+    # experienced.
+    #
+    # LDM-#2199: the KEY is asserted, the VALUE is not. `null` is the honest
+    # answer whenever the readiness wait was not preceded by a boot in the
+    # same process: `ldm wait` IS the readiness wait, and the containers were
+    # started by an earlier command, so no span exists here to measure.
+    #
+    # That is the NORMAL case for this suite, not an edge one -- it boots with
+    # `ldm run . --no-wait` and waits separately with `ldm wait`
+    # (verify_e2e_refactor.sh:3501 and :3505). Demanding a number failed the
+    # whole run against a correct boot, which is what shipped in pre.5 and
+    # pre.6 and what run 38698969081 caught.
+    #
+    # Key presence still does the job the assertion exists for.
+    # `write_startup_status` always emits the key, as `null` when the span is
+    # unknown (runtime/readiness.py:185), so a binary predating LDM-#2181 has
+    # no key at all and still fails here.
+    #
+    # A populated value is covered by nothing end to end; that is LDM-#2200,
+    # and it is a gap this check cannot close from the `cmd_wait` path.
+    if status.get("status") == "ready":
+        complaint = pre_readiness_complaint(status)
+        if complaint:
+            return 1, [*lines, complaint]
 
     recorded = status.get("status")
     if recorded not in TERMINAL_STATUSES:
