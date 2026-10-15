@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.6-pre.8] - 2026-10-15
+
+### Fixed
+
+- **A failed `.ldmp` round trip now says why** (LDM-#2208). The round trip piped the output of all three commands it runs -- `package`, `import`, boot -- to `/dev/null` and `Out-Null`, so a failure after a multi-hour verification run reported only *that* it failed. Hit for real on Windows PowerShell 5.1 against `-pre.7`, where `ldm import` refused a package LDM itself had just produced and the only other line printed was a hard-coded hint reading "the integrity check is the first suspect" -- which prints on any non-zero exit, whatever the cause, and in this case pointed away from the likely answer. `ldm package` writes `{sha}  {filename}` and the importer parses it with `.strip()` then `.split()[0]`, so LDM-#2159's fix is present and handles both CRLF and the filename field. All six call sites now capture their output and print it under a labelled banner, into the **results file** as well as the console -- a diagnosis visible only on a terminal that has since been closed is the problem, not a fix for it. The PowerShell side routes it through `ConvertTo-LdmText`, because a `2>&1` merge on 5.1 yields `ErrorRecord` objects that otherwise stringify to `System.Management.Automation.RemoteException` instead of the message.
+
+  Same family as LDM-#2155, LDM-#2171, LDM-#2187 and LDM-#2188: a verdict computed correctly and then not surfaced. Here the verdict *was* the error message.
+
+### Changed
+
+- **The boundary end-to-end slice now watches what it asserts about** (toward LDM-#2199). Its path filter covered `handlers/composer.py`, `workspace/`, `pipelines/` and `verify_e2e_refactor.sh`, but neither the checker scripts the suite shells out to nor `ldm_core/runtime/**` -- which is where `readiness.py` writes `startup-status.json`, the file those checkers read. That gap is why an over-strict assertion shipped in two successive pre-releases without ever meeting a real Liferay: the pull request that introduced it ran lint, build and CodeQL, and nothing that boots a portal. Both are now watched. `ldm_core/runtime` has had 81 commits in 90 days against `pipelines`' 82, so this is parity with a path already in the list rather than a new cost profile.
+
+- **The docs say what LDM is, in the first screen and on their own page** (LDM-#2203, LDM-#2205). A new *About these docs* page records that LDM is a community project, not an official Liferay product and not covered by Liferay Support, that the documentation is written with the help of AI coding agents, and what the dates in every page footer mean -- with each claim mapped to the check that enforces it, and the two that **cannot** be enforced named as disclosures rather than guarantees. The community-project notice also now appears directly below the opening paragraph of the README and the docs home page, because the full disclaimer at the foot of the README was never reached by anyone deciding whether to adopt the tool. Position is asserted, not just presence: a check fails if the notice is missing **or** if it sits below the first section heading.
+
 ## [v2.26.6-pre.7] - 2026-10-15
 
 ### Fixed
