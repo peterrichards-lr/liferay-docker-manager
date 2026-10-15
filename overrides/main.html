@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+<!--
+  LDM-#2210: search-engine ownership verification.
+
+  Material has no config key for this, so the meta tags are injected through
+  the theme's `extrahead` block. `{{ super() }}` is first and is load-bearing:
+  the block is not empty in the base template, and dropping it would discard
+  whatever Material puts there -- today and after any theme upgrade.
+
+  Both tags are guarded by `if`, so an unset key emits nothing rather than an
+  empty `content=""`, which some crawlers treat as a failed claim rather than
+  an absent one.
+
+  `custom_dir` costs an upgrade hazard worth recording: this file now overrides
+  the theme's `main.html`, so a future Material release that changes that
+  template will not reach this site until this file is reconciled. Keeping the
+  override to one block, and calling `super()`, is what keeps that cost small.
+-->
+{% block extrahead %}{{ super() }}
+  {% if config.extra.google_site_verification %}<meta name="google-site-verification" content="{{ config.extra.google_site_verification }}">{% endif %}
+  {% if config.extra.bing_site_verification %}<meta name="msvalidate.01" content="{{ config.extra.bing_site_verification }}">{% endif %}
+{% endblock %}
