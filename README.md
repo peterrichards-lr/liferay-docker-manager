@@ -4,6 +4,12 @@ A professional command-line orchestrator for running, managing, and developing *
 
 > 📰 **As featured on the Liferay Blog:** [*Effortless Liferay Orchestration: Advanced Docker Scripts for Local Development*](https://liferay.dev/b/liferay-docker-automation-python-scripts) — Peter Richards, March 2026.
 
+<!-- MD028: the blog callout above and the notice below are SEPARATE
+     blockquotes. Without this comment markdownlint reads the blank line
+     between them as a blank line inside one quote, and some renderers
+     merge the two into a single block. -->
+> ℹ️ **Community project** — not an official Liferay product and not covered by Liferay Support. [About this project](https://peterrichards-lr.github.io/liferay-docker-manager/about/)
+
 ---
 
 ## 🐳 Why use LDM for Liferay in Docker?
@@ -159,4 +165,4 @@ Liferay Docker Manager is a community project maintained by Peter Richards. It i
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-04* | *Last Reviewed: 2026-08-03*
+*Last Updated: 2026-10-15* | *Last Reviewed: 2026-10-15*
