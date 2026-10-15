@@ -6519,7 +6519,10 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     # this suite's only other .ldmp assertions test for, so refusal testing
     # could not see it.
     Write-Host ">> Verifying a .ldmp round trip: pack, import, boot, serve (LDM-#2131)..."
-    $roundTripPort = $TEST_PORT + 6
+    # [int] is load-bearing -- see the translation notes above. Without it
+    # PowerShell concatenates: "8082" + 6 is "80826", which 'ldm import'
+    # faithfully wrote into the compose file for docker to reject (LDM-#2213).
+    $roundTripPort = [int]$TEST_PORT + 6
     $roundTripOk = $true
     if (Test-Path $ROUNDTRIP_PKG_DIR) { Remove-Item -Recurse -Force $ROUNDTRIP_PKG_DIR -ErrorAction SilentlyContinue }
     New-Item -ItemType Directory -Path $ROUNDTRIP_PKG_DIR -Force | Out-Null
