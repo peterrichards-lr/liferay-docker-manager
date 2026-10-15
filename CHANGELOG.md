@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.6-pre.9] - 2026-10-15
+
+### Fixed
+
+- **The PowerShell round trip asked Docker for port 80826** (LDM-#2213). `$TEST_PORT` is assigned the **string** `"8082"`, and PowerShell types `+` by its *left* operand -- so `$TEST_PORT + 6` concatenated to `"80826"` rather than adding to 8088. `ldm import` was handed that port, wrote it faithfully into the compose file, and `docker compose config` refused it as an invalid hostPort. The failure therefore presented as an LDM defect and was treated as one for two pre-releases; it never was. The bash half was always correct, because `$((TEST_PORT + 6))` is arithmetic by construction, so this could only ever break Windows -- the same shape as LDM-#2197, where the round trip had never run there at all.
+
+  **The trap was already documented in the file it bit.** The translation notes above the shared-database check spell out this exact arithmetic -- "`$TEST_PORT + 3` is "80823", not 8085" -- and three call sites cast correctly because of it. The round trip, added last for LDM-#2131, is the one that did not. A comment informs whoever reads it and says nothing to whoever does not, so the fix adds a static guard: any `$VAR + <number>` where `$VAR` is anywhere assigned a string literal and carries no `[int]` cast now fails the suite. Neuter-probed -- it reports the defect at its line and finds nothing across the 6,600-line script once fixed.
+
+- **A failed round trip dumped the wrong container's logs** (LDM-#2216). `capture_logs_on_failure` named `${PROJECT_NAME}` and `${PROJECT_NAME}-db-1`, and three things were wrong with that list. `-db-1` is the name compose picks when nothing sets `container_name`; LDM always sets it, so the database is `<project>-db` and **its logs had never been captured on any platform**. `${ROUNDTRIP_PROJECT}` was absent entirely, so when the round trip was what failed the dump emitted the *source* project's logs under a correct-looking heading -- in the pre.8 macOS report, stamped an hour before the failure they were meant to explain. And `docker ps -a | grep -q "$container"` matched on a substring, so `${PROJECT_NAME}` was satisfied by `${PROJECT_NAME}-roundtrip`: the guard passed, `docker logs` then resolved the exact name only, and the mismatch was invisible.
+
+  The PowerShell half had **no failure capture at all** -- no `docker logs` on the failure path -- which is why the pre.7 Windows round-trip failure had to be reproduced by hand.
+
+  Both halves now capture the round-trip project and its database, match names exactly, and record the container's **state** alongside its logs: `state`, `exit`, `oom-killed`, health status and failing streak, plus the healthcheck's own output. That last part is the point. A boot that compose aborts with `dependency failed to start ... is unhealthy` leaves nothing in the log saying so -- the portal is mid-boot and perfectly content -- and a portal killed for memory produces the same log tail as one still booting when compose gave up waiting. Those two have opposite answers, and until now the report could not tell them apart.
+
+### Changed
+
+- **The documentation site carries its own mark, not Liferay's** (LDM-#2215). The favicon was the official Liferay logo, on a site whose own footer says this is not an official Liferay product. It is now LDM's own family mark, shared in form with the sibling community tools, and "Liferay" appears in text only. The site also gains Open Graph and Twitter card tags, a repository link and an edit-this-page action, a `--strict` build that fails on a broken internal link rather than publishing it, and documentation builds on pull requests instead of only after a merge.
+
+  `git-revision-date-localized` is deliberately **not** adopted. It renders a date taken from the last commit to touch a file -- advancing on a typo fix -- next to the last-reviewed date `docs/about.md` publicly promises means a review actually happened. Its one claimed benefit here, feeding the sitemap's `lastmod`, does not exist: MkDocs sets `lastmod` from `page.update_date`, which is the *build* date, and the plugin never assigns to it.
+
+### Notes
+
+`ldm_core` is untouched since `v2.26.6-pre.8`, so the binary is byte-identical apart from its version stamp. This release exists so the verification bundle carries both script fixes. The Fedora 44 and Windows WSL2 passes recorded against `-pre.8` therefore stand and need no re-run; Windows PowerShell 5.1, PowerShell 7 and macOS do.
+
 ## [v2.26.6-pre.8] - 2026-10-15
 
 ### Fixed
