@@ -12,16 +12,38 @@ on:
       # live site keeps serving the previous HTML and the edit looks applied
       # while nothing has moved.
       - "overrides/**"
+      - "requirements-dev.txt"
+      - "mkdocs_hooks/**"
       - "scripts/check_site_verification.py"
+      - "scripts/check_social_card.py"
+      - ".github/workflows/docs.yml"
+  # LDM-#2215: build on PRs too. Before this the docs built only AFTER a merge,
+  # so a broken link or a bad template reached `master` and was discovered by
+  # the deploy failing -- on the trunk, with nothing to revert but the merge.
+  # The same paths filter applies, and docs-skip.yml reports the same job name
+  # for PRs that touch none of them, so the check can be made required without
+  # leaving unrelated PRs pending forever.
+  pull_request:
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "README.md"
+      - "overrides/**"
+      - "requirements-dev.txt"
+      - "mkdocs_hooks/**"
+      - "scripts/check_site_verification.py"
+      - "scripts/check_social_card.py"
       - ".github/workflows/docs.yml"
   workflow_dispatch: # Allow manual trigger
 
-# LDM-#1053: only one Pages deployment should ever be in flight at a time --
-# unlike most of this repo's other workflows, don't cancel an in-progress
-# deployment (a half-applied deploy would leave the live site broken).
+# LDM-#1053: only one Pages DEPLOYMENT should ever be in flight -- a
+# half-applied deploy leaves the live site broken, so a master run is never
+# cancelled. LDM-#2215: PR builds publish nothing, so they take a per-ref group
+# instead; without this every PR would queue behind every other one on the
+# single "pages" group, and a force-push would leave its predecessor running.
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'push' && 'pages' || format('docs-pr-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 permissions:
   contents: read
@@ -44,7 +66,10 @@ jobs:
         run: pip install --disable-pip-version-check -r requirements-dev.txt
 
       - name: Build site
-        run: mkdocs build --site-dir _site
+        # LDM-#2215: --strict turns a WARNING into a failed build. MkDocs warns
+        # about broken internal links and missing nav targets and then emits
+        # the page anyway, so without this the site publishes its own 404s.
+        run: mkdocs build --strict --site-dir _site
 
       # LDM-#2210: BEFORE the upload, so a site missing its verification tag
       # is never published. Removing extra.google_site_verification keeps the
@@ -64,6 +89,16 @@ jobs:
       - name: Verify the built site carries its search-console tag
         run: python3 scripts/check_site_verification.py _site
 
+      # LDM-#2215: also BEFORE the upload. `og:image` is an absolute URL built
+      # from site_url + extra.social_image and is resolved by a SCRAPER days
+      # later, so a typo in either leaves the build green and the card blank.
+      # Measured: mistyping social_image by one character still passes
+      # `mkdocs build --strict`.
+      - name: Verify the social card and icons resolve
+        run: |
+          python3 scripts/check_social_card.py _site \
+            --site-url=https://peterrichards-lr.github.io/liferay-docker-manager/
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
@@ -71,6 +106,10 @@ jobs:
 
   deploy:
     needs: build
+    # LDM-#2215: a PR builds and is checked, but never publishes. Without this
+    # guard adding `pull_request:` above would deploy every PR over the live
+    # site.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

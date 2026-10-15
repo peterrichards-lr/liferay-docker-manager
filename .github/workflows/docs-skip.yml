@@ -1,0 +1,35 @@
+# LDM-#2215: the companion to the paths filter in docs.yml.
+#
+# A required check that never RUNS is not a passing check -- GitHub leaves it
+# pending forever and the pull request cannot merge. docs.yml only runs when a
+# documentation path changes, so every other PR would hang on it.
+#
+# This reports the SAME job name on the inverse path set, so the check is
+# always present and always truthful: either the docs really were built, or
+# there were no docs to build.
+#
+# The two path lists must stay complements of each other. Adding a path to
+# docs.yml without removing it here would make both workflows claim the same
+# check on the same PR, and GitHub would take whichever finished last.
+name: Deploy Documentation
+
+on:
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "README.md"
+      - "overrides/**"
+      - "requirements-dev.txt"
+      - "mkdocs_hooks/**"
+      - "scripts/check_site_verification.py"
+      - "scripts/check_social_card.py"
+      - ".github/workflows/docs.yml"
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: No documentation changes in this pull request
+        run: echo "No documentation paths changed -- nothing to build."

@@ -2,15 +2,18 @@
 
 <!--
   LDM-#2210: search-engine ownership verification.
+  LDM-#2215: Open Graph / Twitter cards, SVG favicon and apple-touch-icon,
+  shared with the sibling Liferay tools docs sites.
 
-  Material has no config key for this, so the meta tags are injected through
-  the theme's `extrahead` block. `{{ super() }}` is first and is load-bearing:
-  the block is not empty in the base template, and dropping it would discard
-  whatever Material puts there -- today and after any theme upgrade.
+  Material has no config key for any of this, so the meta tags are injected
+  through the theme's `extrahead` block. `{{ super() }}` is first and is
+  load-bearing: the block is not empty in the base template, and dropping it
+  would discard whatever Material puts there -- today and after any theme
+  upgrade.
 
-  Both tags are guarded by `if`, so an unset key emits nothing rather than an
-  empty `content=""`, which some crawlers treat as a failed claim rather than
-  an absent one.
+  The verification tags are guarded by `if`, so an unset key emits nothing
+  rather than an empty `content=""`, which some crawlers treat as a failed
+  claim rather than an absent one.
 
   `custom_dir` costs an upgrade hazard worth recording: this file now overrides
   the theme's `main.html`, so a future Material release that changes that
@@ -20,4 +23,36 @@
 {% block extrahead %}{{ super() }}
   {% if config.extra.google_site_verification %}<meta name="google-site-verification" content="{{ config.extra.google_site_verification }}">{% endif %}
   {% if config.extra.bing_site_verification %}<meta name="msvalidate.01" content="{{ config.extra.bing_site_verification }}">{% endif %}
+
+  {#-
+    Social cards, so a link shared in Slack, Teams or LinkedIn unfurls as the
+    project rather than a bare URL. The home page uses the site name alone;
+    every other page is prefixed with its own title.
+  -#}
+  {% set og_title = (page.title ~ " - " ~ config.site_name) if page and page.title and not page.is_homepage else config.site_name %}
+  {% set og_desc = (page.meta.description if page and page.meta and page.meta.description else config.site_description) %}
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="{{ config.site_name }}">
+  <meta property="og:title" content="{{ og_title }}">
+  <meta property="og:description" content="{{ og_desc }}">
+  {% if page and page.canonical_url %}<meta property="og:url" content="{{ page.canonical_url }}">{% endif %}
+  {%- if config.extra.social_image %}
+  {#-
+    Absolute by construction: `og:image` is resolved by the SCRAPER, not the
+    browser, so a relative path has no page to resolve against and the card
+    renders blank. `site_url` carries a trailing slash and `social_image` does
+    not lead with one -- mkdocs.yml asserts both.
+  -#}
+  <meta property="og:image" content="{{ config.site_url }}{{ config.extra.social_image }}">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="{{ config.site_url }}{{ config.extra.social_image }}">
+  {%- endif %}
+  <meta name="twitter:title" content="{{ og_title }}">
+  <meta name="twitter:description" content="{{ og_desc }}">
+
+  {#- SVG favicon for browsers that take one; theme.favicon (PNG) is the fallback. -#}
+  {% if config.extra.favicon_svg %}<link rel="icon" type="image/svg+xml" href="{{ config.extra.favicon_svg | url }}">{% endif %}
+  <link rel="apple-touch-icon" href="{{ 'assets/apple-touch-icon.png' | url }}">
 {% endblock %}
