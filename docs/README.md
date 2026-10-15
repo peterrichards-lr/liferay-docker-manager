@@ -4,6 +4,13 @@ Welcome to the Liferay Docker Manager (LDM) documentation index. Use the categor
 
 > 📰 **As featured on the Liferay Blog:** [*Effortless Liferay Orchestration: Advanced Docker Scripts for Local Development*](https://liferay.dev/b/liferay-docker-automation-python-scripts) — Peter Richards, March 2026.
 
+<!-- MD028: the blog callout above and the notice below are SEPARATE
+     blockquotes. Without this comment markdownlint reads the blank line
+     between them as a blank line inside one quote, and some renderers
+     merge the two into a single block. -->
+> [!NOTE]
+> ℹ️ **Community project** — not an official Liferay product and not covered by Liferay Support. [About this project](about.md)
+
 ---
 
 ## 🧭 I want to…
@@ -77,4 +84,4 @@ Check out our **[Video Showcase](showcase/README.md)** to see short demonstratio
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-31*
+*Last Updated: 2026-10-15* | *Last Reviewed: 2026-10-15*
