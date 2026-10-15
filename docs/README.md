@@ -32,6 +32,19 @@ suits how you are looking.
 
 ---
 
+## 🧰 Related Liferay tools
+
+LDM is one of three community tools for working with Liferay. All three are
+unofficial, unsupported by Liferay, and maintained by the same author.
+
+| Tool | What it does |
+| :--- | :--- |
+| **[Liferay Docker Manager](https://peterrichards-lr.github.io/liferay-docker-manager/)** | You are here — run, manage and develop Liferay DXP and Portal in Docker. |
+| **[Liferay AI Commerce Accelerator](https://peterrichards-lr.github.io/liferay-ai-commerce-accelerator/)** | An AI-assisted commerce accelerator built on Liferay. |
+| **[lfr-tunnel](https://peterrichards-lr.github.io/lfr-tunnel/)** | Expose a local Liferay stack over a public URL for demos and webhooks. |
+
+---
+
 ## 🎥 Seeing is Believing (Showcase)
 
 Check out our **[Video Showcase](showcase/README.md)** to see short demonstrations of LDM in action, including Fast Provisioning, Cloud Hydration, and instant Snapshots & Restoration!
