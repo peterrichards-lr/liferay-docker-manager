@@ -3661,8 +3661,18 @@ class TheFailureLogsCoverTheContainerThatActuallyFailed(unittest.TestCase):
         return code[at : at + 3000]
 
     def _bodies(self):
+        """The per-container MECHANICS, wherever they live.
+
+        LDM-#2221 moved them into a helper that takes names, because the
+        finalizer cannot capture a project the round trip has already deleted.
+        The assertions below are about HOW a container is inspected, not about
+        which ones -- that is TheRoundTripIsCapturedBeforeItIsDestroyed.
+        """
         return (
-            ("bash", self._capture_body(BASH_SCRIPT, "capture_logs_on_failure() {")),
+            (
+                "bash",
+                self._capture_body(BASH_SCRIPT, "capture_container_diagnostics() {"),
+            ),
             (
                 "ps1",
                 self._capture_body(PS1_SCRIPT, "function Write-FailureDebugLogs {"),
@@ -3670,8 +3680,14 @@ class TheFailureLogsCoverTheContainerThatActuallyFailed(unittest.TestCase):
         )
 
     def test_both_halves_capture_the_round_trip_project(self):
-        for half, body in self._bodies():
-            self.assertIn("ROUNDTRIP_PROJECT", body, f"{half}: round trip not captured")
+        """Captured at the point of failure now, not from the finalizer."""
+        for half, path in (("bash", BASH_SCRIPT), ("ps1", PS1_SCRIPT)):
+            text = path.read_text(encoding="utf-8")
+            at = text.find("ROUND TRIP CONTAINER STATE")
+            self.assertNotEqual(-1, at, f"{half}: round trip not captured at all")
+            self.assertIn(
+                "ROUNDTRIP_PROJECT", text[at : at + 700], f"{half}: not by name"
+            )
 
     def test_neither_half_asks_for_a_db_container_that_cannot_exist(self):
         """`-db-1` is the name compose picks when nothing sets container_name.
@@ -3711,4 +3727,88 @@ class TheFailureLogsCoverTheContainerThatActuallyFailed(unittest.TestCase):
             'if ($status -eq "fail") { Write-FailureDebugLogs }',
             code,
             "defined but never called",
+        )
+
+
+class TheRoundTripIsCapturedBeforeItIsDestroyed(unittest.TestCase):
+    """LDM-#2221: LDM-#2216 named the round-trip containers and never saw one.
+
+    That fix added `${ROUNDTRIP_PROJECT}` to the failure-log capture, and the
+    capture runs from the FINALIZER -- at the end of the script. The round trip
+    removes its own project six lines after reporting the failure, so by then
+    there is nothing to inspect. Three reports on three platforms carried the
+    `--- FAILURE DEBUG LOGS ---` heading with no round-trip container under it,
+    which is indistinguishable from the project never having been created.
+
+    The cost was a whole pre-release. `v2.26.6-pre.9` existed largely to answer
+    one question -- was the macOS round-trip failure a host out of memory or an
+    `ldm_core` defect -- and it came back unable to answer it, because
+    `oom-killed` lives on a container that had already been deleted.
+
+    Nothing in LDM-#2216's own tests could see this: they assert that the names
+    appear in the capture list, and they do. The defect is **ordering**, which
+    is the same shape as LDM-#2197 -- a value read before it was assigned,
+    passing every test that asked whether it was assigned at all.
+    """
+
+    @staticmethod
+    def _positions(text, *markers):
+        return [text.find(m) for m in markers]
+
+    def test_bash_captures_the_round_trip_before_removing_it(self):
+        text = BASH_SCRIPT.read_text(encoding="utf-8")
+        capture, cleanup = self._positions(
+            text,
+            "--- ROUND TRIP CONTAINER STATE (captured before cleanup) ---",
+            "# Removed whether or not it passed: ~1 GB per run",
+        )
+        self.assertNotEqual(-1, capture, "the round trip captures no state at all")
+        self.assertNotEqual(
+            -1, cleanup, "the round-trip cleanup moved; re-anchor this test"
+        )
+        self.assertLess(
+            capture,
+            cleanup,
+            "the round trip is removed before its state is captured, so the "
+            "report explains nothing -- exactly the LDM-#2216 defect",
+        )
+
+    def test_powershell_captures_the_round_trip_before_removing_it(self):
+        text = PS1_SCRIPT.read_text(encoding="utf-8")
+        capture, cleanup = self._positions(
+            text,
+            "--- ROUND TRIP CONTAINER STATE (captured before cleanup) ---",
+            "# Removed whether or not it passed: ~1 GB per run",
+        )
+        self.assertNotEqual(-1, capture, "the round trip captures no state at all")
+        self.assertNotEqual(
+            -1, cleanup, "the round-trip cleanup moved; re-anchor this test"
+        )
+        self.assertLess(capture, cleanup, "removed before captured")
+
+    def test_both_halves_capture_the_services_that_gate_the_boot(self):
+        """`derivedsvc`/`syntheticsvc` are what compose was waiting ON.
+
+        The macOS failure is `dependency failed to start ... is unhealthy` --
+        reported against the dependents, not against Liferay. Capturing only
+        the portal would omit the containers the message names.
+        """
+        for half, path in (("bash", BASH_SCRIPT), ("ps1", PS1_SCRIPT)):
+            text = path.read_text(encoding="utf-8")
+            at = text.find("ROUND TRIP CONTAINER STATE")
+            window = text[at : at + 700]
+            for svc in ("-db", "-derivedsvc", "-syntheticsvc"):
+                self.assertIn(svc, window, f"{half}: {svc} not captured")
+
+    def test_the_finalizer_no_longer_claims_the_round_trip(self):
+        """Listing it there is what made the omission look like coverage."""
+        text = BASH_SCRIPT.read_text(encoding="utf-8")
+        at = text.find("capture_logs_on_failure() {")
+        self.assertNotEqual(-1, at)
+        body = text[at : at + 600]
+        self.assertNotIn(
+            "${ROUNDTRIP_PROJECT}",
+            body,
+            "the finalizer still lists the round trip, which cannot exist by "
+            "the time it runs -- a capture list that silently matches nothing",
         )

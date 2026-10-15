@@ -392,11 +392,17 @@ get_hash() {
 # failing streak are what distinguish a host that ran out of memory from a
 # genuine boot failure, and that distinction decides whether a fix belongs in
 # a script or in `ldm_core`.
-capture_logs_on_failure() {
-    echo -e "\n--- FAILURE DEBUG LOGS ---" >> "$RESULTS_FILE_TMP"
-    for container in liferay-proxy-global liferay-search-global \
-        "${PROJECT_NAME}" "${PROJECT_NAME}-db" \
-        "${ROUNDTRIP_PROJECT}" "${ROUNDTRIP_PROJECT}-db"; do
+# LDM-#2221: the capture takes its container NAMES as arguments, because the
+# finalizer is too late for some of them.
+#
+# LDM-#2216 added the round-trip project to the finalizer's list and it never
+# once matched: the round trip removes its own project six lines after
+# reporting the failure, and the finalizer runs at the end of the script. Three
+# reports on three platforms carried the heading and no round-trip container,
+# which reads exactly like "it was never created". A caller that is about to
+# destroy something captures it itself, first.
+capture_container_diagnostics() {
+    for container in "$@"; do
         # -qxF: exact whole line, literal. An unanchored match is what let a
         # project name be satisfied by its own round-trip sibling.
         if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qxF "$container"; then
@@ -416,6 +422,15 @@ capture_logs_on_failure() {
             } >> "$RESULTS_FILE_TMP"
         fi
     done
+}
+
+capture_logs_on_failure() {
+    echo -e "\n--- FAILURE DEBUG LOGS ---" >> "$RESULTS_FILE_TMP"
+    # The round-trip project is deliberately NOT here: by the time this runs it
+    # has been removed, and the round trip captures it at the point of failure.
+    capture_container_diagnostics \
+        liferay-proxy-global liferay-search-global \
+        "${PROJECT_NAME}" "${PROJECT_NAME}-db"
 }
 
 # LDM-#1255: Liferay writes its OSGi runtime state (state, modules, configs,
@@ -6648,6 +6663,21 @@ if [ "$ROUNDTRIP_OK" = true ]; then
             ROUNDTRIP_OK=false
             ;;
     esac
+fi
+
+# LDM-#2221: captured BEFORE the removal below, which is the whole point.
+# A failed boot, or a portal that never answers, leaves containers whose STATE
+# says why -- oom-killed, the health status, the failing streak and the
+# healthcheck's own output. None of that is in `docker logs`, and none of it
+# survives `ldm rm`.
+if [ "$ROUNDTRIP_OK" != true ]; then
+    {
+        echo ""
+        echo "--- ROUND TRIP CONTAINER STATE (captured before cleanup) ---"
+    } >> "$RESULTS_FILE_TMP"
+    capture_container_diagnostics \
+        "${ROUNDTRIP_PROJECT}" "${ROUNDTRIP_PROJECT}-db" \
+        "${ROUNDTRIP_PROJECT}-derivedsvc" "${ROUNDTRIP_PROJECT}-syntheticsvc"
 fi
 
 # Removed whether or not it passed: ~1 GB per run, across six environments.

@@ -426,6 +426,15 @@ function Write-TrapNote {
 }
 
 function Write-FailureDebugLogs {
+    # LDM-#2221: names are a PARAMETER, because the finalizer is too late for
+    # some of them. LDM-#2216 put the round-trip project in the default list and
+    # it never once matched -- the round trip removes its own project six lines
+    # after reporting the failure, while this runs at the very end. Three
+    # reports on three platforms carried the heading and no round-trip
+    # container, which reads exactly like "it was never created". A caller about
+    # to destroy something captures it itself, first.
+    param([string[]]$Containers)
+
     # LDM-#2216: the bash half has captured container logs on failure since
     # LDM-#1255. This half captured NOTHING -- so a Windows failure arrived
     # with the verdict and no evidence, which is why the pre.7 round-trip
@@ -437,7 +446,7 @@ function Write-FailureDebugLogs {
     # failing streak are what separate a host out of memory from a real boot
     # failure, and that decides whether the fix belongs in a script or in
     # ldm_core.
-    Write-TrapNote "`n--- FAILURE DEBUG LOGS ---"
+    if (-not $Containers) { Write-TrapNote "`n--- FAILURE DEBUG LOGS ---" }
 
     $names = @()
     try {
@@ -449,10 +458,15 @@ function Write-FailureDebugLogs {
         return
     }
 
-    foreach ($container in @(
-        "liferay-proxy-global", "liferay-search-global",
-        $PROJECT_NAME, "$PROJECT_NAME-db",
-        $ROUNDTRIP_PROJECT, "$ROUNDTRIP_PROJECT-db")) {
+    if (-not $Containers) {
+        # Default: the long-lived containers. The round-trip project is
+        # deliberately absent -- it is gone by the time this runs.
+        $Containers = @(
+            "liferay-proxy-global", "liferay-search-global",
+            $PROJECT_NAME, "$PROJECT_NAME-db")
+    }
+
+    foreach ($container in $Containers) {
 
         if ([string]::IsNullOrWhiteSpace($container)) { continue }
         # -ceq, and an EXACT match. A substring test would let $PROJECT_NAME be
@@ -6673,6 +6687,18 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
             Write-Verdict "[ERROR] The imported project booted but does not serve -- HTTP '$roundTripStatus' on port $roundTripPort (LDM-#2131)."
             $roundTripOk = $false
         }
+    }
+
+    # LDM-#2221: captured BEFORE the removal below, which is the whole point.
+    # A failed boot, or a portal that never answers, leaves containers whose
+    # STATE says why -- oom-killed, the health status, the failing streak and
+    # the healthcheck's own output. None of that is in `docker logs`, and none
+    # of it survives `ldm rm`.
+    if (-not $roundTripOk) {
+        Write-TrapNote "`n--- ROUND TRIP CONTAINER STATE (captured before cleanup) ---"
+        Write-FailureDebugLogs -Containers @(
+            $ROUNDTRIP_PROJECT, "$ROUNDTRIP_PROJECT-db",
+            "$ROUNDTRIP_PROJECT-derivedsvc", "$ROUNDTRIP_PROJECT-syntheticsvc")
     }
 
     # Removed whether or not it passed: ~1 GB per run, across six environments.
