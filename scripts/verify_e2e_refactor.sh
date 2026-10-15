@@ -367,12 +367,53 @@ get_hash() {
     else date +%s | cut -c5-12; fi
 }
 
+# LDM-#2216: capture the container that actually failed, and say what state
+# it was in.
+#
+# Three defects this replaces, each of which looked like it worked:
+#
+#   * `${PROJECT_NAME}-db-1` never matched anything. LDM sets an explicit
+#     `container_name`, so the database is `<project>-db` -- compose only
+#     appends `-1` when it is left to name the container itself. Database
+#     logs had therefore never been captured, on any platform, since this
+#     helper was written.
+#   * `${ROUNDTRIP_PROJECT}` was absent. When the round trip was what failed,
+#     the dump emitted the SOURCE project's logs under a correct-looking
+#     heading -- in the pre.8 macOS report, stamped an hour before the
+#     failure they were supposed to explain.
+#   * `docker ps -a | grep -q "$container"` matched on a SUBSTRING, so
+#     `${PROJECT_NAME}` was satisfied by `${PROJECT_NAME}-roundtrip`. The
+#     guard passed, `docker logs` then resolved the exact name only, and the
+#     mismatch was invisible.
+#
+# The state line matters as much as the logs. A boot that compose aborts with
+# "dependency failed to start ... is unhealthy" leaves nothing in the logs
+# saying so -- the portal is mid-boot and perfectly happy. `OOMKilled` and the
+# failing streak are what distinguish a host that ran out of memory from a
+# genuine boot failure, and that distinction decides whether a fix belongs in
+# a script or in `ldm_core`.
 capture_logs_on_failure() {
     echo -e "\n--- FAILURE DEBUG LOGS ---" >> "$RESULTS_FILE_TMP"
-    for container in liferay-proxy-global liferay-search-global "${PROJECT_NAME}" "${PROJECT_NAME}-db-1"; do
-        if docker ps -a | grep -q "$container"; then
-            echo ">> Logs for $container:" >> "$RESULTS_FILE_TMP"
-            docker logs "$container" --tail 50 >> "$RESULTS_FILE_TMP" 2>&1
+    for container in liferay-proxy-global liferay-search-global \
+        "${PROJECT_NAME}" "${PROJECT_NAME}-db" \
+        "${ROUNDTRIP_PROJECT}" "${ROUNDTRIP_PROJECT}-db"; do
+        # -qxF: exact whole line, literal. An unanchored match is what let a
+        # project name be satisfied by its own round-trip sibling.
+        if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qxF "$container"; then
+            # One redirect for the group (SC2129), not four for the parts.
+            {
+                echo ">> Logs for $container:"
+                docker inspect --format \
+                    '   state={{.State.Status}} exit={{.State.ExitCode}} oom-killed={{.State.OOMKilled}} health={{if .State.Health}}{{.State.Health.Status}} failing-streak={{.State.Health.FailingStreak}}{{else}}none{{end}}' \
+                    "$container" 2>&1
+                # The healthcheck's own output, which `docker logs` never
+                # carries. Docker retains the last five probes; truncated so a
+                # chatty probe cannot bury the logs underneath it.
+                docker inspect --format \
+                    '{{if .State.Health}}{{range .State.Health.Log}}   probe exit={{.ExitCode}}: {{.Output}}
+{{end}}{{end}}' "$container" 2>/dev/null | head -c 2000
+                docker logs "$container" --tail 50 2>&1
+            } >> "$RESULTS_FILE_TMP"
         fi
     done
 }
