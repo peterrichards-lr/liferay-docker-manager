@@ -3269,6 +3269,151 @@ class EveryPowerShellVariableReadIsAssigned(unittest.TestCase):
         )
 
 
+# LDM-#2197: the automatic variables PowerShell supplies. Reading one before
+# any assignment in this file is correct, not a defect.
+_PS_AUTOMATIC = frozenset(
+    [
+        "true",
+        "false",
+        "null",
+        "args",
+        "input",
+        "matches",
+        "error",
+        "this",
+        "switch",
+        "foreach",
+        "psscriptroot",
+        "pscommandpath",
+        "psversiontable",
+        "myinvocation",
+        "lastexitcode",
+        "psboundparameters",
+        "host",
+        "pwd",
+        "home",
+        "pid",
+        "stacktrace",
+        "shellid",
+        "nestedpromptlevel",
+        "executioncontext",
+        "ofs",
+        "iswindows",
+        "ismacos",
+        "islinux",
+        "iscoreclr",
+        "psedition",
+        "psculture",
+        "erroractionpreference",
+        "progresspreference",
+        "warningpreference",
+        "informationpreference",
+        "confirmpreference",
+        "verbosepreference",
+        "debugpreference",
+        "env",
+    ]
+)
+
+_PS_TOP_ASSIGN = re.compile(
+    r"^\s*\$(?:script:|global:|local:|private:)?([A-Za-z_]\w*)\s*=(?!=)"
+)
+_PS_READ = re.compile(r"\$(?:script:|global:|local:|private:)?([A-Za-z_]\w*)")
+
+
+def _ps_use_before_assignment(text):
+    """Every top-level read that happens before its own first assignment.
+
+    Brace depth, not line position, is the boundary. Top-level straight-line
+    code runs in file order, so a read there binds whatever exists at that
+    moment; a function body is deferred until something calls it, by which
+    time the whole top-level block has run. This file interleaves the two --
+    the first `function` is at line 26, well above the configuration block --
+    so a scan keyed on position would report most of the script.
+    """
+    code = _ps_code_for_variable_scan(text)
+    first_assigned, reads, depth = {}, [], 0
+
+    for lineno, line in enumerate(code.split("\n"), 1):
+        if depth == 0:
+            match = _PS_TOP_ASSIGN.match(line)
+            name = match.group(1).lower() if match else None
+            if name and name not in first_assigned:
+                first_assigned[name] = lineno
+            for read in _PS_READ.findall(line[match.end() :] if match else line):
+                reads.append((read.lower(), lineno))
+        depth = max(0, depth + line.count("{") - line.count("}"))
+
+    return [
+        (name, lineno, first_assigned[name])
+        for name, lineno in reads
+        if name not in _PS_AUTOMATIC
+        and name in first_assigned
+        and first_assigned[name] > lineno
+    ]
+
+
+class EveryPowerShellVariableIsAssignedBeforeItIsRead(unittest.TestCase):
+    """LDM-#2197: `$ROUNDTRIP_PKG_DIR` was built from `$LDM_WORKSPACE` 66
+    lines before `$LDM_WORKSPACE` was assigned.
+
+    `Join-Path` bound a null `-Path` and threw, non-terminating, so the run
+    carried on with `$ROUNDTRIP_PKG_DIR` left `$null` until the `.ldmp` round
+    trip tried to create it some 6300 lines later -- at the end of a
+    multi-hour suite, after a full Liferay boot. The bash half had the two
+    lines in the correct order, so only Windows was broken, and the round trip
+    had never once run there.
+
+    **Why the LDM-#2135 scanner beside this one could not see it.** That one
+    asks whether a variable is assigned ANYWHERE in the file.
+    `$LDM_WORKSPACE` is assigned, 66 lines too late, so it passes. The weaker
+    question is the whole difference: `$PROJECT_NAME` was never assigned and
+    was caught; `$LDM_WORKSPACE` was assigned out of order and was not. Same
+    family, same `$null`, same silent plausible-but-wrong behaviour.
+    """
+
+    def test_no_top_level_read_precedes_its_assignment(self):
+        findings = _ps_use_before_assignment(PS1_SCRIPT.read_text(encoding="utf-8"))
+        self.assertEqual(
+            [],
+            findings,
+            "read at top level before being assigned (PowerShell binds $null "
+            "rather than erroring): "
+            + "; ".join(
+                f"${name} read at line {use}, first assigned at line {assigned}"
+                for name, use, assigned in findings
+            ),
+        )
+
+    def test_the_scanner_sees_the_defect_that_prompted_it(self):
+        """The real ordering, reduced -- not a synthetic stand-in."""
+        sample = (
+            '$ROUNDTRIP_PKG_DIR = Join-Path $LDM_WORKSPACE ".ldm-roundtrip-pkg"\n'
+            '$LDM_WORKSPACE = Join-Path $ORIGINAL_PWD "e2e-work-dir"\n'
+        )
+        self.assertEqual([("ldm_workspace", 1, 2)], _ps_use_before_assignment(sample))
+
+    def test_a_function_body_may_read_what_is_assigned_below_it(self):
+        """Deferred execution is the reason depth is the boundary.
+
+        `Get-VersionBannerLines` sits at line 26 and legitimately reads
+        configuration assigned a hundred lines further down, because nothing
+        calls it until the whole top-level block has run. A scan keyed on line
+        position would reject the file as it stands.
+        """
+        sample = (
+            "function Show-It {\n"
+            '    Write-Host "$LATER"\n'
+            "}\n"
+            '$LATER = "assigned after the function that reads it"\n'
+        )
+        self.assertEqual([], _ps_use_before_assignment(sample))
+
+    def test_an_automatic_variable_is_not_a_finding(self):
+        sample = '$RESULTS = Join-Path $PSScriptRoot "out.txt"\n'
+        self.assertEqual([], _ps_use_before_assignment(sample))
+
+
 def _occupied_port():
     """A port held open for the lifetime of the caller's `with` block."""
     s = socket.socket()
