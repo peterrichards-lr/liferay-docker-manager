@@ -3078,6 +3078,12 @@ def _ps_code_for_variable_scan(text):
                     continue
                 quote = None
                 out.append(ch)
+            elif ch == "\n":
+                # Keep the line structure. The BODY is still dropped, so this
+                # changes no finding -- it only means a reported line number
+                # is the one a developer can open, rather than one shifted up
+                # by every newline inside the embedded bash payloads.
+                out.append(ch)
             i += 1
             continue
         if quote == '"':
@@ -3414,6 +3420,93 @@ class EveryPowerShellVariableIsAssignedBeforeItIsRead(unittest.TestCase):
         self.assertEqual([], _ps_use_before_assignment(sample))
 
 
+_PS_STRING_ASSIGN = re.compile(r"^[^\S\n]*\$([A-Za-z_]\w*)\s*=\s*[\"']", re.M)
+_PS_NUMERIC_ADD = re.compile(
+    r"(\[(?:int|long|uint\d*|int\d+|byte|double|decimal)\]\s*)?"
+    r"\$([A-Za-z_]\w*)\s*\+\s*\d"
+)
+
+
+def _ps_string_arithmetic(text):
+    """Every `$VAR + <number>` where $VAR is somewhere assigned a string.
+
+    PowerShell types `+` by its LEFT operand, so a string on the left
+    concatenates and a number on the left adds. There is no warning and no
+    error -- the result is a plausible-looking value of the wrong kind, which
+    is why this has to be caught by reading the script rather than by running
+    it. An explicit cast on the left is the fix, and its absence is the only
+    thing this looks for.
+    """
+    code = _ps_code_for_variable_scan(text)
+    stringy = {m.group(1).lower() for m in _PS_STRING_ASSIGN.finditer(code)}
+
+    return [
+        (m.group(2).lower(), code.count("\n", 0, m.start()) + 1)
+        for m in _PS_NUMERIC_ADD.finditer(code)
+        if m.group(1) is None and m.group(2).lower() in stringy
+    ]
+
+
+class NoStringIsUsedAsTheLeftOperandOfNumericAddition(unittest.TestCase):
+    """LDM-#2213: `$TEST_PORT + 6` produced the port "80826".
+
+    `$TEST_PORT` is assigned `"8082"` -- a string -- so the round trip asked
+    `ldm import` for port 80826. LDM did exactly as it was told and wrote it
+    into the compose file, where `docker compose config` refused it as an
+    invalid hostPort. The failure therefore surfaced as an LDM defect, two
+    pre-releases into a cycle, at the end of a multi-hour run.
+
+    **The trap was already documented in the file it bit.** The translation
+    notes above the shared-database check spell out this precise arithmetic
+    -- "`$TEST_PORT + 3` is "80823", not 8085" -- and three call sites cast
+    correctly because of it. The round trip, added last for LDM-#2131, is the
+    one that did not. A comment is not a guard: it informs whoever reads it
+    and says nothing to whoever does not.
+
+    The bash half has no equivalent exposure. `$((TEST_PORT + 6))` is
+    arithmetic by construction, so this is a parity defect of the kind that
+    can only ever break Windows -- the same family as LDM-#2197, where the
+    round trip had never once run there.
+    """
+
+    def test_no_string_variable_is_added_to_a_number(self):
+        findings = _ps_string_arithmetic(PS1_SCRIPT.read_text(encoding="utf-8"))
+        self.assertEqual(
+            [],
+            findings,
+            "PowerShell concatenates when the left operand is a string; cast "
+            "with [int] to add: "
+            + "; ".join(f"${name} at line {line}" for name, line in findings),
+        )
+
+    def test_the_scanner_sees_the_defect_that_prompted_it(self):
+        """The real two lines, reduced -- not a synthetic stand-in."""
+        sample = '$TEST_PORT = "8082"\n$roundTripPort = $TEST_PORT + 6\n'
+        self.assertEqual([("test_port", 2)], _ps_string_arithmetic(sample))
+
+    def test_an_explicit_cast_is_accepted(self):
+        sample = '$TEST_PORT = "8082"\n$naPort = [int]$TEST_PORT + 5\n'
+        self.assertEqual([], _ps_string_arithmetic(sample))
+
+    def test_a_numeric_variable_is_not_a_finding(self):
+        sample = "$COUNT = 0\n$next = $COUNT + 1\n"
+        self.assertEqual([], _ps_string_arithmetic(sample))
+
+    def test_deliberate_concatenation_is_not_a_finding(self):
+        """Building a string with `+` is legitimate and common in this script.
+
+        Only a NUMERIC right operand is a finding, because only then was
+        addition the evident intent.
+        """
+        sample = '$PROJ = "demo"\n$label = $PROJ + "-suffix"\n'
+        self.assertEqual([], _ps_string_arithmetic(sample))
+
+    def test_the_comment_that_documents_the_trap_is_not_itself_a_finding(self):
+        """The scanner reads code, not the prose warning about the code."""
+        sample = '$TEST_PORT = "8082"\n# `$TEST_PORT + 3` is "80823", not 8085\n'
+        self.assertEqual([], _ps_string_arithmetic(sample))
+
+
 def _occupied_port():
     """A port held open for the lifetime of the caller's `with` block."""
     s = socket.socket()
@@ -3528,3 +3621,94 @@ class TheSslPortCheckDoesNotDemandAnOccupiedPort(unittest.TestCase):
                     self.assertTrue(got.isdigit(), f"got {got!r}")
         finally:
             sock.close()
+
+
+class TheFailureLogsCoverTheContainerThatActuallyFailed(unittest.TestCase):
+    """LDM-#2216: a round-trip boot failure dumped the SOURCE project's logs.
+
+    On macOS at v2.26.6-pre.8 the `.ldmp` round trip failed with compose
+    reporting `dependency failed to start ... is unhealthy`. The report's
+    debug section carried three log dumps, none of them the container that
+    failed -- the round-trip project was absent from the capture list, so
+    what landed was the source project's log, stamped an hour before the
+    failure it was supposed to explain.
+
+    Three defects, each of which looked like it worked:
+
+    * ``${PROJECT_NAME}-db-1`` never matched. LDM sets an explicit
+      ``container_name`` (``composer.py``: ``f"{project_name}-db"``), so
+      compose does not append its ``-1`` index. Database logs had never been
+      captured on any platform.
+    * ``${ROUNDTRIP_PROJECT}`` was absent entirely.
+    * ``docker ps -a | grep -q "$container"`` matched a SUBSTRING, so
+      ``${PROJECT_NAME}`` was satisfied by ``${PROJECT_NAME}-roundtrip``.
+      The guard passed, ``docker logs`` resolved the exact name only, and
+      nothing looked wrong. The same family as LDM-#2197's anchoring bug.
+
+    And the PowerShell half captured nothing at all, which is why the pre.7
+    Windows round-trip failure had to be reproduced by hand.
+    """
+
+    @staticmethod
+    def _capture_body(path, start_marker):
+        code = path.read_text(encoding="utf-8")
+        at = code.find(start_marker)
+        assert at != -1, (
+            f"{path.name} has no {start_marker!r} -- the failure capture is "
+            "gone entirely, which is the state LDM-#2216 found the "
+            "PowerShell half in"
+        )
+        return code[at : at + 3000]
+
+    def _bodies(self):
+        return (
+            ("bash", self._capture_body(BASH_SCRIPT, "capture_logs_on_failure() {")),
+            (
+                "ps1",
+                self._capture_body(PS1_SCRIPT, "function Write-FailureDebugLogs {"),
+            ),
+        )
+
+    def test_both_halves_capture_the_round_trip_project(self):
+        for half, body in self._bodies():
+            self.assertIn("ROUNDTRIP_PROJECT", body, f"{half}: round trip not captured")
+
+    def test_neither_half_asks_for_a_db_container_that_cannot_exist(self):
+        """`-db-1` is the name compose picks when nothing sets container_name.
+
+        LDM always sets it, so this suffix matched nothing for the whole life
+        of the helper -- a capture list entry that silently captured nothing.
+        """
+        for half, body in self._bodies():
+            self.assertNotIn("-db-1", body, f"{half}: compose never names it that")
+            self.assertIn("-db", body, f"{half}: database not captured at all")
+
+    def test_both_halves_match_a_container_name_exactly(self):
+        """An unanchored match lets a project be satisfied by its own sibling."""
+        bash, ps1 = (b for _, b in self._bodies())
+        self.assertIn("--format '{{.Names}}'", bash)
+        self.assertIn("grep -qxF", bash)
+        self.assertNotIn("docker ps -a | grep", bash)
+        self.assertIn("-ceq", ps1)
+
+    def test_both_halves_record_the_state_not_only_the_log(self):
+        """`unhealthy` and `OOMKilled` appear nowhere in `docker logs`.
+
+        A portal killed for memory, and one still booting happily when compose
+        gave up waiting, produce the same log tail. The state line is the only
+        thing that separates them -- and that separation decides whether a fix
+        belongs in a script or in `ldm_core`.
+        """
+        for half, body in self._bodies():
+            self.assertIn("docker inspect", body, f"{half}: no state captured")
+            self.assertIn("OOMKilled", body, f"{half}: cannot see a memory kill")
+            self.assertIn("Health", body, f"{half}: cannot see the healthcheck")
+
+    def test_the_powershell_half_runs_it_on_the_failure_path(self):
+        """It is not enough to define it. LDM-#2135's family of defect."""
+        code = PS1_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            'if ($status -eq "fail") { Write-FailureDebugLogs }',
+            code,
+            "defined but never called",
+        )

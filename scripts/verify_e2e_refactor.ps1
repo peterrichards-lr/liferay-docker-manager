@@ -425,6 +425,63 @@ function Write-TrapNote {
     }
 }
 
+function Write-FailureDebugLogs {
+    # LDM-#2216: the bash half has captured container logs on failure since
+    # LDM-#1255. This half captured NOTHING -- so a Windows failure arrived
+    # with the verdict and no evidence, which is why the pre.7 round-trip
+    # failure had to be reproduced by hand.
+    #
+    # The state line carries what the logs cannot. A boot that compose aborts
+    # with "dependency failed to start ... is unhealthy" leaves no trace in
+    # the log: the portal is mid-boot and perfectly content. OOMKilled and the
+    # failing streak are what separate a host out of memory from a real boot
+    # failure, and that decides whether the fix belongs in a script or in
+    # ldm_core.
+    Write-TrapNote "`n--- FAILURE DEBUG LOGS ---"
+
+    $names = @()
+    try {
+        $names = @(& docker ps -a --format "{{.Names}}" 2>$null)
+    } catch {
+        # Docker itself being gone is a legitimate reason a run failed; say so
+        # rather than throwing inside the finalizer and losing the report.
+        Write-TrapNote "   (could not list containers -- is Docker running?)"
+        return
+    }
+
+    foreach ($container in @(
+        "liferay-proxy-global", "liferay-search-global",
+        $PROJECT_NAME, "$PROJECT_NAME-db",
+        $ROUNDTRIP_PROJECT, "$ROUNDTRIP_PROJECT-db")) {
+
+        if ([string]::IsNullOrWhiteSpace($container)) { continue }
+        # -ceq, and an EXACT match. A substring test would let $PROJECT_NAME be
+        # satisfied by "$PROJECT_NAME-roundtrip", which is the defect this
+        # issue removed from the bash half.
+        if (-not ($names | Where-Object { $_ -ceq $container })) { continue }
+
+        Write-TrapNote ">> Logs for ${container}:"
+        try {
+            $state = & docker inspect --format '   state={{.State.Status}} exit={{.State.ExitCode}} oom-killed={{.State.OOMKilled}} health={{if .State.Health}}{{.State.Health.Status}} failing-streak={{.State.Health.FailingStreak}}{{else}}none{{end}}' $container 2>&1
+            Write-TrapNote (ConvertTo-LdmText $state)
+
+            $probes = & docker inspect --format '{{if .State.Health}}{{range .State.Health.Log}}   probe exit={{.ExitCode}}: {{.Output}}
+{{end}}{{end}}' $container 2>&1
+            $probeText = ConvertTo-LdmText $probes
+            if (-not [string]::IsNullOrWhiteSpace($probeText)) {
+                # Truncated: a chatty probe must not bury the logs below it.
+                if ($probeText.Length -gt 2000) { $probeText = $probeText.Substring(0, 2000) }
+                Write-TrapNote $probeText
+            }
+
+            $logs = & docker logs $container --tail 50 2>&1
+            Write-TrapNote (ConvertTo-LdmText $logs)
+        } catch {
+            Write-TrapNote "   (could not read $container -- $($_.Exception.Message))"
+        }
+    }
+}
+
 function Get-FreeSslTestPort {
     # LDM-#2136: the suite asked for a hardcoded 8443 and then DEMANDED 8443.
     # When something already holds it, LDM detects the conflict and selects
@@ -610,6 +667,10 @@ function Invoke-FinalizerBody {
 
     $status = "fail"
     if ($ExitCode -eq 0) { $status = "pass" }
+
+    # Before the slug lookup below, which shells out to ldm and can itself
+    # fail: the evidence must reach the report even if finalisation does not.
+    if ($status -eq "fail") { Write-FailureDebugLogs }
     
     $slug = "unknown"
     try {
@@ -6519,7 +6580,10 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     # this suite's only other .ldmp assertions test for, so refusal testing
     # could not see it.
     Write-Host ">> Verifying a .ldmp round trip: pack, import, boot, serve (LDM-#2131)..."
-    $roundTripPort = $TEST_PORT + 6
+    # [int] is load-bearing -- see the translation notes above. Without it
+    # PowerShell concatenates: "8082" + 6 is "80826", which 'ldm import'
+    # faithfully wrote into the compose file for docker to reject (LDM-#2213).
+    $roundTripPort = [int]$TEST_PORT + 6
     $roundTripOk = $true
     if (Test-Path $ROUNDTRIP_PKG_DIR) { Remove-Item -Recurse -Force $ROUNDTRIP_PKG_DIR -ErrorAction SilentlyContinue }
     New-Item -ItemType Directory -Path $ROUNDTRIP_PKG_DIR -Force | Out-Null

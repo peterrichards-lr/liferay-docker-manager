@@ -7,6 +7,12 @@ on:
       - "docs/**"
       - "mkdocs.yml"
       - "README.md"
+      # LDM-#2210: the theme override that injects the search-console meta
+      # tag. Without this line a template-only change never rebuilds, so the
+      # live site keeps serving the previous HTML and the edit looks applied
+      # while nothing has moved.
+      - "overrides/**"
+      - "scripts/check_site_verification.py"
       - ".github/workflows/docs.yml"
   workflow_dispatch: # Allow manual trigger
 
@@ -39,6 +45,24 @@ jobs:
 
       - name: Build site
         run: mkdocs build --site-dir _site
+
+      # LDM-#2210: BEFORE the upload, so a site missing its verification tag
+      # is never published. Removing extra.google_site_verification keeps the
+      # build green and silently unverifies the property in Search Console --
+      # there is no other signal, which is why this reads the built HTML
+      # rather than the config that produced it.
+      #
+      # Exit 3 means no HTML was found at all. That is a FAILURE here, not a
+      # skip: an empty site directory means the build did not happen, which is
+      # not the same as a site that verified.
+      # PRESENCE, not the token's value. The token lives in mkdocs.yml and is
+      # emitted verbatim; repeating it here would mean two copies to keep in
+      # step, and a rotated token would fail CI against the stale one. What
+      # this catches is the failure that is actually silent -- the key gone,
+      # the tag gone, the build still green. That the token is the RIGHT one
+      # is verified once, by Search Console accepting it.
+      - name: Verify the built site carries its search-console tag
+        run: python3 scripts/check_site_verification.py _site
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

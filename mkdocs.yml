@@ -4,6 +4,12 @@ site_description: "The ultimate CLI tool and Docker Compose orchestrator for run
 site_author: Peter Richards
 theme:
   name: material
+  # LDM-#2210: only `overrides/main.html` lives here, and it overrides exactly
+  # one block. That is deliberate: a custom_dir shadows the theme's own
+  # template, so a Material release that changes `main.html` does not reach
+  # this site until the override is reconciled. One block plus `super()` keeps
+  # that cost to the smallest surface that still works.
+  custom_dir: overrides
   favicon: assets/favicon.png
   # LDM-#1822: Liferay Blue. #0B5FFF is not one of Material's built-in palette
   # colours, so `primary:` cannot name it -- the scheme toggle is declared here
@@ -52,6 +58,18 @@ copyright: >
   Liferay Docker Manager is a community project and is not an official Liferay
   product &mdash;
   <a href="https://peterrichards-lr.github.io/liferay-docker-manager/about/">about these docs</a>.
+
+# LDM-#2210: search-engine ownership verification. Consumed by
+# overrides/main.html, which emits the meta tag only when the key is set.
+#
+# `bing_site_verification` can be added here the same way -- the template
+# already emits `msvalidate.01` under the same guard, so it needs no change.
+#
+# Removing this key keeps `mkdocs build` GREEN and silently unverifies the
+# property, which is why scripts/check_site_verification.py reads the BUILT
+# HTML rather than this file.
+extra:
+  google_site_verification: r7MfW8Y9zUhxsygop-Ubkr6dt7i9rUmddL4pEI26Ngk
 
 extra_css:
   - assets/stylesheets/liferay-blue.css

@@ -10,6 +10,8 @@ A professional command-line orchestrator for running, managing, and developing *
      merge the two into a single block. -->
 > ℹ️ **Community project** — not an official Liferay product and not covered by Liferay Support. [About this project](https://peterrichards-lr.github.io/liferay-docker-manager/about/)
 
+📚 **[Read the documentation](https://peterrichards-lr.github.io/liferay-docker-manager/)** — tutorials, how-to guides, CLI reference and architecture.
+
 ---
 
 ## 🐳 Why use LDM for Liferay in Docker?
