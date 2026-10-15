@@ -132,11 +132,10 @@ $SSHFAIL_TEST_PROJ = "sshfail-proj-${TEST_PORT}"
 $PORTCONFLICT_PROJ = "portconflict-${TEST_PORT}"
 $PORT_HOLDER = "ldm-e2e-port-holder-${TEST_PORT}"
 $LDMP_REFUSAL_PROJECT = "ldmp-refusal-${TEST_PORT}"
-# LDM-#2131: the round trip's project and package directory, named here
-# so the finalizer can remove them if the run is killed part-way. The
-# package is ~1 GB.
+# LDM-#2131: the round trip's project, named here so the finalizer can
+# remove it if the run is killed part-way. Its PACKAGE directory is named
+# further down, immediately after $LDM_WORKSPACE exists -- see LDM-#2197.
 $ROUNDTRIP_PROJECT = "${PROJECT_NAME}-roundtrip"
-$ROUNDTRIP_PKG_DIR = Join-Path $LDM_WORKSPACE ".ldm-roundtrip-pkg"
 $CLOUD_IMPORT_PROJECT = "cloud-import-${TEST_PORT}"
 $CLOUD_NOID_PROJECT = "cloud-noid-${TEST_PORT}"
 $PRODUCT_PIN_PROJECT = "product-pin-${TEST_PORT}"
@@ -205,6 +204,15 @@ if ($LDM_E2E_SECTIONS -ne "all") {
 $LDM_WORKSPACE = Join-Path $ORIGINAL_PWD "e2e-work-dir"
 $env:LDM_WORKSPACE = $LDM_WORKSPACE
 if (-not (Test-Path $LDM_WORKSPACE)) { New-Item -ItemType Directory -Path $LDM_WORKSPACE | Out-Null }
+
+# LDM-#2197: this MUST stay below $LDM_WORKSPACE. It sat 66 lines above it,
+# so `Join-Path` bound a null -Path and threw at parse-time-looking line 139
+# while the run carried on -- $ROUNDTRIP_PKG_DIR stayed null until the round
+# trip tried to create it ~6300 lines later, near the end of a multi-hour
+# suite. The bash half had the order right (LDM_WORKSPACE then the package
+# dir), so the two halves disagreed and only the Windows one was broken.
+# The package is ~1 GB; the finalizer removes it by this name.
+$ROUNDTRIP_PKG_DIR = Join-Path $LDM_WORKSPACE ".ldm-roundtrip-pkg"
 
 $TEST_VENV = Join-Path $LDM_WORKSPACE ".verify-venv"
 $VENV_PYTHON = Join-Path $TEST_VENV "Scripts\python.exe"
