@@ -49,6 +49,14 @@ on:
       - "ldm_core/workspace/**"
       - "ldm_core/pipelines/**"
       - "scripts/verify_e2e_refactor.sh"
+      # LDM-#2199: the helpers the slice SHELLS OUT TO are part of the slice,
+      # by the same reasoning as the workflow file below. Their absence here
+      # is why the `pre_readiness_seconds` assertion shipped in pre.5 and
+      # pre.6 without ever meeting a Liferay: it lives in a file this filter
+      # did not watch, so PR #2195 ran lint, build and CodeQL and nothing that
+      # boots a portal.
+      - "scripts/check_startup_phases.py"
+      - "scripts/check_published_dxp_domain.py"
       - ".github/workflows/pr-boundary-e2e.yml"
   workflow_dispatch: # Allow the slice to be run against any branch on demand
 
