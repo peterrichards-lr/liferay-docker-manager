@@ -17,6 +17,7 @@ on:
       - "scripts/check_site_verification.py"
       - "scripts/check_social_card.py"
       - "scripts/check_community_notice.py"
+      - "scripts/check_home_layout.py"
       - ".github/workflows/docs.yml"
   # LDM-#2215: build on PRs too. Before this the docs built only AFTER a merge,
   # so a broken link or a bad template reached `master` and was discovered by
@@ -35,6 +36,7 @@ on:
       - "scripts/check_site_verification.py"
       - "scripts/check_social_card.py"
       - "scripts/check_community_notice.py"
+      - "scripts/check_home_layout.py"
       - ".github/workflows/docs.yml"
   workflow_dispatch: # Allow manual trigger
 
@@ -110,6 +112,14 @@ jobs:
       # the em dash each reverts it, and each is caught.
       - name: Verify the community-project notice renders as the shared form
         run: python3 scripts/check_community_notice.py _site
+
+      # LDM-#2222: the three sites' home pages share one structure, and
+      # nothing about a drifted one is visible in a single repo's diff -- it
+      # shows only when all three are opened side by side, which nobody does.
+      # An `##` that becomes `###`, or an emoji added to a heading, also
+      # changes the anchor and silently breaks every inbound link.
+      - name: Verify the home page matches the shared layout
+        run: python3 scripts/check_home_layout.py _site
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
