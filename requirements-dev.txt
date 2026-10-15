@@ -11,6 +11,10 @@ pyinstaller==6.22.3
 actionlint-py==1.7.12.25
 detect-secrets==1.5.0
 deptry==0.25.1
+# LDM-#2215: mkdocs itself is pinned, not just the theme. It was an
+# implicit transitive dependency of mkdocs-material, so a 2.0 release
+# would have arrived unannounced in CI and in `mkdocs build --strict`.
+mkdocs==1.6.1
 mkdocs-material==9.7.7
 mypy==2.4.0
 types-requests

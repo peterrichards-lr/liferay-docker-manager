@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 ABOUT = ROOT / "docs" / "about.md"
 README = ROOT / "README.md"
 DOCS_HOME = ROOT / "docs" / "README.md"
+COPYRIGHT_PARTIAL = ROOT / "overrides" / "partials" / "copyright.html"
 PRECOMMIT = ROOT / ".pre-commit-config.yaml"
 MKDOCS = ROOT / "mkdocs.yml"
 
@@ -62,40 +63,68 @@ class TheAboutPagePromisesWhatCiEnforces(unittest.TestCase):
 
 
 class TheFooterLinkSurvivesADomainChange(unittest.TestCase):
-    """`copyright` is raw HTML and is not Jinja-processed, so it cannot
-    interpolate `site_url`. The link is therefore hardcoded, and this is what
-    stops it being orphaned by a move to a custom domain.
+    """The About link is reachable from the footer of every page, at any depth.
 
-    It is not hypothetical arithmetic: this is a PROJECT site served under
-    `/liferay-docker-manager/`, so the obvious-looking root-relative
-    `/about/` resolves to `github.io/about/` and 404s on every page.
+    LDM-#2215 changed the MECHANISM, not the claim. It used to be an absolute
+    URL hardcoded into `copyright:`, because that string is raw HTML and is
+    NOT Jinja-processed -- it could not interpolate `site_url`, and this is a
+    PROJECT site served under `/liferay-docker-manager/`, so the
+    obvious-looking root-relative `/about/` resolves to `github.io/about/` and
+    404s on every page.
+
+    It now lives in `overrides/partials/copyright.html`, where Jinja's `url`
+    filter resolves it against the CURRENT page. Measured on a real build:
+    `about/` at the site root, `../../../about/` at depth 3, and `./` on the
+    About page itself. That cannot drift from `site_url`, because it is
+    derived from it rather than repeated alongside it.
+
+    This asserts the partial, not the rendered HTML, because a unit test must
+    not need a site build. The two things that can silently break it are the
+    filter being dropped and `custom_dir` being removed, so both are checked.
     """
 
-    def test_the_footer_link_sits_under_site_url(self):
-        # yaml.safe_load chokes on mkdocs' !!python/name: tags, and the two
-        # values wanted here are plain scalars, so read them as text.
-        text = MKDOCS.read_text(encoding="utf-8")
-
-        site_url = re.search(r"^site_url:\s*(\S+)", text, re.M)
-        assert site_url, "mkdocs.yml has no site_url"
-        base = site_url.group(1).rstrip("/")
-
-        href = re.search(r'<a href="([^"]+)">about these docs</a>', text)
-        assert href, "the About link is gone from the mkdocs copyright footer"
-
+    def test_the_footer_partial_links_to_the_about_page(self):
         self.assertTrue(
-            href.group(1).startswith(base),
-            f"the footer links to {href.group(1)} but the site is published "
-            f"at {base}/ -- the disclosure link is orphaned on every page",
+            COPYRIGHT_PARTIAL.exists(),
+            "overrides/partials/copyright.html is gone -- every page's footer "
+            "has lost the site-wide About disclosure",
+        )
+        self.assertIn(
+            "about/",
+            COPYRIGHT_PARTIAL.read_text(encoding="utf-8"),
+            "the footer partial no longer points at the About page",
         )
 
-    def test_the_footer_link_resolves_to_the_about_page(self):
-        text = MKDOCS.read_text(encoding="utf-8")
-        href = re.search(r'<a href="([^"]+)">about these docs</a>', text)
-        assert href, "the About link is gone from the mkdocs copyright footer"
-        self.assertTrue(
-            href.group(1).rstrip("/").endswith("/about"),
-            f"the footer link {href.group(1)} does not point at the About page",
+    def test_the_footer_link_is_resolved_by_the_url_filter(self):
+        """A bare href here is the exact defect the absolute URL worked around.
+
+        `href="/about/"` 404s under the project subpath; `href="about/"` is
+        correct at the site root and wrong on every nested page. Only the
+        filter is right everywhere.
+        """
+        text = COPYRIGHT_PARTIAL.read_text(encoding="utf-8")
+        self.assertRegex(
+            text,
+            r"""\{\{\s*['"]about/['"]\s*\|\s*url\s*\}\}""",
+            "the About href is not resolved through Jinja's `url` filter, so "
+            "it is correct at only one nesting depth",
+        )
+
+    def test_the_overrides_directory_is_still_wired_up(self):
+        """The partial is inert unless `custom_dir` points at its parent.
+
+        Removing that line keeps `mkdocs build` green and silently reverts the
+        footer to Material's stock partial, with no About link at all -- the
+        same shape of silent failure as LDM-#2210's verification tag, which is
+        why that one is checked against the BUILT html.
+        """
+        self.assertRegex(
+            MKDOCS.read_text(encoding="utf-8"),
+            # re.M, because assertRegex does not apply it and `custom_dir` is
+            # one line inside a long file, not the whole of it.
+            re.compile(r"^\s*custom_dir:\s*overrides\s*$", re.M),
+            "theme.custom_dir is not `overrides`, so the footer partial and "
+            "the search-console tags are both ignored",
         )
 
 

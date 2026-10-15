@@ -1,7 +1,14 @@
 site_name: Liferay Docker Manager
 site_url: https://peterrichards-lr.github.io/liferay-docker-manager/
-site_description: "The ultimate CLI tool and Docker Compose orchestrator for running, managing, and developing Liferay DXP and Liferay Portal containers in Docker."
+site_description: >-
+  Liferay Docker Manager (LDM): run, manage and develop Liferay DXP and Portal in Docker. Compose orchestration for local development.
 site_author: Peter Richards
+# LDM-#2215: without these Material shows no repository link in the header
+# and no "edit this page" action, so a reader who spots a mistake has no
+# route from the page to the file.
+repo_url: https://github.com/peterrichards-lr/liferay-docker-manager
+repo_name: peterrichards-lr/liferay-docker-manager
+edit_uri: edit/master/docs/
 theme:
   name: material
   # LDM-#2210: only `overrides/main.html` lives here, and it overrides exactly
@@ -10,7 +17,18 @@ theme:
   # this site until the override is reconciled. One block plus `super()` keeps
   # that cost to the smallest surface that still works.
   custom_dir: overrides
+  # LDM-#2215: the site's own mark, not Material's default icon and not
+  # the official Liferay logo. The previous favicon WAS that logo, which
+  # contradicted the "not an official Liferay product" disclaimer shown
+  # on the same page. Liferay appears in text only -- see DESIGN-10350.
+  #
+  # logo.svg strokes #FFFFFF (it sits on the navy header); favicon.svg
+  # strokes #0B5FFF (it sits on a light browser tab). They are NOT
+  # interchangeable: each is invisible on the other's background.
+  logo: assets/logo.svg
   favicon: assets/favicon.png
+  icon:
+    repo: fontawesome/brands/github
   # LDM-#1822: Liferay Blue. #0B5FFF is not one of Material's built-in palette
   # colours, so `primary:` cannot name it -- the scheme toggle is declared here
   # and the actual colours live in docs/assets/stylesheets/liferay-blue.css.
@@ -28,36 +46,44 @@ theme:
     - navigation.top
     - navigation.sections
     - navigation.indexes
+    # LDM-#2215: navigation.footer gives prev/next links; content.action.edit
+    # is what renders the pencil that `edit_uri` above points at.
+    - navigation.footer
+    - content.action.edit
     - content.code.copy
     - content.code.annotate
     - search.suggest
     - search.highlight
     - toc.follow
+  # LDM-#2215: `primary`/`accent: custom` is load-bearing, not decoration.
+  # Without it Material emits its own palette values and the tokens in
+  # liferay-blue.css are overridden rather than applied.
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
 
-# The About page is linked site-wide from here. Material renders `copyright`
-# in the footer of every page, so the disclosure is one click from anywhere in
-# the docs without forking the footer partial via custom_dir.
+# LDM-#2215: the About link now lives in overrides/partials/copyright.html,
+# where Jinja's `url` filter can resolve it against the current page. It used
+# to be hardcoded here as an absolute URL, because `copyright` is rendered as
+# raw HTML and is NOT Jinja-processed -- so it could not interpolate site_url,
+# and a root-relative "/about/" 404s on a PROJECT site served under a subpath.
 #
-# The href MUST be absolute and MUST match site_url above. This is a PROJECT
-# site served under /liferay-docker-manager/, so a root-relative "/about/"
-# resolves to github.io/about/ and 404s. `copyright` is rendered as raw HTML
-# and is not Jinja-processed, so it cannot interpolate site_url itself --
-# test_about_page_claims.py asserts the two agree instead.
-copyright: >
-  Liferay Docker Manager is a community project and is not an official Liferay
-  product &mdash;
-  <a href="https://peterrichards-lr.github.io/liferay-docker-manager/about/">about these docs</a>.
+# Material renders this string in the footer of every page, so what remains is
+# the disclaimer itself.
+copyright: >-
+  A community project &mdash; not an official Liferay product
 
 # LDM-#2210: search-engine ownership verification. Consumed by
 # overrides/main.html, which emits the meta tag only when the key is set.
@@ -70,6 +96,16 @@ copyright: >
 # HTML rather than this file.
 extra:
   google_site_verification: r7MfW8Y9zUhxsygop-Ubkr6dt7i9rUmddL4pEI26Ngk
+  # LDM-#2215: consumed by overrides/main.html. `social_image` is joined to
+  # `site_url` there, so it must NOT lead with a slash and `site_url` must keep
+  # its trailing one -- test_about_page_claims.py asserts both, because the
+  # failure mode is a card that renders blank rather than a build that breaks.
+  social_image: assets/social-preview.png
+  favicon_svg: assets/favicon.svg
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/peterrichards-lr
+      name: More Liferay tools by Peter Richards
 
 extra_css:
   - assets/stylesheets/liferay-blue.css
@@ -106,7 +142,14 @@ markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
-  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  # check_paths turns a snippet pointing at a missing file into a build
+  # failure rather than a silently empty block. No page uses snippets today,
+  # so this costs nothing now and is a guard the first one gets for free.
+  - pymdownx.snippets:
+      base_path: ['.']
+      check_paths: true
 
 nav:
   - Home: README.md
@@ -189,6 +232,18 @@ nav:
   # and the old name did not say so, which told readers that some unknown
   # fraction of the section was irrelevant to them.
   - Project & Contributing:
+    # LDM-#2215 asked for a deliberate decision on PLAYBOOK.md, which AICA
+    # excludes from its own site with `exclude_docs`. KEPT HERE, for two
+    # reasons that are specific to this repo rather than a preference:
+    #
+    #   * this section is already named for its audience. LDM-#1817 renamed it
+    #     from "Project Info" precisely so a reader knows these pages address
+    #     maintainers and contributors, which is the problem `exclude_docs`
+    #     solves elsewhere.
+    #   * docs/README.md routes "...contribute to LDM itself" straight at it.
+    #     Excluding the file without rewriting that row turns the row into a
+    #     broken link -- and `mkdocs build --strict` now FAILS on one, so the
+    #     cost would be a red build rather than a quiet 404.
     - Playbook: PLAYBOOK.md
     - Roadmap: ROADMAP.md
     - Testing: TESTING.md

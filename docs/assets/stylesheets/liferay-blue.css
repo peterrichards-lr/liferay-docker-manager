@@ -29,6 +29,7 @@
   --lfr-blue: #0b5fff;
   --lfr-blue-hover: #0048d4;
   --lfr-blue-strong: #0b59f0;
+  --lfr-blue-light: #5d9bff; /* 5.88:1 on navy -- dark-scheme links */
   --lfr-navy: #1a1f35;
   --lfr-navy-deep: #12162a;
   --lfr-navy-raised: #1e2442;
@@ -48,11 +49,21 @@
  * light scheme rather than forcing one mode on every reader.
  * ------------------------------------------------------------------------ */
 [data-md-color-scheme="default"] {
-  --md-primary-fg-color: var(--lfr-blue);
-  --md-primary-fg-color--light: #4a86ff;
-  --md-primary-fg-color--dark: var(--lfr-blue-hover);
-  --md-primary-bg-color: #ffffff;
-  --md-primary-bg-color--light: rgba(255, 255, 255, 0.7);
+  /* LDM-#2215: navy chrome in LIGHT mode too, matching the shared family
+     palette. `.md-header` and `.md-tabs` below were already pinned to navy in
+     both schemes, so the visible header does not move -- what changes is every
+     OTHER element Material fills from `--md-primary-fg-color`: the mobile nav
+     drawer, the search field and the active nav item, which were blue against
+     a navy header and now agree with it.
+
+     `--md-primary-bg-color` is the text that sits ON that fill, so it moves
+     with it. Leaving it white would have been correct by accident here; naming
+     the token keeps the pair honest if the fill ever changes again. */
+  --md-primary-fg-color: var(--lfr-navy-deep);
+  --md-primary-fg-color--light: var(--lfr-navy-raised);
+  --md-primary-fg-color--dark: #0d1020;
+  --md-primary-bg-color: var(--lfr-text-main);
+  --md-primary-bg-color--light: var(--lfr-text-secondary);
 
   --md-accent-fg-color: var(--lfr-blue-hover);
   --md-accent-fg-color--transparent: rgba(11, 95, 255, 0.1);
@@ -89,14 +100,14 @@
   --md-primary-bg-color: var(--lfr-text-main);
   --md-primary-bg-color--light: var(--lfr-text-secondary);
 
-  --md-accent-fg-color: #5d9bff;
+  --md-accent-fg-color: var(--lfr-blue-light);
   --md-accent-fg-color--transparent: rgba(11, 95, 255, 0.15);
 
   /* Measured: #0b5fff on #1a1f35 is 3.17:1 -- it FAILS AA as body-size link
      text. The lifted tint is 5.88:1 and passes. Upstream reaches for the same
      value for the same reason (--status-info-text), so this follows it rather
      than inventing a colour. */
-  --md-typeset-a-color: #5d9bff;
+  --md-typeset-a-color: var(--lfr-blue-light);
 
   --md-code-bg-color: rgba(0, 0, 0, 0.3);
   --md-code-fg-color: var(--lfr-text-main);
@@ -135,4 +146,17 @@
    which clashes with the navy. */
 ::selection {
   background-color: rgba(11, 95, 255, 0.3);
+}
+
+/* LDM-#2215: the review stamp every page carries
+   (`*Last Updated: ... | Last Reviewed: ...*`, under a rule) renders as
+   body-size italic prose, which reads as a closing sentence rather than
+   maintenance metadata. Shared with the sibling docs sites.
+
+   Selector note: `hr + p > em:only-child` matches the stamp precisely because
+   it is the ONLY child of the paragraph that follows a horizontal rule. An
+   emphasised phrase inside ordinary prose has siblings and is untouched. */
+.md-typeset hr + p > em:only-child {
+  font-size: 0.75rem;
+  opacity: 0.7;
 }
