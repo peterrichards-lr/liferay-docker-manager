@@ -776,6 +776,46 @@ function Finalize-Verification {
     }
 }
 
+function Write-RoundTripOutput {
+    <#
+    .SYNOPSIS
+    Print what a round-trip command actually said, under a labelled banner.
+
+    .DESCRIPTION
+    LDM-#2208: the three round-trip commands piped stdout and stderr to
+    Out-Null, so a failure after a multi-hour run reported only THAT it
+    failed. The import failure on Windows PowerShell 5.1 at v2.26.6-pre.7 had
+    to be reproduced by hand for want of these lines.
+
+    Goes through ConvertTo-LdmText for the reason given on that function: on
+    5.1 a `2>&1` merge yields ErrorRecord objects, and letting them stringify
+    themselves prints
+    "System.Management.Automation.RemoteException" instead of the message.
+
+    Every line goes through Write-Verdict, so it reaches the results file as
+    well as the console -- a diagnosis only visible on a terminal that has
+    since been closed is the problem this fixes, not a fix for it.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Label,
+        [Parameter(Mandatory = $true)][AllowNull()]$Raw
+    )
+
+    Write-Verdict "          --- what '$Label' said ---"
+    $text = ConvertTo-LdmText $Raw
+    $any = $false
+    foreach ($line in ($text -split "`n")) {
+        if ($line.Trim()) {
+            Write-Verdict "          $($line.TrimEnd())"
+            $any = $true
+        }
+    }
+    if (-not $any) {
+        Write-Verdict "          (it printed nothing at all)"
+    }
+    Write-Verdict "          --- end ---"
+}
+
 function ConvertTo-LdmText {
     # LDM-#2115: a drop-in for `Out-String` when capturing a NATIVE command.
     #
@@ -6489,9 +6529,18 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     # manifest as `github_repository`, so a synthetic value keeps this offline.
     # `--use-latest` is deliberately NOT passed -- it resolves a tag from
     # GitHub releases, which would make this a network test.
-    & $LDM_CMD -y package $PROJECT_NAME -o $ROUNDTRIP_PKG_DIR --repo ldm-e2e/roundtrip 2>&1 | Out-Null
+    # LDM-#2208: output CAPTURED, not piped to Out-Null. These three calls
+    # discarded stdout and stderr, so a round-trip failure after a multi-hour
+    # run said only THAT it failed. The import failure on Windows PowerShell
+    # 5.1 at v2.26.6-pre.7 had to be reproduced by hand because of it.
+    #
+    # ConvertTo-LdmText, as everywhere else here: 5.1 yields ErrorRecord
+    # objects on the 2>&1 merge, and letting those stringify themselves gives
+    # "System.Management.Automation.RemoteException" rather than the message.
+    $rtPackageRaw = & $LDM_CMD -y package $PROJECT_NAME -o $ROUNDTRIP_PKG_DIR --repo ldm-e2e/roundtrip 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Verdict "[ERROR] 'ldm package' failed, so the round trip could not start (LDM-#2131)."
+        Write-RoundTripOutput -Label "ldm package" -Raw $rtPackageRaw
         $roundTripOk = $false
     }
 
@@ -6512,18 +6561,22 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     # that booted would die on a port conflict. Split so a failed import and a
     # failed boot are distinguishable.
     if ($roundTripOk) {
-        & $LDM_CMD -y import $roundTripPkg $ROUNDTRIP_PROJECT --port $roundTripPort --no-run 2>&1 | Out-Null
+        $rtImportRaw = & $LDM_CMD -y import $roundTripPkg $ROUNDTRIP_PROJECT --port $roundTripPort --no-run 2>&1
         if ($LASTEXITCODE -ne 0) {
             Write-Verdict "[ERROR] 'ldm import' refused a package LDM itself produced (LDM-#2159/#2131)."
-            Write-Verdict "[ERROR] The integrity check is the first suspect: 'ldm package' writes '<digest>  <filename>'."
+            Write-RoundTripOutput -Label "ldm import" -Raw $rtImportRaw
+            # Reported alongside the real error, never instead of it. The
+            # checksum is ONE candidate; the lines above say which it was.
+            Write-Verdict "          If that names the checksum: 'ldm package' writes '<digest>  <filename>' (LDM-#2159)."
             $roundTripOk = $false
         }
     }
 
     if ($roundTripOk) {
-        & $LDM_CMD -y run $ROUNDTRIP_PROJECT --port $roundTripPort 2>&1 | Out-Null
+        $rtBootRaw = & $LDM_CMD -y run $ROUNDTRIP_PROJECT --port $roundTripPort 2>&1
         if ($LASTEXITCODE -ne 0) {
             Write-Verdict "[ERROR] The imported project did not boot (LDM-#2131)."
+            Write-RoundTripOutput -Label "ldm run" -Raw $rtBootRaw
             $roundTripOk = $false
         }
     }

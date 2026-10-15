@@ -6544,9 +6544,16 @@ mkdir -p "$ROUNDTRIP_PKG_DIR"
 # manifest as `github_repository`, so a synthetic one keeps this offline.
 # `--use-latest` is deliberately NOT passed -- it resolves a tag from GitHub
 # releases, which would make this a network test.
-if ! "$LDM_CMD" -y package "$PROJECT_NAME" -o "$ROUNDTRIP_PKG_DIR" \
-        --repo ldm-e2e/roundtrip >/dev/null 2>&1; then
+# LDM-#2208: output CAPTURED, not discarded. These three calls sent stdout and
+# stderr to /dev/null, so a round-trip failure after a multi-hour run said only
+# THAT it failed. The import failure on Windows PowerShell 5.1 at
+# v2.26.6-pre.7 had to be reproduced by hand because of it, and the canned
+# "the integrity check is the first suspect" hint below is a guess written when
+# the check was authored, not a diagnosis of the run.
+if ! ROUNDTRIP_PKG_OUT=$("$LDM_CMD" -y package "$PROJECT_NAME" -o "$ROUNDTRIP_PKG_DIR" \
+        --repo ldm-e2e/roundtrip 2>&1); then
     echo "❌ ERROR: 'ldm package' failed, so the round trip could not start (LDM-#2131)." | tee -a "$RESULTS_FILE_TMP"
+    printf '%s\n' "--- what 'ldm package' said ---" "$ROUNDTRIP_PKG_OUT" "--- end ---" | tee -a "$RESULTS_FILE_TMP"
     ROUNDTRIP_OK=false
 fi
 
@@ -6567,17 +6574,21 @@ fi
 # die on a port conflict. Split so a failed import and a failed boot are
 # distinguishable rather than one opaque failure.
 if [ "$ROUNDTRIP_OK" = true ]; then
-    if ! "$LDM_CMD" -y import "$ROUNDTRIP_PKG" "$ROUNDTRIP_PROJECT" \
-            --port "$ROUNDTRIP_PORT" --no-run >/dev/null 2>&1; then
+    if ! ROUNDTRIP_IMPORT_OUT=$("$LDM_CMD" -y import "$ROUNDTRIP_PKG" "$ROUNDTRIP_PROJECT" \
+            --port "$ROUNDTRIP_PORT" --no-run 2>&1); then
         echo "❌ ERROR: 'ldm import' refused a package LDM itself produced (LDM-#2159/#2131)." | tee -a "$RESULTS_FILE_TMP"
-        echo "   The integrity check is the first suspect: 'ldm package' writes '<digest>  <filename>'." | tee -a "$RESULTS_FILE_TMP"
+        printf '%s\n' "--- what 'ldm import' said ---" "$ROUNDTRIP_IMPORT_OUT" "--- end ---" | tee -a "$RESULTS_FILE_TMP"
+        # Reported alongside the real error, never instead of it. The checksum
+        # is ONE candidate; the lines above say which it actually was.
+        echo "   If that names the checksum: 'ldm package' writes '<digest>  <filename>' (LDM-#2159)." | tee -a "$RESULTS_FILE_TMP"
         ROUNDTRIP_OK=false
     fi
 fi
 
 if [ "$ROUNDTRIP_OK" = true ]; then
-    if ! "$LDM_CMD" -y run "$ROUNDTRIP_PROJECT" --port "$ROUNDTRIP_PORT" >/dev/null 2>&1; then
+    if ! ROUNDTRIP_BOOT_OUT=$("$LDM_CMD" -y run "$ROUNDTRIP_PROJECT" --port "$ROUNDTRIP_PORT" 2>&1); then
         echo "❌ ERROR: the imported project did not boot (LDM-#2131)." | tee -a "$RESULTS_FILE_TMP"
+        printf '%s\n' "--- what 'ldm run' said ---" "$ROUNDTRIP_BOOT_OUT" "--- end ---" | tee -a "$RESULTS_FILE_TMP"
         ROUNDTRIP_OK=false
     fi
 fi
