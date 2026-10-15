@@ -153,6 +153,10 @@ LDM is conventions-driven and highly customizable. Choose a topic below for deta
 
 For a complete structured table of contents, visit the **[Documentation Index](docs/README.md)**.
 
+---
+
+Liferay Docker Manager is a community project maintained by Peter Richards. It is not an official Liferay product and is not covered by Liferay Support. This documentation is written with the help of AI coding agents, with the maintainer accountable for what ships — see [About these docs](https://peterrichards-lr.github.io/liferay-docker-manager/about/).
+
 <!-- markdownlint-disable MD049 -->
 ---
 *Last Updated: 2026-08-04* | *Last Reviewed: 2026-08-03*

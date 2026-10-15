@@ -39,6 +39,20 @@ theme:
         icon: material/weather-sunny
         name: Switch to light mode
 
+# The About page is linked site-wide from here. Material renders `copyright`
+# in the footer of every page, so the disclosure is one click from anywhere in
+# the docs without forking the footer partial via custom_dir.
+#
+# The href MUST be absolute and MUST match site_url above. This is a PROJECT
+# site served under /liferay-docker-manager/, so a root-relative "/about/"
+# resolves to github.io/about/ and 404s. `copyright` is rendered as raw HTML
+# and is not Jinja-processed, so it cannot interpolate site_url itself --
+# test_about_page_claims.py asserts the two agree instead.
+copyright: >
+  Liferay Docker Manager is a community project and is not an official Liferay
+  product &mdash;
+  <a href="https://peterrichards-lr.github.io/liferay-docker-manager/about/">about these docs</a>.
+
 extra_css:
   - assets/stylesheets/liferay-blue.css
 
@@ -134,6 +148,7 @@ nav:
     - Advanced CLI: reference/advanced_cli.md
     - JVM & Database Tuning: reference/tuning.md
     - Logging Strategy: reference/logging-strategy.md
+  - About these docs: about.md
   - Explanation:
     - explanation/index.md
     - Architecture: explanation/architecture.md
