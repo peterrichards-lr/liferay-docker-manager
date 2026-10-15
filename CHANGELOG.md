@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.6-pre.7] - 2026-10-15
+
+### Fixed
+
+- **The verification suite no longer fails a correct boot over a null span** (LDM-#2199). `scripts/check_startup_phases.py` required `pre_readiness_seconds` to be a **number** on every boot that reached `ready`, and `null` is the honest value whenever the readiness wait was not preceded by a boot in the same process. Caught by the PR Boundary E2E on the v2.26.6 tracking PR: seven milestones recorded including `Tomcat Server Ready = 55.8s`, the LDM-#2154 assertion passing immediately above it, and nothing whatever wrong with the boot. `pre_readiness_seconds` is the span *before* the wait -- asset sync, compose render, container start -- derived from `total_start`. `pipelines/run.py:2956` passes it; `cmd_wait` at `runtime/readiness.py:416` does not, and correctly so, because `ldm wait` **is** the readiness wait and the containers were started by an earlier command. The suite takes exactly that path (`ldm run . --no-wait`, then `ldm wait`), so `null` is the normal shape of the file there rather than an edge case. The checker now asserts the **key**, not the value: `write_startup_status` always emits it, as `null` when the span is unknown, so a binary predating LDM-#2181 still fails. Where the value *is* a number it must be non-negative -- `null` means "no span to measure" and a negative means the arithmetic is wrong, and those must not reach the same verdict.
+
+  Deliberately **not** done: making `cmd_wait` pass its own start time so the field is always populated. That records a near-zero number which reads as a measurement and is not one.
+
+  No shipped behaviour changes. As with `-pre.6`, `ldm_core` is untouched and the binary is identical to its predecessor; the release exists so the verification bundle carries the fix.
+
+  Two pre-releases shipped this assertion without it ever meeting a real Liferay, because the boundary slice's path filter did not watch the file it lives in. That filter now watches the checkers the suite shells out to. The remaining gap -- that a *populated* `pre_readiness_seconds` has no end-to-end coverage at all, since the suite never boots through `run.py`'s readiness path -- is recorded as LDM-#2200.
+
 ## [v2.26.6-pre.6] - 2026-10-15
 
 ### Fixed
