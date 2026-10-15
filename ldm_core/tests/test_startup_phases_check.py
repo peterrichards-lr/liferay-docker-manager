@@ -301,13 +301,62 @@ class TestTheSpanBeforeTheWaitIsRecorded(unittest.TestCase):
     wall clock a user experienced. Measured on v2.26.6-pre.4: `Liferay ready`
     said 1m 47s while the command took 2m 51s."""
 
-    def test_a_ready_boot_without_the_span_fails(self):
+    def test_a_ready_boot_with_no_such_key_fails(self):
+        """A binary predating LDM-#2181 writes no key at all."""
         with tempfile.TemporaryDirectory() as tmp:
             code, out = _Project(
                 tmp, {"status": "ready", "milestone_seconds": REAL_BOOT}
             ).check()
         self.assertEqual(code, NOT_RECORDED, out)
         self.assertIn("pre_readiness_seconds", out)
+
+    def test_an_explicit_null_span_passes(self):
+        """LDM-#2199: the case that failed the whole suite against a correct
+        boot, in pre.5 and pre.6.
+
+        `ldm wait` IS the readiness wait -- the containers were started by an
+        earlier command -- so there is no preceding span in this process and
+        `null` is the truthful answer, not a missing measurement. The suite
+        takes exactly that path: `ldm run . --no-wait` then `ldm wait`
+        (verify_e2e_refactor.sh:3501 and :3505), so this is the normal shape
+        of the file here, not an edge case.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out = _Project(
+                tmp,
+                {
+                    "status": "ready",
+                    "milestone_seconds": REAL_BOOT,
+                    "pre_readiness_seconds": None,
+                },
+            ).check()
+        self.assertEqual(code, ASSERTED, out)
+
+    def test_a_negative_span_fails(self):
+        """Null means "no span to measure". A negative number means the
+        arithmetic is wrong, and must not read as the same thing."""
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out = _Project(
+                tmp,
+                {
+                    "status": "ready",
+                    "milestone_seconds": REAL_BOOT,
+                    "pre_readiness_seconds": -3.2,
+                },
+            ).check()
+        self.assertEqual(code, NOT_RECORDED, out)
+
+    def test_a_non_numeric_span_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out = _Project(
+                tmp,
+                {
+                    "status": "ready",
+                    "milestone_seconds": REAL_BOOT,
+                    "pre_readiness_seconds": "64.0",
+                },
+            ).check()
+        self.assertEqual(code, NOT_RECORDED, out)
 
     def test_a_ready_boot_with_the_span_passes(self):
         with tempfile.TemporaryDirectory() as tmp:
