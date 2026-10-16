@@ -2,6 +2,11 @@
 """
 check_template_drift.py - Upstream Template Drift Checker
 
+SHARED FILE. The canonical copy is scripts/check_template_drift.py on the main branch of
+peterrichards-lr/ai-agent-template. Never edit a copy: change the canonical file in the
+template, through a PR there, then copy it into each project unchanged. A docs site's CI
+compares it (DOCS_SITE_SHARED_PATHS), and .agents/skills/docs-site-standard/SKILL.md has the rule.
+
 A repository bootstrapped from `ai-agent-template` inherits its AI-agent governance
 files once and then never hears from the template again. Nothing pulls updates; a rule
 the template corrects after a real incident stays wrong downstream indefinitely, and a
@@ -29,14 +34,22 @@ mkdocs_hooks/github_alerts.py). The "Path mapping" section of .agents/TEMPLATE_R
 records `local` <- `upstream` pairs, and the moved file is compared with its upstream
 original instead of being reported as one file missing and another extra.
 
+The comparison is against upstream HEAD, so a merge to the template that changes a governed
+file fails every adopter's --fail-on-drift run with no change on their side; the fix is a sync
+PR. --against-recorded compares against the commit recorded in .agents/TEMPLATE_REF.md
+instead: a local edit still fails, a template merge cannot. See
+.agents/skills/docs-site-standard/SKILL.md, rule 4, for where each belongs (ai-agent-template#141).
+
 Exit codes:
   0  the check ran (with or without drift), or the upstream was unreachable (DNS, timeout,
      5xx, no network): warned, not failed
   1  configuration error: .agents/TEMPLATE_REF.md is missing or unparseable
   2  governed files differ from upstream AND --fail-on-drift was requested. Upstream commits
      since the recorded ref are reported but are not drift: only content is
-  3  nothing could be compared: the upstream repository was not found or refused access, or
-     a governed path does not exist upstream. Fails with or without --fail-on-drift
+  3  nothing could be compared: the upstream repository was not found or refused access, a
+     governed path does not exist upstream, or --against-recorded found no usable recorded
+     commit. Fails with or without --fail-on-drift. Also: under --docs-site --fail-on-drift,
+     a profile stylesheet present locally with no path mapping (a report-only run warns)
 """
 
 import argparse
@@ -50,9 +63,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, List, NamedTuple, Optional, Sequence, Tuple
 
-# Allow importing sibling script helpers regardless of invocation working directory
-sys.path.insert(0, str(Path(__file__).parent.resolve()))
-from check_docs_review import FOOTER_REGEX, IGNORE_DIRS
+# The footer this repository's documents carry. The drift check strips it before comparing, so a
+# copy whose only difference is its review dates is not drift, and rewrites it when it stamps.
+# Defined here, not imported from check_docs_review.py: this file is shared and copied verbatim
+# (DOCS_SITE_SHARED_PATHS), and check_docs_review.py is not, so an adopter's copy may lack the
+# name or define it differently (lfr-tunnel's and LDM's do, #141, #147). The format is the
+# template's; tests/test_template_drift.py holds it equal to check_docs_review.FOOTER_REGEX.
+FOOTER_REGEX = re.compile(
+    r"([*_])Last Updated:\s*(\d{4}-\d{2}-\d{2})\1\s*\|\s*\1Last Reviewed:\s*(\d{4}-\d{2}-\d{2})\1"
+)
 
 # The upstream this template *is*. Recorded into every adopter's reference file at
 # bootstrap time and overridable per invocation with --repo-url for forks.
@@ -95,11 +114,17 @@ GOVERNED_PATHS = (
 # The two override files by name, never `overrides/` as a whole: Material has ONE custom_dir,
 # so a site's own extra override (a partial of its own) has nowhere else to live, and governing
 # the directory would fail docs CI on a file the template does not ship.
+#
+# This script is one of them: it is copied verbatim, and an edit to it would otherwise pass the
+# check it implements (#141). check_docs_review.py is not: adopters legitimately keep their own
+# (lfr-tunnel's adds --review-only and --changed-files), so this script imports nothing from it
+# (#147).
 DOCS_SITE_SHARED_PATHS = (
     'overrides/main.html',
     'overrides/partials/copyright.html',
     'scripts/mkdocs_github_alerts.py',
     'scripts/check_docs_rendered.py',
+    'scripts/check_template_drift.py',
 )
 # Where bootstrap puts a profile's stylesheets, and where the profiles live upstream: a local
 # stylesheet named like a profile's, with no mapping, is the shared file not being compared.
@@ -144,10 +169,16 @@ NOT_FOUND_PATTERNS = (
     'access denied',
 )
 
-# check_docs_review.IGNORE_DIRS is tuned for scanning documentation; a tree comparison
-# must additionally skip artefacts that exist in a working checkout and in no git tree.
-# Left in, `scripts/__pycache__/*.pyc` heads the report for every Python adopter.
-COMPARISON_IGNORE_DIRS = IGNORE_DIRS | {'__pycache__', '.idea', '.vscode'}
+# Directories a tree comparison skips: dependency, build and tool-state directories, plus the
+# artefacts that exist in a working checkout and in no git tree. Left in,
+# `scripts/__pycache__/*.pyc` heads the report for every Python adopter. The first set is
+# check_docs_review.IGNORE_DIRS as the template ships it, held equal by a test; it is not
+# imported, for the reason FOOTER_REGEX is not (#147).
+COMPARISON_IGNORE_DIRS = {
+    '.git', 'node_modules', '.venv', 'venv', 'env', '.smoke_venv',
+    'coverage', 'target', 'build', 'dist', 'bin', '.gemini', '.agent_scratch', '.pytest_cache',
+    'site', '_site',
+} | {'__pycache__', '.idea', '.vscode'}
 COMPARISON_IGNORE_SUFFIXES = ('.pyc', '.pyo', '.orig', '.rej')
 
 # Git subcommands are cheap; a hung network call is not. Bound every one of them.
@@ -597,9 +628,13 @@ def is_shared_file(path: str, mappings: Optional[dict] = None) -> bool:
     Only these get the copy-FROM-upstream direction. Bootstrap customises AGENTS.md, ci.yml and
     the pre-commit config, and TEMPLATE_REF.md says to edit those freely; telling an adopter to
     overwrite them from the template would be wrong.
+
+    Of a profile, only the stylesheets are shared. Its about.md, palette.yml and site.yml are
+    seeds bootstrap copies from, and matching the whole profile directory printed the direction
+    over files an adopter had customised on purpose (#141).
     """
     return (path in DOCS_SITE_SHARED_PATHS or path in (mappings or {})
-            or path.startswith(DOCS_PROFILE_DIR + '/'))
+            or (path.startswith(DOCS_PROFILE_DIR + '/') and path.endswith('.css')))
 
 
 def unmapped_profile_stylesheets(upstream_root: Path, local_root: Path, mappings: dict) -> list:
@@ -619,7 +654,7 @@ def unmapped_profile_stylesheets(upstream_root: Path, local_root: Path, mappings
 
 def report(reference: TemplateReference, snapshot: UpstreamSnapshot,
            changes: UpstreamChanges, comparison: PathComparison,
-           mappings: Optional[dict] = None) -> None:
+           mappings: Optional[dict] = None, compared_against: str = 'upstream HEAD') -> None:
     """Print the human-readable drift report."""
     print(f"Upstream : {reference.repo_url}")
     print(f"Recorded : {reference.version} @ {reference.commit} "
@@ -638,7 +673,7 @@ def report(reference: TemplateReference, snapshot: UpstreamSnapshot,
         _print_section("Governed paths changed upstream since your recorded ref",
                        changes.changed_paths)
 
-    print("\n--- Local governance files vs upstream HEAD "
+    print(f"\n--- Local governance files vs {compared_against} "
           "(timestamp footers ignored) ---")
     if comparison.missing_upstream:
         _print_section("Governed paths with nothing upstream to compare against",
@@ -653,8 +688,9 @@ def report(reference: TemplateReference, snapshot: UpstreamSnapshot,
         _print_section("Content differs",
                        [f"{path}\n      {evidence[path]}" if path in evidence else path
                         for path in comparison.modified])
-        if any(is_shared_file(path, mappings)
-               for path in comparison.modified + comparison.only_upstream):
+        # Only a shared file whose content differs. An upstream-only file is not one this
+        # repository carries a copy of, and an adopter without a docs site has no reason to.
+        if any(is_shared_file(path, mappings) for path in comparison.modified):
             print("\n" + DIRECTION_MESSAGE.format(repo_url=reference.repo_url))
 
 
@@ -699,8 +735,13 @@ def check_template_drift(root_dir: Path, repo_url: Optional[str] = None,
                          rel_paths: Sequence[str] = GOVERNED_PATHS,
                          update_stamp: bool = False, fail_on_drift: bool = False,
                          timeout: int = DEFAULT_GIT_TIMEOUT_SECONDS,
-                         explicit_paths: bool = False, docs_site: bool = False) -> int:
-    """Run the whole check and return the process exit code (see module docstring)."""
+                         explicit_paths: bool = False, docs_site: bool = False,
+                         against_recorded: bool = False) -> int:
+    """Run the whole check and return the process exit code (see module docstring).
+
+    `against_recorded` compares the local files with the upstream at the RECORDED commit
+    instead of its HEAD, so a template merge cannot fail this repository's check (#141).
+    """
     reference_path = root_dir / TEMPLATE_REFERENCE_RELPATH
     if not reference_path.exists():
         print('❌ ' + MISSING_REFERENCE_MESSAGE.format(
@@ -746,16 +787,30 @@ def check_template_drift(root_dir: Path, repo_url: Optional[str] = None,
         upstream_paths = [to_upstream_path(path.strip('/'), mappings) for path in rel_paths]
         changes = summarise_upstream_changes(
             snapshot.worktree, reference.commit, upstream_paths, timeout=timeout)
+        compared_against = 'upstream HEAD'
+        if against_recorded:
+            # After the summary, which reads `recorded..HEAD` and needs HEAD where it was.
+            code, _, stderr = run_git(
+                ['-C', str(snapshot.worktree), 'checkout', '--quiet', '--detach',
+                 f'{reference.commit}^{{commit}}'], timeout=timeout)
+            if code != 0 or reference.commit in ('', UNKNOWN_STAMP_VALUE):
+                print(
+                    f"❌ --against-recorded: the recorded commit `{reference.commit}` is unknown "
+                    "or not in the upstream template,\n"
+                    "   so there is nothing to compare against. Record a real baseline with "
+                    "--update-stamp (without\n   --against-recorded) first.", file=sys.stderr)
+                return 3
+            compared_against = f'the recorded ref ({reference.commit})'
         comparison = compare_paths(snapshot.worktree, root_dir, rel_paths,
                                    mappings=mappings, explicit_paths=explicit_paths)
-        report(reference, snapshot, changes, comparison, mappings)
-        if docs_site:
-            suggestions = unmapped_profile_stylesheets(snapshot.worktree, root_dir, mappings)
-            if suggestions:
-                print(
-                    "\n⚠️ Not compared: a shared profile stylesheet with no path mapping. Add to "
-                    f"the Path mapping section\n   of {TEMPLATE_REFERENCE_RELPATH.as_posix()}:\n   "
-                    + '\n   '.join(suggestions))
+        report(reference, snapshot, changes, comparison, mappings, compared_against)
+        unmapped = (unmapped_profile_stylesheets(snapshot.worktree, root_dir, mappings)
+                    if docs_site else [])
+        if unmapped:
+            print(
+                f"\n{'❌' if fail_on_drift else '⚠️'} Not compared: a shared profile stylesheet "
+                "with no path mapping. Add to the Path mapping section\n"
+                f"   of {TEMPLATE_REFERENCE_RELPATH.as_posix()}:\n   " + '\n   '.join(unmapped))
 
         if comparison.missing_upstream:
             print(
@@ -766,19 +821,31 @@ def check_template_drift(root_dir: Path, repo_url: Optional[str] = None,
                 f"   Path mapping section of {TEMPLATE_REFERENCE_RELPATH.as_posix()}.",
                 file=sys.stderr)
             return 3
+        # A deleted mapping leaves the shared stylesheet uncompared, and must not pass a gate
+        # (#141). Exit 3, not 2: nothing differs that anyone saw, the file was never compared,
+        # and a re-run will not fix it. A report-only run warns, as before.
+        if unmapped and fail_on_drift:
+            print(
+                f"\n❌ {len(unmapped)} shared profile stylesheet(s) not compared: no path mapping "
+                f"in {TEMPLATE_REFERENCE_RELPATH.as_posix()}.\n"
+                "   Add the mapping line(s) above; a stylesheet left unmapped is never checked.",
+                file=sys.stderr)
+            return 3
 
         # Content only. Upstream commits since the recorded ref are listed above, but a commit
         # that changed nothing this repository carries is not drift, and a docs CI job gating
         # on three shared files must not go red because the template moved elsewhere.
         drift_found = comparison.has_drift
 
-        if should_offer_stamp_update(update_stamp):
+        # Never offered after --against-recorded: the stamp records a comparison against HEAD,
+        # and this run did not make one.
+        if not against_recorded and should_offer_stamp_update(update_stamp):
             try:
                 update_stamp_file(reference_path, reference, snapshot,
                                   datetime.today().strftime('%Y-%m-%d'))
             except (TemplateReferenceError, OSError) as error:
                 print(f"⚠️ Could not update the stamp: {error}", file=sys.stderr)
-        elif not update_stamp:
+        elif not update_stamp and not against_recorded:
             print("\nRe-run with --update-stamp to record this comparison "
                   "(and add any real divergence to the 'Known drift' list first).")
 
@@ -804,8 +871,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help='Compare only the shared docs-site files (%s), plus every '
                              'mapped path, instead of the default set. For a docs CI job.'
                              % ', '.join(DOCS_SITE_SHARED_PATHS))
-    parser.add_argument('--update-stamp', action='store_true',
-                        help="Record the current upstream ref as the new baseline without prompting")
+    baseline = parser.add_mutually_exclusive_group()
+    baseline.add_argument('--update-stamp', action='store_true',
+                          help="Record the current upstream ref as the new baseline without "
+                               "prompting")
+    baseline.add_argument('--against-recorded', action='store_true',
+                          help='Compare against the upstream at the commit recorded in '
+                               '.agents/TEMPLATE_REF.md instead of its HEAD, so a template merge '
+                               'cannot fail the check; an unknown or missing recorded commit '
+                               'exits 3. Never moves the stamp')
     parser.add_argument('--fail-on-drift', action='store_true',
                         help='Exit 2 when governed files differ from upstream (an unreachable '
                              'upstream still exits 0)')
@@ -832,6 +906,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         timeout=args.timeout,
         explicit_paths=bool(rel_paths),
         docs_site=args.docs_site,
+        against_recorded=args.against_recorded,
     )
 
 

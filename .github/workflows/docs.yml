@@ -118,15 +118,45 @@ jobs:
             --site-url=https://peterrichards-lr.github.io/liferay-docker-manager/
 
       # LDM-#2229: the shared docs files must still BE the shared docs files.
-      # --docs-site scopes the comparison to the four the docs standard
+      # --docs-site scopes the comparison to the files the docs standard
       # governs, plus the stylesheet through its path mapping, so this job
       # fails on them and only them. A transport failure warns; a 404 fails,
       # because a missing path or a permissions problem will not fix itself.
       #
       # Before the upload, like every check above: a drifted shared file that
       # is discovered after deployment has already reached readers.
+      #
+      # THE COMPARISON BASIS DIFFERS BY EVENT, deliberately (template-sync
+      # SKILL.md: "use it where a template merge must not block, such as a
+      # deploy").
+      #
+      # By default the check compares against upstream HEAD, so a merge in the
+      # template reddens this job with nothing changed here. That happened
+      # within hours of adopting v2.2.0: ai-agent-template#144, #145 and #149
+      # landed on main, and every LDM docs PR went red on files copied
+      # byte-for-byte from the tag.
+      #
+      #   push (the path that deploys) -> --against-recorded, which compares
+      #     against the commit in .agents/TEMPLATE_REF.md. An upstream merge
+      #     can then never block a deploy of docs that are correct for the
+      #     version this repo has actually adopted.
+      #   pull_request -> upstream HEAD, deliberately left as-is. That is the
+      #     signal that a sync PR is due, and a PR is where acting on it is
+      #     cheap. It must stay a signal and not a blocker: a red PR here is
+      #     read, a red deploy is a broken site.
+      # Two steps rather than one with an interpolated flag: an empty
+      # `$DRIFT_BASIS` has to be unquoted to vanish, and unquoted is SC2086,
+      # which actionlint fails. Quoting it instead passes an empty argument
+      # that argparse rejects. Two steps are also plainer to read in a log.
       - name: Verify the shared docs files match the template
+        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
         run: python3 scripts/check_template_drift.py --docs-site --fail-on-drift
+
+      - name: Verify the shared docs files match the adopted template version
+        if: github.event_name == 'push'
+        run: |
+          python3 scripts/check_template_drift.py --docs-site --fail-on-drift \
+            --against-recorded
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

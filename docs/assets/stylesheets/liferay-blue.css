@@ -128,6 +128,20 @@
 [data-md-color-scheme="slate"] .md-header { background-color: var(--lfr-navy-deep); color: var(--lfr-text-main); }
 [data-md-color-scheme="slate"] .md-tabs   { background-color: var(--lfr-navy);      color: var(--lfr-text-main); }
 
+/* Section titles look the same with or without an index page (navigation.indexes).
+   Material renders a section that has an index page as a link, in the primary
+   text colour, and one without as a label, in the secondary colour, so the same
+   stylesheet gave LDM white section titles and lfr-tunnel muted ones
+   (ai-agent-template#143). This gives the link the label's colour; hover and the
+   active page keep the link colour, so a title with an index page still reads
+   as clickable. Desktop only: below 76.25em, in the drawer, the two already
+   match, and widening the rule would make them differ there. */
+@media screen and (min-width: 76.25em) {
+  .md-nav--primary .md-nav__item--section > .md-nav__container > .md-nav__link:not(:hover):not(.md-nav__link--active) {
+    color: var(--md-default-fg-color--light);
+  }
+}
+
 /* Selection uses the blue at a low alpha rather than the browser default,
    which clashes with the navy. */
 ::selection { background-color: rgba(11, 95, 255, 0.3); }
