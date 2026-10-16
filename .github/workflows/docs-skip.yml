@@ -22,7 +22,6 @@ on:
       - "overrides/**"
       - "requirements-dev.txt"
       - "mkdocs_hooks/**"
-      - "scripts/check_social_card.py"
       - "scripts/check_docs_rendered.py"
       - "scripts/check_template_drift.py"
       - "scripts/check_docs_review.py"

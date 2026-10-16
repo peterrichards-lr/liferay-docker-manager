@@ -34,11 +34,14 @@ mkdocs_hooks/github_alerts.py). The "Path mapping" section of .agents/TEMPLATE_R
 records `local` <- `upstream` pairs, and the moved file is compared with its upstream
 original instead of being reported as one file missing and another extra.
 
-The comparison is against upstream HEAD, so a merge to the template that changes a governed
-file fails every adopter's --fail-on-drift run with no change on their side; the fix is a sync
-PR. --against-recorded compares against the commit recorded in .agents/TEMPLATE_REF.md
-instead: a local edit still fails, a template merge cannot. See
-.agents/skills/docs-site-standard/SKILL.md, rule 4, for where each belongs (ai-agent-template#141).
+By default the comparison is against upstream HEAD, so a merge to the template that changes a
+governed file fails every adopter's --fail-on-drift run with no change on their side.
+--against-recorded compares against the commit recorded in .agents/TEMPLATE_REF.md instead: a
+local edit still fails, a template merge cannot. It falls back to HEAD only while the stamp is
+`unknown` (a fresh project), and when upstream has a newer release tag than the recorded
+version it prints a notice naming that version and the compared files it changes, without
+failing. Docs PR CI and the deploy both run it (ai-agent-template#141, #166). See
+.agents/skills/docs-site-standard/SKILL.md, rule 4.
 
 Exit codes:
   0  the check ran (with or without drift), or the upstream was unreachable (DNS, timeout,
@@ -47,8 +50,8 @@ Exit codes:
   2  governed files differ from upstream AND --fail-on-drift was requested. Upstream commits
      since the recorded ref are reported but are not drift: only content is
   3  nothing could be compared: the upstream repository was not found or refused access, a
-     governed path does not exist upstream, or --against-recorded found no usable recorded
-     commit, or (under --docs-site) a profile stylesheet is present locally with no path
+     governed path does not exist upstream, or --against-recorded's recorded commit is not in
+     the upstream template, or (under --docs-site) a profile stylesheet is present locally with no path
      mapping, so the shared file was never compared. Fails with or without --fail-on-drift
 """
 
@@ -502,6 +505,46 @@ def summarise_upstream_changes(worktree: Path, recorded_commit: str,
     )
 
 
+VERSION_TAG_REGEX = re.compile(r'^v(\d+)\.(\d+)\.(\d+)$')
+
+
+def newer_release_notice(worktree: Path, reference: TemplateReference, upstream_paths: list,
+                         mappings: dict,
+                         timeout: int = DEFAULT_GIT_TIMEOUT_SECONDS) -> Optional[str]:
+    """A notice when upstream has a newer release tag than the recorded version, or None.
+
+    Names the version and the compared shared files that changed between the recorded commit
+    and that tag, so an --against-recorded run that cannot fail on a template merge still
+    says one is waiting to be synced. Read from upstream's HEAD, so call it before any
+    checkout of the recorded commit.
+    """
+    recorded = VERSION_TAG_REGEX.match(reference.version or '')
+    if not recorded:
+        return None
+    _, tags, _ = run_git(['-C', str(worktree), 'tag', '--merged', 'HEAD', '--list', 'v*'],
+                         timeout=timeout)
+    releases = sorted((tuple(int(part) for part in match.groups()), tag)
+                      for tag in tags.split() if (match := VERSION_TAG_REGEX.match(tag)))
+    newest = releases[-1] if releases else None
+    if not newest or newest[0] <= tuple(int(part) for part in recorded.groups()):
+        return None
+    _, diff, _ = run_git(['-C', str(worktree), 'diff', '--name-only', reference.commit, newest[1],
+                          '--'] + list(upstream_paths), timeout=timeout)
+    changed = sorted({line.strip() for line in diff.splitlines() if line.strip()})
+    lines = [f"ℹ️ The template has a newer release, {newest[1]} (this repository records "
+             f"{reference.version})."]
+    if changed:
+        lines.append(f"   It changes {len(changed)} of the shared files compared here:")
+        lines += [f"   - {mappings.get(path, path)}"
+                  + (f" (upstream {path})" if path in mappings else '') for path in changed]
+        lines.append("   Not a failure: this run compared against the recorded commit. Sync in "
+                     "a PR that copies\n   them in from the template and runs --update-stamp.")
+    else:
+        lines.append("   It changes none of the shared files compared here; --update-stamp "
+                     "records it.")
+    return '\n'.join(lines)
+
+
 def normalise_for_comparison(content, rel_path: Path) -> bytes:
     """Reduce a file to the bytes worth comparing across two repositories.
 
@@ -788,22 +831,34 @@ def check_template_drift(root_dir: Path, repo_url: Optional[str] = None,
         changes = summarise_upstream_changes(
             snapshot.worktree, reference.commit, upstream_paths, timeout=timeout)
         compared_against = 'upstream HEAD'
-        if against_recorded:
-            # After the summary, which reads `recorded..HEAD` and needs HEAD where it was.
+        release_notice = None
+        if against_recorded and reference.commit in ('', UNKNOWN_STAMP_VALUE):
+            # A fresh project's stamp: there is no recorded commit to compare against yet, and
+            # failing its first run over that would be wrong. HEAD is the only baseline.
+            print(f"ℹ️ --against-recorded: {TEMPLATE_REFERENCE_RELPATH.as_posix()} records no "
+                  "commit yet (`unknown`), so this compares\n   against upstream HEAD. "
+                  "--update-stamp records one.")
+        elif against_recorded:
+            # After the summary and the release notice, which read upstream's HEAD.
+            release_notice = newer_release_notice(snapshot.worktree, reference, upstream_paths,
+                                                  mappings, timeout=timeout)
             code, _, stderr = run_git(
                 ['-C', str(snapshot.worktree), 'checkout', '--quiet', '--detach',
                  f'{reference.commit}^{{commit}}'], timeout=timeout)
-            if code != 0 or reference.commit in ('', UNKNOWN_STAMP_VALUE):
+            if code != 0:
                 print(
-                    f"❌ --against-recorded: the recorded commit `{reference.commit}` is unknown "
-                    "or not in the upstream template,\n"
-                    "   so there is nothing to compare against. Record a real baseline with "
-                    "--update-stamp (without\n   --against-recorded) first.", file=sys.stderr)
+                    f"❌ --against-recorded: the recorded commit `{reference.commit}` is not in "
+                    "the upstream template,\n"
+                    "   so there is nothing to compare against. Check the stamp in "
+                    f"{TEMPLATE_REFERENCE_RELPATH.as_posix()}, or record\n   a real baseline "
+                    "with --update-stamp (without --against-recorded).", file=sys.stderr)
                 return 3
             compared_against = f'the recorded ref ({reference.commit})'
         comparison = compare_paths(snapshot.worktree, root_dir, rel_paths,
                                    mappings=mappings, explicit_paths=explicit_paths)
         report(reference, snapshot, changes, comparison, mappings, compared_against)
+        if release_notice:
+            print('\n' + release_notice)
         unmapped = (unmapped_profile_stylesheets(snapshot.worktree, root_dir, mappings)
                     if docs_site else [])
         if unmapped:

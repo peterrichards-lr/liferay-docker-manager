@@ -52,9 +52,11 @@ Checked when mkdocs.yml configures them:
 Deleting a key switches its check off. So a check can be REQUIRED: one that is fails, naming
 each missing key and sub-key (CONFIGURED_CHECKS), instead of being skipped or checking less
 (ai-agent-template#141, #155). Required: what the site's profile requires (PROFILE_REQUIRED: the
-Liferay profile requires all four), plus extra.docs_standard.required, less what
+Liferay profile requires all four, and PROFILE_KEYS what more it needs of them, #164), plus
+extra.docs_standard.required, less what
 extra.docs_standard.waive drops with a reason. An unknown name, or a waive with no reason or of
-a check nothing requires, fails as REQUIRED.
+a check nothing requires, fails as REQUIRED. MISSING-VERIFICATION:google and :bing require
+that token specifically (#161); waiving a check waives its qualified forms.
 
 Exit codes: 0 every assertion passed; 1 an assertion failed, or nothing was scanned.
 """
@@ -278,6 +280,12 @@ class SectionTitles(HTMLParser):
             self.title["text"] += data
 
 
+def stylesheet_path(entry):
+    """An extra_css entry as a path in the build: a cache-busting query string or a fragment
+    (`liferay-blue.css?v=2`) is part of the URL, not of the file (#164)."""
+    return urlparse(entry).path if isinstance(entry, str) else None
+
+
 def _compact_css(css):
     """CSS without comments or insignificant whitespace, so two spellings of one rule compare."""
     css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
@@ -484,8 +492,9 @@ def check_section_titles(site, home_html, config):
                 for kind, text in linked if kind == "unmatched"]
     rule = _compact_css(SECTION_TITLE_RULE)
     sheets = [s for s in (config.get("extra_css") or []) if isinstance(s, str)]
+    paths = [stylesheet_path(s).lstrip("/") for s in sheets]
     if not any(rule in _compact_css((site / s).read_text(encoding="utf-8", errors="replace"))
-               for s in sheets if (site / s).is_file()):
+               for s in paths if s and (site / s).is_file()):
         names = [text for _, text in linked]
         problems.append(f"sections with an index page {names!r} render in the primary text "
                         "colour, and those without in the secondary one, but no stylesheet in "
@@ -747,6 +756,14 @@ CONFIGURED_CHECKS = {
          lambda c: _extra(c).get("google_site_verification")
          or _extra(c).get("bing_site_verification")),
     ],
+    # A specific token: a site that depends on Search Console cannot let Bing's token stand in
+    # for Google's (lfr-tunnel#2381, #161). Waiving MISSING-VERIFICATION drops these too.
+    "MISSING-VERIFICATION:google": [
+        ("extra.google_site_verification", lambda c: _extra(c).get("google_site_verification")),
+    ],
+    "MISSING-VERIFICATION:bing": [
+        ("extra.bing_site_verification", lambda c: _extra(c).get("bing_site_verification")),
+    ],
     "MISSING-SOCIAL": [
         ("extra.social_image", lambda c: _extra(c).get("social_image")),
         ("extra.favicon_svg", lambda c: _extra(c).get("favicon_svg")),
@@ -772,15 +789,27 @@ CONFIGURED_CHECKS = {
 # extra.docs_standard.waive, which names it and gives a reason.
 PROFILE_REQUIRED = {
     "liferay-blue.css": ("the Liferay profile",
-                         ("NO-NOTICE", "HOME-LAYOUT", "MISSING-VERIFICATION", "MISSING-SOCIAL")),
+                         ("NO-NOTICE", "HOME-LAYOUT", "MISSING-VERIFICATION", "MISSING-SOCIAL",
+                          "MISSING-VERIFICATION:google")),
+}
+
+# What a profile requires of a check beyond CONFIGURED_CHECKS. Every Liferay profile site carries
+# the related-tools rows, so its HOME-LAYOUT needs the related block itself: deleting the block,
+# with the home page's section, used to leave HOME-LAYOUT passing with no related section on the
+# site at all (#164). A site that has a reason waives HOME-LAYOUT, like any other.
+PROFILE_KEYS = {
+    "the Liferay profile": {
+        "HOME-LAYOUT": [("extra.docs_standard.related", lambda c: _block(c, "related"))],
+    },
 }
 
 
 def profile_required(config):
     """(the profile's name, the checks it requires), or (None, ()) for a site with no profile."""
     for sheet in config.get("extra_css") or []:
-        if isinstance(sheet, str) and sheet.rsplit("/", 1)[-1] in PROFILE_REQUIRED:
-            return PROFILE_REQUIRED[sheet.rsplit("/", 1)[-1]]
+        name = (stylesheet_path(sheet) or "").rsplit("/", 1)[-1]
+        if name in PROFILE_REQUIRED:
+            return PROFILE_REQUIRED[name]
     return None, ()
 
 
@@ -825,17 +854,21 @@ def check_required(config, always_run):
         if not isinstance(reason, str) or not reason.strip():
             problems.setdefault("REQUIRED", []).append(
                 f"extra.docs_standard.waive.{name} gives no reason; a waived check needs one")
-        elif name not in by_profile and name not in required:
+        elif not any(other == name or other.split(":")[0] == name
+                     for other in list(by_profile) + list(required)):
             problems.setdefault("REQUIRED", []).append(
                 f"extra.docs_standard.waive.{name}: nothing requires {name}, so there is nothing "
                 "to waive")
 
     waived = {name for name, reason in waive.items() if isinstance(reason, str) and reason.strip()}
     for name in dict.fromkeys(list(by_profile) + list(required)):
-        if name not in CONFIGURED_CHECKS or name in waived:
+        # Waiving a check waives its qualified forms too (MISSING-VERIFICATION:google).
+        if name not in CONFIGURED_CHECKS or name in waived or name.split(":")[0] in waived:
             continue
         why = f"by {profile}" if name in by_profile else "by extra.docs_standard.required"
-        missing = [key for key, is_set in CONFIGURED_CHECKS[name] if not is_set(config)]
+        needs = CONFIGURED_CHECKS[name] + (
+            PROFILE_KEYS.get(profile, {}).get(name, []) if name in by_profile else [])
+        missing = [key for key, is_set in needs if not is_set(config)]
         if missing:
             problems[name] = [f"required {why}, but {key} is not set, so it is not checked"
                               for key in missing]

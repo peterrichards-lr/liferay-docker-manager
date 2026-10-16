@@ -15,7 +15,7 @@ reference for AI-agent rules across projects; this file is the manual checkpoint
 drift from it deliberate instead of silent.
 
 **Reference repo**: <https://github.com/peterrichards-lr/ai-agent-template>
-**Reference version at last check**: `v2.4.0` (origin/main @ `d7abfa6`, 2026-10-16)
+**Reference version at last check**: `v2.5.0` (origin/main @ `cadd17b`, 2026-10-16)
 **Last checked**: 2026-10-16
 
 > If the stamp above reads `unknown` / `never`, no baseline has been recorded yet. That is

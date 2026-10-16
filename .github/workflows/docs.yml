@@ -14,7 +14,6 @@ on:
       - "overrides/**"
       - "requirements-dev.txt"
       - "mkdocs_hooks/**"
-      - "scripts/check_social_card.py"
       - "scripts/check_docs_rendered.py"
       - "scripts/check_template_drift.py"
       - "scripts/check_docs_review.py"
@@ -35,7 +34,6 @@ on:
       - "overrides/**"
       - "requirements-dev.txt"
       - "mkdocs_hooks/**"
-      - "scripts/check_social_card.py"
       - "scripts/check_docs_rendered.py"
       - "scripts/check_template_drift.py"
       - "scripts/check_docs_review.py"
@@ -107,79 +105,40 @@ jobs:
       - name: Verify the built site gives readers what the source asks for
         run: python3 scripts/check_docs_rendered.py _site --config mkdocs.yml
 
-      # LDM-#2215: also BEFORE the upload. `og:image` is an absolute URL built
-      # from site_url + extra.social_image and is resolved by a SCRAPER days
-      # later, so a typo in either leaves the build green and the card blank.
-      # Measured: mistyping social_image by one character still passes
-      # `mkdocs build --strict`.
-      - name: Verify the social card and icons resolve
-        run: |
-          python3 scripts/check_social_card.py _site \
-            --site-url=https://peterrichards-lr.github.io/liferay-docker-manager/
-
       # LDM-#2229: the shared docs files must still BE the shared docs files.
       # --docs-site scopes the comparison to the files the docs standard
       # governs, plus the stylesheet through its path mapping, so this job
-      # fails on them and only them. A transport failure warns; a 404 fails,
-      # because a missing path or a permissions problem will not fix itself.
+      # fails on them and only them. Exit 3 (the template, or a governed file
+      # in it, not found) fails too; a network failure only warns.
       #
       # Before the upload, like every check above: a drifted shared file that
       # is discovered after deployment has already reached readers.
       #
-      # THE COMPARISON BASIS DIFFERS BY EVENT, deliberately (template-sync
-      # SKILL.md: "use it where a template merge must not block, such as a
-      # deploy").
+      # Taken from the template's own docs.yml at v2.5.0
+      # (ai-agent-template#168). PR CI and the deploy BOTH compare against the
+      # commit the stamp records: a template merge must not turn a pull
+      # request red, or block publishing, over a change nobody made here,
+      # while a local edit still fails. A newer template release prints as a
+      # notice naming the shared files it changes, and does not fail. An
+      # `unknown` stamp falls back to upstream HEAD inside the script.
       #
-      # By default the check compares against upstream HEAD, so a merge in the
-      # template reddens this job with nothing changed here. That happened
-      # within hours of adopting v2.2.0: ai-agent-template#144, #145 and #149
-      # landed on main, and every LDM docs PR went red on files copied
-      # byte-for-byte from the tag.
+      # This job serves BOTH push and pull_request, which is where LDM's
+      # workflow differs from the template's shape -- so the behaviour above
+      # applies to every event this job runs on, which is the point.
       #
-      #   push (the path that deploys) -> --against-recorded, which compares
-      #     against the commit in .agents/TEMPLATE_REF.md. An upstream merge
-      #     can then never block a deploy of docs that are correct for the
-      #     version this repo has actually adopted.
-      #   pull_request -> upstream HEAD, deliberately left as-is. That is the
-      #     signal that a sync PR is due, and a PR is where acting on it is
-      #     cheap. It must stay a signal and not a blocker: a red PR here is
-      #     read, a red deploy is a broken site.
-      # LDM-#2229: the shared docs files must still BE the shared docs files.
-      # --docs-site scopes the comparison to the files the docs standard
-      # governs, plus the stylesheet through its path mapping, so this job
-      # fails on them and only them. A transport failure warns; a 404 fails,
-      # because a missing path or a permissions problem will not fix itself.
-      #
-      # Before the upload, like every check above: a drifted shared file that
-      # is discovered after deployment has already reached readers.
-      #
-      # STAMP-BASED, taken verbatim from the template's own docs.yml at
-      # v2.4.0 (ai-agent-template#157). It compares against the commit
-      # recorded in .agents/TEMPLATE_REF.md whenever the stamp holds a real
-      # one, and falls back to upstream HEAD only for an unstamped repo.
-      #
-      # This replaces an event-conditional version written here first, which
-      # used --against-recorded on push and HEAD on pull requests. The
-      # upstream form is better for a reason worth recording: comparing a PR
-      # against HEAD makes every docs PR go red whenever the template merges
-      # anything, on files copied byte-for-byte from a tag. That happened
-      # five times in one morning during this migration and cost two
-      # abandoned sync branches. The signal it provided -- "a sync is due" --
-      # is better served by the template's own release notice than by a red
-      # check on an unrelated PR.
+      # Skipped on Dependabot's pull requests: a dependency bump changes no
+      # shared file, so there is nothing here to check, and a skipped step
+      # lets a required docs check report success rather than pending. Those
+      # pull requests still build the site and run the rendered check above,
+      # because dependency bumps are exactly what break rendering. On a push
+      # github.event.pull_request is empty, so the step runs.
       - name: Verify the shared docs files match the template
+        if: ${{ github.event.pull_request.user.login != 'dependabot[bot]' }}
         run: |
-          if [ ! -f .agents/TEMPLATE_REF.md ]; then
-            echo "No .agents/TEMPLATE_REF.md: nothing to compare."
-            exit 0
-          fi
-          recorded=$(python3 -c 'import sys; sys.path.insert(0, "scripts"); from pathlib import Path; from check_template_drift import UNKNOWN_STAMP_VALUE, parse_template_reference; commit = parse_template_reference(Path(".agents/TEMPLATE_REF.md").read_text(encoding="utf-8")).commit; print("" if commit == UNKNOWN_STAMP_VALUE else commit)')
-          if [ -n "$recorded" ]; then
-            echo "Comparing against the recorded commit $recorded."
+          if [ -f .agents/TEMPLATE_REF.md ]; then
             python3 scripts/check_template_drift.py --docs-site --fail-on-drift --against-recorded
           else
-            echo "The stamp records no commit yet (unknown): comparing against upstream HEAD."
-            python3 scripts/check_template_drift.py --docs-site --fail-on-drift
+            echo "No .agents/TEMPLATE_REF.md: nothing to compare."
           fi
 
       - name: Upload Pages artifact
