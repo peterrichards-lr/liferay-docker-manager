@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A verification run now removes the images it pulled and the volumes it created** (LDM-#2214). Two mechanisms existed and neither covered it: the LDM-#2084 sweep removes images compose *built*, matched on the run's own project name, and `--prune-after` is a machine-wide `docker system prune -af --volumes` that is correctly off by default -- it would re-cost a 5 GB Liferay pull on the next run. Everything *pulled* rather than built fell between them, along with any volume outliving the project that made it.
+
+  The design is a diff, not a prune. An inventory of images and volumes is taken before anything is pulled and again at cleanup, and only the difference is removed. That is what makes it safe as a default: an image already on the host is in the start inventory and is never touched, so a warm cache survives, and another project's volumes were there at the start too, so they survive -- a distinction a machine-wide prune cannot make.
+
+  Three decisions, each of which could reasonably have gone the other way. Images are matched by **full ID**, never by tag, because a tag the run merely re-pointed is not a download and a re-pulled tag whose digest was already present must not be reaped. The reap runs **only on a pass**, because a failed run is about to be re-run and re-downloading DXP before every diagnosis costs more than the disk it reclaims; on a failure it says so. And it does **not** force removal: forcing would untag an image a running container still uses, where without it Docker refuses, which is correct and is counted and reported. `--keep-pulled` / `-KeepPulled` opts out.
+
 - **The round trip's containers are captured before they are deleted** (LDM-#2221). LDM-#2216 added `${ROUNDTRIP_PROJECT}` to the failure-log capture and it never once matched. The round trip removes its own project six lines after reporting the failure; the capture runs from the finalizer, at the end of the script. Three reports on three platforms carried the `--- FAILURE DEBUG LOGS ---` heading with no round-trip container beneath it, which reads exactly like a project that was never created.
 
   It cost a release. `v2.26.6-pre.9` was cut largely to settle whether the macOS round-trip failure was a host out of memory or an `ldm_core` defect -- two answers with opposite responses -- and came back unable to say, because `oom-killed` lives on a container that had already been removed.
@@ -30,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The LDM-#1574 probe carried the identical construct and is fixed with it. It survived only because `/` does not redirect; an access URL that did would have thrown and aborted the whole run on 5.1.
 
 ### Changed
+
+- **The documentation site moved onto the shared `ai-agent-template` docs standard** (LDM-#2229, LDM-#2226). The four shared files -- the stylesheet, the GitHub-alerts hook, `main.html` and `copyright.html` -- are now governed upstream and compared byte for byte by a drift check in docs CI, rather than being four copies maintained by hand across three sites. One rendered-output check replaced three local ones while asserting strictly more, and the left-hand navigation adopted the family's shared order and sentence case. Nothing here ships in the binary; the site is the deliverable.
 
 - **The documentation home page adopts the shared Liferay tools layout** (LDM-#2222). The three community tools' docs sites had drifted in title, in the shape of the task table, in whether the subject index was numbered, and in where the related-tools section sat -- none of which breaks a build, and none of which is visible in one repository's diff. The structure, headings and table formats are now shared; each site keeps its own rows. A rendered-output check asserts the heading text, the three section anchors and their order, both table headers, the related-tools rows, and that no heading carries an emoji -- because an `##` that becomes `###` changes the anchor and silently breaks every inbound link to it.
 
