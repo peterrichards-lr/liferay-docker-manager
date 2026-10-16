@@ -2,14 +2,16 @@
  * Liferay Blue -- shared documentation palette for the Liferay tools family
  * (lfr-tunnel, liferay-docker-manager, liferay-ai-commerce-accelerator).
  *
- * SHARED FILE. The canonical copy is docs/assets/stylesheets/liferay-blue.css
- * on the master branch of peterrichards-lr/lfr-tunnel. Each site carries a
- * copy with the same content. Never edit a copy: change the canonical file in
- * lfr-tunnel, then copy it to the others unchanged. A site-specific need goes
- * in a separate stylesheet listed after this one in extra_css. The rule is in
- * lfr-tunnel's CONTRIBUTING.md, "Shared docs files"; the sync plan, including
- * the CI checks that compare the copies, is
- * peterrichards-lr/liferay-ai-commerce-accelerator#1329.
+ * SHARED FILE. The canonical copy is
+ * .agents/templates/docs-profiles/liferay/liferay-blue.css on the main branch
+ * of peterrichards-lr/ai-agent-template; `bootstrap_template.py --docs-site
+ * --docs-profile liferay` copies it to docs/assets/stylesheets/liferay-blue.css
+ * and records that path mapping in .agents/TEMPLATE_REF.md. Never edit a copy:
+ * change the canonical file in the template, through a PR there, then copy it
+ * into each site unchanged. scripts/check_template_drift.py compares the
+ * copies. A site-specific need goes in a separate stylesheet listed after this
+ * one in extra_css. The rule is in the template's CONTRIBUTING.md, "Shared docs
+ * files", and .agents/skills/docs-site-standard/SKILL.md.
  *
  * Derived from LDM's original (LDM-#1822), which ports the lfr-tunnel portal's
  * palette (pkg/server/static/themes/liferay.css) so the two surfaces of the
