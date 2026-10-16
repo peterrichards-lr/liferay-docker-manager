@@ -1,15 +1,20 @@
 ﻿=== LDM BINARY VERIFICATION REPORT ===
-Timestamp: 10/12/2026 14:20:41
+Timestamp: 10/16/2026 13:42:15
 Platform:  Microsoft Windows NT 10.0.22631.0
 PowerShell: 5.1.22621.6133 (Desktop)
 Run Context: workstation
 Binary:    [ANONYMIZED]
-Version:   ldm 2.26.5-pre.5
-Script Ver: 2.26.5-pre.5
+Version:   ldm 2.26.6-pre.10
+Script Ver: 2.26.6-pre.10
 Docker:    29.4.0
+[0;33m⚠️  Elasticsearch container exited unexpectedly.[0m
+[0;33m⚠️  Elasticsearch failed to become ready in time.[0m
+[0;33mℹ  Saved the failing container's logs to C:\Users\[USER]\.ldm\infra\search\search-failure-20261016-134751.log[0m
+[0;33m⚠️  Attempting automatic search volume repair...[0m
+[0;33m⚠️  This deletes the SHARED search data at C:\Users\[USER]\.ldm\infra\search\data. Any project that had an index will need to rebuild it.[0m
 [0;32m✅  Infrastructure setup complete.[0m
 [0;32m✅  Infrastructure setup complete.[0m
-[SUCCESS] Custom SSL Port & Recreate verified.
+[SUCCESS] Custom SSL Port & Recreate verified (port 8443).
 [SUCCESS] Dev Guardrails verified.
 [SUCCESS] Cascading default write refused with the working command named; non-cascading keys still write.
 [SUCCESS] Config reset-all and revert verified, including the state-bearing refusal (LDM-#1853/#1854).
@@ -40,22 +45,22 @@ Docker:    29.4.0
 │ aws-1       │ 51.20.52.201    │ ec2-user │ NO             │
 [2m╰─────────────┴─────────────────┴──────────┴────────────────╯[0m
 [1;33m=== Target Compute Nodes Status & Connectivity Probe ===[0m
-[2m╭────────┬─────────────────┬────────┬────────────────┬──────────────────┬────────────────────╮[0m
-│ [0;37m[1mTARGET[0m │ [0;37m[1mHOST / ENDPOINT[0m │ [0;37m[1mSTATUS[0m │ [0;37m[1mENGINE VERSION[0m │ [0;37m[1mCPUs / MEMORY   [0m │ [0;37m[1mRUNNING CONTAINERS[0m │
-[2m├────────┼─────────────────┼────────┼────────────────┼──────────────────┼────────────────────┤[0m
-│ local  │ localhost       │ [0;32mONLINE[0m │ v29.4.0        │ 12 CPUs / 7.6 GB │ 3                  │
-[2m╰────────┴─────────────────┴────────┴────────────────┴──────────────────┴────────────────────╯[0m
+[2m╭────────┬─────────────────┬────────┬────────────────┬───────────────────┬────────────────────╮[0m
+│ [0;37m[1mTARGET[0m │ [0;37m[1mHOST / ENDPOINT[0m │ [0;37m[1mSTATUS[0m │ [0;37m[1mENGINE VERSION[0m │ [0;37m[1mCPUs / MEMORY    [0m │ [0;37m[1mRUNNING CONTAINERS[0m │
+[2m├────────┼─────────────────┼────────┼────────────────┼───────────────────┼────────────────────┤[0m
+│ local  │ localhost       │ [0;32mONLINE[0m │ v29.4.0        │ 12 CPUs / 10.7 GB │ 3                  │
+[2m╰────────┴─────────────────┴────────┴────────────────┴───────────────────┴────────────────────╯[0m
 [0;32m✅  Target node 'e2e-target-8082' (127.0.0.1) registered successfully.[0m
 [SUCCESS] Target registration verified.
 [0;32m✅  Target node 'e2e-target-8082' removed.[0m
 [0;32m✅  Target node 'loopback-node-8082' (127.0.0.2) registered successfully.[0m
 [SUCCESS] Loopback target registration verified.
 [1;33m=== Target Compute Nodes Status & Connectivity Probe ===[0m
-[2m╭────────────────────┬─────────────────┬────────┬────────────────┬──────────────────┬────────────────────╮[0m
-│ [0;37m[1mTARGET            [0m │ [0;37m[1mHOST / ENDPOINT[0m │ [0;37m[1mSTATUS[0m │ [0;37m[1mENGINE VERSION[0m │ [0;37m[1mCPUs / MEMORY   [0m │ [0;37m[1mRUNNING CONTAINERS[0m │
-[2m├────────────────────┼─────────────────┼────────┼────────────────┼──────────────────┼────────────────────┤[0m
-│ loopback-node-8082 │ 127.0.0.2       │ [0;32mONLINE[0m │ v29.4.0        │ 12 CPUs / 7.6 GB │ 3                  │
-[2m╰────────────────────┴─────────────────┴────────┴────────────────┴──────────────────┴────────────────────╯[0m
+[2m╭────────────────────┬─────────────────┬────────┬────────────────┬───────────────────┬────────────────────╮[0m
+│ [0;37m[1mTARGET            [0m │ [0;37m[1mHOST / ENDPOINT[0m │ [0;37m[1mSTATUS[0m │ [0;37m[1mENGINE VERSION[0m │ [0;37m[1mCPUs / MEMORY    [0m │ [0;37m[1mRUNNING CONTAINERS[0m │
+[2m├────────────────────┼─────────────────┼────────┼────────────────┼───────────────────┼────────────────────┤[0m
+│ loopback-node-8082 │ 127.0.0.2       │ [0;32mONLINE[0m │ v29.4.0        │ 12 CPUs / 10.7 GB │ 3                  │
+[2m╰────────────────────┴─────────────────┴────────┴────────────────┴───────────────────┴────────────────────╯[0m
 [0;32m✅  Target node 'loopback-node-8082' removed.[0m
 [0;32m✅  Target node 'announce-node-8082' (192.0.2.10) registered successfully.[0m
 [0;33mℹ  Docker context 'announce-node-8082' dials ssh://192.0.2.10.[0m
@@ -64,6 +69,8 @@ Docker:    29.4.0
 [2m╭────────────────────┬───────────────┬────────────────────┬─────────────┬───────────────────────╮[0m
 │ [0;37m[1mProject           [0m │ [0;37m[1mVersion      [0m │ [0;37m[1mTarget            [0m │ [0;37m[1mStatus     [0m │ [0;37m[1mURL                  [0m │
 [2m├────────────────────┼───────────────┼────────────────────┼─────────────┼───────────────────────┤[0m
+│ [0;36mbarbtest[0m 🌱        │ 2026.q3.7     │ [1;36mlocal[0m              │ [0;33mNot Created[0m │ [4mhttp://localhost:8080[0m │
+│ [0;36mbenchtest[0m 🌱       │ 2026.q3.7     │ [1;36mlocal[0m              │ [0;33mNot Created[0m │ [4mhttp://localhost:8080[0m │
 │ [0;36mannounce-proj-8082[0m │ 2026.q1.7-lts │ [1;36mannounce-node-8082[0m │ [0;33mNot Created[0m │ [4mhttp://localhost:8099[0m │
 [2m╰────────────────────┴───────────────┴────────────────────┴─────────────┴───────────────────────╯[0m
 
@@ -75,7 +82,6 @@ Docker:    29.4.0
 [0;36m💡 Tip:      Nothing is listening on port 22. If the node was started moments ago, sshd may not be up yet -- wait a few seconds and retry. Otherwise it may be stopped or re-addressed: check with 'ldm target status sshfail-node-8082', then re-register with 'ldm target add sshfail-node-8082 --host <ip> --user nobody --key <key>'.[0m
 [SUCCESS] Unreachable node diagnosed by name and cause, with no raw blob (LDM-#1345).
 [0;33mℹ  The LDM project 'portconflict-8082' already exists and this command will reconfigure it.[0m
-[0;33mℹ  Liferay tag 2026.q1.7-lts carries no compatibility claim: the package records the tag it was built with, not one it has been tested against.[0m
 [1;36m▶  Synchronizing Assets[0m
 [1;31m❌  Port conflict detected: Port 5601 is already in use on the host and is required by service 'kibana' in your compose configuration. It is currently held by container 'ldm-e2e-port-holder-8082'.[0m
 [0;36m💡 Tip:      Service 'kibana' has a fixed port, so a re-run will produce 5601 again. Free up port 5601 on the host, or disable/move that service, then re-run.[0m
@@ -84,22 +90,21 @@ Docker:    29.4.0
 [SUCCESS] --master flag alias verified.
 [0;33m⚠️  Could not read metadata at C:\Users\[USER]\ldm-verify\e2e-work-dir\ldm-smoke-test\meta: content is in neither the JSON object format nor the legacy flat key-value format[0m
 [0;33mℹ  The LDM project 'ldm-smoke-test' already exists and this command will reconfigure it.[0m
-[0;33mℹ  Liferay tag 2026.q1.13-lts carries no compatibility claim: the package records the tag it was built with, not one it has been tested against.[0m
 [1;36m▶  Synchronizing Assets[0m
 [1;36m▶  Starting Container Stack[0m
 [0;32m✅  Project 'ldm-smoke-test' started in background.[0m
 [0;36m💡  Next step: Run 'ldm link <path-to-cx>' to attach client extensions, or 'ldm logs -f ldm-smoke-test' to tail logs.[0m
-✅  Liferay ready: http://localhost:8080  (2m 17s)
+✅  Liferay ready: http://localhost:8080  (1m 58s awaiting readiness)
 [0;32m✅  Project '.' is responding to HTTP (200).[0m
 [0;32m✅  Project '.' is fully initialized and idle.[0m
 [SUCCESS] The portal runs with umask 0022, so the config trees it publishes are readable by a client extension (LDM-#1944).
 [0;32m✅  Artifact deployment complete.[0m
 [SUCCESS] Hot Deploy verified.
 [0;32m✅  Database dump completed.[0m
-[0;32m✅  Snapshot saved: C:\Users\[USER]\ldm-verify\e2e-work-dir\ldm-smoke-test\snapshots\20261012_143908[0m
+[0;32m✅  Snapshot saved: C:\Users\[USER]\ldm-verify\e2e-work-dir\ldm-smoke-test\snapshots\20261016_140817[0m
 [SUCCESS] Integrity check verified.
 [1;33m=== Snapshots for ldm-smoke-test ===[0m
-[1] [0;36m20261012_143908[0m - [1mBinary-Verify[0m (1.0 GB)[2m [DB,VOL,MOD][0m
+[1] [0;36m20261016_140817[0m - [1mBinary-Verify[0m (1.0 GB)[2m [DB,VOL,MOD][0m
 [0;33m⚠️  Resetting [1mldm-smoke-test[0m (all)...[0m
 [0;33m⚠️  Tearing down stack: ldm-smoke-test[0m
 [0;32m✅  Project ldm-smoke-test reset successful.[0m
@@ -107,7 +112,6 @@ Docker:    29.4.0
 [1;36m▶  Restoring Workspace Data[0m
 [0;33m⚠️  Discarded 11 search setting(s) from the package's portal-ext.properties; this machine resolved search_mode 'sidecar'.[0m
 [1;36m▶  Finalizing Metadata[0m
-[0;33mℹ  Liferay tag 2026.q1.13-lts carries no compatibility claim: the package records the tag it was built with, not one it has been tested against.[0m
 [1;36m▶  Synchronizing Assets[0m
 [1;36m▶  Starting Container Stack[0m
 [1;36m▶  Restoring Database Components[0m
@@ -131,12 +135,11 @@ Docker:    29.4.0
 [SUCCESS] Trace Log (last-command.log) verified.
 [0;32m✅  Updated scale factors for project ldm-smoke-test[0m
 [0;33mℹ  The LDM project 'ldm-smoke-test' already exists and this command will reconfigure it.[0m
-[0;33mℹ  Liferay tag 2026.q1.13-lts carries no compatibility claim: the package records the tag it was built with, not one it has been tested against.[0m
 [1;36m▶  Synchronizing Assets[0m
 [1;36m▶  Starting Container Stack[0m
 [0;32m✅  Project 'ldm-smoke-test' started in background.[0m
 [0;36m💡  Next step: Run 'ldm link <path-to-cx>' to attach client extensions, or 'ldm logs -f ldm-smoke-test' to tail logs.[0m
-[SUCCESS] Logs Export verified (C:\Users\[USER]\ldm-verify\e2e-work-dir\ldm-smoke-test\ldm-smoke-test-ldm-smoke-test_20261012_144729.log).
+[SUCCESS] Logs Export verified (C:\Users\[USER]\ldm-verify\e2e-work-dir\ldm-smoke-test\ldm-smoke-test-ldm-smoke-test_20261016_141703.log).
 [SUCCESS] ldm start fast-fail verified.
 [SUCCESS] ldm run reconfigure UX message verified.
 [SUCCESS] Safe SELECT SQL Query verified.
@@ -150,11 +153,10 @@ Docker:    29.4.0
 [SUCCESS] ldm list --json schema verified.
 [SUCCESS] ldm status --json schema verified.
 [0;33mℹ  The LDM project 'ldm-smoke-test' already exists and this command will reconfigure it.[0m
-[0;33mℹ  Liferay tag 2026.q1.13-lts carries no compatibility claim: the package records the tag it was built with, not one it has been tested against.[0m
 [1;36m▶  Synchronizing Assets[0m
 [1;36m▶  Starting Container Stack[0m
 [1;36m▶  Awaiting Liferay Readiness[0m
-✅  Liferay ready: http://localhost:8080  (51s)
+✅  Liferay ready: http://localhost:8080  (58s awaiting readiness)
 [SUCCESS] Idempotent Exit Code 5 verified.
 [SUCCESS] Reported access URL serves: http://localhost:8080 -> HTTP 200 (LDM-#1574).
 [0;32m✅  Artifact deployment complete.[0m
@@ -162,15 +164,32 @@ Docker:    29.4.0
 [0;32m✅  Artifact deployment complete.[0m
 [SUCCESS] Client-extension service: routes anchored at /etc/liferay/lxc/routes with both trees addressed inside it (not over the app), domain supplied, host resolvable, and the extension's own /opt/liferay/routes code still visible inside the running container (LDM-#1911/#1918/#1944).
 [SUCCESS] No two services publish the same host port (LDM-#1987/#1969).
-[WARNING] SKIPPED (not run): Liferay published no per-extension routes directory within 180s. Nothing to pair against, so LDM-#1944 was NOT verified on this run.
+[SUCCESS] Every routes directory Liferay published (synthetic-svc) is one LDM points an extension at, inside the anchored mount (LDM-#1944).
 [SUCCESS] Routes tree scaffolded on the host: routes/default/dxp and routes/default/synthetic-svc (LDM-#1928).
 [0;32m✅  Artifact deployment complete.[0m
 [SUCCESS] LDM overrides the extension's declared routes paths (/opt/custom/lxc/dxp-tree, /opt/custom/lxc/ext-tree) and addresses both trees inside the anchored routes/default mount, under the projectName (LDM-#1944).
 [SUCCESS] Custom service joins the shared config space: routes mounted, LXC domain supplied, host resolvable, waits for Liferay (LDM-#1928).
 [0;32m✅  Database dump completed.[0m
-[0;32m✅  Snapshot saved: C:\Users\[USER]\ldm-verify\e2e-work-dir\ldm-smoke-test\snapshots\20261012_145358[0m
+[0;32m✅  Snapshot saved: C:\Users\[USER]\ldm-verify\e2e-work-dir\ldm-smoke-test\snapshots\20261016_142039[0m
 [SUCCESS] Snapshot manifest lists the client extension it claims (LDM-#1573).
-[WARNING] SKIPPED (not run): no files under routes/ after 180s, from inside a container OR on the host, with every client extension in this run already deployed. Liferay publishes the dxp tree during boot, so by here it should exist -- its absence means Liferay's published config is not reaching the host, and a client extension could not read it either (LDM-#2042).
+[SUCCESS] All 4 published config file(s) under routes/ are readable by a client extension (LDM-#1944/#1946).
+   published DXP config tree:
+     com.liferay.lxc.dxp.domains = localhost:8080
+     com.liferay.lxc.dxp.main.domain = localhost:8080
+     com.liferay.lxc.dxp.mainDomain = localhost:8080
+     com.liferay.lxc.dxp.server.protocol = http
+ASSERTED: the portal published 'localhost:8080' for a project configured as 'localhost'.
+[SUCCESS] The portal published the configured host name into routes/default/dxp (LDM-#2154).
+>> Verifying LDM recorded the phases of the boot it just performed (LDM-#2169)...
+   phases LDM recorded for this boot:
+     Tomcat Initializing = 0.0s
+     Database Schema Initializing = 0.0s
+     OSGi Framework Starting = 0.0s
+     OSGi Framework Started = 0.0s
+     Portal Startup Progress = 15.7s
+     Tomcat Server Ready = 21.0s
+ASSERTED: LDM recorded 6 startup phases including 'Tomcat Server Ready', and the boot's outcome as 'ready', so a slow boot on this platform can be decomposed and a finished one can be told from a stalled one.
+[SUCCESS] LDM recorded a decomposable startup phase breakdown (LDM-#2169).
 [0;33m⚠️  ldm-verify-noop-patch.jar does not exist in /opt/liferay/osgi/portal for this image -- it may have been renamed or removed upstream; copying anyway (--force-portal-patches).[0m
 [0;32m✅  Applied 1 portal patch(es) to /opt/liferay/osgi/portal.[0m
 [0;33m⚠️  ldm-verify-noop-patch.jar does not exist in /opt/liferay/osgi/portal for this image -- it may have been renamed or removed upstream; copying anyway (--force-portal-patches).[0m
@@ -194,6 +213,7 @@ Docker:    29.4.0
 [SUCCESS] 'ldm db start'/'db stop' drive the real global container, idempotently (LDM-#1400).
 [SUCCESS] Every service and volume carries the project UUID ownership label (LDM-#1393/#1395).
 [SUCCESS] Shared search mode verified (flag honoured, mode persisted, OSGi config written and mounted).
+[SUCCESS] .ldmp round trip verified: packed, imported as 'ldm-smoke-test-roundtrip', booted and serving HTTP 200 on 8088 (LDM-#2131).
 [1;33m=== LDM Service Status ===[0m
 [0;37mGlobal Infrastructure:[0m
 [2m╭───────────────────────┬─────────┬───────────────────────────────╮[0m
@@ -208,4 +228,4 @@ Docker:    29.4.0
 [2m╰──────────────────┴────────────────┴───────────────────────┴───────╯[0m
 
 [SUCCESS] ALL E2E VERIFICATIONS PASSED!
-[INFO]  Other LDM projects are running (ldm-smoke-test). Skipping global infrastructure cleanup.
+[INFO]  No other LDM projects running. Cleaning up global infrastructure...
