@@ -49,10 +49,12 @@ Checked when mkdocs.yml configures them:
   NO-NOTICE           extra.docs_standard.notice: the home page shows it as an `info`
                       callout above its first section
   HOME-LAYOUT         extra.docs_standard.home_layout: the shared home-page layout
-Deleting a key switches its check off. A site lists the checks it cannot do without in
-extra.docs_standard.required (for example [MISSING-VERIFICATION, NO-NOTICE]): a required check
-with no configuration fails, naming the key, instead of being skipped. An unknown name in the
-list fails too, as REQUIRED (ai-agent-template#141).
+Deleting a key switches its check off. So a check can be REQUIRED: one that is fails, naming
+each missing key and sub-key (CONFIGURED_CHECKS), instead of being skipped or checking less
+(ai-agent-template#141, #155). Required: what the site's profile requires (PROFILE_REQUIRED: the
+Liferay profile requires all four), plus extra.docs_standard.required, less what
+extra.docs_standard.waive drops with a reason. An unknown name, or a waive with no reason or of
+a check nothing requires, fails as REQUIRED.
 
 Exit codes: 0 every assertion passed; 1 an assertion failed, or nothing was scanned.
 """
@@ -722,48 +724,124 @@ def check_home_layout(home_html, standard, site_name):
     return bad, ok
 
 
-# The checks that run only when mkdocs.yml configures them: the key that switches each on, and
-# whether it is set. extra.docs_standard.required names the ones a site cannot lose by deleting
-# a key (#141).
+def _extra(config):
+    return config.get("extra") or {}
+
+
+def _standard(config):
+    return _extra(config).get("docs_standard") or {}
+
+
+def _block(config, key):
+    value = _standard(config).get(key)
+    return value if isinstance(value, dict) else {}
+
+
+# The checks that run only when mkdocs.yml configures them, and every key a REQUIRED one needs:
+# a key whose absence would switch it off (#141), and a sub-key whose absence would leave it
+# running but checking less (#155). Each entry is (the key, as named in a failure, and whether
+# it is set).
 CONFIGURED_CHECKS = {
-    "MISSING-VERIFICATION": (
-        "extra.google_site_verification or extra.bing_site_verification",
-        lambda extra, standard: extra.get("google_site_verification")
-        or extra.get("bing_site_verification")),
-    "MISSING-SOCIAL": ("extra.social_image", lambda extra, standard: extra.get("social_image")),
-    "NO-NOTICE": ("extra.docs_standard.notice", lambda extra, standard: standard.get("notice")),
-    "HOME-LAYOUT": ("extra.docs_standard.home_layout: true",
-                    lambda extra, standard: standard.get("home_layout")),
+    "MISSING-VERIFICATION": [
+        ("extra.google_site_verification or extra.bing_site_verification",
+         lambda c: _extra(c).get("google_site_verification")
+         or _extra(c).get("bing_site_verification")),
+    ],
+    "MISSING-SOCIAL": [
+        ("extra.social_image", lambda c: _extra(c).get("social_image")),
+        ("extra.favicon_svg", lambda c: _extra(c).get("favicon_svg")),
+        ("theme.favicon", lambda c: (c.get("theme") or {}).get("favicon")),
+    ],
+    "NO-NOTICE": [
+        (f"extra.docs_standard.notice.{key}", lambda c, key=key: _block(c, "notice").get(key))
+        for key in ("title", "text", "link_text")
+    ],
+    "HOME-LAYOUT": [
+        ("extra.docs_standard.home_layout: true", lambda c: _standard(c).get("home_layout")),
+    ] + [
+        # Only with a related block: a site with no related projects has no section to check.
+        (f"extra.docs_standard.related.{key}",
+         lambda c, key=key: "related" not in _standard(c) or _block(c, "related").get(key))
+        for key in ("heading", "intro", "rows")
+    ],
+}
+
+# A profile requires its checks by default, so a site cannot turn one off by deleting
+# `required` (#155). The profile is known by the shared stylesheet in extra_css, which it
+# cannot drop without losing its palette. A site drops a check only through an entry in
+# extra.docs_standard.waive, which names it and gives a reason.
+PROFILE_REQUIRED = {
+    "liferay-blue.css": ("the Liferay profile",
+                         ("NO-NOTICE", "HOME-LAYOUT", "MISSING-VERIFICATION", "MISSING-SOCIAL")),
 }
 
 
-def check_required(extra, standard, always_run):
-    """Failures for extra.docs_standard.required, as {check name: problems}.
+def profile_required(config):
+    """(the profile's name, the checks it requires), or (None, ()) for a site with no profile."""
+    for sheet in config.get("extra_css") or []:
+        if isinstance(sheet, str) and sheet.rsplit("/", 1)[-1] in PROFILE_REQUIRED:
+            return PROFILE_REQUIRED[sheet.rsplit("/", 1)[-1]]
+    return None, ()
 
-    A required check that is configured runs as usual and needs nothing here. One that is not
-    would be skipped, and that is what this prevents: lfr-tunnel lost its Search Console
-    verification to a deleted key while its build stayed green (lfr-tunnel#2381). A check in
-    `always_run` already runs on every site, so naming it is allowed and changes nothing.
+
+def check_required(config, always_run):
+    """Failures for the required checks, as {check name: problems}.
+
+    Required: what the site's profile requires, plus extra.docs_standard.required, less what
+    extra.docs_standard.waive drops with a reason. A required check fails, naming each missing
+    key, when a key it needs is not set: lfr-tunnel lost its Search Console verification to a
+    deleted key while its build stayed green (lfr-tunnel#2381), and a deleted sub-key leaves a
+    check running that checks less (#155). A check in `always_run` already runs on every site,
+    so naming it in `required` is allowed and changes nothing.
     """
+    standard = _standard(config)
+    problems = {}
     required = standard.get("required")
     if required is None:
-        return {}
-    if not isinstance(required, list):
-        return {"REQUIRED": ["extra.docs_standard.required must be a list of check names, "
-                             f"not {required!r}"]}
-    problems = {}
-    unknown = [name for name in required if name not in CONFIGURED_CHECKS
-               and name not in always_run]
+        required = []
+    elif not isinstance(required, list):
+        problems["REQUIRED"] = ["extra.docs_standard.required must be a list of check names, "
+                                f"not {required!r}"]
+        required = []
+    waive = standard.get("waive")
+    if waive is None:
+        waive = {}
+    elif not isinstance(waive, dict):
+        problems.setdefault("REQUIRED", []).append(
+            "extra.docs_standard.waive must map a check name to the reason it is waived, "
+            f"not {waive!r}")
+        waive = {}
+
+    profile, by_profile = profile_required(config)
+    known = set(CONFIGURED_CHECKS) | set(always_run)
+    unknown = [name for name in list(required) + list(waive) if name not in known]
     if unknown:
-        problems["REQUIRED"] = [f"unknown check name(s) in extra.docs_standard.required: "
-                                f"{unknown!r}; a required check is one of "
-                                f"{sorted(CONFIGURED_CHECKS)!r}"]
-    for name in required:
-        if name in CONFIGURED_CHECKS:
-            key, is_configured = CONFIGURED_CHECKS[name]
-            if not is_configured(extra, standard):
-                problems[name] = [f"required by extra.docs_standard.required, but {key} is not "
-                                  "set, so nothing was checked"]
+        problems.setdefault("REQUIRED", []).append(
+            f"unknown check name(s) in extra.docs_standard.required or waive: {unknown!r}; a "
+            f"required check is one of {sorted(CONFIGURED_CHECKS)!r}")
+    for name, reason in waive.items():
+        if name not in known:
+            continue
+        if not isinstance(reason, str) or not reason.strip():
+            problems.setdefault("REQUIRED", []).append(
+                f"extra.docs_standard.waive.{name} gives no reason; a waived check needs one")
+        elif name not in by_profile and name not in required:
+            problems.setdefault("REQUIRED", []).append(
+                f"extra.docs_standard.waive.{name}: nothing requires {name}, so there is nothing "
+                "to waive")
+
+    waived = {name for name, reason in waive.items() if isinstance(reason, str) and reason.strip()}
+    for name in dict.fromkeys(list(by_profile) + list(required)):
+        if name not in CONFIGURED_CHECKS or name in waived:
+            continue
+        why = f"by {profile}" if name in by_profile else "by extra.docs_standard.required"
+        missing = [key for key, is_set in CONFIGURED_CHECKS[name] if not is_set(config)]
+        if missing:
+            problems[name] = [f"required {why}, but {key} is not set, so it is not checked"
+                              for key in missing]
+            if name in by_profile:
+                problems[name].append(f"set it, or waive {name} in extra.docs_standard.waive "
+                                      "with the reason it does not apply")
     return problems
 
 
@@ -819,7 +897,7 @@ def run(site, config):
             failures["HOME-LAYOUT"] = bad
         passes += [f"home: {line}" for line in ok]
     # SECTION-TITLE is a known name even on a build without an index page, where it did not run.
-    failures.update(check_required(extra, standard, set(always) | {"SECTION-TITLE"}))
+    failures.update(check_required(config, set(always) | {"SECTION-TITLE"}))
 
     if failures:
         for name, problems in failures.items():

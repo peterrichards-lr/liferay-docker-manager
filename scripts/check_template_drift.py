@@ -48,8 +48,8 @@ Exit codes:
      since the recorded ref are reported but are not drift: only content is
   3  nothing could be compared: the upstream repository was not found or refused access, a
      governed path does not exist upstream, or --against-recorded found no usable recorded
-     commit. Fails with or without --fail-on-drift. Also: under --docs-site --fail-on-drift,
-     a profile stylesheet present locally with no path mapping (a report-only run warns)
+     commit, or (under --docs-site) a profile stylesheet is present locally with no path
+     mapping, so the shared file was never compared. Fails with or without --fail-on-drift
 """
 
 import argparse
@@ -808,7 +808,7 @@ def check_template_drift(root_dir: Path, repo_url: Optional[str] = None,
                     if docs_site else [])
         if unmapped:
             print(
-                f"\n{'❌' if fail_on_drift else '⚠️'} Not compared: a shared profile stylesheet "
+                "\n❌ Not compared: a shared profile stylesheet "
                 "with no path mapping. Add to the Path mapping section\n"
                 f"   of {TEMPLATE_REFERENCE_RELPATH.as_posix()}:\n   " + '\n   '.join(unmapped))
 
@@ -821,10 +821,11 @@ def check_template_drift(root_dir: Path, repo_url: Optional[str] = None,
                 f"   Path mapping section of {TEMPLATE_REFERENCE_RELPATH.as_posix()}.",
                 file=sys.stderr)
             return 3
-        # A deleted mapping leaves the shared stylesheet uncompared, and must not pass a gate
-        # (#141). Exit 3, not 2: nothing differs that anyone saw, the file was never compared,
-        # and a re-run will not fix it. A report-only run warns, as before.
-        if unmapped and fail_on_drift:
+        # A deleted mapping leaves the shared stylesheet uncompared, and must not pass (#141).
+        # Exit 3, not 2: nothing differs that anyone saw, the file was never compared, and a
+        # re-run will not fix it. With or without --fail-on-drift, like every other exit 3: a
+        # report-only run that cannot compare a governed file has not reported on it.
+        if unmapped:
             print(
                 f"\n❌ {len(unmapped)} shared profile stylesheet(s) not compared: no path mapping "
                 f"in {TEMPLATE_REFERENCE_RELPATH.as_posix()}.\n"
