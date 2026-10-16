@@ -3812,3 +3812,108 @@ class TheRoundTripIsCapturedBeforeItIsDestroyed(unittest.TestCase):
             "the finalizer still lists the round trip, which cannot exist by "
             "the time it runs -- a capture list that silently matches nothing",
         )
+
+
+class NeitherHalfRefusesARedirectWhenItAsksThePortal(unittest.TestCase):
+    """LDM-#2227: the two halves asked the same URL different questions.
+
+    The shell half probes with `urllib.request.urlopen`, which FOLLOWS
+    redirects, and both of its call sites accept the followed result (`2*|3*`
+    for LDM-#1574, `200 | 302` for the round trip). The PowerShell half passed
+    `-MaximumRedirection 0`, which does not hand back a 3xx response -- it
+    raises a terminating error, leaving the status to be recovered from
+    `$_.Exception.Response`.
+
+    That recovery is not version-portable. PowerShell 7 is HttpClient-based
+    and populates `.Response` for the blocked redirect; Windows PowerShell 5.1
+    is HttpWebRequest-based and does not, so the probe fell through to its
+    `"000"` initialiser. `/c/portal/layout` 302-redirects an anonymous GET and
+    `/` does not, which is precisely why `v2.26.6-pre.9` failed the round trip
+    on 5.1 while the LDM-#1574 probe passed in the same run, and why PS 7 on
+    the same machine and port reported 302.
+
+    Measured on pwsh 7.6.7 against a server mimicking Liferay's redirect:
+    following turns the 302 into a 200 and leaves 200/500/refused unchanged.
+
+    The second assertion here is about diagnosis rather than correctness. The
+    old `catch` discarded `$_.Exception.Message`, so a refused connection, a
+    timeout and an unreadable redirect were all the same bare `'000'` -- which
+    is why pre.9's failure needed a second run on a different shell to
+    interpret at all.
+    """
+
+    @staticmethod
+    def _uncommented(text):
+        """PowerShell lines with the comment tail removed.
+
+        The fix's own explanation names `-MaximumRedirection 0`, so a plain
+        substring search over the file would match the comment that documents
+        why it is gone -- a test that fails on its own rationale.
+        """
+        out = []
+        for line in text.splitlines():
+            stripped = line.split("#", 1)[0]
+            if stripped.strip():
+                out.append(stripped)
+        return "\n".join(out)
+
+    def test_no_powershell_probe_refuses_redirects(self):
+        code = self._uncommented(PS1_SCRIPT.read_text(encoding="utf-8"))
+        self.assertNotIn(
+            "-MaximumRedirection",
+            code,
+            "a PowerShell probe refuses redirects again: on Windows "
+            "PowerShell 5.1 the blocked 3xx is unreadable and reads as '000', "
+            "which is LDM-#2227",
+        )
+
+    def test_both_portal_probes_go_through_the_shared_helper(self):
+        text = PS1_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            "function Get-HttpStatus {",
+            text,
+            "the shared probe helper is gone; the twin of http_status()",
+        )
+        # Both assertions that ask a portal whether it serves, by the issue
+        # each exists for.
+        for marker in (
+            "$urlProbe = Get-HttpStatus -Uri $statusUrl",
+            "$roundTripProbe = Get-HttpStatus -Uri "
+            '"http://localhost:$roundTripPort/c/portal/layout"',
+        ):
+            self.assertIn(
+                marker,
+                text,
+                f"a probe stopped using Get-HttpStatus: {marker!r}. A raw "
+                "Invoke-WebRequest here is how the 5.1 divergence returns",
+            )
+
+    def test_the_shell_half_still_follows_redirects(self):
+        """The other side of the parity claim, asserted rather than assumed."""
+        text = BASH_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            "urllib.request.urlopen",
+            text,
+            "http_status() no longer uses urlopen; if it has moved to "
+            "something that refuses redirects, the PowerShell half is now the "
+            "one asking the right question and this parity is inverted",
+        )
+
+    def test_a_failed_probe_says_why_it_failed(self):
+        text = PS1_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            "$note = $_.Exception.Message",
+            text,
+            "Get-HttpStatus discards the exception message again, so every "
+            "failure mode renders as a bare '000' (LDM-#2227)",
+        )
+        self.assertIn(
+            "The probe reported: $($roundTripProbe.Note)",
+            text,
+            "the round-trip failure verdict no longer reports the reason",
+        )
+        self.assertIn(
+            "The probe reported: $($urlProbe.Note)",
+            text,
+            "the access-URL failure no longer reports the reason",
+        )

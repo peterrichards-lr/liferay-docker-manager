@@ -1020,6 +1020,52 @@ function Write-Verdict {
     $Message | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
 }
 
+function Get-HttpStatus {
+    # The PowerShell twin of http_status() in verify_e2e_refactor.sh. Returns
+    # the status as a string, plus the reason when there isn't one.
+    #
+    # LDM-#2227: redirects are FOLLOWED here, and the absence of
+    # -MaximumRedirection 0 is the fix, not an oversight.
+    #
+    # Refusing redirects does not hand you a 3xx response -- it raises a
+    # terminating error, and the status then has to be dug out of
+    # $_.Exception.Response. That dig is not version-portable. PowerShell 7 is
+    # HttpClient-based and populates .Response for a blocked redirect, so it
+    # reads 302. Windows PowerShell 5.1 is HttpWebRequest-based and does not,
+    # so it fell through to "000" -- and `/c/portal/layout` 302-redirects an
+    # anonymous GET, which is why the round trip failed on 5.1 in pre.9 while
+    # the LDM-#1574 probe against `/` passed in that same run.
+    #
+    # The shell half never had this: urllib.request.urlopen follows redirects,
+    # and both of its call sites accept the followed result. Following here is
+    # what makes the two halves ask the same question.
+    #
+    # -TimeoutSec is mandatory -- neither shell bounds this by default and a
+    # hung probe would burn a CI job rather than fail it.
+    param(
+        [Parameter(Mandatory = $true)][string]$Uri,
+        [int]$TimeoutSec = 30
+    )
+    $status = "000"
+    $note = ""
+    try {
+        $resp = Invoke-WebRequest -Uri $Uri -TimeoutSec $TimeoutSec `
+            -UseBasicParsing -ErrorAction Stop
+        $status = [string][int]$resp.StatusCode
+    }
+    catch {
+        # Kept whatever happens: a refused connection, a timeout and an
+        # unreadable response are otherwise the same bare "000", which is
+        # exactly what made pre.9's failure need a second run on another
+        # shell to interpret.
+        $note = $_.Exception.Message
+        if ($_.Exception.Response) {
+            $status = [string][int]$_.Exception.Response.StatusCode
+        }
+    }
+    return [PSCustomObject]@{ Status = $status; Note = $note }
+}
+
 function Get-HostFreeGb {
     # LDM-#1435: the volume backing the engine, not the profile directory.
     try {
@@ -4359,22 +4405,18 @@ zf.close()
     }
 
     $statusUrl = $statusUrl.Trim()
-    $urlCode = 0
-    try {
-        $resp = Invoke-WebRequest -Uri $statusUrl -TimeoutSec 30 -UseBasicParsing -MaximumRedirection 0 -ErrorAction Stop
-        $urlCode = [int]$resp.StatusCode
-    } catch {
-        if ($_.Exception.Response) {
-            $urlCode = [int]$_.Exception.Response.StatusCode
-        } else {
-            $urlCode = 0
-        }
-    }
+    # LDM-#2227: follows redirects, as the shell half's `2*|3*` case already
+    # did. This probe survived 5.1 only because `/` answers 200 outright; an
+    # access URL that redirected would have thrown here on 5.1 and aborted the
+    # whole run, for the same unreadable-exception reason the round trip hit.
+    $urlProbe = Get-HttpStatus -Uri $statusUrl
+    $urlCode = [int]$urlProbe.Status
 
     if ($urlCode -ge 200 -and $urlCode -lt 400) {
         Write-Verdict "[SUCCESS] Reported access URL serves: $statusUrl -> HTTP $urlCode (LDM-#1574)."
     } else {
-        throw "LDM reports an access URL that does not serve: $statusUrl -> HTTP $urlCode. 0 means nothing answered -- the dead-URL defect this check exists for (LDM-#1574)."
+        $urlNote = if ($urlProbe.Note) { " The probe reported: $($urlProbe.Note)" } else { "" }
+        throw "LDM reports an access URL that does not serve: $statusUrl -> HTTP $urlCode. 0 means nothing answered -- the dead-URL defect this check exists for (LDM-#1574).$urlNote"
     }
     } # LDM-#1975 end section: project
 
@@ -6668,23 +6710,22 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     # as an exception carrying the status; a refused connection as one with no
     # Response at all. -TimeoutSec is mandatory -- neither bounds this by
     # default and a hung probe would burn a CI job rather than fail it.
+    #
+    # Redirects are FOLLOWED, and that is load-bearing -- see Get-HttpStatus.
     if ($roundTripOk) {
-        $roundTripStatus = "000"
-        try {
-            $resp = Invoke-WebRequest -Uri "http://localhost:$roundTripPort/c/portal/layout" `
-                -TimeoutSec 30 -UseBasicParsing -MaximumRedirection 0 -ErrorAction Stop
-            $roundTripStatus = [string][int]$resp.StatusCode
-        }
-        catch {
-            if ($_.Exception.Response) {
-                $roundTripStatus = [string][int]$_.Exception.Response.StatusCode
-            }
-        }
+        $roundTripProbe = Get-HttpStatus -Uri "http://localhost:$roundTripPort/c/portal/layout"
+        $roundTripStatus = $roundTripProbe.Status
         if ($roundTripStatus -eq "200" -or $roundTripStatus -eq "302") {
             Write-Verdict "[SUCCESS] .ldmp round trip verified: packed, imported as '$ROUNDTRIP_PROJECT', booted and serving HTTP $roundTripStatus on $roundTripPort (LDM-#2131)."
         }
         else {
             Write-Verdict "[ERROR] The imported project booted but does not serve -- HTTP '$roundTripStatus' on port $roundTripPort (LDM-#2131)."
+            if ($roundTripProbe.Note) {
+                # LDM-#2227: without this, a refused connection, a timeout and
+                # a blocked redirect are all just '000' and the run has to be
+                # repeated on another shell to tell them apart.
+                Write-Verdict "          The probe reported: $($roundTripProbe.Note)"
+            }
             $roundTripOk = $false
         }
     }

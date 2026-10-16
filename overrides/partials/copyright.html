@@ -1,23 +1,31 @@
 {#-
-  Material's partials/copyright.html (mkdocs-material 9.7.7) plus an About link
-  on every page. Shared with the sibling Liferay tools docs sites; ported from
-  lfr-tunnel #2383.
+  SHARED FILE. The canonical copy is overrides/partials/copyright.html on the
+  master branch of peterrichards-lr/lfr-tunnel. The Liferay tools docs sites
+  (lfr-tunnel, liferay-docker-manager, liferay-ai-commerce-accelerator) each
+  carry a copy with the same content. Never edit a copy: change the canonical
+  file in lfr-tunnel, then copy it to the others unchanged. The rule is in
+  lfr-tunnel's CONTRIBUTING.md, "Shared docs files"; the sync plan, including
+  the CI checks that compare the copies, is
+  peterrichards-lr/liferay-ai-commerce-accelerator#1329.
 
-  LDM-#2215: this replaces an absolute URL hardcoded into `copyright:`. That
-  worked, but only because it was absolute -- `copyright` is raw HTML and is
-  NOT Jinja-processed, so it could not interpolate `site_url`, and a
-  root-relative "/about/" resolves to github.io/about/ on a PROJECT site and
-  404s. The `url` filter resolves against the CURRENT page, so it is correct on
-  nested pages and under `mkdocs serve` alike, and it cannot drift from
-  `site_url` because it is derived from it.
+  The footer text is per-site: it comes from each site's `copyright:` in
+  mkdocs.yml. The link target is fixed, so every site must have an About page
+  at docs/about.md.
 
-  `test_the_footer_link_sits_under_site_url` was migrated to assert this
-  partial rather than the old `copyright:` string -- the claim the About page
-  makes is unchanged, only the mechanism that keeps it true.
+  Material's partials/copyright.html (mkdocs-material 9.7.7), plus a link to the
+  About page in every page's footer (lfr-tunnel #2383).
+
+  Why a partial and not a link inside `copyright:`: that string is raw HTML and
+  is NOT Jinja-processed, so it cannot interpolate `site_url`. A relative
+  "about/" there 404s on every nested page, and a root-relative "/about/"
+  resolves to github.io/about/ on a project site. The `url` filter resolves
+  against the CURRENT page (`../../about/` on a page two levels down), so the
+  link is correct on nested pages and under `mkdocs serve` alike, and cannot
+  drift from `site_url` because it never reads it.
 -#}
 <div class="md-copyright">
   <div class="md-copyright__highlight">
-    {% if config.copyright %}{{ config.copyright }} &middot; {% endif %}<a href="{{ 'about/' | url }}">About these docs</a>
+    {% if config.copyright %}{{ config.copyright }} · {% endif %}<a href="{{ 'about/' | url }}">About these docs</a>
   </div>
   {% if not config.extra.generator == false %}
     Made with

@@ -47,6 +47,27 @@ include = ["ldm_core*"]
 target-version = "py310"
 line-length = 88
 
+# LDM-#2215: the shared docs files are governed in lfr-tunnel, not here. The
+# rule is "never edit a copy", and a formatter that rewrites one on every
+# commit edits it -- so the copy could never stay byte-identical and the drift
+# check that is coming (ai-agent-template#135) would fail on day one.
+#
+# This is not hypothetical. Copying the canonical hook in, ruff immediately
+# rewrapped two lines to this repo's line-length of 88 (lfr-tunnel writes
+# wider) and stripped `# noqa: ARG001` as unused, because ARG001 sits in this
+# repo's global `ignore` list and does not sit in lfr-tunnel's. Same file,
+# different rule sets, guaranteed divergence.
+#
+# Measured, three ways, because the obvious reasoning about force-exclude is
+# wrong here. With no exclusion at all the file is rewritten. extend-exclude
+# ALONE is sufficient for `pre-commit run --all-files`, because the upstream
+# ruff hooks already pass --force-exclude themselves. force-exclude earns its
+# place for a direct `ruff check mkdocs_hooks/github_alerts.py`, which without
+# it reports the stripped-noqa error and offers to fix it -- i.e. for anyone
+# running ruff by hand on the path, which is how it would get edited.
+extend-exclude = ["mkdocs_hooks/github_alerts.py"]
+force-exclude = true
+
 [tool.ruff.lint]
 select = [
     "E",    # pycodestyle errors
