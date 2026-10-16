@@ -29,3 +29,15 @@ updates:
       - "dependencies"
       - "python"
       - "no-issue-needed"
+    # LDM-#2229, from the template's own dependabot.yml at v2.5.0: mkdocs 2.0
+    # removes the plugin system and rewrites theming, and Material for MkDocs
+    # warns that every plugin and theme override breaks with no migration
+    # path. This docs site depends on both -- mkdocs_hooks/github_alerts.py
+    # through `hooks:`, and overrides/main.html through `custom_dir` -- so a
+    # 2.x bump can only break it. The same reasoning is already recorded in
+    # mkdocs.yml, which chose a core hook over a plugin for it (LDM-#1814).
+    # Patch and minor 1.x releases still come through. Revisit when Material
+    # supports mkdocs 2.
+    ignore:
+      - dependency-name: "mkdocs"
+        versions: [">= 2"]
