@@ -155,10 +155,10 @@ nav:
   - Home: README.md
   - Tutorials:
     - tutorials/index.md
-    - First 5 Minutes: tutorials/first_5_minutes.md
-    - PaaS Local Dev: tutorials/paas_local_dev.md
-    - Liferay Workspace Local Dev: tutorials/workspace_development.md
-  - How-To:
+    - First 5 minutes: tutorials/first_5_minutes.md
+    - PaaS local dev: tutorials/paas_local_dev.md
+    - Liferay Workspace local dev: tutorials/workspace_development.md
+  - How-to guides:
     - how-to/index.md
     # LDM-#1816: grouped to match how-to/index.md, so the sidebar and the
     # landing page tell the same story. Nav-only -- no page URL changes.
@@ -168,57 +168,56 @@ nav:
       # "Quick Start" and filed under Tutorials, where it contested the front
       # door and made the docs look far larger than they are. The file keeps its
       # path so no published URL breaks; only its label and place change.
-      - Installation & Setup: tutorials/quick_start.md
+      - Installation and setup: tutorials/quick_start.md
       - macOS: how-to/install_macos.md
       - Windows: how-to/install_windows.md
       - Linux: how-to/install_linux.md
     - Get a project running:
-      - Fresh Vanilla Start: how-to/vanilla_start.md
-      - Workspace Import: how-to/workspace_import.md
-      - Nightly & Master Builds: how-to/nightly_master_builds.md
-      - Version Upgrades: how-to/version_upgrades.md
+      - Fresh vanilla start: how-to/vanilla_start.md
+      - Workspace import: how-to/workspace_import.md
+      - Nightly and master builds: how-to/nightly_master_builds.md
+      - Version upgrades: how-to/version_upgrades.md
     - Develop:
-      - Client Extensions: how-to/client_extensions.md
-      - Portal Patches: how-to/portal_patches.md
-      - Runtime Overrides: how-to/runtime_overrides.md
-      - Development & Building: how-to/development.md
+      - Client extensions: how-to/client_extensions.md
+      - Portal patches: how-to/portal_patches.md
+      - Runtime overrides: how-to/runtime_overrides.md
+      - Development and building: how-to/development.md
     - Data & environments:
-      - Data Management: how-to/data_management.md
-      - Custom Containers: how-to/custom_containers.md
-      - Multi-Compose Architecture: how-to/multi_compose.md
+      - Data management: how-to/data_management.md
+      - Custom containers: how-to/custom_containers.md
+      - Multi-Compose architecture: how-to/multi_compose.md
     - Share & connect:
-      - Sharing & Tunnels: how-to/sharing_tunnels.md
+      - Sharing and tunnels: how-to/sharing_tunnels.md
       - AI & MCP: how-to/ai_mcp_guide.md
     - Operate at scale:
-      - Multi-Node Orchestration: how-to/multi_node_orchestration.md
-      - Cloud Deployment: how-to/cloud_deployment.md
-      - Target Node IAM Least Privilege: how-to/target_node_iam_least_privilege.md
-      - End-to-End Testing: how-to/e2e_testing.md
+      - Multi-node orchestration: how-to/multi_node_orchestration.md
+      - Cloud deployment: how-to/cloud_deployment.md
+      - Target node IAM least privilege: how-to/target_node_iam_least_privilege.md
+      - End-to-end testing: how-to/e2e_testing.md
   - Reference:
     - reference/index.md
     - Configuration: reference/configuration.md
-    - CLI Reference:
+    - CLI reference:
       - Core: reference/cli/core.md
       - Data: reference/cli/data.md
       - System: reference/cli/system.md
       - Cloud: reference/cli/cloud.md
     - Compatibility: reference/compatibility.md
     - Security: reference/security.md
-    - Third-Party Tools: reference/third_party_tools.md
+    - Third-party tools: reference/third_party_tools.md
     - Networking: reference/networking.md
     - Advanced CLI: reference/advanced_cli.md
-    - JVM & Database Tuning: reference/tuning.md
-    - Logging Strategy: reference/logging-strategy.md
-  - About these docs: about.md
+    - JVM and database tuning: reference/tuning.md
+    - Logging strategy: reference/logging-strategy.md
   - Explanation:
     - explanation/index.md
     - Architecture: explanation/architecture.md
-    - Remote Node Architecture: explanation/remote-node-architecture.md
-    - Permissions & the Reclaim Helper: explanation/permissions-and-reclaim.md
+    - Remote node architecture: explanation/remote-node-architecture.md
+    - Permissions and the reclaim helper: explanation/permissions-and-reclaim.md
     - Properties: explanation/properties.md
-    - Key Features: explanation/conventions.md
-    - Conventions & Configuration: explanation/conventions_and_config.md
-    - Internationalization & Transcoding: explanation/i18n.md
+    - Key features: explanation/conventions.md
+    - Conventions and configuration: explanation/conventions_and_config.md
+    - Internationalization and transcoding: explanation/i18n.md
     - FAQ: explanation/faq.md
   # LDM-#1817: Troubleshooting and Showcase are user-facing and were filed in
   # a drawer named after project governance, where users do not look.
@@ -227,11 +226,11 @@ nav:
   - Troubleshooting: TROUBLESHOOTING.md
   - Showcase:
     - Intro: showcase/README.md
-    - OSGi State Persistence: showcase/OSGI_STATE_PERSISTENCE.md
+    - OSGi state persistence: showcase/OSGI_STATE_PERSISTENCE.md
   # Renamed from "Project Info": these address maintainers and contributors,
   # and the old name did not say so, which told readers that some unknown
   # fraction of the section was irrelevant to them.
-  - Project & Contributing:
+  - Project and contributing:
     # LDM-#2215 asked for a deliberate decision on PLAYBOOK.md, which AICA
     # excludes from its own site with `exclude_docs`. KEPT HERE, for two
     # reasons that are specific to this repo rather than a preference:
@@ -247,8 +246,9 @@ nav:
     - Playbook: PLAYBOOK.md
     - Roadmap: ROADMAP.md
     - Testing: TESTING.md
-    - Roadmap Plans:
+    - Roadmap plans:
       - Clustered HA: roadmap/plans/clustered_ha_profile.md
       - External DB: roadmap/plans/external_database_integration.md
       - Keycloak SSO: roadmap/plans/keycloak_sso_profile.md
-      - Profile Loader: roadmap/plans/profile_loader_logic.md
+      - Profile loader: roadmap/plans/profile_loader_logic.md
+  - About these docs: about.md
