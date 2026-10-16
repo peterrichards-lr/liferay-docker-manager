@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.6-pre.10] - 2026-10-16
+
+### Fixed
+
+- **The round trip's containers are captured before they are deleted** (LDM-#2221). LDM-#2216 added `${ROUNDTRIP_PROJECT}` to the failure-log capture and it never once matched. The round trip removes its own project six lines after reporting the failure; the capture runs from the finalizer, at the end of the script. Three reports on three platforms carried the `--- FAILURE DEBUG LOGS ---` heading with no round-trip container beneath it, which reads exactly like a project that was never created.
+
+  It cost a release. `v2.26.6-pre.9` was cut largely to settle whether the macOS round-trip failure was a host out of memory or an `ldm_core` defect -- two answers with opposite responses -- and came back unable to say, because `oom-killed` lives on a container that had already been removed.
+
+  **LDM-#2216's own tests could not see it.** They assert the names appear in the capture list, and they do. The defect is ORDER, the same shape as LDM-#2197: a value read before it was assigned, passing every test that asked only whether it was assigned at all. The new guard asserts the order in both halves rather than the presence of the names.
+
+  The per-container mechanics now take names as arguments, the round trip captures its own project, database and the `derivedsvc`/`syntheticsvc` dependents that compose names in `dependency failed to start`, and the finalizer no longer claims a project it cannot see.
+
+  No shipped behaviour changes. `ldm_core` is untouched and the binary is identical to its predecessor; the release exists so the verification bundle carries the fix. The Fedora 44, WSL2 and macOS 27 passes recorded against `-pre.9` therefore stand.
+
+- **The PowerShell HTTP probes follow redirects, so a 302 is no longer read as `000`** (LDM-#2227). Both PowerShell probes passed `-MaximumRedirection 0`. That does not hand back a 3xx response -- it raises a terminating error, leaving the status to be dug out of `$_.Exception.Response`, and that dig is not version-portable. PowerShell 7 is `HttpClient`-based and populates `.Response` for the blocked redirect, so it reads 302; Windows PowerShell 5.1 is `HttpWebRequest`-based and does not, so the probe fell through to its `"000"` initialiser.
+
+  `/c/portal/layout` 302-redirects an anonymous GET and `/` answers 200 outright. That is the whole difference between the two call sites, and it is why `-pre.9` failed the round trip on 5.1 while the LDM-#1574 access-URL probe passed in the same run, and why PowerShell 7 on the same machine and the same port reported 302. **Liferay was serving throughout.** The reported failure was the probe's.
+
+  The shell half never had this: `http_status()` uses `urllib.request.urlopen`, which follows redirects, and both of its call sites accept the followed result. The two halves had been asking the same URL different questions, and only one of them needed a PowerShell version to answer it. Both now go through a `Get-HttpStatus` helper that follows redirects, which is the twin of `http_status()` and deletes the divergent path entirely.
+
+  The failure is also diagnosable now. The old `catch` discarded `$_.Exception.Message`, so a refused connection, a timeout and an unreadable redirect were the same bare `'000'` -- which is why `-pre.9`'s failure needed a second run on a different shell before it could be read at all.
+
+  The LDM-#1574 probe carried the identical construct and is fixed with it. It survived only because `/` does not redirect; an access URL that did would have thrown and aborted the whole run on 5.1.
+
+### Changed
+
+- **The documentation home page adopts the shared Liferay tools layout** (LDM-#2222). The three community tools' docs sites had drifted in title, in the shape of the task table, in whether the subject index was numbered, and in where the related-tools section sat -- none of which breaks a build, and none of which is visible in one repository's diff. The structure, headings and table formats are now shared; each site keeps its own rows. A rendered-output check asserts the heading text, the three section anchors and their order, both table headers, the related-tools rows, and that no heading carries an emoji -- because an `##` that becomes `###` changes the anchor and silently breaks every inbound link to it.
+
+- **The four shared docs files are synced from their canonical copies, and the formatter is told to leave one alone** (LDM-#2215). The stylesheet, the alerts hook, `main.html` and `copyright.html` are shared verbatim across the three Liferay tools docs sites. LDM's copies predated the consolidating pass and so rendered 14 boxes as `admonition important` -- a class Material 9.7.7 does not define, so they fell back to the generic style with no colour and no icon of their own. They now render as `info` titled "Important", and the one `CAUTION` box recovers its own label instead of reading "Danger". Exactly two labels moved; the site's 69 admonitions are otherwise unchanged.
+
+  Copying the hook in revealed why a shared file needs protecting from its host repository: ruff rewrote it on contact, rewrapping to this repo's `line-length` and stripping a `# noqa` that is redundant here and load-bearing in the repository that owns the file. "Never edit a copy" cannot hold while the formatter edits it every commit, so the path is excluded from ruff -- the counterpart of the `.prettierignore` entry the canonical repository already carries.
+
+  A rendered-output check now also fails any admonition titled with its Material style name rather than its author's label, which catches the class of drift that produced the `CAUTION` box above.
+
+### Notes
+
+What `-pre.10` makes answerable, which `-pre.9` could not:
+
+- **macOS (MacBook Air, OrbStack)** -- `dependency failed to start ... is unhealthy`. Four other machines boot a second Liferay successfully, a MacBook Pro among them, so memory pressure is the leading explanation. `oom-killed` on the round-trip container settles it either way.
+- **Windows PowerShell 5.1 (Docker Desktop)** -- answered, and the answer was that the suite was wrong, not LDM. The PowerShell 7 pass on the same machine and port settled it: Liferay was serving a 302 the probe could not read (LDM-#2227, above). `-pre.10` carries the fix; re-running 5.1 confirms it.
+
+`ldm_core` is untouched across the whole of `-pre.10`, so the binary is identical to its predecessor and the Fedora 44, WSL2, macOS 27 and PowerShell 7 passes recorded against `-pre.9` stand. The release exists so the verification bundle carries the script fixes.
+
 ## [v2.26.6-pre.9] - 2026-10-15
 
 ### Fixed
