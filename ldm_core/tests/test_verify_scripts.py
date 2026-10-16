@@ -4072,3 +4072,292 @@ class BothHalvesReapOnlyWhatTheRunItselfCreated(unittest.TestCase):
         self.assertIn(
             "[switch]$KeepPulled", ps1, "the PowerShell half has no -KeepPulled"
         )
+
+
+def _block_after(text, open_pattern, close_pattern="^}"):
+    """Lines of a column-zero block, from its opening line to its closing brace.
+
+    Both scripts declare their top-level functions and their top-level
+    try/catch/finally at column zero and close them the same way, so the
+    extent is unambiguous without parsing braces -- which would have to cope
+    with braces inside strings.
+    """
+    lines = text.splitlines()
+    start = None
+    for index, line in enumerate(lines):
+        if re.match(open_pattern, line):
+            start = index
+            break
+    if start is None:
+        raise AssertionError(f"no line matching {open_pattern!r}")
+    for index in range(start + 1, len(lines)):
+        if re.match(close_pattern, lines[index]):
+            return lines[start : index + 1], start
+    raise AssertionError(f"block opened by {open_pattern!r} is never closed")
+
+
+class EveryLineAfterFinalisationReachesTheReport(unittest.TestCase):
+    """LDM-#2238: the report is moved, then written to at the old path.
+
+    `cleanup_test_projects` finalises the report -- and takes the archived
+    copy that becomes the compatibility matrix -- and then keeps writing to
+    `RESULTS_FILE_TMP`, which no longer exists. `tee -a` recreates it, so the
+    text lands in a dotfile nothing reads. Measured over the 224 reports in
+    references/verification-results: `Disk: this run consumed` appears in
+    none of them, and neither does `image(s) built by this run`, while the
+    one line in the same region that uses the helper appears in 12 of the 14
+    current reports.
+
+    The PowerShell half drops the same text two ways. Its finalizer calls
+    `Write-Verdict`, which appends unconditionally to the moved path. Its
+    top-level `finally` -- which runs after the report has been archived --
+    used bare `Write-Host`, which reaches no file at all, so on Windows the
+    text was not merely misfiled but unrecoverable.
+
+    What this costs is not cosmetic. LDM-#2214's reap, LDM-#2084's built-image
+    sweep and LDM-#1438's per-run disk figure are each reported for exactly
+    one reason, written in their own comments: a cleanup that removes nothing
+    must be visible, because an `rmi` that silently removed nothing is how
+    LDM-#2084 hid. None of the three has ever appeared in a report.
+
+    This asserts the mechanism, not the message. A test that looked for the
+    text would pass against the defect -- the text is present and correct, it
+    is the destination that is wrong -- which is the failure mode the release
+    skill names as reading the source rather than running it. So the
+    invariant here is positional: after the line that moves the report,
+    nothing in that block may name the moved path as a write target, and
+    every message must go through the helper that resolves the destination.
+    """
+
+    # Writes, not mentions. The fix leaves comments naming the path, and a
+    # removal of the stale path would also be legitimate; only redirection
+    # into it is the defect.
+    _BASH_WRITES = (
+        r'tee\s+-a\s+"\$RESULTS_FILE_TMP"',
+        r'>>\s*"\$RESULTS_FILE_TMP"',
+        r'>\s*"\$RESULTS_FILE_TMP"',
+    )
+
+    def test_the_bash_trap_never_writes_to_the_moved_path(self):
+        text = BASH_SCRIPT.read_text(encoding="utf-8")
+        block, offset = _block_after(text, r"^cleanup_test_projects\(\) \{")
+
+        moved = [i for i, line in enumerate(block) if 'mv "$RESULTS_FILE_TMP"' in line]
+        self.assertEqual(
+            len(moved),
+            1,
+            "expected exactly one line moving the report out of the temp path",
+        )
+
+        offenders = []
+        for index in range(moved[0] + 1, len(block)):
+            line = block[index]
+            if line.lstrip().startswith("#"):
+                continue
+            for pattern in self._BASH_WRITES:
+                if re.search(pattern, line):
+                    offenders.append(f"{offset + index + 1}: {line.strip()}")
+                    break
+
+        self.assertEqual(
+            offenders,
+            [],
+            "these lines write to the report's temp path after it has been "
+            "moved away, so the text reaches a recreated dotfile instead of "
+            "the report (LDM-#2238). Route them through trap_report:\n"
+            + "\n".join(offenders),
+        )
+
+    def test_the_powershell_finalizer_never_writes_to_the_moved_path(self):
+        text = PS1_SCRIPT.read_text(encoding="utf-8")
+        block, offset = _block_after(text, r"^function Invoke-FinalizerBody \{")
+
+        moved = [
+            i for i, line in enumerate(block) if "Move-Item $RESULTS_FILE_TMP" in line
+        ]
+        self.assertEqual(len(moved), 1, "expected exactly one Move-Item of the report")
+
+        offenders = []
+        for index in range(moved[0] + 1, len(block)):
+            line = block[index]
+            if line.lstrip().startswith("#"):
+                continue
+            # Write-Verdict appends unconditionally to RESULTS_FILE_TMP, so it
+            # is as wrong here as a direct Out-File at that path.
+            if re.search(
+                r"Write-Verdict|Out-File\s+-FilePath\s+\$RESULTS_FILE_TMP", line
+            ):
+                offenders.append(f"{offset + index + 1}: {line.strip()}")
+
+        self.assertEqual(
+            offenders,
+            [],
+            "these lines append to the report's temp path after Move-Item has "
+            "renamed it, so Out-File recreates a dotfile nothing reads "
+            "(LDM-#2238). Route them through Write-TrapNote:\n" + "\n".join(offenders),
+        )
+
+    def test_the_powershell_finally_block_reaches_a_file_at_all(self):
+        text = PS1_SCRIPT.read_text(encoding="utf-8")
+        block, offset = _block_after(text, r"^\} finally \{")
+
+        offenders = []
+        for index, line in enumerate(block):
+            if line.lstrip().startswith("#"):
+                continue
+            if re.search(r"\bWrite-Host\b", line):
+                offenders.append(f"{offset + index + 1}: {line.strip()}")
+
+        self.assertEqual(
+            offenders,
+            [],
+            "Write-Host in the top-level finally reaches the console and no "
+            "file. This block runs after the report has been archived, so its "
+            "text -- the whole of the LDM-#2214 reap on Windows -- is "
+            "unrecoverable once the console scrolls (LDM-#2238). Use "
+            "Write-TrapNote:\n" + "\n".join(offenders),
+        )
+
+    def test_both_halves_record_why_the_preflight_refused(self):
+        """A -fail report that does not say what failed (LDM-#2238).
+
+        The LDM-#2085 pre-flight refuses to run beside a live project. It is
+        the earliest thing that can fail a run, and it wrote to stderr only --
+        so the report for a refused run carried an exit code, a note about
+        cleanup it skipped, and no cause. One such report was produced on
+        v2.26.6-pre.10. That is the defect LDM-#1255 and LDM-#1440 each
+        removed from a later call site.
+        """
+        bash = BASH_SCRIPT.read_text(encoding="utf-8")
+        ps1 = PS1_SCRIPT.read_text(encoding="utf-8")
+
+        bash_refusal = [
+            line
+            for line in bash.splitlines()
+            if "other LDM projects are running:" in line and "echo" in line
+        ]
+        self.assertTrue(bash_refusal, "the shell pre-flight refusal has moved")
+        for line in bash_refusal:
+            self.assertIn(
+                'tee -a "$RESULTS_FILE_TMP"',
+                line,
+                "the shell pre-flight refusal goes to stderr only, so a run it "
+                f"refuses writes a report naming no cause: {line.strip()}",
+            )
+
+        ps_refusal = [
+            line
+            for line in ps1.splitlines()
+            if "other LDM projects are running:" in line
+        ]
+        self.assertTrue(ps_refusal, "the PowerShell pre-flight refusal has moved")
+        for line in ps_refusal:
+            self.assertNotIn(
+                "Write-Host",
+                line,
+                "the PowerShell pre-flight refusal reaches no file, so a run it "
+                f"refuses writes a report naming no cause: {line.strip()}",
+            )
+
+
+class TheReportHelpersDeliverAcrossFinalisation(unittest.TestCase):
+    """The other half of LDM-#2238: do the helpers actually deliver?
+
+    The class above asserts that every call site routes through the helper.
+    That is necessary and not sufficient -- it would pass just as happily if
+    the helper itself wrote nowhere, which is the whole defect one level up.
+    So these extract `trap_report` and `Write-TrapNote` and run them for real,
+    across the move that finalises the report, and read the file back.
+
+    The move is the part worth simulating. Before LDM-#2238 every one of these
+    messages was emitted after `mv`/`Move-Item` had renamed the path they were
+    addressed to, and `tee -a` and `Out-File -Append` both *create* a missing
+    file rather than failing -- which is exactly why the loss was silent and
+    survived 224 reports.
+    """
+
+    def test_bash_trap_report_follows_the_renamed_report(self):
+        func = _extract_function(
+            BASH_SCRIPT, re.compile(r"^trap_report\(\) \{.*?^\}", re.M | re.S)
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            script = f"""{func}
+RESULTS_FILE_TMP="{tmp}/tmp-report.txt"
+echo "header" > "$RESULTS_FILE_TMP"
+trap_report "before the move"
+FINAL_REPORT_PATH="{tmp}/final-report.txt"
+mv "$RESULTS_FILE_TMP" "$FINAL_REPORT_PATH"
+trap_report "Removing 2 volume(s) created by this run..."
+trap_report "$(printf 'multi\\nline\\n' | sed 's/^/     /')"
+[ -f "$RESULTS_FILE_TMP" ] && echo "TEMP-RECREATED"
+exit 0
+"""
+            res = subprocess.run(
+                ["bash", "-c", script], capture_output=True, text=True, check=False
+            )
+            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertNotIn(
+                "TEMP-RECREATED",
+                res.stdout,
+                "trap_report recreated the moved-away temp path",
+            )
+
+            final = Path(tmp, "final-report.txt").read_text(encoding="utf-8")
+            self.assertIn("before the move", final)
+            self.assertIn(
+                "Removing 2 volume(s) created by this run...",
+                final,
+                "the reap's line did not reach the finalised report",
+            )
+            # The piped call sites pass sed's output as one argument; the
+            # indentation it adds is the readable part and must survive.
+            self.assertIn("     multi\n     line", final)
+
+            # Still printed for the operator, not only filed.
+            self.assertIn("Removing 2 volume(s) created by this run...", res.stdout)
+
+    @unittest.skipIf(_pwsh_binary() is None, "no PowerShell on this machine")
+    def test_powershell_write_trapnote_follows_the_renamed_report(self):
+        func = _extract_function(
+            PS1_SCRIPT, re.compile(r"^function Write-TrapNote \{.*?^\}", re.M | re.S)
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_report = Path(tmp, "tmp-report.txt").as_posix()
+            final_report = Path(tmp, "final-report.txt").as_posix()
+            script = f"""{func}
+$RESULTS_FILE_TMP = "{tmp_report}"
+"header" | Out-File -FilePath $RESULTS_FILE_TMP -Encoding utf8
+Write-TrapNote "before the move"
+Move-Item $RESULTS_FILE_TMP "{final_report}" -Force
+$script:FINAL_REPORT_PATH = "{final_report}"
+Write-TrapNote "Removing 2 volume(s) created by this run..."
+Write-TrapNote "a coloured warning" -Color Yellow
+if (Test-Path $RESULTS_FILE_TMP) {{ Write-Output "TEMP-RECREATED" }}
+"""
+            binary = _pwsh_binary()
+            res = subprocess.run(
+                [binary, "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertNotIn(
+                "TEMP-RECREATED",
+                res.stdout,
+                "Write-TrapNote recreated the moved-away temp path",
+            )
+
+            final = Path(tmp, "final-report.txt").read_text(encoding="utf-8")
+            self.assertIn("before the move", final)
+            self.assertIn(
+                "Removing 2 volume(s) created by this run...",
+                final,
+                "the reap's line did not reach the finalised report",
+            )
+            # -Color is new (LDM-#2238) and exists so the callers that used
+            # Write-Host only to colour a warning could move over. A wrong
+            # signature here is a mandatory-parameter prompt in a non-
+            # interactive run, which is how LDM shipped one in pre.5 -- so the
+            # colour path is executed, not merely named.
+            self.assertIn("a coloured warning", final)
