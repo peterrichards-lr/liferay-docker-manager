@@ -180,6 +180,27 @@ extra_css:
 
 plugins:
   - search
+  # LDM-#2229: Material renders this into every page's source-file aside as
+  # "Last update". Matches lfr-tunnel and AICA, whose sites already show it.
+  #
+  # `type: date` rather than a timeago string, so the three sites read the
+  # same. `enable_creation_date: false` because a created date is a second
+  # claim nothing here maintains. `fallback_to_build_date: true` keeps a
+  # shallow checkout building rather than failing -- which is also the trap:
+  # with the fallback a shallow clone stamps TODAY on every page and the
+  # build stays green, so a green build does not show the plugin is working.
+  # What shows it is dates that DIFFER between pages. Hence fetch-depth: 0 in
+  # docs.yml, and the check recorded on the pull request.
+  #
+  # This does NOT replace the in-page "Last Updated | Last Reviewed" footers.
+  # Those are what scripts/check_docs_review.py reads, and the review date is
+  # a deliberate human claim that no commit timestamp can stand in for -- the
+  # distinction docs/about.md makes to readers, and the one LDM-#986 and
+  # LDM-#1833 each removed a false version of.
+  - git-revision-date-localized:      # needs fetch-depth: 0 wherever the site is built
+      type: date
+      enable_creation_date: false
+      fallback_to_build_date: true
 
 # LDM-#1820: the docs use GitHub's alert syntax (`> [!NOTE]`), which MkDocs does
 # not understand -- it emitted a plain blockquote with the marker still visible,

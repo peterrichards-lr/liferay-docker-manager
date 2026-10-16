@@ -16,6 +16,10 @@ deptry==0.25.1
 # would have arrived unannounced in CI and in `mkdocs build --strict`.
 mkdocs==1.6.1
 mkdocs-material==9.7.7
+# LDM-#2229: the "Last update" date in Material's source-file aside.
+# Pinned exactly, like the two above: it declares mkdocs<2, so an
+# unpinned bump is one more way a 2.0 release could reach the build.
+mkdocs-git-revision-date-localized-plugin==1.6.0
 mypy==2.4.0
 types-requests
 types-PyYAML
