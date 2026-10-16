@@ -92,8 +92,9 @@ copyright: >-
 # already emits `msvalidate.01` under the same guard, so it needs no change.
 #
 # Removing this key keeps `mkdocs build` GREEN and silently unverifies the
-# property, which is why scripts/check_site_verification.py reads the BUILT
-# HTML rather than this file.
+# property, which is why the check reads the BUILT HTML rather than this file.
+# LDM-#2229: that check is now MISSING-VERIFICATION in
+# scripts/check_docs_rendered.py, which also covers bing_site_verification.
 extra:
   google_site_verification: r7MfW8Y9zUhxsygop-Ubkr6dt7i9rUmddL4pEI26Ngk
   # LDM-#2215: consumed by overrides/main.html. `social_image` is joined to
@@ -106,6 +107,73 @@ extra:
     - icon: fontawesome/brands/github
       link: https://github.com/peterrichards-lr
       name: More Liferay tools by Peter Richards
+
+  # LDM-#2229: the per-site values for the shared docs standard, read by
+  # scripts/check_docs_rendered.py. Per-site values belong HERE and never in
+  # that file, which is governed by ai-agent-template and compared byte for
+  # byte by scripts/check_template_drift.py.
+  docs_standard:
+    # The H1 is "<project_name> documentation", and this also picks this
+    # site's own row out of `related` below. The full name, not the repo slug.
+    project_name: Liferay Docker Manager
+
+    # Names a sentence-case nav label may capitalise mid-label (the NAV check).
+    #
+    # Only two of these are load-bearing today, and it is worth saying which,
+    # because the rule is narrower than it looks: a word is examined only when
+    # it is NOT the label's first word, and it passes on its own shape when it
+    # carries an inner capital. So Liferay, PaaS, OSGi, Keycloak, IAM, CLI,
+    # JVM and SSO already pass unaided -- each is either the first word of its
+    # label or shaped like an acronym.
+    #
+    # WORKSPACE and COMPOSE are the two that need declaring, and they are here
+    # because "Liferay Workspace" and "Docker Compose" are PRODUCT names.
+    # Lowercasing them would have satisfied the check and been wrong, and it
+    # would have left this list empty and untested. Measured: remove the list
+    # and "Liferay Workspace local dev" and "Multi-Compose architecture" are
+    # the only two labels flagged.
+    #
+    # The rest are recorded for the labels this nav will grow, so the next
+    # person adding "Traefik routing" does not have to rediscover the rule.
+    proper_nouns:
+      - Liferay
+      - Workspace
+      - Docker
+      - Compose
+      - Traefik
+      - Keycloak
+      - Colima
+      - Ngrok
+      - Fedora
+      - Debian
+      - Ubuntu
+      - Alpine
+      - Elasticsearch
+      - Postgres
+
+    # ON, unlike a freshly bootstrapped project's: this home page already
+    # follows the shared layout (LDM-#2222) and already carries the notice.
+    home_layout: true
+    notice:
+      title: Community project
+      text: Not an official Liferay product and not covered by Liferay Support
+      link_text: About this project
+
+    related:
+      heading: Related Liferay tools
+      intro: >-
+        Three community tools from the same maintainer. None is an official
+        Liferay product or covered by Liferay Support.
+      rows:
+        - name: Liferay Docker Manager
+          url: https://peterrichards-lr.github.io/liferay-docker-manager/
+          description: Run, manage and develop Liferay DXP and Portal environments in Docker.
+        - name: Liferay AI Commerce Accelerator
+          url: https://peterrichards-lr.github.io/liferay-ai-commerce-accelerator/
+          description: Generate and manage AI-driven commerce data in Liferay DXP.
+        - name: Liferay Tunnel
+          url: https://peterrichards-lr.github.io/lfr-tunnel/
+          description: Securely expose a local Liferay environment on a public HTTPS subdomain.
 
 extra_css:
   - assets/stylesheets/liferay-blue.css

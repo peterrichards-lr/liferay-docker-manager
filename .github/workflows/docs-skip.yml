@@ -22,10 +22,12 @@ on:
       - "overrides/**"
       - "requirements-dev.txt"
       - "mkdocs_hooks/**"
-      - "scripts/check_site_verification.py"
       - "scripts/check_social_card.py"
-      - "scripts/check_community_notice.py"
-      - "scripts/check_home_layout.py"
+      - "scripts/check_docs_rendered.py"
+      - "scripts/check_template_drift.py"
+      - "scripts/check_docs_review.py"
+      - "scripts/ldm_docs_common.py"
+      - ".agents/TEMPLATE_REF.md"
       - ".github/workflows/docs.yml"
 
 jobs:
