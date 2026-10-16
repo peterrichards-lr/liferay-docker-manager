@@ -43,6 +43,14 @@ KEEP_ARTIFACTS=false
 # project teardown. Worth having for a machine dedicated to verification, where
 # the accumulation is the whole problem.
 PRUNE_AFTER=false
+# LDM-#2214: reap the images this run PULLED and the volumes it created, by
+# diffing an inventory taken before anything was pulled against one taken at
+# the end. On by default -- the diff is what makes that safe, where
+# --prune-after is not: anything already on the host is in the start
+# inventory and is never touched, so a warm 5 GB DXP cache survives and so
+# does a concurrent project's data. --keep-pulled opts out, for iterating on
+# the same images back to back.
+KEEP_PULLED=false
 ALLOW_VERSION_MISMATCH=false
 for arg in "$@"; do
     if [ "$arg" == "-k" ] || [ "$arg" == "--keep" ]; then
@@ -50,6 +58,9 @@ for arg in "$@"; do
     fi
     if [ "$arg" == "--prune-after" ]; then
         PRUNE_AFTER=true
+    fi
+    if [ "$arg" == "--keep-pulled" ]; then
+        KEEP_PULLED=true
     fi
     if [ "$arg" == "--allow-version-mismatch" ]; then
         ALLOW_VERSION_MISMATCH=true
@@ -808,6 +819,69 @@ cleanup_test_projects() {
             docker rmi -f $built_images >/dev/null 2>&1 || true
         fi
 
+        # LDM-#2214: remove what this run PULLED and the volumes it created.
+        #
+        # The delta is the whole design. Anything in the start inventory was
+        # on this host before the run and is left alone, so a warm
+        # liferay/dxp cache survives -- which is the objection that keeps
+        # --prune-after off by default, answered. A concurrent project's
+        # volumes were also there at the start, so they survive too;
+        # `docker system prune` cannot make that distinction.
+        #
+        # ONLY ON A PASS. A failed run is about to be re-run, and
+        # re-downloading DXP before every diagnosis would make the failure
+        # more expensive to investigate than to live with.
+        #
+        # No `-f`. A forced removal would untag an image a running container
+        # is still using; without it Docker simply refuses, which is the
+        # correct outcome and is reported below rather than hidden.
+        if [ "$status" = "pass" ] && [ "$KEEP_PULLED" != true ]; then
+            local end_images end_volumes new_images new_volumes
+            end_images="${TMPDIR:-/tmp}/ldm-verify-images-end-$$.txt"
+            end_volumes="${TMPDIR:-/tmp}/ldm-verify-volumes-end-$$.txt"
+            docker image ls -q --no-trunc 2>/dev/null | sort -u > "$end_images" || true
+            docker volume ls --format '{{.Name}}' 2>/dev/null | sort -u > "$end_volumes" || true
+
+            new_images=$(comm -13 "$INVENTORY_START_IMAGES" "$end_images" 2>/dev/null || true)
+            new_volumes=$(comm -13 "$INVENTORY_START_VOLUMES" "$end_volumes" 2>/dev/null || true)
+
+            if [ -n "$new_volumes" ]; then
+                local vol_count
+                vol_count=$(printf '%s\n' "$new_volumes" | grep -c . || true)
+                echo "ℹ  Removing ${vol_count} volume(s) created by this run..." | tee -a "$RESULTS_FILE_TMP"
+                printf '%s\n' "$new_volumes" | while IFS= read -r vol; do
+                    [ -n "$vol" ] && docker volume rm "$vol" >/dev/null 2>&1 || true
+                done
+            fi
+
+            if [ -n "$new_images" ]; then
+                local img_count
+                img_count=$(printf '%s\n' "$new_images" | grep -c . || true)
+                echo "ℹ  Removing ${img_count} image(s) pulled by this run..." | tee -a "$RESULTS_FILE_TMP"
+                printf '%s\n' "$new_images" | while IFS= read -r img; do
+                    [ -n "$img" ] && docker rmi "$img" >/dev/null 2>&1 || true
+                done
+            fi
+
+            # Honest about what it actually did, in the style of the block
+            # above: a reap that removes nothing should be visible, because
+            # that is exactly how the rmi above failed unnoticed for so long.
+            local left_images left_volumes
+            docker image ls -q --no-trunc 2>/dev/null | sort -u > "$end_images" || true
+            docker volume ls --format '{{.Name}}' 2>/dev/null | sort -u > "$end_volumes" || true
+            left_images=$(comm -13 "$INVENTORY_START_IMAGES" "$end_images" 2>/dev/null | grep -c . || true)
+            left_volumes=$(comm -13 "$INVENTORY_START_VOLUMES" "$end_volumes" 2>/dev/null | grep -c . || true)
+            if [ "${left_images:-0}" -gt 0 ] || [ "${left_volumes:-0}" -gt 0 ]; then
+                echo "ℹ  Still present after the reap: ${left_images} image(s), ${left_volumes} volume(s) -- in use, or removed by something else." | tee -a "$RESULTS_FILE_TMP"
+            fi
+            rm -f "$end_images" "$end_volumes"
+        elif [ "$KEEP_PULLED" = true ]; then
+            echo "ℹ  --keep-pulled: leaving this run's pulled images and created volumes in place." | tee -a "$RESULTS_FILE_TMP"
+        else
+            echo "ℹ  Run failed: keeping this run's pulled images and created volumes for the re-run." | tee -a "$RESULTS_FILE_TMP"
+        fi
+        rm -f "$INVENTORY_START_IMAGES" "$INVENTORY_START_VOLUMES"
+
         if [ "$PRUNE_AFTER" = true ]; then
             # Deliberately after the project removal above, so the project's own
             # volumes are already gone and this only reclaims what nothing else
@@ -1201,6 +1275,23 @@ check_docker_disk "$MIN_DISK_GB" "to finish"
 # none looked identical to one that cleaned up perfectly.
 DISK_START_DOCKER_GB=$(docker_free_gb)
 DISK_START_HOST_GB=$(host_free_gb)
+
+# LDM-#2214: what Docker already had, so the cleanup can remove only what THIS
+# run added. Taken here, beside the disk figures and BEFORE anything is
+# pulled, for the same reason those are: the question "what did this run
+# cost?" cannot be answered from the end state alone.
+#
+# Images by full ID, never by tag. A tag the run merely re-pointed is not a
+# download, and a re-pulled tag whose digest was already present must not be
+# reaped -- an ID is the only identifier that distinguishes those.
+#
+# Files rather than variables: `comm` needs sorted input and both inventories
+# can be empty, which a `printf '%s\n' "$var"` round trip turns into a single
+# blank line that then compares as a phantom entry.
+INVENTORY_START_IMAGES="${TMPDIR:-/tmp}/ldm-verify-images-$$.txt"
+INVENTORY_START_VOLUMES="${TMPDIR:-/tmp}/ldm-verify-volumes-$$.txt"
+docker image ls -q --no-trunc 2>/dev/null | sort -u > "$INVENTORY_START_IMAGES" || true
+docker volume ls --format '{{.Name}}' 2>/dev/null | sort -u > "$INVENTORY_START_VOLUMES" || true
 
 # LDM-#2085: refuse to run while another LDM project is live.
 #
