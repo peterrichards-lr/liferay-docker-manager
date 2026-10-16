@@ -782,19 +782,19 @@ cleanup_test_projects() {
             --format '{{.Names}}  {{.Status}}' 2>/dev/null || true)
         if [ "$rm_rc" -ne 0 ] && printf '%s' "$rm_out" | grep -q "not found" \
            && [ -z "$rm_leftover" ]; then
-            echo "ℹ  No project to remove: the run ended before '${PROJECT_NAME}' was created, and no container carries its name." | tee -a "$RESULTS_FILE_TMP"
+            trap_report "ℹ  No project to remove: the run ended before '${PROJECT_NAME}' was created, and no container carries its name."
         elif [ "$rm_rc" -ne 0 ]; then
-            echo "⚠  'ldm rm ${PROJECT_NAME} --delete' failed (exit ${rm_rc}); the project directory may remain." | tee -a "$RESULTS_FILE_TMP"
+            trap_report "⚠  'ldm rm ${PROJECT_NAME} --delete' failed (exit ${rm_rc}); the project directory may remain."
             if [ -n "$rm_out" ]; then
-                echo "   LDM said:" | tee -a "$RESULTS_FILE_TMP"
-                echo "$rm_out" | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
+                trap_report "   LDM said:"
+                trap_report "$(printf '%s\n' "$rm_out" | sed 's/^/     /')"
             else
-                echo "   LDM produced no output, which is itself a finding." | tee -a "$RESULTS_FILE_TMP"
+                trap_report "   LDM produced no output, which is itself a finding."
             fi
             # The stack still being up is the leading hypothesis (LDM-#1436);
             # record it either way rather than asking the reader to re-run.
-            echo "   Containers still present for this project:" | tee -a "$RESULTS_FILE_TMP"
-            printf '%s\n' "$rm_leftover" | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
+            trap_report "   Containers still present for this project:"
+            trap_report "$(printf '%s\n' "$rm_leftover" | sed 's/^/     /')"
         fi
 
         # LDM-#2084: remove every image compose built for THIS run.
@@ -814,7 +814,7 @@ cleanup_test_projects() {
         if [ -n "$built_images" ]; then
             local built_count
             built_count=$(printf '%s\n' "$built_images" | grep -c . || true)
-            echo "ℹ  Removing ${built_count} image(s) built by this run..." | tee -a "$RESULTS_FILE_TMP"
+            trap_report "ℹ  Removing ${built_count} image(s) built by this run..."
             # shellcheck disable=SC2086
             docker rmi -f $built_images >/dev/null 2>&1 || true
         fi
@@ -848,7 +848,7 @@ cleanup_test_projects() {
             if [ -n "$new_volumes" ]; then
                 local vol_count
                 vol_count=$(printf '%s\n' "$new_volumes" | grep -c . || true)
-                echo "ℹ  Removing ${vol_count} volume(s) created by this run..." | tee -a "$RESULTS_FILE_TMP"
+                trap_report "ℹ  Removing ${vol_count} volume(s) created by this run..."
                 printf '%s\n' "$new_volumes" | while IFS= read -r vol; do
                     [ -n "$vol" ] && docker volume rm "$vol" >/dev/null 2>&1 || true
                 done
@@ -857,7 +857,7 @@ cleanup_test_projects() {
             if [ -n "$new_images" ]; then
                 local img_count
                 img_count=$(printf '%s\n' "$new_images" | grep -c . || true)
-                echo "ℹ  Removing ${img_count} image(s) pulled by this run..." | tee -a "$RESULTS_FILE_TMP"
+                trap_report "ℹ  Removing ${img_count} image(s) pulled by this run..."
                 printf '%s\n' "$new_images" | while IFS= read -r img; do
                     [ -n "$img" ] && docker rmi "$img" >/dev/null 2>&1 || true
                 done
@@ -872,13 +872,13 @@ cleanup_test_projects() {
             left_images=$(comm -13 "$INVENTORY_START_IMAGES" "$end_images" 2>/dev/null | grep -c . || true)
             left_volumes=$(comm -13 "$INVENTORY_START_VOLUMES" "$end_volumes" 2>/dev/null | grep -c . || true)
             if [ "${left_images:-0}" -gt 0 ] || [ "${left_volumes:-0}" -gt 0 ]; then
-                echo "ℹ  Still present after the reap: ${left_images} image(s), ${left_volumes} volume(s) -- in use, or removed by something else." | tee -a "$RESULTS_FILE_TMP"
+                trap_report "ℹ  Still present after the reap: ${left_images} image(s), ${left_volumes} volume(s) -- in use, or removed by something else."
             fi
             rm -f "$end_images" "$end_volumes"
         elif [ "$KEEP_PULLED" = true ]; then
-            echo "ℹ  --keep-pulled: leaving this run's pulled images and created volumes in place." | tee -a "$RESULTS_FILE_TMP"
+            trap_report "ℹ  --keep-pulled: leaving this run's pulled images and created volumes in place."
         else
-            echo "ℹ  Run failed: keeping this run's pulled images and created volumes for the re-run." | tee -a "$RESULTS_FILE_TMP"
+            trap_report "ℹ  Run failed: keeping this run's pulled images and created volumes for the re-run."
         fi
         rm -f "$INVENTORY_START_IMAGES" "$INVENTORY_START_VOLUMES"
 
@@ -887,8 +887,8 @@ cleanup_test_projects() {
             # volumes are already gone and this only reclaims what nothing else
             # owns. Reported, not silent: a prune that removes 50 GB should say
             # so, and one that removes nothing tells you the leak is elsewhere.
-            echo "ℹ  --prune-after: reclaiming unused Docker resources..." | tee -a "$RESULTS_FILE_TMP"
-            docker system prune -af --volumes 2>&1 | tail -2 | tee -a "$RESULTS_FILE_TMP" || true
+            trap_report "ℹ  --prune-after: reclaiming unused Docker resources..."
+            trap_report "$(docker system prune -af --volumes 2>&1 | tail -2)" || true
         fi
 
         # LDM-#1438: report what this run cost, so growth is visible per run
@@ -904,9 +904,9 @@ cleanup_test_projects() {
             # Negative means the run reclaimed more than it consumed, which is
             # the outcome to hope for -- say so rather than printing "-3 GB".
             if [ "$used_docker" -lt 0 ]; then
-                echo "ℹ  Disk: reclaimed $((0 - used_docker)) GB in Docker; ${end_docker} GB now free (host: ${end_host:-?} GB)." | tee -a "$RESULTS_FILE_TMP"
+                trap_report "ℹ  Disk: reclaimed $((0 - used_docker)) GB in Docker; ${end_docker} GB now free (host: ${end_host:-?} GB)."
             else
-                echo "ℹ  Disk: this run consumed ${used_docker} GB in Docker and ${used_host} GB on the host; ${end_docker} GB now free (host: ${end_host:-?} GB)." | tee -a "$RESULTS_FILE_TMP"
+                trap_report "ℹ  Disk: this run consumed ${used_docker} GB in Docker and ${used_host} GB on the host; ${end_docker} GB now free (host: ${end_host:-?} GB)."
             fi
         fi
 
@@ -1327,24 +1327,24 @@ except Exception:
 print(" ".join(r.get("project", "?") for r in rows if str(r.get("status", "")).lower() == "running"))' 2>/dev/null || true)
 
 if [ -n "${RUNNING_PROJECTS// /}" ]; then
-    echo "❌ ERROR: other LDM projects are running: ${RUNNING_PROJECTS}" >&2
-    echo "" >&2
-    echo "   This suite reconfigures the SHARED proxy and search node, which those" >&2
-    echo "   projects are using. Two things can happen, and the second is why this" >&2
-    echo "   refuses rather than warns:" >&2
-    echo "" >&2
-    echo "     * 'ldm infra setup' will refuse to recreate the SSL proxy while they" >&2
-    echo "       run, so the suite fails partway through anyway." >&2
-    echo "     * if Elasticsearch misses its readiness window, LDM wipes the SHARED" >&2
-    echo "       search data directory -- destroying those projects' indexes," >&2
-    echo "       silently, while they continue to report healthy (LDM-#2083)." >&2
-    echo "" >&2
-    echo "   Stop them first, then re-run:" >&2
+    echo "❌ ERROR: other LDM projects are running: ${RUNNING_PROJECTS}" | tee -a "$RESULTS_FILE_TMP" >&2
+    echo "" | tee -a "$RESULTS_FILE_TMP" >&2
+    echo "   This suite reconfigures the SHARED proxy and search node, which those" | tee -a "$RESULTS_FILE_TMP" >&2
+    echo "   projects are using. Two things can happen, and the second is why this" | tee -a "$RESULTS_FILE_TMP" >&2
+    echo "   refuses rather than warns:" | tee -a "$RESULTS_FILE_TMP" >&2
+    echo "" | tee -a "$RESULTS_FILE_TMP" >&2
+    echo "     * 'ldm infra setup' will refuse to recreate the SSL proxy while they" | tee -a "$RESULTS_FILE_TMP" >&2
+    echo "       run, so the suite fails partway through anyway." | tee -a "$RESULTS_FILE_TMP" >&2
+    echo "     * if Elasticsearch misses its readiness window, LDM wipes the SHARED" | tee -a "$RESULTS_FILE_TMP" >&2
+    echo "       search data directory -- destroying those projects' indexes," | tee -a "$RESULTS_FILE_TMP" >&2
+    echo "       silently, while they continue to report healthy (LDM-#2083)." | tee -a "$RESULTS_FILE_TMP" >&2
+    echo "" | tee -a "$RESULTS_FILE_TMP" >&2
+    echo "   Stop them first, then re-run:" | tee -a "$RESULTS_FILE_TMP" >&2
     for _p in ${RUNNING_PROJECTS}; do
-        echo "       ldm stop ${_p}" >&2
+        echo "       ldm stop ${_p}" | tee -a "$RESULTS_FILE_TMP" >&2
     done
-    echo "" >&2
-    echo "   They will reindex on their next boot if their index was already lost." >&2
+    echo "" | tee -a "$RESULTS_FILE_TMP" >&2
+    echo "   They will reindex on their next boot if their index was already lost." | tee -a "$RESULTS_FILE_TMP" >&2
     exit 1
 fi
 
