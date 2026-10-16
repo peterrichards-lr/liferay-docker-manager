@@ -4,7 +4,11 @@
 # code may not. PowerShell's PARSER accepts a later param block (and so does
 # PSScriptAnalyzer), but the runtime rejects it, so a misplacement is invisible
 # until the script is actually run on Windows.
-param([switch]$AllowVersionMismatch)
+# LDM-#2214: -KeepPulled opts out of reaping the images this run pulled and
+# the volumes it created. The reap is on by default; see the inventory
+# snapshot below for why the diff makes that safe where a machine-wide prune
+# would not be.
+param([switch]$AllowVersionMismatch, [switch]$KeepPulled)
 
 # Target: Verifies the INSTALLED binary, not the source code.
 # Optimized for Windows Native.
@@ -2778,6 +2782,19 @@ try {
     # printed once, at the start, and never mentioned again.
     $script:DiskStartDockerGb = Get-DockerFreeGb
     $script:DiskStartHostGb = Get-HostFreeGb
+
+    # LDM-#2214: what Docker already had, so the cleanup removes only what
+    # THIS run added. Taken here, beside the disk figures and BEFORE the
+    # pre-pull below, for the same reason those are -- "what did this run
+    # cost?" cannot be answered from the end state alone.
+    #
+    # Images by full ID, never by tag: a tag the run merely re-pointed is not
+    # a download, and a re-pulled tag whose digest was already present must
+    # not be reaped. The ID is the only identifier that tells those apart.
+    $script:InventoryStartImages = @(
+        & docker image ls -q --no-trunc 2>$null | Where-Object { $_ })
+    $script:InventoryStartVolumes = @(
+        & docker volume ls --format '{{.Name}}' 2>$null | Where-Object { $_ })
 
     # Pre-pull large images to avoid containerd lease timeouts during the timed E2E run
     # LDM-#2085: refuse to run while another LDM project is live.
@@ -6793,6 +6810,63 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
         }
     } catch {
         Write-Host "[WARN]  Could not remove this run's built images: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+
+    # LDM-#2214: remove what this run PULLED and the volumes it created.
+    #
+    # The delta is the whole design. Anything in the start inventory was on
+    # this host before the run and is left alone, so a warm liferay/dxp cache
+    # survives -- the objection that keeps a machine-wide prune off by
+    # default, answered. A concurrent project's volumes were there at the
+    # start too, so they survive; a prune cannot make that distinction.
+    #
+    # ONLY ON A PASS. A failed run is about to be re-run, and re-downloading
+    # DXP before every diagnosis would cost more than the disk it reclaims.
+    # $script:VerificationExitCode is set on BOTH paths above, before this
+    # finally block runs, so it is readable here -- unlike Finalize-
+    # Verification's own $status, which is local to that function.
+    #
+    # No -f. Forcing would untag an image a running container still uses;
+    # without it Docker refuses, which is correct and is reported below.
+    try {
+        if ($script:VerificationExitCode -eq 0 -and -not $KeepPulled) {
+            $startImages = @($script:InventoryStartImages)
+            $startVolumes = @($script:InventoryStartVolumes)
+            $endImages = @(& docker image ls -q --no-trunc 2>$null | Where-Object { $_ })
+            $endVolumes = @(& docker volume ls --format '{{.Name}}' 2>$null | Where-Object { $_ })
+
+            $newImages = @($endImages | Where-Object { $startImages -notcontains $_ })
+            $newVolumes = @($endVolumes | Where-Object { $startVolumes -notcontains $_ })
+
+            if ($newVolumes.Count -gt 0) {
+                Write-Host "[INFO]  Removing $($newVolumes.Count) volume(s) created by this run..."
+                foreach ($vol in $newVolumes) { & docker volume rm $vol 2>&1 | Out-Null }
+            }
+            if ($newImages.Count -gt 0) {
+                Write-Host "[INFO]  Removing $($newImages.Count) image(s) pulled by this run..."
+                foreach ($img in $newImages) { & docker rmi $img 2>&1 | Out-Null }
+            }
+
+            # Honest about what it actually did: a reap that removes nothing
+            # should be visible, which is how the rmi above went unnoticed.
+            $leftImages = @(@(& docker image ls -q --no-trunc 2>$null |
+                Where-Object { $_ }) | Where-Object { $startImages -notcontains $_ })
+            $leftVolumes = @(@(& docker volume ls --format '{{.Name}}' 2>$null |
+                Where-Object { $_ }) | Where-Object { $startVolumes -notcontains $_ })
+            if ($leftImages.Count -gt 0 -or $leftVolumes.Count -gt 0) {
+                Write-Host ("[INFO]  Still present after the reap: " +
+                    "$($leftImages.Count) image(s), $($leftVolumes.Count) volume(s) " +
+                    "-- in use, or removed by something else.")
+            }
+        }
+        elseif ($KeepPulled) {
+            Write-Host "[INFO]  -KeepPulled: leaving this run's pulled images and created volumes in place."
+        }
+        else {
+            Write-Host "[INFO]  Run failed: keeping this run's pulled images and created volumes for the re-run."
+        }
+    } catch {
+        Write-Host "[WARN]  Could not reap this run's pulled images or volumes: $($_.Exception.Message)" -ForegroundColor Yellow
     }
 }
 
