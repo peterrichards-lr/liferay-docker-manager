@@ -2,7 +2,7 @@
 
 **You want to understand why.** These pages explain LDM's design and the
 reasoning behind its defaults. Nothing here is a set of steps to follow — for
-that, see the [How-To guides](../how-to/index.md) or
+that, see the [How-to guides](../how-to/index.md) or
 [Reference](../reference/index.md).
 
 ## How LDM is put together
@@ -43,4 +43,4 @@ They are unrelated, and picking the wrong one wastes a reader's time:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-13* | *Last Reviewed: 2026-10-13*
+*Last Updated: 2026-10-16* | *Last Reviewed: 2026-10-16*

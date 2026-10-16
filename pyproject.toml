@@ -65,7 +65,17 @@ line-length = 88
 # place for a direct `ruff check mkdocs_hooks/github_alerts.py`, which without
 # it reports the stripped-noqa error and offers to fix it -- i.e. for anyone
 # running ruff by hand on the path, which is how it would get edited.
-extend-exclude = ["mkdocs_hooks/github_alerts.py"]
+# Every governed shared file that ruff can reach. The list grew when the docs
+# site moved onto the template (ai-agent-template#135): copying
+# check_docs_rendered.py and check_template_drift.py in, ruff reformatted both
+# on contact and `check_template_drift.py --docs-site --fail-on-drift` went
+# from exit 0 to exit 2 against files that had just been copied byte-for-byte
+# from the tag. The exclusion is what keeps the drift check meaningful.
+extend-exclude = [
+    "mkdocs_hooks/github_alerts.py",
+    "scripts/check_docs_rendered.py",
+    "scripts/check_template_drift.py",
+]
 force-exclude = true
 
 [tool.ruff.lint]

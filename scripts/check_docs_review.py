@@ -3,7 +3,33 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from ldm_docs_common import FOOTER_REGEX_BY_SUFFIX, footer_regex_for, is_ignored_path
+from ldm_docs_common import (
+    FOOTER_REGEX,
+    FOOTER_REGEX_BY_SUFFIX,
+    IGNORE_DIRS,
+    footer_regex_for,
+    is_ignored_path,
+)
+
+# FOOTER_REGEX and IGNORE_DIRS are re-exported, not used here: the template's
+# scripts/check_template_drift.py imports both from this module by name, to
+# strip footers before comparing a file and to skip noise directories when
+# walking a tree (ai-agent-template#135).
+#
+# This file is deliberately NOT replaced by the template's own copy, which is
+# what the migration issue first proposed. The template's version carries a
+# single markdown FOOTER_REGEX and globs `*.md`; this one dispatches by
+# suffix, so `ldm_core/resources/ldm.1` is covered by a ROFF footer regex.
+# That is LDM-#1833, and it exists because globbing only `*.md` let the man
+# page ship four minor releases out of date. Adopting the template's copy
+# would not merely lose that -- the man page would start FAILING the check,
+# because a markdown regex cannot match a roff stamp, so it would be read as
+# a document with no footer at all.
+#
+# The file is outside the drift checker's --docs-site set
+# (DOCS_SITE_SHARED_PATHS), so keeping it is not drift for docs CI. Raised
+# upstream as a request for per-suffix footers; see the migration PR.
+__all__ = ["FOOTER_REGEX", "IGNORE_DIRS", "check_docs"]
 
 
 def check_docs(max_review_days, max_update_days, max_gap_days):

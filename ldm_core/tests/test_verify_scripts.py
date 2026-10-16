@@ -3917,3 +3917,158 @@ class NeitherHalfRefusesARedirectWhenItAsksThePortal(unittest.TestCase):
             text,
             "the access-URL failure no longer reports the reason",
         )
+
+
+class BothHalvesReapOnlyWhatTheRunItselfCreated(unittest.TestCase):
+    """LDM-#2214: a verification run should leave the host as it found it.
+
+    Two mechanisms already existed and neither covered it. The LDM-#2084 sweep
+    removes images compose BUILT, matched on the run's own project name.
+    `--prune-after` runs `docker system prune -af --volumes`, which is
+    machine-wide and is correctly off by default -- it would re-cost a 5 GB
+    Liferay pull on the next run. The gap was everything *pulled* rather than
+    built, plus any volume outliving the project that made it.
+
+    The design is a diff, not a prune: inventory images and volumes before
+    anything is pulled, inventory again at the end, remove only the
+    difference. That is what makes it safe as a default. Anything already on
+    the host is in the start inventory and is never touched, so a warm cache
+    survives and so does a concurrent project's data -- a distinction a
+    machine-wide prune cannot make.
+
+    Two properties this asserts beyond "the code is present", because both are
+    the kind of thing that reads correct and behaves wrongly:
+
+    - the inventory is taken by image **ID**, not tag. A tag the run merely
+      re-pointed is not a download, and a re-pulled tag whose digest was
+      already present must not be reaped.
+    - the reap is gated on a PASS. A failed run is about to be re-run, and
+      re-downloading DXP before each diagnosis costs more than the disk.
+    """
+
+    def test_both_halves_snapshot_before_pulling(self):
+        bash = BASH_SCRIPT.read_text(encoding="utf-8")
+        ps1 = PS1_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            "INVENTORY_START_IMAGES", bash, "the shell half takes no image inventory"
+        )
+        self.assertIn(
+            "INVENTORY_START_VOLUMES", bash, "the shell half takes no volume inventory"
+        )
+        self.assertIn(
+            "InventoryStartImages", ps1, "the PowerShell half takes no image inventory"
+        )
+        self.assertIn(
+            "InventoryStartVolumes",
+            ps1,
+            "the PowerShell half takes no volume inventory",
+        )
+
+    def test_every_image_inventory_is_taken_by_full_id(self):
+        """`--no-trunc` on `image ls -q` is what makes it a full ID.
+
+        Asserted over EVERY occurrence, not merely that the string appears
+        somewhere. The first version of this test checked only that
+        `docker image ls -q --no-trunc` was present in the file, and passed
+        against a snapshot that had been edited down to `docker image ls -q`
+        -- because the other three call sites still carried the flag. A reap
+        comparing truncated IDs against full ones finds every image "new".
+        """
+        for script in (BASH_SCRIPT, PS1_SCRIPT):
+            text = script.read_text(encoding="utf-8")
+            occurrences = [
+                line.strip()
+                for line in text.splitlines()
+                if "docker image ls -q" in line
+            ]
+            self.assertTrue(occurrences, f"{script.name} inventories no images at all")
+            bare = [line for line in occurrences if "--no-trunc" not in line]
+            self.assertEqual(
+                [],
+                bare,
+                f"{script.name} inventories images without --no-trunc, so it "
+                "compares truncated IDs against full ones and treats every "
+                "image as new (LDM-#2214)",
+            )
+
+    def test_the_snapshot_is_taken_before_anything_is_pulled(self):
+        """Ordering -- but of the PULL, not of the reap.
+
+        Note what this deliberately does NOT assert. The reap lives inside
+        `cleanup_test_projects()`, which is DEFINED near the top of the file
+        and CALLED from the trap at the very end, so the reap's text sits
+        above the snapshot's while executing long after it. An ordering test
+        anchored on the reap therefore fails against correct code -- it did,
+        when this test was first written that way.
+
+        What has to hold is that the inventory is taken before the pre-pull.
+        Taken after, the delta is empty and the reap is a silent no-op that
+        every other assertion here still passes.
+        """
+        for script, snapshot_marker in (
+            (BASH_SCRIPT, "INVENTORY_START_IMAGES="),
+            (PS1_SCRIPT, "$script:InventoryStartImages = @("),
+        ):
+            text = script.read_text(encoding="utf-8")
+            snapshot = text.find(snapshot_marker)
+            pull = text.find("Pre-pull large images")
+            self.assertNotEqual(-1, snapshot, f"{script.name}: no inventory; re-anchor")
+            self.assertNotEqual(
+                -1, pull, f"{script.name}: no pre-pull; re-anchor this test"
+            )
+            self.assertLess(
+                snapshot,
+                pull,
+                f"{script.name} inventories Docker AFTER the pre-pull, so every "
+                "pulled image is already in the start inventory, the delta is "
+                "empty, and the reap silently removes nothing (LDM-#2214)",
+            )
+
+    def test_both_halves_reap_only_on_a_pass(self):
+        bash = BASH_SCRIPT.read_text(encoding="utf-8")
+        ps1 = PS1_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            'if [ "$status" = "pass" ] && [ "$KEEP_PULLED" != true ]; then',
+            bash,
+            "the shell reap is no longer gated on a passing run, so a failure "
+            "now deletes the images its own re-run needs (LDM-#2214)",
+        )
+        self.assertIn(
+            "if ($script:VerificationExitCode -eq 0 -and -not $KeepPulled) {",
+            ps1,
+            "the PowerShell reap is no longer gated on a passing run",
+        )
+
+    def test_neither_half_forces_the_removal(self):
+        """`docker rmi -f` would untag an image a running container still uses.
+
+        The LDM-#2084 sweep above does force, and is right to: it matches only
+        images this run's own compose built. This one matches anything new on
+        the host, so the blast radius is different and the refusal is wanted.
+        """
+        bash = BASH_SCRIPT.read_text(encoding="utf-8")
+        ps1 = PS1_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            'docker rmi "$img"', bash, "the shell reap no longer removes images by ID"
+        )
+        self.assertNotIn(
+            'docker rmi -f "$img"', bash, "the shell reap forces removal (LDM-#2214)"
+        )
+        self.assertIn(
+            "& docker rmi $img 2>&1",
+            ps1,
+            "the PowerShell reap no longer removes images",
+        )
+        self.assertNotIn(
+            "docker rmi -f $img", ps1, "the PowerShell reap forces removal"
+        )
+
+    def test_both_halves_offer_the_same_opt_out(self):
+        bash = BASH_SCRIPT.read_text(encoding="utf-8")
+        ps1 = PS1_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            '"$arg" == "--keep-pulled"', bash, "the shell half has no --keep-pulled"
+        )
+        self.assertIn(
+            "[switch]$KeepPulled", ps1, "the PowerShell half has no -KeepPulled"
+        )

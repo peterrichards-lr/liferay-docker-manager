@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
 {#-
-  SHARED FILE. The canonical copy is overrides/main.html on the master branch
-  of peterrichards-lr/lfr-tunnel. The Liferay tools docs sites (lfr-tunnel,
-  liferay-docker-manager, liferay-ai-commerce-accelerator) each carry a copy
-  with the same content. Never edit a copy: change the canonical file in
-  lfr-tunnel, then copy it to the others unchanged. The rule is in lfr-tunnel's
-  CONTRIBUTING.md, "Shared docs files"; the sync plan, including the CI checks
-  that compare the copies, is peterrichards-lr/liferay-ai-commerce-accelerator#1329.
+  SHARED FILE. The canonical copy is overrides/main.html on the main branch of
+  peterrichards-lr/ai-agent-template, which seeds it into every project
+  bootstrapped with --docs-site. Never edit a copy: change the canonical file
+  in the template, through a PR there, then copy it into each project
+  unchanged. scripts/check_template_drift.py compares the copies. The rule is
+  in the template's CONTRIBUTING.md, "Shared docs files", and
+  .agents/skills/docs-site-standard/SKILL.md.
 
   The values are per-site and come from each site's mkdocs.yml (verification
   tokens, social image, site name and description, SVG favicon). Two things are

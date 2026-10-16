@@ -14,10 +14,11 @@ on:
       - "overrides/**"
       - "requirements-dev.txt"
       - "mkdocs_hooks/**"
-      - "scripts/check_site_verification.py"
-      - "scripts/check_social_card.py"
-      - "scripts/check_community_notice.py"
-      - "scripts/check_home_layout.py"
+      - "scripts/check_docs_rendered.py"
+      - "scripts/check_template_drift.py"
+      - "scripts/check_docs_review.py"
+      - "scripts/ldm_docs_common.py"
+      - ".agents/TEMPLATE_REF.md"
       - ".github/workflows/docs.yml"
   # LDM-#2215: build on PRs too. Before this the docs built only AFTER a merge,
   # so a broken link or a bad template reached `master` and was discovered by
@@ -33,10 +34,11 @@ on:
       - "overrides/**"
       - "requirements-dev.txt"
       - "mkdocs_hooks/**"
-      - "scripts/check_site_verification.py"
-      - "scripts/check_social_card.py"
-      - "scripts/check_community_notice.py"
-      - "scripts/check_home_layout.py"
+      - "scripts/check_docs_rendered.py"
+      - "scripts/check_template_drift.py"
+      - "scripts/check_docs_review.py"
+      - "scripts/ldm_docs_common.py"
+      - ".agents/TEMPLATE_REF.md"
       - ".github/workflows/docs.yml"
   workflow_dispatch: # Allow manual trigger
 
@@ -59,6 +61,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # LDM-#2229: git-revision-date-localized reads each page's last
+          # commit, so it needs the history. The default shallow fetch leaves
+          # it with none, and `fallback_to_build_date: true` then stamps the
+          # BUILD date on every page while the build stays green -- a wrong
+          # date on every page, reported as success.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -90,36 +99,54 @@ jobs:
       # this catches is the failure that is actually silent -- the key gone,
       # the tag gone, the build still green. That the token is the RIGHT one
       # is verified once, by Search Console accepting it.
-      - name: Verify the built site carries its search-console tag
-        run: python3 scripts/check_site_verification.py _site
+      # LDM-#2229: one check replaces three. check_docs_rendered.py is governed
+      # by ai-agent-template and asserts MISSING-VERIFICATION (the search
+      # console tag, Google AND Bing), NO-NOTICE, HOME-LAYOUT and STYLE-TITLE
+      # -- which were scripts/check_site_verification.py,
+      # check_community_notice.py and check_home_layout.py here -- plus
+      # LEAKED-ALERT, UNRENDERED-DIAGRAM, UNDATED-PAGE, ABOUT-LINK and NAV,
+      # which nothing here checked at all.
+      #
+      # Per-site values come from extra.docs_standard in mkdocs.yml. Never
+      # edit the script to change what it asserts for this site.
+      - name: Verify the built site gives readers what the source asks for
+        run: python3 scripts/check_docs_rendered.py _site --config mkdocs.yml
 
-      # LDM-#2215: also BEFORE the upload. `og:image` is an absolute URL built
-      # from site_url + extra.social_image and is resolved by a SCRAPER days
-      # later, so a typo in either leaves the build green and the card blank.
-      # Measured: mistyping social_image by one character still passes
-      # `mkdocs build --strict`.
-      - name: Verify the social card and icons resolve
+      # LDM-#2229: the shared docs files must still BE the shared docs files.
+      # --docs-site scopes the comparison to the files the docs standard
+      # governs, plus the stylesheet through its path mapping, so this job
+      # fails on them and only them. Exit 3 (the template, or a governed file
+      # in it, not found) fails too; a network failure only warns.
+      #
+      # Before the upload, like every check above: a drifted shared file that
+      # is discovered after deployment has already reached readers.
+      #
+      # Taken from the template's own docs.yml at v2.5.0
+      # (ai-agent-template#168). PR CI and the deploy BOTH compare against the
+      # commit the stamp records: a template merge must not turn a pull
+      # request red, or block publishing, over a change nobody made here,
+      # while a local edit still fails. A newer template release prints as a
+      # notice naming the shared files it changes, and does not fail. An
+      # `unknown` stamp falls back to upstream HEAD inside the script.
+      #
+      # This job serves BOTH push and pull_request, which is where LDM's
+      # workflow differs from the template's shape -- so the behaviour above
+      # applies to every event this job runs on, which is the point.
+      #
+      # Skipped on Dependabot's pull requests: a dependency bump changes no
+      # shared file, so there is nothing here to check, and a skipped step
+      # lets a required docs check report success rather than pending. Those
+      # pull requests still build the site and run the rendered check above,
+      # because dependency bumps are exactly what break rendering. On a push
+      # github.event.pull_request is empty, so the step runs.
+      - name: Verify the shared docs files match the template
+        if: ${{ github.event.pull_request.user.login != 'dependabot[bot]' }}
         run: |
-          python3 scripts/check_social_card.py _site \
-            --site-url=https://peterrichards-lr.github.io/liferay-docker-manager/
-
-      # LDM-#2215: the three Liferay tools docs sites must render the
-      # community-project notice identically, and for a while they did not --
-      # this one emitted `admonition note` titled "Note" while the others
-      # emitted `admonition info` titled "Community project". Every one of
-      # those was a valid build of a valid page, which is why it needs a check
-      # rather than a review. Neuter-probed: dropping the hook, the emoji or
-      # the em dash each reverts it, and each is caught.
-      - name: Verify the community-project notice renders as the shared form
-        run: python3 scripts/check_community_notice.py _site
-
-      # LDM-#2222: the three sites' home pages share one structure, and
-      # nothing about a drifted one is visible in a single repo's diff -- it
-      # shows only when all three are opened side by side, which nobody does.
-      # An `##` that becomes `###`, or an emoji added to a heading, also
-      # changes the anchor and silently breaks every inbound link.
-      - name: Verify the home page matches the shared layout
-        run: python3 scripts/check_home_layout.py _site
+          if [ -f .agents/TEMPLATE_REF.md ]; then
+            python3 scripts/check_template_drift.py --docs-site --fail-on-drift --against-recorded
+          else
+            echo "No .agents/TEMPLATE_REF.md: nothing to compare."
+          fi
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

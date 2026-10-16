@@ -1,12 +1,12 @@
 """Convert GitHub alert blockquotes into Material admonitions at build time.
 
-SHARED FILE. The canonical copy is scripts/mkdocs_github_alerts.py on the master branch of
-peterrichards-lr/lfr-tunnel. The Liferay tools docs sites (lfr-tunnel, liferay-docker-manager,
-liferay-ai-commerce-accelerator) each carry a copy with the same content; LDM keeps it at
-mkdocs_hooks/github_alerts.py. Never edit a copy: change the canonical file in lfr-tunnel,
-then copy it to the others unchanged. The rule is in lfr-tunnel's CONTRIBUTING.md, "Shared
-docs files"; the sync plan, including the CI checks that compare the copies, is
-peterrichards-lr/liferay-ai-commerce-accelerator#1329.
+SHARED FILE. The canonical copy is scripts/mkdocs_github_alerts.py on the main branch of
+peterrichards-lr/ai-agent-template, which seeds it into every project bootstrapped with
+--docs-site. Never edit a copy: change the canonical file in the template, through a PR there,
+then copy it into each project unchanged. A project may keep it at another path (LDM keeps it
+at mkdocs_hooks/github_alerts.py) by recording the mapping in .agents/TEMPLATE_REF.md, and
+scripts/check_template_drift.py compares the copies. The rule is in the template's
+CONTRIBUTING.md, "Shared docs files", and .agents/skills/docs-site-standard/SKILL.md.
 
 The docs are read on two surfaces. In the repository and on github.com, `> [!WARNING]` is
 native syntax and renders as a callout. In the built site it is not: Python-Markdown sees an
