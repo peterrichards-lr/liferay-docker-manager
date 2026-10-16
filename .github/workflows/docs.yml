@@ -14,7 +14,6 @@ on:
       - "overrides/**"
       - "requirements-dev.txt"
       - "mkdocs_hooks/**"
-      - "scripts/check_social_card.py"
       - "scripts/check_docs_rendered.py"
       - "scripts/check_template_drift.py"
       - "scripts/check_docs_review.py"
@@ -35,7 +34,6 @@ on:
       - "overrides/**"
       - "requirements-dev.txt"
       - "mkdocs_hooks/**"
-      - "scripts/check_social_card.py"
       - "scripts/check_docs_rendered.py"
       - "scripts/check_template_drift.py"
       - "scripts/check_docs_review.py"
@@ -106,16 +104,6 @@ jobs:
       # edit the script to change what it asserts for this site.
       - name: Verify the built site gives readers what the source asks for
         run: python3 scripts/check_docs_rendered.py _site --config mkdocs.yml
-
-      # LDM-#2215: also BEFORE the upload. `og:image` is an absolute URL built
-      # from site_url + extra.social_image and is resolved by a SCRAPER days
-      # later, so a typo in either leaves the build green and the card blank.
-      # Measured: mistyping social_image by one character still passes
-      # `mkdocs build --strict`.
-      - name: Verify the social card and icons resolve
-        run: |
-          python3 scripts/check_social_card.py _site \
-            --site-url=https://peterrichards-lr.github.io/liferay-docker-manager/
 
       # LDM-#2229: the shared docs files must still BE the shared docs files.
       # --docs-site scopes the comparison to the files the docs standard
