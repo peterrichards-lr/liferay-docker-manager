@@ -2,7 +2,7 @@
 
 **Start here if you are new.** A tutorial walks you through a complete journey
 end to end, with every step given. You do not need to know what you want yet —
-that is what separates these from the [How-To guides](../how-to/index.md),
+that is what separates these from the [How-to guides](../how-to/index.md),
 which assume you have a specific task in mind.
 
 ## Start with this one
@@ -23,10 +23,10 @@ which assume you have a specific task in mind.
 ## Not here
 
 - **Installing LDM, or fixing a broken setup** — see
-  [Installation & Setup](quick_start.md) under How-To. It covers
+  [Installation & Setup](quick_start.md) under How-to guides. It covers
   prerequisites, per-OS SSL tooling, Docker permissions, shell completion and
   troubleshooting. It is a reference to reach into, not a tutorial to read.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-19* | *Last Reviewed: 2026-09-19*
+*Last Updated: 2026-10-16* | *Last Reviewed: 2026-10-16*
