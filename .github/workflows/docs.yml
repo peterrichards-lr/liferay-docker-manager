@@ -118,15 +118,69 @@ jobs:
             --site-url=https://peterrichards-lr.github.io/liferay-docker-manager/
 
       # LDM-#2229: the shared docs files must still BE the shared docs files.
-      # --docs-site scopes the comparison to the four the docs standard
+      # --docs-site scopes the comparison to the files the docs standard
       # governs, plus the stylesheet through its path mapping, so this job
       # fails on them and only them. A transport failure warns; a 404 fails,
       # because a missing path or a permissions problem will not fix itself.
       #
       # Before the upload, like every check above: a drifted shared file that
       # is discovered after deployment has already reached readers.
+      #
+      # THE COMPARISON BASIS DIFFERS BY EVENT, deliberately (template-sync
+      # SKILL.md: "use it where a template merge must not block, such as a
+      # deploy").
+      #
+      # By default the check compares against upstream HEAD, so a merge in the
+      # template reddens this job with nothing changed here. That happened
+      # within hours of adopting v2.2.0: ai-agent-template#144, #145 and #149
+      # landed on main, and every LDM docs PR went red on files copied
+      # byte-for-byte from the tag.
+      #
+      #   push (the path that deploys) -> --against-recorded, which compares
+      #     against the commit in .agents/TEMPLATE_REF.md. An upstream merge
+      #     can then never block a deploy of docs that are correct for the
+      #     version this repo has actually adopted.
+      #   pull_request -> upstream HEAD, deliberately left as-is. That is the
+      #     signal that a sync PR is due, and a PR is where acting on it is
+      #     cheap. It must stay a signal and not a blocker: a red PR here is
+      #     read, a red deploy is a broken site.
+      # LDM-#2229: the shared docs files must still BE the shared docs files.
+      # --docs-site scopes the comparison to the files the docs standard
+      # governs, plus the stylesheet through its path mapping, so this job
+      # fails on them and only them. A transport failure warns; a 404 fails,
+      # because a missing path or a permissions problem will not fix itself.
+      #
+      # Before the upload, like every check above: a drifted shared file that
+      # is discovered after deployment has already reached readers.
+      #
+      # STAMP-BASED, taken verbatim from the template's own docs.yml at
+      # v2.4.0 (ai-agent-template#157). It compares against the commit
+      # recorded in .agents/TEMPLATE_REF.md whenever the stamp holds a real
+      # one, and falls back to upstream HEAD only for an unstamped repo.
+      #
+      # This replaces an event-conditional version written here first, which
+      # used --against-recorded on push and HEAD on pull requests. The
+      # upstream form is better for a reason worth recording: comparing a PR
+      # against HEAD makes every docs PR go red whenever the template merges
+      # anything, on files copied byte-for-byte from a tag. That happened
+      # five times in one morning during this migration and cost two
+      # abandoned sync branches. The signal it provided -- "a sync is due" --
+      # is better served by the template's own release notice than by a red
+      # check on an unrelated PR.
       - name: Verify the shared docs files match the template
-        run: python3 scripts/check_template_drift.py --docs-site --fail-on-drift
+        run: |
+          if [ ! -f .agents/TEMPLATE_REF.md ]; then
+            echo "No .agents/TEMPLATE_REF.md: nothing to compare."
+            exit 0
+          fi
+          recorded=$(python3 -c 'import sys; sys.path.insert(0, "scripts"); from pathlib import Path; from check_template_drift import UNKNOWN_STAMP_VALUE, parse_template_reference; commit = parse_template_reference(Path(".agents/TEMPLATE_REF.md").read_text(encoding="utf-8")).commit; print("" if commit == UNKNOWN_STAMP_VALUE else commit)')
+          if [ -n "$recorded" ]; then
+            echo "Comparing against the recorded commit $recorded."
+            python3 scripts/check_template_drift.py --docs-site --fail-on-drift --against-recorded
+          else
+            echo "The stamp records no commit yet (unknown): comparing against upstream HEAD."
+            python3 scripts/check_template_drift.py --docs-site --fail-on-drift
+          fi
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

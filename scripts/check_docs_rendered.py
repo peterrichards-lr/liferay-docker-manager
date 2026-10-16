@@ -23,20 +23,38 @@ text and every diagram rendered as code. `mkdocs build --strict` passes a footer
 Always checked:
   LEAKED-ALERT        no `[!NOTE]`-style marker is printed as text (the alerts hook ran)
   UNRENDERED-DIAGRAM  no mermaid block is rendered as code
-  UNDATED-PAGE        every page shows its Last Updated / Last Reviewed footer
+  UNDATED-PAGE        every page shows when it was last updated and last reviewed: both dates
+                      in its footer, or "Last Reviewed" in its footer and the date that
+                      mkdocs-git-revision-date-localized-plugin generates in Material's
+                      source-file aside
   ABOUT-LINK          every page's footer "About these docs" link resolves to a built page
   STYLE-TITLE         no alert is titled with Material's style name ("Info", "Danger")
   NAV                 the top-level nav is an ordered subset of STANDARD_NAV, with "About
                       these docs" present and last, and every nav label, top level and below,
                       is in sentence case (names in extra.docs_standard.proper_nouns allowed)
+Checked when the build has a section with an index page (navigation.indexes):
+  SECTION-TITLE       the section title is in the markup the shared rule targets, and a
+                      stylesheet in extra_css carries that rule, so it renders like a section
+                      without one
 Checked when mkdocs.yml configures them:
   MISSING-VERIFICATION  extra.google_site_verification / extra.bing_site_verification:
                         the meta tag is on every page
-  MISSING-SOCIAL        extra.social_image: every page carries an absolute og:image that
-                        exists in the build
+  MISSING-SOCIAL        extra.social_image, extra.favicon_svg or theme.favicon: what
+                        overrides/main.html emits, each part only when configured. The card:
+                        an absolute og:image that exists in the build, twitter:card
+                        summary_large_image and twitter:image the same URL as og:image. The
+                        icons: the SVG favicon, theme.favicon and the apple-touch-icon
+                        (assets/apple-touch-icon.png), each linked from every page to a file
+                        in the build
   NO-NOTICE           extra.docs_standard.notice: the home page shows it as an `info`
                       callout above its first section
   HOME-LAYOUT         extra.docs_standard.home_layout: the shared home-page layout
+Deleting a key switches its check off. So a check can be REQUIRED: one that is fails, naming
+each missing key and sub-key (CONFIGURED_CHECKS), instead of being skipped or checking less
+(ai-agent-template#141, #155). Required: what the site's profile requires (PROFILE_REQUIRED: the
+Liferay profile requires all four), plus extra.docs_standard.required, less what
+extra.docs_standard.waive drops with a reason. An unknown name, or a waive with no reason or of
+a check nothing requires, fails as REQUIRED.
 
 Exit codes: 0 every assertion passed; 1 an assertion failed, or nothing was scanned.
 """
@@ -51,8 +69,10 @@ from urllib.parse import urljoin, urlparse
 
 import yaml
 
-# Too few pages to be a real build; a near-empty directory would pass every assertion.
-MIN_PAGES = 3
+# Too few pages to be a real build; a near-empty directory would pass every assertion. Five was
+# lfr-tunnel's threshold before this check replaced its own (#141); the template's own site
+# builds ten.
+MIN_PAGES = 5
 
 # The standard top-level navigation, in order (ai-agent-template#135). A site omits a section
 # only when it has no pages, and never renames or reorders one. Only the labels are fixed: which
@@ -73,9 +93,26 @@ ABOUT_LABEL = "About these docs"
 ALERT_MARKER = re.compile(r"\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]")
 FOOTER = re.compile(r"<p><em>Last Updated: ?\d{4}-\d{2}-\d{2}</em> \| "
                     r"<em>Last Reviewed: ?\d{4}-\d{2}-\d{2}</em></p>")
+# The review date alone, for a site whose "Last updated" is generated from git (#142).
+REVIEWED = re.compile(r"<p><em>Last Reviewed: ?\d{4}-\d{2}-\d{2}</em></p>")
+# Material's source-file aside, where mkdocs-git-revision-date-localized-plugin's date renders.
+SOURCE_FILE = re.compile(r'<aside class="md-source-file">(.*?)</aside>', re.S)
+SOURCE_FACT = '<span class="md-source-file__fact">'
 # The markup the alerts hook produces when a title is the STYLE name rather than GitHub's label.
 STYLE_TITLES = ('<div class="admonition info"><p class="admonition-title">Info</p>',
                 '<div class="admonition danger"><p class="admonition-title">Danger</p>')
+
+# Section titles render the same with or without an index page (ai-agent-template#143).
+# Material renders a section with an index page as a link in the primary text colour, and one
+# without as a label in the secondary colour; this rule gives the link the label's colour at
+# desktop width. Below 76.25em, in the drawer, the two already match. The Liferay profile's
+# liferay-blue.css carries it, and SECTION-TITLE holds every site with an index page to it.
+SECTION_TITLE_RULE = """\
+@media screen and (min-width: 76.25em) {
+  .md-nav--primary .md-nav__item--section > .md-nav__container > .md-nav__link:not(:hover):not(.md-nav__link--active) {
+    color: var(--md-default-fg-color--light);
+  }
+}"""
 
 # A label's words, for the sentence-case rule ("How-To Guides" and "About These Docs" fail).
 _WORD = re.compile(r"[A-Za-z][A-Za-z'’]*")
@@ -187,6 +224,66 @@ class PrimaryNav(HTMLParser):
             self.buffer += data
 
 
+class SectionTitles(HTMLParser):
+    """Each section's title in the primary nav, and the markup it is rendered in.
+
+    `kind` is "label" for a section without an index page; "indexed" for one with an index page,
+    in the markup SECTION_TITLE_RULE targets (li > div.md-nav__container > a.md-nav__link); and
+    "unmatched" for any other title markup, which the rule may no longer reach. The page's own
+    table of contents (nav.md-nav--secondary) is skipped.
+    """
+
+    VOID = {"input", "img", "br", "hr", "meta", "link", "source", "wbr"}
+
+    def __init__(self):
+        super().__init__()
+        self.sections, self.stack, self.title = [], [], None
+
+    def handle_starttag(self, tag, attrs):
+        cls = (dict(attrs).get("class") or "").split()
+        parent = self.stack[-1] if self.stack else None
+        if parent and self.title is None and tag != "input" and not parent["children"]:
+            in_nav = [c for t, c in ((e["tag"], e["cls"]) for e in self.stack) if t == "nav"]
+            primary = any("md-nav--primary" in c for c in in_nav)
+            toc = any("md-nav--secondary" in c for c in in_nav)
+            if primary and not toc:
+                if parent["tag"] == "li" and "md-nav__item--section" in parent["cls"]:
+                    if tag == "label":
+                        self.title = {"kind": "label"}
+                    elif not (tag == "div" and "md-nav__container" in cls):
+                        self.title = {"kind": "unmatched"}
+                elif parent["tag"] == "div" and "md-nav__container" in parent["cls"]:
+                    self.title = {"kind": "indexed" if tag == "a" and "md-nav__link" in cls
+                                  else "unmatched"}
+        if parent and tag != "input":
+            parent["children"] += 1
+        if tag in self.VOID:
+            return
+        self.stack.append({"tag": tag, "cls": cls, "children": 0})
+        if self.title is not None and "depth" not in self.title:
+            self.title.update(depth=len(self.stack), text="")
+
+    def handle_endtag(self, tag):
+        if tag not in [e["tag"] for e in self.stack]:
+            return
+        while self.stack:
+            if self.title is not None and len(self.stack) == self.title["depth"]:
+                self.sections.append((self.title["kind"], " ".join(self.title["text"].split())))
+                self.title = None
+            if self.stack.pop()["tag"] == tag:
+                break
+
+    def handle_data(self, data):
+        if self.title is not None and "text" in self.title:
+            self.title["text"] += data
+
+
+def _compact_css(css):
+    """CSS without comments or insignificant whitespace, so two spellings of one rule compare."""
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    return re.sub(r"\s*([{}:;,>()])\s*", r"\1", " ".join(css.split())).replace(";}", "}")
+
+
 class FooterAbout(HTMLParser):
     """The href of the "About these docs" link inside the footer's .md-copyright block."""
 
@@ -287,9 +384,35 @@ def check_diagrams(pages):
             for rel, html in pages.items() if 'class="language-mermaid"' in html]
 
 
+def has_generated_update(html):
+    """Material's source-file aside shows a date: the plugin's "Last update" (#142).
+
+    Matched by structure, not by the icon's title, which is Material's localised
+    `source.file.date.updated` string ("Last update", "Letztes Update"). A date fact is one
+    holding text and no <nav>; the contributor facts beside it hold a <nav> of names."""
+    aside = SOURCE_FILE.search(html)
+    return bool(aside) and any(
+        "<nav" not in fact and re.sub(r"<[^>]+>", "", fact).strip()
+        for fact in aside.group(1).split(SOURCE_FACT)[1:])
+
+
 def check_footers(pages):
-    return [f"{rel}: no Last Updated / Last Reviewed footer"
-            for rel, html in pages.items() if rel != "404.html" and not FOOTER.search(html)]
+    """Both dates typed in the body, or the review date typed and the update generated."""
+    problems = []
+    for rel, html in pages.items():
+        if rel == "404.html" or FOOTER.search(html):
+            continue
+        reviewed, updated = bool(REVIEWED.search(html)), has_generated_update(html)
+        if reviewed and updated:
+            continue
+        if reviewed:
+            problems.append(f"{rel}: Last Reviewed but no Last Updated, in the footer or in "
+                            "Material's source-file aside")
+        elif updated:
+            problems.append(f"{rel}: a generated last update but no Last Reviewed")
+        else:
+            problems.append(f"{rel}: no Last Updated / Last Reviewed footer")
+    return problems
 
 
 def check_about_links(site, pages):
@@ -345,6 +468,33 @@ def check_nav(home_html, names=()):
     return problems, labels
 
 
+def check_section_titles(site, home_html, config):
+    """Section titles render the same with or without an index page (#143). Computed colour is
+    not in static HTML, so this asserts the two things that make it true: the title is in the
+    markup the shared rule targets, and a stylesheet the site loads carries the rule. Returns
+    (problems, linked), where `linked` names the sections with an index page; when it is empty
+    there is nothing to make consistent and the check did not run."""
+    parser = SectionTitles()
+    parser.feed(home_html)
+    linked = [(kind, text) for kind, text in parser.sections if kind != "label"]
+    if not linked:
+        return [], []
+    problems = [f"{text!r}: a section title in markup the shared rule does not reach (Material "
+                "changed it?); update SECTION_TITLE_RULE and the profile stylesheet together"
+                for kind, text in linked if kind == "unmatched"]
+    rule = _compact_css(SECTION_TITLE_RULE)
+    sheets = [s for s in (config.get("extra_css") or []) if isinstance(s, str)]
+    if not any(rule in _compact_css((site / s).read_text(encoding="utf-8", errors="replace"))
+               for s in sheets if (site / s).is_file()):
+        names = [text for _, text in linked]
+        problems.append(f"sections with an index page {names!r} render in the primary text "
+                        "colour, and those without in the secondary one, but no stylesheet in "
+                        f"extra_css ({sheets or 'none'}) carries the rule that makes them match. "
+                        "The Liferay profile's liferay-blue.css has it; any other site adds it, "
+                        f"verbatim, to its own stylesheet:\n{SECTION_TITLE_RULE}")
+    return problems, [text for _, text in linked]
+
+
 def check_verification(pages, extra):
     problems = []
     for key, name in (("google_site_verification", "google-site-verification"),
@@ -356,21 +506,92 @@ def check_verification(pages, extra):
     return problems
 
 
+class HeadTags(HTMLParser):
+    """The page's <meta> values by name or property, and its <link> tags."""
+
+    def __init__(self):
+        super().__init__()
+        self.meta, self.links = {}, []
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag == "meta" and (a.get("name") or a.get("property")):
+            self.meta.setdefault(a.get("name") or a.get("property"), a.get("content"))
+        elif tag == "link":
+            self.links.append(a)
+
+
+def social_configured(config):
+    """MISSING-SOCIAL runs when the site configures its social card or any of its icons."""
+    extra = config.get("extra") or {}
+    return bool(extra.get("social_image") or extra.get("favicon_svg")
+                or (config.get("theme") or {}).get("favicon"))
+
+
+# overrides/main.html links the touch icon at this fixed path on every page.
+APPLE_TOUCH_ICON = "assets/apple-touch-icon.png"
+
+
 def check_social(site, pages, config):
-    image = (config.get("extra") or {}).get("social_image")
-    if not image:
+    """What overrides/main.html emits for link previews and icons (#146), each part only when it
+    is configured: the social card (og:image, twitter:card, twitter:image the same absolute URL
+    as og:image), the SVG favicon, Material's theme.favicon, and the apple-touch-icon. A link
+    must resolve, from its own page, to a file in the build."""
+    if not social_configured(config):
         return []
-    site_url = config.get("site_url") or ""
-    if site_url and not site_url.endswith("/"):
-        site_url += "/"          # as MkDocs normalises it before the template sees it
-    if not site_url.startswith(("http://", "https://")):
-        return ["extra.social_image is set but site_url is not an absolute URL, so og:image "
-                "cannot be absolute: a scraper has no page to resolve a relative one against"]
-    want = site_url + image
-    problems = [] if (site / image).is_file() else [f"{image} is not in the build"]
+    extra = config.get("extra") or {}
+    image = extra.get("social_image")
+    problems, want = [], None
+    if image:
+        site_url = config.get("site_url") or ""
+        if site_url and not site_url.endswith("/"):
+            site_url += "/"          # as MkDocs normalises it before the template sees it
+        if not site_url.startswith(("http://", "https://")):
+            return ["extra.social_image is set but site_url is not an absolute URL, so og:image "
+                    "cannot be absolute: a scraper has no page to resolve a relative one against"]
+        want = site_url + image
+        if not (site / image).is_file():
+            problems.append(f"{image} is not in the build")
+    icons = [("the SVG favicon", lambda a: "icon" in (a.get("rel") or "").split()
+              and a.get("type") == "image/svg+xml", extra.get("favicon_svg")),
+             ("the theme.favicon icon", lambda a: "icon" in (a.get("rel") or "").split()
+              and a.get("type") != "image/svg+xml", (config.get("theme") or {}).get("favicon")),
+             ("the apple-touch-icon", lambda a: a.get("rel") == "apple-touch-icon",
+              APPLE_TOUCH_ICON)]
+    base = urlparse(config.get("site_url") or "").path or "/"
+    base += "" if base.endswith("/") else "/"
+    missing_files = set()
     for rel, html in pages.items():
-        if f'<meta property="og:image" content="{want}">' not in html:
-            problems.append(f"{rel}: no og:image {want!r}")
+        head = HeadTags()
+        head.feed(html)
+        if want:
+            if head.meta.get("og:image") != want:
+                problems.append(f"{rel}: no og:image {want!r}")
+            if head.meta.get("twitter:card") != "summary_large_image":
+                problems.append(f"{rel}: twitter:card is {head.meta.get('twitter:card')!r}, "
+                                "not 'summary_large_image'")
+            if head.meta.get("twitter:image") != want:
+                problems.append(f"{rel}: twitter:image is {head.meta.get('twitter:image')!r}, "
+                                f"not the og:image {want!r}")
+        for name, is_it, expected in icons:
+            if not expected:
+                continue
+            link = next((a for a in head.links if is_it(a)), None)
+            if link is None:
+                problems.append(f"{rel}: no <link> for {name} ({expected})")
+                continue
+            # 404.html is served at every depth, so MkDocs gives it links absolute under
+            # site_url's path ("/demo/assets/..."); every other page's are relative.
+            target = urlparse(urljoin("http://site/" + rel, link.get("href") or "")).path
+            if base != "/" and target.startswith(base):
+                target = target[len(base) - 1:]
+            target = target.lstrip("/")
+            if target != expected.lstrip("/"):
+                problems.append(f"{rel}: {name} links {link.get('href')!r}, which resolves to "
+                                f"/{target}, not /{expected}")
+            elif not (site / target).is_file() and target not in missing_files:
+                missing_files.add(target)
+                problems.append(f"{name}: {target} is not in the build")
     return problems
 
 
@@ -503,6 +724,127 @@ def check_home_layout(home_html, standard, site_name):
     return bad, ok
 
 
+def _extra(config):
+    return config.get("extra") or {}
+
+
+def _standard(config):
+    return _extra(config).get("docs_standard") or {}
+
+
+def _block(config, key):
+    value = _standard(config).get(key)
+    return value if isinstance(value, dict) else {}
+
+
+# The checks that run only when mkdocs.yml configures them, and every key a REQUIRED one needs:
+# a key whose absence would switch it off (#141), and a sub-key whose absence would leave it
+# running but checking less (#155). Each entry is (the key, as named in a failure, and whether
+# it is set).
+CONFIGURED_CHECKS = {
+    "MISSING-VERIFICATION": [
+        ("extra.google_site_verification or extra.bing_site_verification",
+         lambda c: _extra(c).get("google_site_verification")
+         or _extra(c).get("bing_site_verification")),
+    ],
+    "MISSING-SOCIAL": [
+        ("extra.social_image", lambda c: _extra(c).get("social_image")),
+        ("extra.favicon_svg", lambda c: _extra(c).get("favicon_svg")),
+        ("theme.favicon", lambda c: (c.get("theme") or {}).get("favicon")),
+    ],
+    "NO-NOTICE": [
+        (f"extra.docs_standard.notice.{key}", lambda c, key=key: _block(c, "notice").get(key))
+        for key in ("title", "text", "link_text")
+    ],
+    "HOME-LAYOUT": [
+        ("extra.docs_standard.home_layout: true", lambda c: _standard(c).get("home_layout")),
+    ] + [
+        # Only with a related block: a site with no related projects has no section to check.
+        (f"extra.docs_standard.related.{key}",
+         lambda c, key=key: "related" not in _standard(c) or _block(c, "related").get(key))
+        for key in ("heading", "intro", "rows")
+    ],
+}
+
+# A profile requires its checks by default, so a site cannot turn one off by deleting
+# `required` (#155). The profile is known by the shared stylesheet in extra_css, which it
+# cannot drop without losing its palette. A site drops a check only through an entry in
+# extra.docs_standard.waive, which names it and gives a reason.
+PROFILE_REQUIRED = {
+    "liferay-blue.css": ("the Liferay profile",
+                         ("NO-NOTICE", "HOME-LAYOUT", "MISSING-VERIFICATION", "MISSING-SOCIAL")),
+}
+
+
+def profile_required(config):
+    """(the profile's name, the checks it requires), or (None, ()) for a site with no profile."""
+    for sheet in config.get("extra_css") or []:
+        if isinstance(sheet, str) and sheet.rsplit("/", 1)[-1] in PROFILE_REQUIRED:
+            return PROFILE_REQUIRED[sheet.rsplit("/", 1)[-1]]
+    return None, ()
+
+
+def check_required(config, always_run):
+    """Failures for the required checks, as {check name: problems}.
+
+    Required: what the site's profile requires, plus extra.docs_standard.required, less what
+    extra.docs_standard.waive drops with a reason. A required check fails, naming each missing
+    key, when a key it needs is not set: lfr-tunnel lost its Search Console verification to a
+    deleted key while its build stayed green (lfr-tunnel#2381), and a deleted sub-key leaves a
+    check running that checks less (#155). A check in `always_run` already runs on every site,
+    so naming it in `required` is allowed and changes nothing.
+    """
+    standard = _standard(config)
+    problems = {}
+    required = standard.get("required")
+    if required is None:
+        required = []
+    elif not isinstance(required, list):
+        problems["REQUIRED"] = ["extra.docs_standard.required must be a list of check names, "
+                                f"not {required!r}"]
+        required = []
+    waive = standard.get("waive")
+    if waive is None:
+        waive = {}
+    elif not isinstance(waive, dict):
+        problems.setdefault("REQUIRED", []).append(
+            "extra.docs_standard.waive must map a check name to the reason it is waived, "
+            f"not {waive!r}")
+        waive = {}
+
+    profile, by_profile = profile_required(config)
+    known = set(CONFIGURED_CHECKS) | set(always_run)
+    unknown = [name for name in list(required) + list(waive) if name not in known]
+    if unknown:
+        problems.setdefault("REQUIRED", []).append(
+            f"unknown check name(s) in extra.docs_standard.required or waive: {unknown!r}; a "
+            f"required check is one of {sorted(CONFIGURED_CHECKS)!r}")
+    for name, reason in waive.items():
+        if name not in known:
+            continue
+        if not isinstance(reason, str) or not reason.strip():
+            problems.setdefault("REQUIRED", []).append(
+                f"extra.docs_standard.waive.{name} gives no reason; a waived check needs one")
+        elif name not in by_profile and name not in required:
+            problems.setdefault("REQUIRED", []).append(
+                f"extra.docs_standard.waive.{name}: nothing requires {name}, so there is nothing "
+                "to waive")
+
+    waived = {name for name, reason in waive.items() if isinstance(reason, str) and reason.strip()}
+    for name in dict.fromkeys(list(by_profile) + list(required)):
+        if name not in CONFIGURED_CHECKS or name in waived:
+            continue
+        why = f"by {profile}" if name in by_profile else "by extra.docs_standard.required"
+        missing = [key for key, is_set in CONFIGURED_CHECKS[name] if not is_set(config)]
+        if missing:
+            problems[name] = [f"required {why}, but {key} is not set, so it is not checked"
+                              for key in missing]
+            if name in by_profile:
+                problems[name].append(f"set it, or waive {name} in extra.docs_standard.waive "
+                                      "with the reason it does not apply")
+    return problems
+
+
 # --------------------------------------------------------------------------------------------
 
 def run(site, config):
@@ -535,6 +877,9 @@ def run(site, config):
     nav_problems, labels = check_nav(
         home, set(standard.get("proper_nouns") or ())) if home else (["no home page (index.html)"], [])
     always["NAV"] = nav_problems
+    section_problems, indexed = check_section_titles(site, home, config)
+    if indexed:
+        always["SECTION-TITLE"] = section_problems
     if standard.get("notice"):
         always["NO-NOTICE"] = check_notice(home, standard["notice"])
     for name, problems in always.items():
@@ -544,13 +889,15 @@ def run(site, config):
     ran = [name for name in always if name not in ("MISSING-VERIFICATION", "MISSING-SOCIAL")]
     if extra.get("google_site_verification") or extra.get("bing_site_verification"):
         ran.append("MISSING-VERIFICATION")
-    if extra.get("social_image"):
+    if social_configured(config):
         ran.append("MISSING-SOCIAL")
     if standard.get("home_layout"):
         bad, ok = check_home_layout(home, standard, config.get("site_name", ""))
         if bad:
             failures["HOME-LAYOUT"] = bad
         passes += [f"home: {line}" for line in ok]
+    # SECTION-TITLE is a known name even on a build without an index page, where it did not run.
+    failures.update(check_required(config, set(always) | {"SECTION-TITLE"}))
 
     if failures:
         for name, problems in failures.items():
