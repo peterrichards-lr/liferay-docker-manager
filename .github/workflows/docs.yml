@@ -61,6 +61,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # LDM-#2229: git-revision-date-localized reads each page's last
+          # commit, so it needs the history. The default shallow fetch leaves
+          # it with none, and `fallback_to_build_date: true` then stamps the
+          # BUILD date on every page while the build stays green -- a wrong
+          # date on every page, reported as success.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v7
