@@ -3,7 +3,7 @@
 **You need to look something up.** These pages are for consulting, not reading
 through. For why LDM behaves the way it does, see
 [Explanation](../explanation/index.md); for how to accomplish a task, see the
-[How-To guides](../how-to/index.md).
+[How-to guides](../how-to/index.md).
 
 ## Command line
 
@@ -38,4 +38,4 @@ through. For why LDM behaves the way it does, see
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-19* | *Last Reviewed: 2026-09-19*
+*Last Updated: 2026-10-16* | *Last Reviewed: 2026-10-16*

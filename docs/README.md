@@ -19,7 +19,7 @@ LDM runs, manages and develops Liferay DXP and Portal environments in Docker fro
 | :--- | :--- |
 | Get Liferay running for the first time | [The First 5 Minutes](tutorials/first_5_minutes.md) |
 | Install LDM, or fix a broken setup | [Installation & Setup](tutorials/quick_start.md) |
-| Do a specific task — import a workspace, move data, expose a demo | [How-To guides](how-to/index.md) |
+| Do a specific task — import a workspace, move data, expose a demo | [How-to guides](how-to/index.md) |
 | Look something up — a flag, a setting, a port | [Reference](reference/index.md) |
 | Understand why LDM behaves as it does | [Explanation](explanation/index.md) |
 | Fix something that is broken | [Troubleshooting](TROUBLESHOOTING.md) |
@@ -97,4 +97,4 @@ Three community tools from the same maintainer. None is an official Liferay prod
 | [Liferay Tunnel](https://peterrichards-lr.github.io/lfr-tunnel/) | Securely expose a local Liferay environment on a public HTTPS subdomain. |
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-15* | *Last Reviewed: 2026-10-15*
+*Last Updated: 2026-10-16* | *Last Reviewed: 2026-10-16*

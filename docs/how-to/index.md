@@ -1,4 +1,4 @@
-# How-To Guides
+# How-to guides
 
 **You have a task and roughly know what you want.** Each guide here solves one
 problem and assumes LDM is already installed. If you are new and want to be
@@ -61,4 +61,4 @@ walked through from the start, begin with
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-19* | *Last Reviewed: 2026-09-19*
+*Last Updated: 2026-10-16* | *Last Reviewed: 2026-10-16*
