@@ -420,8 +420,11 @@ function Write-TrapNote {
     #
     # Not cosmetic: a restore that cannot be seen in the artifact is how the
     # broken one survived three green verification runs.
-    param([string]$Message)
-    Write-Host $Message
+    # LDM-#2238: -Color exists so the callers that used Write-Host purely to
+    # colour a warning can route through here without losing the colour. The
+    # colour is console-only; the report records the text either way.
+    param([string]$Message, [string]$Color)
+    if ($Color) { Write-Host $Message -ForegroundColor $Color } else { Write-Host $Message }
     if ($RESULTS_FILE_TMP -and (Test-Path $RESULTS_FILE_TMP)) {
         $Message | Out-File -FilePath $RESULTS_FILE_TMP -Append -Encoding utf8
     } elseif ($script:FINAL_REPORT_PATH -and (Test-Path $script:FINAL_REPORT_PATH)) {
@@ -784,20 +787,20 @@ function Invoke-FinalizerBody {
     # that fired on runs which otherwise passed, and is still unexplained.
     $rmLeftover = @(& docker ps -a --filter "name=ldm-smoke-test" --format "{{.Names}}  {{.Status}}" 2>$null)
     if ($rmRc -ne 0 -and $rmOut -cmatch "not found" -and $rmLeftover.Count -eq 0) {
-        Write-Verdict "[INFO] No project to remove: the run ended before 'ldm-smoke-test' was created, and no container carries its name."
+        Write-TrapNote "[INFO] No project to remove: the run ended before 'ldm-smoke-test' was created, and no container carries its name."
     }
     elseif ($rmRc -ne 0) {
-        Write-Verdict "[WARNING] 'ldm rm ldm-smoke-test --delete' failed (exit $rmRc); the project directory may remain."
+        Write-TrapNote "[WARNING] 'ldm rm ldm-smoke-test --delete' failed (exit $rmRc); the project directory may remain."
         if ($rmOut) {
-            Write-Verdict "          LDM said:"
-            foreach ($line in ($rmOut -split "`n")) { Write-Verdict "            $line" }
+            Write-TrapNote "          LDM said:"
+            foreach ($line in ($rmOut -split "`n")) { Write-TrapNote "            $line" }
         } else {
-            Write-Verdict "          LDM produced no output, which is itself a finding."
+            Write-TrapNote "          LDM produced no output, which is itself a finding."
         }
         # The stack still being up is the leading hypothesis (LDM-#1436);
         # record it either way rather than asking the reader to re-run.
-        Write-Verdict "          Containers still present for this project:"
-        foreach ($line in $rmLeftover) { Write-Verdict "            $line" }
+        Write-TrapNote "          Containers still present for this project:"
+        foreach ($line in $rmLeftover) { Write-TrapNote "            $line" }
     }
     
     # LDM-#1438: report what this run cost, so growth is visible per run rather
@@ -814,9 +817,9 @@ function Invoke-FinalizerBody {
         if ($usedDocker -lt 0) {
             # Reclaimed more than it consumed -- the outcome to hope for. Say so
             # rather than printing a negative.
-            Write-Verdict "[INFO] Disk: reclaimed $(-$usedDocker) GB in Docker; $endDocker GB now free (host: $hostText)."
+            Write-TrapNote "[INFO] Disk: reclaimed $(-$usedDocker) GB in Docker; $endDocker GB now free (host: $hostText)."
         } else {
-            Write-Verdict "[INFO] Disk: this run consumed $usedDocker GB in Docker and $usedHost GB on the host; $endDocker GB now free (host: $hostText)."
+            Write-TrapNote "[INFO] Disk: this run consumed $usedDocker GB in Docker and $usedHost GB on the host; $endDocker GB now free (host: $hostText)."
         }
     }
 
@@ -2826,22 +2829,22 @@ try {
         }
     }
     if ($runningNames.Count -gt 0) {
-        Write-Host "[ERROR] ERROR: other LDM projects are running: $($runningNames -join ', ')" -ForegroundColor Red
-        Write-Host ""
-        Write-Host "   This suite reconfigures the SHARED proxy and search node, which those"
-        Write-Host "   projects are using. Two things can happen, and the second is why this"
-        Write-Host "   refuses rather than warns:"
-        Write-Host ""
-        Write-Host "     * 'ldm infra setup' will refuse to recreate the SSL proxy while they"
-        Write-Host "       run, so the suite fails partway through anyway."
-        Write-Host "     * if Elasticsearch misses its readiness window, LDM wipes the SHARED"
-        Write-Host "       search data directory -- destroying those projects' indexes,"
-        Write-Host "       silently, while they continue to report healthy (LDM-#2083)."
-        Write-Host ""
-        Write-Host "   Stop them first, then re-run:"
-        foreach ($rp in $runningNames) { Write-Host "       ldm stop $rp" }
-        Write-Host ""
-        Write-Host "   They will reindex on their next boot if their index was already lost."
+        Write-TrapNote "[ERROR] ERROR: other LDM projects are running: $($runningNames -join ', ')" -Color Red
+        Write-TrapNote ""
+        Write-TrapNote "   This suite reconfigures the SHARED proxy and search node, which those"
+        Write-TrapNote "   projects are using. Two things can happen, and the second is why this"
+        Write-TrapNote "   refuses rather than warns:"
+        Write-TrapNote ""
+        Write-TrapNote "     * 'ldm infra setup' will refuse to recreate the SSL proxy while they"
+        Write-TrapNote "       run, so the suite fails partway through anyway."
+        Write-TrapNote "     * if Elasticsearch misses its readiness window, LDM wipes the SHARED"
+        Write-TrapNote "       search data directory -- destroying those projects' indexes,"
+        Write-TrapNote "       silently, while they continue to report healthy (LDM-#2083)."
+        Write-TrapNote ""
+        Write-TrapNote "   Stop them first, then re-run:"
+        foreach ($rp in $runningNames) { Write-TrapNote "       ldm stop $rp" }
+        Write-TrapNote ""
+        Write-TrapNote "   They will reindex on their next boot if their index was already lost."
         exit 1
     }
 
@@ -6805,11 +6808,11 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
         $builtImages = @(& docker images -q --filter "reference=$PROJECT_NAME-*" 2>$null |
             Where-Object { $_ } | Select-Object -Unique)
         if ($builtImages.Count -gt 0) {
-            Write-Host "[INFO]  Removing $($builtImages.Count) image(s) built by this run..."
+            Write-TrapNote "[INFO]  Removing $($builtImages.Count) image(s) built by this run..."
             & docker rmi -f @builtImages 2>&1 | Out-Null
         }
     } catch {
-        Write-Host "[WARN]  Could not remove this run's built images: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-TrapNote "[WARN]  Could not remove this run's built images: $($_.Exception.Message)" -Color Yellow
     }
 
     # LDM-#2214: remove what this run PULLED and the volumes it created.
@@ -6839,11 +6842,11 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
             $newVolumes = @($endVolumes | Where-Object { $startVolumes -notcontains $_ })
 
             if ($newVolumes.Count -gt 0) {
-                Write-Host "[INFO]  Removing $($newVolumes.Count) volume(s) created by this run..."
+                Write-TrapNote "[INFO]  Removing $($newVolumes.Count) volume(s) created by this run..."
                 foreach ($vol in $newVolumes) { & docker volume rm $vol 2>&1 | Out-Null }
             }
             if ($newImages.Count -gt 0) {
-                Write-Host "[INFO]  Removing $($newImages.Count) image(s) pulled by this run..."
+                Write-TrapNote "[INFO]  Removing $($newImages.Count) image(s) pulled by this run..."
                 foreach ($img in $newImages) { & docker rmi $img 2>&1 | Out-Null }
             }
 
@@ -6854,19 +6857,19 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
             $leftVolumes = @(@(& docker volume ls --format '{{.Name}}' 2>$null |
                 Where-Object { $_ }) | Where-Object { $startVolumes -notcontains $_ })
             if ($leftImages.Count -gt 0 -or $leftVolumes.Count -gt 0) {
-                Write-Host ("[INFO]  Still present after the reap: " +
+                Write-TrapNote ("[INFO]  Still present after the reap: " +
                     "$($leftImages.Count) image(s), $($leftVolumes.Count) volume(s) " +
                     "-- in use, or removed by something else.")
             }
         }
         elseif ($KeepPulled) {
-            Write-Host "[INFO]  -KeepPulled: leaving this run's pulled images and created volumes in place."
+            Write-TrapNote "[INFO]  -KeepPulled: leaving this run's pulled images and created volumes in place."
         }
         else {
-            Write-Host "[INFO]  Run failed: keeping this run's pulled images and created volumes for the re-run."
+            Write-TrapNote "[INFO]  Run failed: keeping this run's pulled images and created volumes for the re-run."
         }
     } catch {
-        Write-Host "[WARN]  Could not reap this run's pulled images or volumes: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-TrapNote "[WARN]  Could not reap this run's pulled images or volumes: $($_.Exception.Message)" -Color Yellow
     }
 }
 

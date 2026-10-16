@@ -326,6 +326,19 @@ to one that cleaned up perfectly.
 A run that reclaims more than it consumes says so, rather than printing a
 negative.
 
+> [!NOTE]
+> Until LDM-#2238 that line reached the console and never the report. The
+> finalizer renames the report before this point, and the write still named
+> the old path; `tee -a` and `Out-File -Append` both create a missing file, so
+> the text landed in a dotfile nothing reads. Measured across the 224 reports
+> in `references/verification-results/`, `Disk: this run consumed` appeared in
+> **none** of them — including the three v2.18.0 platforms the figure exists to
+> explain. The same slip hid the LDM-#2084 built-image sweep, the LDM-#2214
+> reap and the LDM-#2085 pre-flight refusal, so a run refused for running
+> beside a live project wrote a `-fail` report naming no cause. Everything
+> after finalisation now goes through `trap_report` / `Write-TrapNote`, which
+> resolve the live destination.
+
 **`--prune-after`** is available for machines dedicated to verification. It runs
 `docker system prune -af --volumes` *after* the project teardown, so it only
 reclaims what nothing else owns, and reports what it freed. It is **opt-in and
