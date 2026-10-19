@@ -613,6 +613,29 @@ rm -rf ~/.ldm/infra/search/data
 ldm infra-setup --search
 ```
 
+### **"Global Search is running, but its cluster is RED"**
+
+LDM refuses to continue when the shared Elasticsearch answers on its port but its cluster is red:
+
+```text
+❌  Global Search is running, but its cluster is RED -- Liferay cannot start against it.
+    Cluster status: red. 17 unassigned primary shard(s), 0 active.
+    Elasticsearch: the node is above the high watermark cluster setting [...]
+```
+
+**This is a refusal, not a failure to start.** Before LDM-#2247 the readiness check asked only whether Elasticsearch answered `GET /`, which a red cluster does perfectly happily. LDM reported "Infrastructure setup complete", and Liferay then failed in a way that pointed everywhere except search: `ElasticsearchSearchEngine.activate()` waits for a yellow cluster, times out, and takes `SearchEngineHelperImpl`, `IndexSearcherHelper`, `FacetedSearcherManager`, `Searcher`, `AssetHelper` and every portlet behind them down with it — retrying every 30 seconds, so the portal never finishes starting. Three verification runs were investigated as disk pressure and then as memory exhaustion before anyone read the cluster status.
+
+Causes worth checking, in order:
+
+| Cause | Tell | Fix |
+| :--- | :--- | :--- |
+| Disk watermark | a `disk_threshold` explanation in the refusal | free space, then `ldm prune --seeds --samples` |
+| Shard data gone from under a live cluster | unassigned **primaries** with no watermark named | remove the stale indices on the search node; `ldm reset <project> global-search` clears one project's |
+
+`ldm system doctor` prints the full allocation report.
+
+If LDM instead says it **could not read** the cluster status, that is not a pass: the check did not run, and the boot continues unverified.
+
 ### **Elasticsearch: index_not_found_exception / Cascading OSGi Failures**
 
 If Liferay's `ElasticsearchSearchEngine` fails to activate, causing dozens of cascading `NullPointerException` and `ServiceException` logs, the search index is likely missing or out-of-sync with the database. This commonly happens if a pre-warmed seed lacked the corresponding search snapshot.
@@ -873,4 +896,4 @@ Projects are discovered from the current folder, its parent, `~/ldm`, the LDM in
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-13* | *Last Reviewed: 2026-10-13*
+*Last Updated: 2026-10-19* | *Last Reviewed: 2026-10-19*
