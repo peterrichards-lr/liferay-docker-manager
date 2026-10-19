@@ -627,14 +627,18 @@ ldm reindex <project>
 ldm run <project>
 ```
 
-> **Do not use `ldm reset <project> global-search` for this.** It is accepted
-> and reports success without deleting a single index
-> ([LDM-#2127](https://github.com/peterrichards-lr/liferay-docker-manager/issues/2127)),
-> so following it leaves the broken indices exactly where they were. Note also
-> that a reindex rebuilds what Liferay can index; it does not purge documents
-> whose classes no longer have an indexer
+> To clear the indices outright rather than rebuild them, use
+> `ldm reset <project> global-search`, which deletes this project's indices
+> from the shared search node and leaves every other project's alone. That
+> target did nothing at all — while reporting success — until LDM-#2127;
+> if you are on an LDM older than v2.26.7, remove the indices on the search
+> node directly instead.
+>
+> Note also that a reindex rebuilds what Liferay can index; it does not purge
+> documents whose classes no longer have an indexer
 > ([LDM-#2119](https://github.com/peterrichards-lr/liferay-docker-manager/issues/2119)).
-> For those, remove the project's indices on the search node directly.
+> `reset global-search` does remove those, because it deletes the indices
+> rather than re-populating them.
 
 #### **Solution 2: Total Project Reseed**
 

@@ -1667,7 +1667,11 @@ def get_parser():  # noqa: PLR0915
         "target",
         nargs="?",
         default="state",
-        help="Target to reset: state, search, db, global-search, or all (default: state)",
+        help=(
+            "Target to reset: state, data, logs, db, global-search, or all. "
+            "A comma-separated list is accepted. An unrecognised target is "
+            "refused rather than reported successful (default: state)"
+        ),
     )
     reset.add_argument("-p", "--project", dest="project_flag")
 
