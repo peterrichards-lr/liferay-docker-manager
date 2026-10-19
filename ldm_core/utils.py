@@ -4265,6 +4265,119 @@ def helper_container_flags(purpose):
     ]
 
 
+LDM_VOLUME_LABEL_MANAGED = "com.liferay.ldm.managed"
+LDM_VOLUME_LABEL_PROJECT = "com.liferay.ldm.project"
+LDM_VOLUME_LABEL_ROLE = "com.liferay.ldm.role"
+LDM_VOLUME_LABEL_UUID = "com.liferay.ldm.project.uuid"
+
+
+def volume_role(volume_name):
+    """Classifies a named volume by how destructive removing it would be (LDM-#1267).
+
+    Consumed by `ldm prune` so that reclaiming disposable storage can never
+    silently take a database with it:
+
+    - ``state``   OSGi bundle state. Regenerated on the next boot; removing it
+                  only costs a slower startup. LDM already wipes this itself
+                  when the Liferay tag changes (`pipelines/run.py`).
+    - ``data``    Database and project data. Removing it is destructive.
+    - ``unknown`` Anything unrecognised. Deliberately NOT treated as disposable
+                  -- an unclassified volume must default to the safe side, so a
+                  future volume suffix cannot become sweepable by omission.
+
+    Order matters: `<project>-db-db-data` ends in `-data`, so `data` is tested
+    before any broader match.
+
+    Lives here rather than in `composer.py` since LDM-#2243, because the
+    snapshot paths create volumes too and a classifier only the composer can
+    reach is how they came to be created unclassified.
+    """
+    name = str(volume_name)
+    if name.endswith("-data"):
+        return "data"
+    if name.endswith("-state"):
+        return "state"
+    return "unknown"
+
+
+#: Longest first, so `<project>-db-db-data` is not read as `<project>-db-db`.
+#: The same list `ldm_core/diagnostics/prune.py` matches on for the
+#: `--legacy-volumes` fallback -- the suffixes LDM actually generates.
+_VOLUME_NAME_SUFFIXES = ("-db-db-data", "-data", "-state")
+
+
+def volume_project_from_name(volume_name):
+    """Best-effort owning project for a volume, from its name alone.
+
+    LDM-#2243. A fallback for a caller that cannot supply the project, used so
+    that a missing argument produces a *correct* label rather than the string
+    "None" -- which would be worse than no label, because it would satisfy the
+    managed-label filter in `ldm prune` while attributing the volume to a
+    project that does not exist.
+
+    Naming is weaker evidence of ownership than being told, which is why this
+    is the fallback and not the mechanism.
+    """
+    name = str(volume_name or "")
+    for suffix in _VOLUME_NAME_SUFFIXES:
+        if name.endswith(suffix):
+            return name[: -len(suffix)] or name
+    return name
+
+
+def volume_ownership_labels(volume_name, project_name, project_uuid=None):
+    """The ownership labels every LDM-created Named Volume must carry.
+
+    LDM-#2243. The architecture mandate says to build a volume definition in
+    exactly one place, because a second construction site is how the labels get
+    silently dropped -- and that is precisely what happened: `snapshot/volumes.py`
+    created volumes with a bare `docker volume create <name>`, carrying nothing.
+
+    **Docker applies volume labels only at creation.** Declaring them later, in
+    compose or anywhere else, does not retrofit an existing volume -- verified,
+    `docker volume inspect` still reports `map[]`. So a volume created without
+    them is invisible to the label-driven sweep in `ldm prune` *forever*; it is
+    reachable only by the name-pattern fallback behind `--legacy-volumes`,
+    whose own message tells the user the volume predates ownership labelling.
+    That message was false for volumes created minutes earlier.
+
+    Returned as a dict for compose (`_named_volume_definition`); see
+    `volume_label_flags` for the `docker volume create` form.
+    """
+    labels = {
+        LDM_VOLUME_LABEL_PROJECT: project_name or volume_project_from_name(volume_name),
+        LDM_VOLUME_LABEL_MANAGED: "true",
+        LDM_VOLUME_LABEL_ROLE: volume_role(volume_name),
+    }
+    # LDM-#1395: the name label is only as stable as the name. A renamed
+    # project's volumes would keep the old one and belong to nothing, and two
+    # projects sharing a name share the label entirely. The UUID makes
+    # ownership exact. The name label stays -- it is what a human reads in
+    # `docker volume inspect`.
+    if project_uuid:
+        labels[LDM_VOLUME_LABEL_UUID] = project_uuid
+    return labels
+
+
+def volume_label_flags(volume_name, project_name, project_uuid=None):
+    """`--label` arguments for `docker volume create`, matching compose exactly.
+
+    LDM-#2243. Splices into the command line:
+
+        [*docker_prefix, "volume", "create",
+         *volume_label_flags(name, project, uuid), name]
+
+    A volume created without these is unreclaimable by `ldm prune` for the rest
+    of its life, so this is not cosmetic metadata.
+    """
+    flags = []
+    for key, value in volume_ownership_labels(
+        volume_name, project_name, project_uuid
+    ).items():
+        flags.extend(["--label", f"{key}={value}"])
+    return flags
+
+
 def reclaim_volume_permissions(
     path, uid=None, gid=None, chmod_val="750", docker_prefix=None
 ):

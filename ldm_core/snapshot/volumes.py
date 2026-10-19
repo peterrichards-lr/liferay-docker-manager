@@ -3,7 +3,7 @@ from pathlib import Path
 
 from ldm_core.docker_service import DockerService
 from ldm_core.ui import UI
-from ldm_core.utils import helper_container_flags, sanitize_id
+from ldm_core.utils import helper_container_flags, sanitize_id, volume_label_flags
 
 
 class VolumesSnapshotService:
@@ -12,8 +12,22 @@ class VolumesSnapshotService:
         self.manager = facade.manager
         self.args = facade.manager.args
 
-    def _sync_volume(self, host_path, volume_name, direction="to_volume"):
-        """Synchronizes data between a host directory and a Docker Named Volume."""
+    def _sync_volume(
+        self,
+        host_path,
+        volume_name,
+        direction="to_volume",
+        project=None,
+        project_uuid=None,
+    ):
+        """Synchronizes data between a host directory and a Docker Named Volume.
+
+        LDM-#2243: `project` and `project_uuid` are not optional in practice --
+        they are what makes the volume reclaimable. They default to None only
+        so the signature stays compatible with existing callers in tests; a
+        volume created without them is invisible to `ldm prune` for the rest of
+        its life, because Docker applies volume labels only at creation.
+        """
         host_path_abs = Path(host_path).resolve()
         if not host_path_abs.exists():
             host_path_abs.mkdir(parents=True, exist_ok=True)
@@ -23,9 +37,20 @@ class VolumesSnapshotService:
         )
         docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
 
-        # Ensure volume exists
+        # Ensure volume exists. LDM-#2243: created WITH ownership labels. This
+        # call used to be a bare `volume create <name>`, so every volume the
+        # snapshot, restore and import paths produced carried nothing --
+        # permanently unreclaimable by the label-driven sweep, and mislabelled
+        # by `--legacy-volumes` as predating ownership labelling.
         self.manager.run_command(
-            [*docker_prefix, "volume", "create", volume_name], check=False
+            [
+                *docker_prefix,
+                "volume",
+                "create",
+                *volume_label_flags(volume_name, project, project_uuid),
+                volume_name,
+            ],
+            check=False,
         )
 
         src = "/host" if direction == "to_volume" else "/vol"
@@ -85,7 +110,13 @@ class VolumesSnapshotService:
             UI.detail(
                 f"  + Dehydrating volume {UI.CYAN}{volume_name}{UI.COLOR_OFF} to host..."
             )
-            self._sync_volume(host_path, volume_name, direction="from_volume")
+            self._sync_volume(
+                host_path,
+                volume_name,
+                direction="from_volume",
+                project=c_name,
+                project_uuid=meta.get("uuid"),
+            )
 
     def hydrate_named_volumes_with_sync_wait(self, paths):
         """Hydrates Named Volumes after a mandatory host filesystem sync wait.
@@ -124,8 +155,18 @@ class VolumesSnapshotService:
         for target in ["data", "state"]:
             volume_name = f"{c_name}-{target}"
             host_path = paths[target]
+            # LDM-#2243: created WITH ownership labels, same set the composer
+            # declares. This is the call that produced the unlabelled volumes
+            # `ldm prune --all` could never reclaim.
             self.manager.run_command(
-                [*docker_prefix, "volume", "create", volume_name], check=False
+                [
+                    *docker_prefix,
+                    "volume",
+                    "create",
+                    *volume_label_flags(volume_name, c_name, meta.get("uuid")),
+                    volume_name,
+                ],
+                check=False,
             )
 
             has_files = False
@@ -139,7 +180,13 @@ class VolumesSnapshotService:
                 UI.detail(
                     f"  + Hydrating volume {UI.CYAN}{volume_name}{UI.COLOR_OFF} from host..."
                 )
-                self._sync_volume(host_path, volume_name, direction="to_volume")
+                self._sync_volume(
+                    host_path,
+                    volume_name,
+                    direction="to_volume",
+                    project=c_name,
+                    project_uuid=meta.get("uuid"),
+                )
             else:
                 # LDM-#1117: Guarantee 1000:1000 (liferay) ownership on empty named volume root
                 # before container boot so Docker Compose initialization doesn't leave it root-owned.
