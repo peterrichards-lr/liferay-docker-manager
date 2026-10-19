@@ -114,10 +114,51 @@ rather than requiring you to know which is which:
 | `lfr-demo.se` | a known gateway base domain | `<subdomain>.lfr-demo.se`, gateway pinned |
 | `peters.lfr-demo.se` | a host **on** a known base domain | subdomain `peters` on `lfr-demo.se`, gateway pinned |
 | `dev.example.com` | a custom vanity domain | `<subdomain>.dev.example.com`, no pin |
+| `default` | the standard gateway | `<subdomain>.lfr-demo.online`, ignoring any stored domain |
 
 A custom vanity domain only affects the **public URL**; the client always
 dials a real Liferay gateway, and the domain must be registered and approved
 in the Liferay Tunnel portal before it will resolve.
+
+### Asking for the standard gateway
+
+The domain is **sticky**. LDM records it in the project's meta and in
+`~/.ldmrc`, so a custom domain set once is reused by every later
+`ldm share start` for that project -- including one where you only passed
+`--subdomain`:
+
+```bash
+ldm share start my-project --subdomain peters
+#  -> still uses the custom domain pinned weeks ago
+```
+
+Pass `default` (or `standard`) to ask for the standard gateway instead:
+
+```bash
+ldm share start my-project --subdomain peters --domain default
+```
+
+This also **replaces the domain stored for that project**, so subsequent runs
+use the standard gateway too. It does not alter `~/.ldmrc`; the project's own
+value takes precedence over it either way.
+
+### When the domain you asked for did not take
+
+An unregistered custom domain does not fail -- the gateway routes you on the
+standard domain instead. LDM announces a public URL before the tunnel starts
+and resolves the real one afterwards, so when those differ it now says so:
+
+```text
+✅  🌍 Public Tunnel Active: https://peters.lfr-demo.se
+⚠️  The tunnel came up on https://peters.lfr-demo.se, not the
+    https://peters.dev.example.com announced above. Use the address on this line.
+💡  Next step: 'dev.example.com' is a custom domain, and the gateway routes one
+    only once it has been registered and approved in the Liferay Tunnel portal.
+```
+
+Previously both URLs were printed and neither was reconciled with the other,
+so the first -- which does not resolve -- was indistinguishable from fact
+(LDM-#2191).
 
 If you already have the URL, pass it whole and let LDM take it apart:
 
@@ -554,4 +595,4 @@ If you are running the `lfr-tunnel` Go executable directly or writing custom scr
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-29* | *Last Reviewed: 2026-09-29*
+*Last Updated: 2026-10-19* | *Last Reviewed: 2026-10-19*
