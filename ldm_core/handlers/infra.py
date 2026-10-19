@@ -226,6 +226,106 @@ class InfraService:
                 f"{', '.join(str(p) for p in pending)}"
             )
 
+    def _assert_search_cluster_is_usable(self, docker_prefix, search_name):
+        """LDM-#2247: "ready" meant the port answered -- which a RED cluster does.
+
+        The readiness loop above asks `GET /` and accepts any response
+        containing `"cluster_name"`. A cluster with zero active shards answers
+        that, so LDM reported "Infrastructure setup complete" over a cluster
+        Liferay cannot use: `ElasticsearchSearchEngine.activate()` waits for
+        yellow, times out, throws, and takes the OSGi service graph down with
+        it -- retrying every 30 seconds, so the portal never finishes starting.
+        Three v2.26.6-pre.10 verification runs failed this way and were
+        investigated as disk (LDM-#2240) and then memory (LDM-#2245).
+
+        Asked once with Elasticsearch's own server-side wait rather than
+        polled here: `wait_for_status=yellow` blocks until the status is
+        reached or the timeout expires, which is precisely the question.
+
+        **Deliberately not folded into the `ready` flag above.** That flag
+        gates the auto-repair, which deletes the SHARED search data of every
+        project on the machine. A cluster that is red because shards cannot be
+        ALLOCATED -- a disk watermark, say -- is not the condition that repair
+        addresses, and wiping cannot fix it.
+        """
+        raw = self.manager.run_command(
+            [
+                *docker_prefix,
+                "exec",
+                search_name,
+                "curl",
+                "-s",
+                "http://localhost:9200/_cluster/health"
+                "?wait_for_status=yellow&timeout=30s",
+            ],
+            check=False,
+            capture_output=True,
+            timeout=_INFRA_PROBE_TIMEOUT,
+        )
+
+        health: dict = {}
+        if raw:
+            try:
+                parsed = json.loads(raw)
+            except (TypeError, ValueError):
+                parsed = None
+            if isinstance(parsed, dict):
+                health = parsed
+        status = health.get("status")
+
+        if not status:
+            # Not a pass. "Could not determine" and "healthy" are different
+            # answers, and collapsing them is how a check stops running
+            # without anyone noticing.
+            UI.warning(
+                "Could not read the Global Search cluster status, so it was NOT "
+                "verified. Continuing -- but a red cluster stops Liferay from "
+                "starting at all (LDM-#2247)."
+            )
+            return
+
+        if status in ("yellow", "green"):
+            UI.detail(f"Global Search cluster status: {status}.")
+            return
+
+        # Remediation 4 on the issue: reuse the doctor's allocation-explain
+        # rather than growing a second one. Imported here because the boot path
+        # should not pull the diagnostics module in on every run.
+        hints: list[str] = []
+
+        def collect(message, *_rest):
+            hints.append(str(message))
+
+        try:
+            from ldm_core.diagnostics.doctor import _check_elasticsearch_watermarks
+
+            _check_elasticsearch_watermarks(self, collect, docker_prefix)
+        except Exception:
+            # The diagnosis is a bonus. It must never replace the refusal.
+            pass
+
+        unassigned = health.get("unassigned_primary_shards")
+        if unassigned is None:
+            unassigned = health.get("unassigned_shards", "an unknown number of")
+        details = [
+            f"Cluster status: {status}. {unassigned} unassigned primary "
+            f"shard(s), {health.get('active_shards', 0)} active."
+        ]
+        details += hints
+
+        UI.die(
+            f"Global Search is running, but its cluster is {str(status).upper()} "
+            "-- Liferay cannot start against it.",
+            details="\n".join(details),
+            tip=(
+                "Liferay waits for a yellow cluster while starting and gives up, "
+                "taking search and every portlet behind it down with it.\n"
+                "      Run 'ldm system doctor' for the full allocation report. "
+                "If a disk watermark is named above, free space and re-run."
+            ),
+            exit_code=3,
+        )
+
     def _capture_search_failure_logs(self, docker_prefix, search_name, dest_dir):
         """Save the failing search container's logs before it is removed.
 
@@ -1329,6 +1429,11 @@ tls:
 
                 UI.detail("Restarting Global Search with clean slate...")
                 return self.setup_global_search(force=force, _depth=_depth + 1)
+
+            # LDM-#2247: the probe above proves the PORT answers, which a red
+            # cluster does perfectly happily. Ask the cluster itself before
+            # declaring the infrastructure complete.
+            self._assert_search_cluster_is_usable(docker_prefix, search_name)
 
             # Register backup repository (required for snapshots)
             repo_res = self.manager.run_command(

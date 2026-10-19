@@ -250,6 +250,7 @@ class TestSidecarImplementation(unittest.TestCase):
                 "",  # exists check (ps)
                 "",  # docker run
                 '{"cluster_name": "liferay-cluster"}',  # health check (curl)
+                '{"status": "yellow"}',  # LDM-#2247 cluster-health gate
                 "OK",  # snapshot
                 "plugins",  # plugin list
                 "OK",
@@ -279,6 +280,7 @@ class TestSidecarImplementation(unittest.TestCase):
                 "",  # exists
                 "",  # run
                 '{"cluster_name": "liferay-cluster"}',  # health
+                '{"status": "yellow"}',  # LDM-#2247 cluster-health gate
                 "OK",  # snapshot
                 "plugins",  # plugin list
                 "OK",
