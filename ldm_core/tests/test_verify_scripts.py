@@ -4066,9 +4066,11 @@ class BothHalvesReapOnlyWhatTheRunItselfCreated(unittest.TestCase):
     def test_both_halves_offer_the_same_opt_out(self):
         bash = BASH_SCRIPT.read_text(encoding="utf-8")
         ps1 = PS1_SCRIPT.read_text(encoding="utf-8")
-        self.assertIn(
-            '"$arg" == "--keep-pulled"', bash, "the shell half has no --keep-pulled"
-        )
+        # LDM-#2241 replaced the chain of equality tests with a `case`, so
+        # the accept ARM is what to pin -- the old `"$arg" == ...` form is
+        # gone. TheHarnessRefusesUnknownArguments below executes the parser;
+        # this one only asserts the two halves still offer the same opt-out.
+        self.assertIn("--keep-pulled)", bash, "the shell half has no --keep-pulled arm")
         self.assertIn(
             "[switch]$KeepPulled", ps1, "the PowerShell half has no -KeepPulled"
         )
@@ -4361,3 +4363,137 @@ if (Test-Path $RESULTS_FILE_TMP) {{ Write-Output "TEMP-RECREATED" }}
             # interactive run, which is how LDM shipped one in pre.5 -- so the
             # colour path is executed, not merely named.
             self.assertIn("a coloured warning", final)
+
+
+def _run_bash_arg_parser(*argv):
+    """Execute the shell half's argument loop for real (LDM-#2241).
+
+    Extracted and run rather than grepped: the defect was that an unknown
+    argument was ACCEPTED silently, and no amount of reading the source
+    distinguishes a parser that refuses from one that happens to mention the
+    flag in a comment.
+    """
+    text = BASH_SCRIPT.read_text(encoding="utf-8")
+    match = re.search(r'^for arg in "\$@"; do.*?^done$', text, re.M | re.S)
+    assert match, "the shell argument loop was not found"
+    flags = ("KEEP_ARTIFACTS", "PRUNE_AFTER", "KEEP_PULLED", "ALLOW_VERSION_MISMATCH")
+    preamble = "".join(f"{name}=false\n" for name in flags)
+    report = " ".join(f"{name}=${name}" for name in flags)
+    script = f'{preamble}{match.group(0)}\necho "{report}"\n'
+
+    return subprocess.run(
+        ["bash", "-c", script, "bash", *argv],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _run_powershell_arg_guard(*argv):
+    """Execute the PowerShell half's param block and guards, via -File.
+
+    -File matters: that is how the suite is invoked, and it is the mode in
+    which PowerShell does NOT reject unknown named parameters.
+    """
+    text = PS1_SCRIPT.read_text(encoding="utf-8")
+    head = text.split("# Target: Verifies the INSTALLED binary", 1)[0]
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".ps1", delete=False, encoding="utf-8"
+    ) as handle:
+        handle.write(
+            head + '\nWrite-Output "FELL-THROUGH KeepPulled=$KeepPulled '
+            'Avm=$AllowVersionMismatch"\n'
+        )
+        path = handle.name
+    try:
+        return subprocess.run(
+            [_pwsh_binary(), "-NoProfile", "-NonInteractive", "-File", path, *argv],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    finally:
+        os.unlink(path)
+
+
+class TheHarnessRefusesUnknownArguments(unittest.TestCase):
+    """LDM-#2241: an unrecognised argument was silently discarded.
+
+    `--keep` is used at exactly one moment -- when a run has failed and
+    someone wants the wreckage preserved -- and that is the one time the
+    artefacts cannot be recreated, because a re-run draws a new random
+    TEST_PORT and a fresh project. A mistyped `-keep` therefore destroyed the
+    only copy of the evidence the flag exists to protect, and the person found
+    out two hours later once teardown had run.
+    """
+
+    def test_the_documented_flags_are_accepted(self):
+        for flag, marker in (
+            ("--keep", "KEEP_ARTIFACTS=true"),
+            ("-k", "KEEP_ARTIFACTS=true"),
+            ("--prune-after", "PRUNE_AFTER=true"),
+            ("--keep-pulled", "KEEP_PULLED=true"),
+            ("--allow-version-mismatch", "ALLOW_VERSION_MISMATCH=true"),
+        ):
+            with self.subTest(flag=flag):
+                res = _run_bash_arg_parser(flag)
+                self.assertEqual(res.returncode, 0, res.stderr)
+                self.assertIn(marker, res.stdout)
+
+    def test_a_single_dash_keep_is_refused(self):
+        # The reported slip. One character from `--keep`, and single-dash long
+        # options are accepted by enough tools (-version, -help) that typing
+        # it is not unreasonable.
+        res = _run_bash_arg_parser("-keep")
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("-keep", res.stderr)
+        self.assertNotIn("KEEP_ARTIFACTS=true", res.stdout)
+
+    def test_an_unknown_flag_is_refused_naming_itself(self):
+        res = _run_bash_arg_parser("--nonsense")
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("--nonsense", res.stderr)
+
+    def test_the_refusal_lists_what_is_accepted(self):
+        res = _run_bash_arg_parser("--nonsense")
+        self.assertIn("--keep", res.stderr)
+        self.assertIn("--allow-version-mismatch", res.stderr)
+
+
+@unittest.skipUnless(_pwsh_binary(), "pwsh/powershell not available on this machine")
+class ThePowerShellHarnessRefusesUnknownArguments(unittest.TestCase):
+    """LDM-#2241, PowerShell half -- which was worse, and not in the issue.
+
+    Measured with pwsh 7.6.7 under -File: unknown NAMED parameters are not
+    rejected, they land in $args; and an unambiguous PREFIX binds to the full
+    parameter name. So `-keep` silently switched on `-KeepPulled`, an
+    unrelated flag, and the run tore everything down anyway.
+    """
+
+    def test_an_unknown_argument_is_refused(self):
+        res = _run_powershell_arg_guard("-nonsense")
+        self.assertEqual(res.returncode, 1)
+        self.assertNotIn("FELL-THROUGH", res.stdout)
+
+    def test_keep_no_longer_binds_to_keep_pulled(self):
+        # The regression guard that matters. Without [switch]$Keep declared,
+        # `-keep` resolves to `-KeepPulled` by prefix and the script runs on
+        # with an unrelated flag enabled.
+        res = _run_powershell_arg_guard("-keep")
+        self.assertEqual(res.returncode, 1)
+        self.assertNotIn("FELL-THROUGH", res.stdout)
+        self.assertNotIn("KeepPulled=True", res.stdout)
+
+    def test_the_keep_refusal_names_the_parity_issue(self):
+        res = _run_powershell_arg_guard("-Keep")
+        self.assertIn("2262", res.stdout + res.stderr)
+
+    def test_the_documented_switches_still_fall_through(self):
+        res = _run_powershell_arg_guard("-KeepPulled")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("KeepPulled=True", res.stdout)
+
+    def test_no_arguments_falls_through(self):
+        res = _run_powershell_arg_guard()
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("FELL-THROUGH", res.stdout)

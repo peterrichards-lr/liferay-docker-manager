@@ -8,7 +8,38 @@
 # the volumes it created. The reap is on by default; see the inventory
 # snapshot below for why the diff makes that safe where a machine-wide prune
 # would not be.
-param([switch]$AllowVersionMismatch, [switch]$KeepPulled)
+param([switch]$AllowVersionMismatch, [switch]$KeepPulled, [switch]$Keep)
+
+# LDM-#2241: an unrecognised argument is REFUSED, not ignored.
+#
+# Measured with pwsh 7.6.7, invoking this script with -File:
+#
+#   -keep      -> binds KeepPulled = True by PREFIX ABBREVIATION, exit 0
+#   -Keep      -> binds KeepPulled = True, exit 0
+#   keep       -> lands in $args, ignored, exit 0
+#   -nonsense  -> lands in $args, ignored, exit 0
+#
+# So this half had the bash half's silent-ignore defect AND a sharper one:
+# PowerShell resolves an unambiguous prefix to the full parameter name, so a
+# mistyped -keep silently switched on an UNRELATED flag. Declaring [switch]
+# $Keep removes that collision, because an exact match beats a prefix.
+#
+# $Keep is declared but NOT implemented: the teardown guard the bash half has
+# does not exist here. It is refused explicitly rather than accepted and
+# ignored, which is the whole point of this change. Tracked as LDM-#2262.
+if ($args.Count -gt 0) {
+    Write-Host "[ERROR] unknown argument(s): $($args -join ', ')" -ForegroundColor Red
+    Write-Host "   Accepted: -AllowVersionMismatch, -KeepPulled" -ForegroundColor Red
+    Write-Host "   Nothing has run yet, so nothing was lost -- fix the argument and re-run." -ForegroundColor Red
+    exit 1
+}
+if ($Keep) {
+    Write-Host "[ERROR] -Keep is not implemented in the PowerShell harness (LDM-#2262)." -ForegroundColor Red
+    Write-Host "   It is declared only so that '-keep' cannot bind to -KeepPulled by" -ForegroundColor Red
+    Write-Host "   prefix abbreviation, which silently enabled an unrelated flag." -ForegroundColor Red
+    Write-Host "   To preserve a failed run's artefacts today, use the bash harness." -ForegroundColor Red
+    exit 1
+}
 
 # Target: Verifies the INSTALLED binary, not the source code.
 # Optimized for Windows Native.
@@ -6936,6 +6967,39 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
             # checksum is ONE candidate; the lines above say which it was.
             Write-Verdict "          If that names the checksum: 'ldm package' writes '<digest>  <filename>' (LDM-#2159)."
             $roundTripOk = $false
+        }
+    }
+
+    # LDM-#2245: stop the source before booting the imported copy.
+    #
+    # This is the only point in the suite where two complete Liferay stacks
+    # would run at once, and it is new in v2.26.6-pre.1 -- every earlier
+    # version peaked at one. On an 8 GB machine the second stack never became
+    # healthy: ten consecutive probes at "Health check exceeded timeout
+    # (1m0s)", against a first stack that had been ready in 58s.
+    #
+    # This is NOT the cause of those failures. LDM-#2247 established that the
+    # shared Elasticsearch was RED with 17 unassigned primaries, so the
+    # restored stack was retrying against a cluster that would never go
+    # yellow. Reducing the peak is still right -- verifying a round trip
+    # should not need two portals at once -- but it is hygiene, not the fix.
+    #
+    # Safe here: nothing after 'ldm package' needs the source RUNNING. The
+    # only later uses of $PROJECT_NAME are the package call, the .ldmp path,
+    # an error string, and a 'docker images' filter that reads image names
+    # rather than containers.
+    #
+    # A failed stop WARNS rather than failing the run: both stacks up is the
+    # old behaviour, which is worse but not a verification error.
+    #
+    # Parity with the LDM-#2245 block in verify_e2e_refactor.sh.
+    if ($roundTripOk) {
+        $rtStopRaw = & $LDM_CMD -y stop $PROJECT_NAME 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Verdict "[INFO]  Stopped '$PROJECT_NAME' so the imported copy boots alone (LDM-#2245)."
+        } else {
+            Write-Verdict "[WARN]  Could not stop '$PROJECT_NAME' before the round trip (LDM-#2245); both stacks will run."
+            Write-RoundTripOutput -Label "ldm stop" -Raw $rtStopRaw
         }
     }
 
