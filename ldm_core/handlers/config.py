@@ -1300,6 +1300,116 @@ class ConfigService:
             "Log level updated and persisted. Liferay will hot-reload the changes within 5 seconds."
         )
 
+    def _print_global_config(self, config):
+        """Print `~/.ldmrc`, with the deciding store visible (LDM-#2174).
+
+        Extracted from `cmd_config` rather than suppressing the complexity
+        warning the new branches tripped.
+
+        LDM-#1970: values are masked by KEY NAME, because `UI.redact` matches
+        `KEY=value` with no spaces and this prints `key = value`.
+
+        LDM-#2174: the `defaults` block is expanded rather than dumped as one
+        value. It used to print as `defaults = {'database_mode': 'isolated',
+        ...}` -- a single collapsed line for the store that DECIDES, directly
+        beneath readable top-level lines for the store that does not. A reader
+        takes the first.
+
+        Expanding it also closes a redaction hole: LDM-#1970 masks
+        credential-shaped KEY NAMES, and `defaults` is not one, so every
+        credential inside the block (an ngrok authtoken, say) was printed
+        verbatim however carefully the top level was masked.
+        """
+        UI.heading("Global LDM Configuration")
+        if not config:
+            UI.detail("No global configuration found.")
+            return
+
+        nested_defaults = config.get("defaults")
+        if not isinstance(nested_defaults, dict):
+            nested_defaults = {}
+
+        for k, v in sorted(config.items()):
+            if k == "defaults" and nested_defaults:
+                continue
+            shown = "[REDACTED]" if is_credential_shaped(k) else v
+            # A top-level key the defaults block also holds is the conflict
+            # LDM-#2174 is about: this line is the one nothing reads.
+            if k in nested_defaults:
+                print(
+                    f"  {k} = {shown}   "
+                    f"{UI.BYELLOW}<- shadowed; the 'defaults' value below is "
+                    f"what projects use{UI.COLOR_OFF}"
+                )
+            else:
+                print(f"  {k} = {shown}")
+
+        if nested_defaults:
+            print("  defaults:")
+            for k, v in sorted(nested_defaults.items()):
+                shown = "[REDACTED]" if is_credential_shaped(k) else v
+                print(f"    {k} = {shown}")
+
+        if any(is_credential_shaped(k) for k in config) or any(
+            is_credential_shaped(k) for k in nested_defaults
+        ):
+            UI.detail(
+                "Credential-shaped values are hidden. "
+                "Use 'ldm config <key> --reveal' to print one."
+            )
+
+    def _resolve_config_value(self, config, key):
+        """The value `key` actually takes, and where it came from (LDM-#2174).
+
+        Two stores sit behind one command name:
+
+        - the **document root** of `~/.ldmrc`, which `ldm config set` writes and
+          which specific features look their own key up in (`share_domain`,
+          `targets`, ...)
+        - the **`defaults` block**, which `ldm defaults` writes and which
+          `DefaultsManager.get_resolved()` reads -- and that resolver is what
+          every project-creation decision consults
+
+        A key the cascade owns is answered by the cascade, because that is the
+        value projects will get. Anything else is a plain config value and
+        still comes from the root.
+
+        `DefaultsManager._load` returns `data["defaults"]` whenever that key is
+        present, so a top-level `database_mode` is invisible to the resolver.
+        Reporting it as the answer -- which is what this command did before
+        LDM-#2174 -- told the user the opposite of what their projects used.
+
+        Returns `(value, source)`, or `(None, None)` when the key is unset
+        everywhere.
+        """
+        defaults_mgr = self.manager.defaults
+        resolved = defaults_mgr.get_resolved()
+        in_root = key in config
+
+        if key in resolved:
+            if key in defaults_mgr.user_defaults:
+                source = "user default (~/.ldmrc 'defaults')"
+            elif key in defaults_mgr.global_defaults:
+                source = "global default (/etc/ldmrc 'defaults')"
+            else:
+                source = "convention"
+            value = resolved[key]
+            # The conflict this issue exists for. Reported through UI.detail
+            # rather than UI.warning on purpose: `ldm config get <key>` is a
+            # documented scripting mechanism, so nothing may be added to
+            # stdout. The bare listing says it loudly instead, where there is
+            # no such contract.
+            if in_root and str(config[key]) != str(value):
+                UI.detail(
+                    f"  (top-level '{key}' is {config[key]!r}, which nothing "
+                    f"reads; the cascade resolves {value!r})"
+                )
+            return value, source
+
+        if in_root:
+            return config[key], "~/.ldmrc (top level)"
+        return None, None
+
     def cmd_config(self, key=None, value=None):
         """View or set global LDM configuration."""
         config_path = get_actual_home() / ".ldmrc"
@@ -1309,29 +1419,26 @@ class ConfigService:
                 config = json.loads(config_path.read_text(encoding="utf-8"))
 
         if not key and not value:
-            UI.heading("Global LDM Configuration")
-            if not config:
-                UI.detail("No global configuration found.")
-            else:
-                # LDM-#1970: this printed every stored value verbatim,
-                # including API keys and auth tokens -- into the terminal, and
-                # so into transcripts, logs and anything capturing output.
-                #
-                # Masked by KEY NAME. `UI.redact` cannot help: it matches
-                # `KEY=value` with no spaces, and this prints `key = value`.
-                for k, v in sorted(config.items()):
-                    shown = "[REDACTED]" if is_credential_shaped(k) else v
-                    print(f"  {k} = {shown}")
-                if any(is_credential_shaped(k) for k in config):
-                    UI.detail(
-                        "Credential-shaped values are hidden. "
-                        "Use 'ldm config <key> --reveal' to print one."
-                    )
+            self._print_global_config(config)
             return
 
         if key and value is None:
-            # Get specific key
-            val = config.get(key)
+            # LDM-#2174: answer from the store that DECIDES, not the one this
+            # command happens to write.
+            #
+            # `ldm config get search_mode` used to report "not found" for a key
+            # with a real, active value of `shared`, because it read only the
+            # document root of ~/.ldmrc and never consulted the cascade. Worse,
+            # on a file carrying both -- which is the normal state once
+            # `ldm defaults` has created a `defaults` block -- it reported the
+            # top-level value while every project resolved the other one.
+            #
+            # A cascading key is answered by the cascade; anything else is a
+            # plain config value and still comes from the root. The provenance
+            # goes through UI.detail, which is gated behind --info/--verbose
+            # (LDM-#1036), so the bare value on stdout is unchanged and the
+            # documented scripting contract still holds.
+            val, source = self._resolve_config_value(config, key)
             if val is not None:
                 # LDM-#1970: `ldm config get <key>` is a documented scripting
                 # mechanism (docs/reference/cli/system.md), so masking it
@@ -1356,6 +1463,7 @@ class ConfigService:
                             f"appear in your terminal history and scrollback."
                         ),
                     )
+                UI.detail(f"  ({key} resolved from: {source})")
                 print(val)
             else:
                 UI.die(f"Configuration key '{key}' not found.")
@@ -1401,6 +1509,24 @@ class ConfigService:
                     "defaults resolver ignores whenever a 'defaults' block "
                     f"exists -- so this would have no effect. Use 'ldm defaults {key} "
                     f"{value}' instead (add --global to write /etc/ldmrc)."
+                )
+
+            # LDM-#2174: the guard above covers CONVENTION_DEFAULTS only, so a
+            # key that lives in someone's `defaults` block WITHOUT being a
+            # convention -- `ngrok_authtoken` is one, and appears in exactly
+            # this shape on a maintainer's machine -- could still be written to
+            # the root, where it shadows the value in use and nothing says so.
+            # Same failure, a different door.
+            if not is_removal and (
+                key in self.manager.defaults.user_defaults
+                or key in self.manager.defaults.global_defaults
+            ):
+                UI.die(
+                    f"'{key}' already has a value in the 'defaults' block, which "
+                    "is the one LDM reads. Writing it at the top level of "
+                    "~/.ldmrc would shadow nothing and change nothing. Use "
+                    f"'ldm defaults {key} {value}' instead (add --global to "
+                    "write /etc/ldmrc)."
                 )
 
             # Set specific key
