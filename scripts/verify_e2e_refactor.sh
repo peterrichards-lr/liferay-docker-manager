@@ -1937,6 +1937,72 @@ verify_cascading_default_guard() {
 # the suite runs against the operator's real home everywhere else. The host is
 # TEST-NET-1 (RFC 5737, permanently unroutable) and the Docker context that
 # `target add` creates is removed immediately, so nothing dials out.
+verify_config_answers_from_the_deciding_store() {
+    # LDM-#2174: `ldm config` is two stores behind one command name -- the
+    # document root of ~/.ldmrc, which `config set` writes, and the `defaults`
+    # block, which `config defaults` writes and which
+    # DefaultsManager.get_resolved reads. That resolver is what every
+    # project-creation decision consults.
+    #
+    # `_load` returns data["defaults"] whenever that key is present, so a
+    # top-level value is invisible to it. The fixture below carries the
+    # CONFLICT shape on purpose: a test written against a tidy config cannot
+    # see this defect at all.
+    #
+    # Measured against the pre-fix binary (38ee1ee3~1): `config get
+    # database_mode` answered `shared` while every project got `isolated` --
+    # the command reported the opposite of what the system did -- and the
+    # listing printed the whole block as one collapsed value with the
+    # credential inside it verbatim.
+    #
+    # Isolated LDM_HOME, like the two guards above: the fixture is a
+    # deliberately broken ~/.ldmrc and must never be the operator's.
+    local ldm_cmd="$1"
+    local work_dir="$2"
+
+    local iso_home="${work_dir}/config-store-home"
+    rm -rf "$iso_home"
+    mkdir -p "$iso_home" || return 1
+    printf '%s\n' '{"defaults": {"database_mode": "isolated", "ngrok_authtoken": "e2e-secret-value"}, "database_mode": "shared"}' > "${iso_home}/.ldmrc"
+
+    local answered
+    answered=$(LDM_HOME="$iso_home" "$ldm_cmd" config get database_mode 2>/dev/null | tr -d '\r' | grep -v '^[[:space:]]*$' | tail -1)
+    if [ "$answered" != "isolated" ]; then
+        echo "❌ ERROR: 'config get database_mode' answered '${answered}', expected 'isolated' (LDM-#2174)."
+        echo "     The defaults block is what DefaultsManager resolves, so the top-level"
+        echo "     value is inert. Reporting it reports the opposite of what every"
+        echo "     project on this machine actually gets."
+        rm -rf "$iso_home"
+        return 1
+    fi
+
+    local listing
+    listing=$(LDM_HOME="$iso_home" "$ldm_cmd" config 2>&1)
+    case "$listing" in
+        *e2e-secret-value*)
+            echo "❌ ERROR: 'ldm config' printed a credential from inside the defaults block verbatim (LDM-#2174)."
+            echo "     LDM-#1970 masks credential-shaped KEY NAMES, and 'defaults' is not one,"
+            echo "     so collapsing the block prints everything inside it unmasked."
+            rm -rf "$iso_home"
+            return 1
+            ;;
+    esac
+    case "$listing" in
+        *shadowed*) ;;
+        *)
+            echo "❌ ERROR: 'ldm config' did not mark the top-level 'database_mode' as shadowed (LDM-#2174)."
+            echo "     Both values are listed, so without the marker the reader cannot tell"
+            echo "     which of the two the system uses."
+            rm -rf "$iso_home"
+            return 1
+            ;;
+    esac
+
+    rm -rf "$iso_home"
+    echo "✅ 'ldm config' answers from the deciding store, expands the defaults block and redacts inside it (LDM-#2174)."
+    return 0
+}
+
 verify_mac_address_persisted() {
     local ldm_cmd="$1"
     local work_dir="$2"
@@ -1994,6 +2060,14 @@ if CONFIG_REVERT_OUT=$(verify_config_reset_and_revert "$LDM_CMD" "$LDM_WORKSPACE
     report_ok "$CONFIG_REVERT_OUT"
 else
     echo "$CONFIG_REVERT_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying 'ldm config' answers from the store that decides (LDM-#2174)..."
+if CONFIG_STORE_OUT=$(verify_config_answers_from_the_deciding_store "$LDM_CMD" "$LDM_WORKSPACE"); then
+    report_ok "$CONFIG_STORE_OUT"
+else
+    echo "$CONFIG_STORE_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
 
@@ -3943,6 +4017,75 @@ if [ "$SHARE_STOPPED_FAILED" = true ]; then
     exit 1
 fi
 report_ok "✅ Share refuses a stopped project locally, before any client, token or gateway work."
+
+# LDM-#2191: '--domain default' must displace a stored custom domain.
+#
+# share_domain is sticky -- it lives in the project's meta AND in ~/.ldmrc --
+# so `share start --subdomain X` silently reused a custom domain pinned at
+# some point in the past. `--domain` could name a DIFFERENT domain but had no
+# way to name the standard one, leaving the user to edit meta by hand.
+#
+# Assertable with no tunnel, token, gateway or DNS: resolve_share_config()
+# runs BEFORE the not-running refusal, so the domain decision is made and
+# announced by the time the command exits 3.
+#
+# --dry-run is a safety interlock, not a convenience. resolve_share_config()
+# runs BEFORE the dry-run short-circuit, so the domain note asserted below is
+# still printed, but no client, token or tunnel can be reached. Without it, a
+# fixture that is ever mis-detected makes `share start` fall through to its
+# normal path and raise a REAL tunnel -- observed while developing this check.
+#
+# The CONTROL run is load-bearing. Without it, a fixture whose meta were
+# ignored for any other reason would satisfy the negative assertion vacuously
+# -- the exact shape of a check that cannot fail.
+echo ">> Verifying '--domain default' displaces a stored custom domain (LDM-#2191)..."
+SHARE_DOM_DIR="${LDM_WORKSPACE}/share-domain-${TEST_PORT}"
+SHARE_DOM_HOME="${SHARE_DOM_DIR}/home"
+SHARE_DOM_PROJ="${SHARE_DOM_DIR}/share-dom"
+rm -rf "$SHARE_DOM_DIR"
+mkdir -p "$SHARE_DOM_HOME" "$SHARE_DOM_PROJ"
+printf '%s\n' "{\"container_name\": \"share-dom-never-started-${TEST_PORT}\", \"project_name\": \"share-dom\", \"host_name\": \"localhost\", \"port\": 8080, \"db_type\": \"postgresql\", \"share_domain\": \"dev.example.com\"}" > "${SHARE_DOM_PROJ}/meta"
+: > "${SHARE_DOM_PROJ}/.liferay-docker"
+SHARE_DOM_FAILED=false
+
+SHARE_DOM_CTL=$(cd "$SHARE_DOM_PROJ" && LDM_HOME="$SHARE_DOM_HOME" "$LDM_CMD" \
+    share start -y --no-color --dry-run --subdomain e2e-ctl 2>&1) || true
+if ! echo "$SHARE_DOM_CTL" | grep -qF "dev.example.com"; then
+    echo "❌ ERROR: the control run did not use the stored custom domain, so the fixture proves nothing (LDM-#2191)." | tee -a "$RESULTS_FILE_TMP"
+    echo "$SHARE_DOM_CTL" | tee -a "$RESULTS_FILE_TMP"
+    SHARE_DOM_FAILED=true
+fi
+
+SHARE_DOM_DEF=$(cd "$SHARE_DOM_PROJ" && LDM_HOME="$SHARE_DOM_HOME" "$LDM_CMD" \
+    share start -y --no-color --dry-run --subdomain e2e-def --domain default 2>&1) || true
+# Asserted POSITIVELY, on the gateway actually chosen. A bare
+# `! grep dev.example.com` passes against the unfixed code too, because an
+# unrecognised sentinel is taken as a literal vanity domain -- the resolved
+# host becomes `e2e-def.default`, which also fails to contain the stored
+# domain. Measured: the negative-only form passed a neuter probe against
+# share.py from 10bc5a65~1, i.e. it was a check that could not fail.
+if ! echo "$SHARE_DOM_DEF" | grep -qF "e2e-def.lfr-demo.online"; then
+    echo "❌ ERROR: '--domain default' did not resolve to the standard gateway (LDM-#2191)." | tee -a "$RESULTS_FILE_TMP"
+    echo "     Expected the public URL to name 'e2e-def.lfr-demo.online', the first" | tee -a "$RESULTS_FILE_TMP"
+    echo "     of the known base domains. An unfixed build treats 'default' as a" | tee -a "$RESULTS_FILE_TMP"
+    echo "     vanity domain and resolves 'e2e-def.default' instead." | tee -a "$RESULTS_FILE_TMP"
+    echo "$SHARE_DOM_DEF" | tee -a "$RESULTS_FILE_TMP"
+    SHARE_DOM_FAILED=true
+fi
+if echo "$SHARE_DOM_DEF" | grep -qF "dev.example.com"; then
+    echo "❌ ERROR: '--domain default' still used the stored custom domain 'dev.example.com' (LDM-#2191)." | tee -a "$RESULTS_FILE_TMP"
+    echo "     The domain is sticky in the project meta and in ~/.ldmrc, and before" | tee -a "$RESULTS_FILE_TMP"
+    echo "     this there was no way to ask for the standard gateway short of" | tee -a "$RESULTS_FILE_TMP"
+    echo "     editing one of them by hand." | tee -a "$RESULTS_FILE_TMP"
+    echo "$SHARE_DOM_DEF" | tee -a "$RESULTS_FILE_TMP"
+    SHARE_DOM_FAILED=true
+fi
+
+rm -rf "$SHARE_DOM_DIR"
+if [ "$SHARE_DOM_FAILED" = true ]; then
+    exit 1
+fi
+report_ok "✅ '--domain default' displaces a stored custom domain; without it the stored one is still used (LDM-#2191)."
 
 echo ">> Verifying Share Command Layout..."
 if "$LDM_CMD" share --help >/dev/null && \
@@ -6536,6 +6679,35 @@ for vname, vdef in (c.get('volumes') or {}).items():
         f'volume {vname!r} carries {got!r}, expected the project uuid (#1395)'
     )
 " "${UUID_DIR}/UuidCheck/docker-compose.yml" "$PROJ_UUID"; then
+        UUID_OK=false
+    fi
+
+    # LDM-#2163: the same freshly-created meta must carry the version that
+    # created it. Asserted HERE because this project is genuinely new --
+    # is_new_project is `not any(meta/.liferay-docker.meta/.ldm.meta exists)`,
+    # and the suite's main test project has its meta written by hand before
+    # `ldm run`, so it is correctly NOT stamped and would fail this check.
+    #
+    # The consequence is what is pinned, not the key: ldm_version was written
+    # by `import` and by nothing else, so projects created by init/run fell
+    # below the 2.14.0 guard and were handed legacy isolated/sidecar
+    # infrastructure on the day they were made, with nothing saying so.
+    if ! "$VENV_PYTHON" -c "
+import json, sys
+meta = json.load(open(sys.argv[1], encoding='utf-8'))
+got = meta.get('ldm_version') or ''
+assert got, (
+    'a project created by ldm init carries no ldm_version. '
+    'resolve_infrastructure_mode defaults a missing value to 0.0.0 and sends '
+    'anything below 2.14.0 to the legacy isolated/sidecar modes, so a project '
+    'created TODAY is treated as pre-dating the shared model (#2163)'
+)
+parts = tuple(int(p) for p in got.split('-')[0].split('.')[:3])
+assert parts >= (2, 14, 0), (
+    'meta carries ldm_version %r, below the 2.14.0 legacy threshold -- the '
+    'guard this stamp exists to defeat would still fire (#2163)' % (got,)
+)
+" "$PROJ_META"; then
         UUID_OK=false
     fi
 fi

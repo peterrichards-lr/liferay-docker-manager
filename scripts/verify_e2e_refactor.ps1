@@ -1415,6 +1415,67 @@ function Test-CascadingDefaultGuard {
     return @{ Ok = $true; Message = "[SUCCESS] Cascading default write refused with the working command named; non-cascading keys still write." }
 }
 
+function Test-ConfigAnswersFromTheDecidingStore {
+    # LDM-#2174: 'ldm config' is two stores behind one command name -- the
+    # document root of ~/.ldmrc, which 'config set' writes, and the 'defaults'
+    # block, which 'config defaults' writes and which
+    # DefaultsManager.get_resolved reads. That resolver is what every
+    # project-creation decision consults.
+    #
+    # _load returns data["defaults"] whenever that key is present, so a
+    # top-level value is invisible to it. The fixture below carries the
+    # CONFLICT shape on purpose: a test written against a tidy config cannot
+    # see this defect at all.
+    #
+    # Measured against the pre-fix binary (38ee1ee3~1): 'config get
+    # database_mode' answered 'shared' while every project got 'isolated' --
+    # the command reported the opposite of what the system did -- and the
+    # listing printed the block as one collapsed value with the credential
+    # inside it verbatim.
+    #
+    # Isolated LDM_HOME, like the two guards above: the fixture is a
+    # deliberately broken ~/.ldmrc and must never be the operator's.
+    #
+    # Comparisons are -cne and -clike (case-SENSITIVE). The shell half uses
+    # exact string tests, and -eq/-like would let the two disagree on
+    # identical correct output.
+    #
+    # Parity with verify_config_answers_from_the_deciding_store in
+    # verify_e2e_refactor.sh.
+    param($LdmCmd, $WorkDir)
+
+    $isoHome = Join-Path $WorkDir "config-store-home"
+    if (Test-Path $isoHome) { Remove-Item -Recurse -Force $isoHome -ErrorAction SilentlyContinue }
+    New-Item -ItemType Directory -Path $isoHome -Force | Out-Null
+    $ldmrc = Join-Path $isoHome ".ldmrc"
+    '{"defaults": {"database_mode": "isolated", "ngrok_authtoken": "e2e-secret-value"}, "database_mode": "shared"}' | Out-File $ldmrc -Encoding utf8
+
+    $prevHome = $env:LDM_HOME
+    $env:LDM_HOME = $isoHome
+    try {
+        $answeredRaw = (& $LdmCmd config get database_mode 2>&1 | ConvertTo-LdmText)
+        $answered = ($answeredRaw -split "`n" | Where-Object { $_.Trim() } | Select-Object -Last 1)
+        if ($null -ne $answered) { $answered = $answered.Trim() }
+        if ($answered -cne "isolated") {
+            return @{ Ok = $false; Message = "[ERROR] 'config get database_mode' answered '$answered', expected 'isolated' (LDM-#2174). The defaults block is what DefaultsManager resolves, so the top-level value is inert -- reporting it reports the opposite of what every project actually gets." }
+        }
+
+        $listing = (& $LdmCmd config 2>&1 | ConvertTo-LdmText)
+        if ($listing -clike "*e2e-secret-value*") {
+            return @{ Ok = $false; Message = "[ERROR] 'ldm config' printed a credential from inside the defaults block verbatim (LDM-#2174). LDM-#1970 masks credential-shaped KEY NAMES, and 'defaults' is not one." }
+        }
+        if (-not ($listing -clike "*shadowed*")) {
+            return @{ Ok = $false; Message = "[ERROR] 'ldm config' did not mark the top-level 'database_mode' as shadowed (LDM-#2174). Both values are listed, so without the marker the reader cannot tell which one the system uses." }
+        }
+    }
+    finally {
+        $env:LDM_HOME = $prevHome
+        if (Test-Path $isoHome) { Remove-Item -Recurse -Force $isoHome -ErrorAction SilentlyContinue }
+    }
+
+    return @{ Ok = $true; Message = "[SUCCESS] 'ldm config' answers from the deciding store, expands the defaults block and redacts inside it (LDM-#2174)." }
+}
+
 function Test-ForceIsNotAPositional {
     # LDM-#1835. '--force' was declared once on a shared parent parser, and
     # argparse 'parents=' copies action REFERENCES. A conflict_handler="resolve"
@@ -2921,6 +2982,15 @@ try {
         exit 1
     }
 
+    Write-Host ">> Verifying 'ldm config' answers from the store that decides (LDM-#2174)..."
+    $configStore = Test-ConfigAnswersFromTheDecidingStore -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE
+    if ($configStore.Ok) {
+        Write-Verdict $configStore.Message
+    } else {
+        Write-Host $configStore.Message -ForegroundColor Red
+        exit 1
+    }
+
     Write-Host ">> Verifying SSL renewal re-issues into the documented directory (LDM-#1958)..."
     $sslRenew = Test-SslRenewalReissues -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE
     if ($sslRenew.Ok) {
@@ -3813,6 +3883,73 @@ zf.close()
         throw "Share did not refuse a stopped project (LDM-#2009)."
     }
     Write-Verdict "[SUCCESS] Share refuses a stopped project locally, before any client, token or gateway work."
+
+    # LDM-#2191: '--domain default' must displace a stored custom domain.
+    #
+    # share_domain is sticky -- it lives in the project's meta AND in ~/.ldmrc
+    # -- so 'share start --subdomain X' silently reused a custom domain pinned
+    # at some point in the past. '--domain' could name a DIFFERENT domain but
+    # had no way to name the standard one.
+    #
+    # --dry-run is a safety interlock, not a convenience. resolve_share_config
+    # runs BEFORE the dry-run short-circuit, so the resolved domain is still
+    # announced, but no client, token or tunnel can be reached. Without it a
+    # mis-detected fixture makes 'share start' fall through and raise a REAL
+    # tunnel -- observed while developing this check.
+    #
+    # The sentinel is asserted POSITIVELY, on the gateway actually chosen. A
+    # bare "does not contain dev.example.com" passes against the unfixed code
+    # too, because an unrecognised sentinel is taken as a literal vanity
+    # domain and resolves 'e2e-def.default'. Measured: the negative-only form
+    # survived a neuter probe against share.py from 10bc5a65~1, i.e. it was a
+    # check that could not fail.
+    #
+    # The CONTROL run is load-bearing for the same reason: without it a
+    # fixture whose meta were ignored would satisfy the rest vacuously.
+    #
+    # Parity with the LDM-#2191 block in verify_e2e_refactor.sh.
+    Write-Host ">> Verifying '--domain default' displaces a stored custom domain (LDM-#2191)..."
+    $shareDomDir = Join-Path $env:LDM_WORKSPACE "share-domain-$TEST_PORT"
+    $shareDomHome = Join-Path $shareDomDir "home"
+    $shareDomProj = Join-Path $shareDomDir "share-dom"
+    Remove-Item -Recurse -Force $shareDomDir -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path $shareDomHome -Force | Out-Null
+    New-Item -ItemType Directory -Path $shareDomProj -Force | Out-Null
+    $shareDomMeta = '{"container_name": "share-dom-never-started-' + $TEST_PORT + '", "project_name": "share-dom", "host_name": "localhost", "port": 8080, "db_type": "postgresql", "share_domain": "dev.example.com"}'
+    Set-Content -Path (Join-Path $shareDomProj "meta") -Value $shareDomMeta -Encoding ASCII
+    Set-Content -Path (Join-Path $shareDomProj ".liferay-docker") -Value "" -Encoding ASCII
+    $shareDomFailed = $false
+    $shareDomOriginalHome = $env:LDM_HOME
+    $shareDomOriginalLocation = Get-Location
+    try {
+        $env:LDM_HOME = $shareDomHome
+        Set-Location $shareDomProj
+        $shareDomCtl = & $LDM_CMD share start -y --no-color --dry-run --subdomain e2e-ctl 2>&1 | ConvertTo-LdmText
+        $shareDomDef = & $LDM_CMD share start -y --no-color --dry-run --subdomain e2e-def --domain default 2>&1 | ConvertTo-LdmText
+    } finally {
+        Set-Location $shareDomOriginalLocation
+        $env:LDM_HOME = $shareDomOriginalHome
+    }
+
+    if (-not ($shareDomCtl -clike "*dev.example.com*")) {
+        Write-Host "[ERROR] the control run did not use the stored custom domain, so the fixture proves nothing (LDM-#2191)." -ForegroundColor Red
+        Write-Verdict $shareDomCtl
+        $shareDomFailed = $true
+    }
+    if (-not ($shareDomDef -clike "*e2e-def.lfr-demo.online*")) {
+        Write-Host "[ERROR] '--domain default' did not resolve to the standard gateway (LDM-#2191). An unfixed build treats 'default' as a vanity domain and resolves 'e2e-def.default' instead." -ForegroundColor Red
+        Write-Verdict $shareDomDef
+        $shareDomFailed = $true
+    }
+    if ($shareDomDef -clike "*dev.example.com*") {
+        Write-Host "[ERROR] '--domain default' still used the stored custom domain 'dev.example.com' (LDM-#2191)." -ForegroundColor Red
+        Write-Verdict $shareDomDef
+        $shareDomFailed = $true
+    }
+
+    Remove-Item -Recurse -Force $shareDomDir -ErrorAction SilentlyContinue
+    if ($shareDomFailed) { exit 1 }
+    Write-Verdict "[SUCCESS] '--domain default' displaces a stored custom domain; without it the stored one is still used (LDM-#2191)."
 
     Write-Host ">> Verifying Legacy Command Translation..."
     $legacyDoc = & $LDM_CMD doctor --help 2>&1
@@ -6532,6 +6669,31 @@ for vname, vdef in (compose.get('volumes') or {}).items():
         'volume %r carries %r, expected the project uuid (#1395)' % (vname, got)
     )
 "@ (Join-Path $uuidDir "meta") (Join-Path $uuidDir "docker-compose.yml")
+        if ($LASTEXITCODE -ne 0) { $uuidOk = $false }
+
+        # LDM-#2163: the same freshly-created meta must carry the version that
+        # created it. Asserted HERE because this project is genuinely new --
+        # is_new_project is "no meta/.liferay-docker.meta/.ldm.meta present",
+        # and the suite's main test project has its meta written by hand
+        # before 'ldm run', so it is correctly NOT stamped.
+        #
+        # Parity with the LDM-#2163 block in verify_e2e_refactor.sh.
+        & $VENV_PYTHON -c @"
+import json, sys
+meta = json.load(open(sys.argv[1], encoding='utf-8'))
+got = meta.get('ldm_version') or ''
+assert got, (
+    'a project created by ldm init carries no ldm_version. '
+    'resolve_infrastructure_mode defaults a missing value to 0.0.0 and sends '
+    'anything below 2.14.0 to the legacy isolated/sidecar modes, so a project '
+    'created TODAY is treated as pre-dating the shared model (#2163)'
+)
+parts = tuple(int(p) for p in got.split('-')[0].split('.')[:3])
+assert parts >= (2, 14, 0), (
+    'meta carries ldm_version %r, below the 2.14.0 legacy threshold -- the '
+    'guard this stamp exists to defeat would still fire (#2163)' % (got,)
+)
+"@ (Join-Path $uuidDir "meta")
         if ($LASTEXITCODE -ne 0) { $uuidOk = $false }
     }
 
