@@ -248,24 +248,35 @@ ldm cloud-fetch [project] uat --sync-env
 Surgically clear project data folders or completely restore a project to its original vanilla state. These commands require the project to be stopped.
 
 ```bash
-ldm reset [project] [target]      # Clear specific data (state|db|search|all)
+ldm reset [project] [target]      # Clear specific data (state|db|global-search|all)
 ldm re-seed [project]             # Wipe ALL data and re-apply vanilla seed
 ```
 
 **Available Targets (for `reset`):**
 
 - **`state`** (Default): Clears the `osgi/state` folder and its named volume.
+- **`data`**: Clears the project's data folder and its named volume.
+- **`logs`**: Clears the project's log directory.
 - **`db`**: Removes the project's database volume (`<project>-db-db-data`).
-- **`all`**: Clears `state`, `data`, `logs` and `db`, and tears the stack down
-  with `docker compose down -v` so anonymous volumes go too.
-- **`search`**, **`global-search`**: **Not currently implemented.** These are
-  accepted and report success without clearing any index — see
+- **`global-search`**: Deletes this project's indices from the shared Global
+  Search node. Scoped by the project's own index prefix, so no other project's
+  indices are touched.
+- **`all`**: Clears `state`, `data`, `logs`, `db` and `global-search`, and
+  tears the stack down with `docker compose down -v` so anonymous volumes go
+  too.
+- **`search`**: **Refused, not implemented.** A sidecar Elasticsearch runs
+  inside the Liferay container and only exists while that container runs, but
+  `reset` stops the stack before it wipes anything — so there is no endpoint
+  left to delete through. Its index files live in the project's own data
+  volume, so `ldm reset <project> data` removes them. See
   [LDM-#2127](https://github.com/peterrichards-lr/liferay-docker-manager/issues/2127).
-  To clear indices today, use `ldm reindex` or remove the project's indices on
-  the search node directly.
 
-Only one target may be given. A comma-separated list is not parsed — it is
-read as a single unknown target, which is also covered by LDM-#2127.
+A comma-separated list is accepted: `ldm reset demo state,db`. Duplicates
+collapse and the order you give is kept.
+
+An unrecognised target is **refused with exit 1**, naming the valid ones.
+Before LDM-#2127 any string was accepted and reported success having done
+nothing.
 
 **Examples:**
 

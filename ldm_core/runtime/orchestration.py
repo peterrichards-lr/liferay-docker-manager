@@ -75,7 +75,81 @@ def _volume_sizes(manager, docker_prefix):
 # LDM-#2118: every target a bare `reset all` is responsible for. `db` was
 # absent, so the database volume was never considered -- see
 # `_reset_volume_for` for why its name does not follow the others'.
-_RESET_ALL_TARGETS = ("data", "logs", "state", "db")
+_RESET_ALL_TARGETS = ("data", "logs", "state", "db", "global-search")
+
+# LDM-#2127: every target the CLI advertises. `target` is a bare positional
+# with no argparse `choices=`, so before this existed ANY string was accepted
+# and reported success -- `ldm reset demo banana` wiped nothing and printed
+# "reset successful". Rejecting the unknown is what would have surfaced the
+# rest of #2127 years earlier, so it is the part to keep even if the targets
+# below change.
+_RESET_KNOWN_TARGETS = (
+    "data",
+    "logs",
+    "state",
+    "db",
+    "search",
+    "global-search",
+    "all",
+)
+
+# LDM-#2127: advertised, with no implementation, and not implementable the way
+# the others are. A sidecar Elasticsearch runs INSIDE the Liferay container and
+# exists only while that container runs -- but `reset` stops the stack before
+# it wipes anything, so by the time a wipe would happen there is no endpoint
+# left to delete indices through. Its on-disk files live in the project's own
+# data volume, which `reset data` already removes.
+#
+# Refused rather than silently succeeding, and deliberately NOT withdrawn from
+# the CLI: whether to implement it against the sidecar port or drop the target
+# is a maintainer's decision, and a refusal keeps both open while making the
+# command honest today.
+_RESET_UNIMPLEMENTED_TARGETS = ("search",)
+
+
+def _parse_reset_targets(target):
+    """Expand `all`, split the comma form, and reject anything unrecognised.
+
+    LDM-#2127. Returns an ordered, de-duplicated list. Raises `ValueError`
+    with a user-facing message rather than calling `UI.die`, so the parsing is
+    testable without a process exit -- the caller turns it into exit 1
+    (Generic/Validation Error, per the exit-code contract: a bad target is
+    user input, not an infrastructure fault).
+
+    The comma form is documented -- `ldm reset demo search,db` appears in
+    `docs/how-to/data_management.md` -- and was never parsed: `[target]` made
+    the whole string one literal target, matching nothing, resetting neither.
+    """
+    raw = [part.strip() for part in str(target or "").split(",")]
+    requested = [part for part in raw if part]
+    if not requested:
+        raise ValueError(
+            f"No reset target given. Valid targets: {', '.join(_RESET_KNOWN_TARGETS)}."
+        )
+
+    unknown = [t for t in requested if t not in _RESET_KNOWN_TARGETS]
+    if unknown:
+        raise ValueError(
+            f"Unknown reset target(s): {', '.join(unknown)}. "
+            f"Valid targets: {', '.join(_RESET_KNOWN_TARGETS)}."
+        )
+
+    unimplemented = [t for t in requested if t in _RESET_UNIMPLEMENTED_TARGETS]
+    if unimplemented:
+        raise ValueError(
+            f"Reset target '{unimplemented[0]}' is not implemented. A sidecar "
+            "Elasticsearch runs inside the Liferay container and is gone by the "
+            "time reset wipes anything; its indices live in the project's data "
+            "volume, so 'ldm reset <project> data' removes them. Use "
+            "'global-search' for the shared search node."
+        )
+
+    expanded = []
+    for t in requested:
+        for resolved in _RESET_ALL_TARGETS if t == "all" else (t,):
+            if resolved not in expanded:
+                expanded.append(resolved)
+    return expanded
 
 
 def _reset_volume_for(target, container_name, meta):
@@ -1414,45 +1488,71 @@ class OrchestrationService(BaseHandler):
             "SSL renewal complete. Changes will be detected by Traefik automatically."
         )
 
+    def _reset_dry_run(self, root, target, reset_targets, tear_down):
+        """Preview what `cmd_reset` would remove, changing nothing.
+
+        Extracted from `cmd_reset` in LDM-#2127 rather than suppressing the
+        complexity warning the new branches tripped. The preview is a separate
+        concern from performing the reset, and keeping it inline is what made
+        the function long enough to hide that two of its targets did nothing.
+        """
+        UI.warning(
+            f"[Dry Run] Resetting {UI.BOLD}{root.name}{UI.COLOR_OFF} ({target})..."
+        )
+        meta = self.manager.read_meta(root)
+        c_name = meta.get("container_name") or root.name
+        if tear_down:
+            UI.detail(
+                f"  {UI.BYELLOW}- Would stop/tear down project stack (down).{UI.COLOR_OFF}"
+            )
+        else:
+            UI.detail(
+                f"  {UI.BYELLOW}- Would stop project stack if running.{UI.COLOR_OFF}"
+            )
+
+        for t in reset_targets:
+            # LDM-#2127: announced in the dry run like every other target. It
+            # was absent entirely, so `--dry-run` could not have revealed that
+            # the real path did nothing for it either.
+            if t == "global-search":
+                UI.detail(
+                    f"  {UI.BYELLOW}- Would delete this project's indices from "
+                    f"the shared search node.{UI.COLOR_OFF}"
+                )
+                continue
+            volume_name = _reset_volume_for(t, c_name, meta)
+            if volume_name:
+                UI.detail(
+                    f"  {UI.BYELLOW}- Would delete Docker named volume: {volume_name}{UI.COLOR_OFF}"
+                )
+            paths = self.manager.setup_paths(root)
+            path = paths.get(t)
+            if path and path.exists():
+                UI.detail(
+                    f"  {UI.BYELLOW}- Would delete host directory: {path.relative_to(root) if path.is_relative_to(root) else path}{UI.COLOR_OFF}"
+                )
+        UI.success(f"[Dry Run] Project {root.name} reset completed (no changes made).")
+        return True
+
     def cmd_reset(self, project_id=None, target="all"):
         """Wipes local state (data, logs, osgi/state) for a project."""
         root = self.manager.detect_project_path(project_id)
         if not root:
             return None
 
+        # LDM-#2127: validate BEFORE anything is stopped or removed. An unknown
+        # or unimplemented target must not reach the point where the stack has
+        # been torn down and the only thing left to do is print success.
+        requested_raw = [p.strip() for p in str(target or "").split(",") if p.strip()]
+        try:
+            reset_targets = _parse_reset_targets(target)
+        except ValueError as exc:
+            UI.die(str(exc), exit_code=1)
+        tear_down = "all" in requested_raw
+
         is_dry_run = getattr(self.manager, "dry_run", False)
         if is_dry_run:
-            UI.warning(
-                f"[Dry Run] Resetting {UI.BOLD}{root.name}{UI.COLOR_OFF} ({target})..."
-            )
-            meta = self.manager.read_meta(root)
-            c_name = meta.get("container_name") or root.name
-            if target == "all":
-                UI.detail(
-                    f"  {UI.BYELLOW}- Would stop/tear down project stack (down).{UI.COLOR_OFF}"
-                )
-            else:
-                UI.detail(
-                    f"  {UI.BYELLOW}- Would stop project stack if running.{UI.COLOR_OFF}"
-                )
-
-            targets = list(_RESET_ALL_TARGETS) if target == "all" else [target]
-            for t in targets:
-                volume_name = _reset_volume_for(t, c_name, meta)
-                if volume_name:
-                    UI.detail(
-                        f"  {UI.BYELLOW}- Would delete Docker named volume: {volume_name}{UI.COLOR_OFF}"
-                    )
-                paths = self.manager.setup_paths(root)
-                path = paths.get(t)
-                if path and path.exists():
-                    UI.detail(
-                        f"  {UI.BYELLOW}- Would delete host directory: {path.relative_to(root) if path.is_relative_to(root) else path}{UI.COLOR_OFF}"
-                    )
-            UI.success(
-                f"[Dry Run] Project {root.name} reset completed (no changes made)."
-            )
-            return True
+            return self._reset_dry_run(root, target, reset_targets, tear_down)
 
         UI.warning(f"Resetting {UI.BOLD}{root.name}{UI.COLOR_OFF} ({target})...")
 
@@ -1483,7 +1583,7 @@ class OrchestrationService(BaseHandler):
         # `devcon2026-staging-data`, which belongs to a different project.
         # A reset must not be able to do that; `--delete` still can, and still
         # asks first.
-        if target == "all":
+        if tear_down:
             self.cmd_down(root.name, delete=False, volumes=True, sweep_volumes=False)
         elif is_running:
             # LDM-#1410: internal step of a reset, which then wipes directories.
@@ -1491,9 +1591,26 @@ class OrchestrationService(BaseHandler):
 
         # 2. Wipe directories
         paths = self.manager.setup_paths(root)
-        targets = list(_RESET_ALL_TARGETS) if target == "all" else [target]
+        targets = reset_targets
 
         for t in targets:
+            # LDM-#2127: the shared search node is not a volume and not a host
+            # directory, so it fell through both branches below and the command
+            # reported success having touched nothing. Reuses the LDM-#2119
+            # deleter rather than issuing a second wildcard DELETE: ES 8
+            # defaults `action.destructive_requires_name` to true and answers a
+            # wildcard with 400, which is why the first attempt never removed an
+            # index on either branch.
+            if t == "global-search":
+                from ldm_core.snapshot.search import SearchSnapshotService
+
+                removed = SearchSnapshotService(self)._delete_project_indices(
+                    c_name, docker_prefix
+                )
+                if not removed:
+                    UI.detail("  - No search indices found for this project.")
+                continue
+
             path = paths.get(t)
 
             # LDM-369: Handle Named Volumes (Hybrid Mount Strategy)
