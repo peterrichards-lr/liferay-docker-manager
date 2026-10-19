@@ -96,13 +96,15 @@ def _volume_role(volume_name):
 
     Order matters: `<project>-db-db-data` ends in `-data`, so `data` is tested
     before any broader match.
+
+    LDM-#2243 moved the implementation to `ldm_core.utils.volume_role`. This
+    name is kept because it is the one the composer tests import, and because a
+    classifier reachable only from the composer is how the snapshot paths came
+    to create volumes with no role at all.
     """
-    name = str(volume_name)
-    if name.endswith("-data"):
-        return "data"
-    if name.endswith("-state"):
-        return "state"
-    return "unknown"
+    from ldm_core.utils import volume_role
+
+    return volume_role(volume_name)
 
 
 def _named_volume_definition(safe_vol_key, project_name, project_uuid=None):
@@ -114,20 +116,17 @@ def _named_volume_definition(safe_vol_key, project_name, project_uuid=None):
     The labels mirror what services already receive via `_inject_ldm_labels`,
     so a volume's owner is recoverable from `docker volume inspect` rather than
     guessed from its name.
+
+    LDM-#2243: the label set itself now comes from
+    `ldm_core.utils.volume_ownership_labels`, shared with the `docker volume
+    create` calls in `snapshot/volumes.py`. Two construction sites that merely
+    agreed today is what let those calls carry no labels at all.
     """
+    from ldm_core.utils import volume_ownership_labels
+
     return {
         "name": safe_vol_key,
-        "labels": {
-            "com.liferay.ldm.project": project_name,
-            "com.liferay.ldm.managed": "true",
-            "com.liferay.ldm.role": _volume_role(safe_vol_key),
-            # LDM-#1395: the name label is only as stable as the name. A renamed
-            # project's volumes would keep the old one and belong to nothing,
-            # and two projects sharing a name share the label entirely. The UUID
-            # makes ownership exact. The name label stays -- it is what a human
-            # reads in `docker volume inspect`.
-            **({"com.liferay.ldm.project.uuid": project_uuid} if project_uuid else {}),
-        },
+        "labels": volume_ownership_labels(safe_vol_key, project_name, project_uuid),
     }
 
 

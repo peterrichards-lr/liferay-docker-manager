@@ -131,7 +131,17 @@ class TestSnapshotService(unittest.TestCase):
             # 1. Test Dehydration
             self.manager.snapshot.volumes._dehydrate_named_volumes(paths)
             self.assertEqual(mock_sync.call_count, 2)
-            mock_sync.assert_any_call(paths["data"], ANY, direction="from_volume")
+            # LDM-#2243: project/project_uuid are passed so the volume is
+            # created WITH its ownership labels. Docker applies volume labels
+            # only at creation, so a call that omits them produces a volume
+            # `ldm prune` can never reclaim.
+            mock_sync.assert_any_call(
+                paths["data"],
+                ANY,
+                direction="from_volume",
+                project=ANY,
+                project_uuid=ANY,
+            )
 
             # 2. Test Hydration
             mock_sync.reset_mock()
@@ -141,7 +151,9 @@ class TestSnapshotService(unittest.TestCase):
             (paths["state"] / "sample.txt").write_text("test")
             self.manager.snapshot.volumes._hydrate_named_volumes(paths)
             self.assertEqual(mock_sync.call_count, 2)
-            mock_sync.assert_any_call(paths["data"], ANY, direction="to_volume")
+            mock_sync.assert_any_call(
+                paths["data"], ANY, direction="to_volume", project=ANY, project_uuid=ANY
+            )
 
     @patch("time.sleep")
     def test_hydrate_named_volumes_with_sync_wait_sleeps_when_named_volumes_used(
