@@ -29,6 +29,17 @@ on:
       - ".agents/TEMPLATE_REF.md"
       - ".github/workflows/docs.yml"
 
+# The only job here echoes one line. It checks nothing out, calls no API and
+# publishes nothing, so it needs no token scopes at all -- an empty map is the
+# tightest setting that still runs, and it is deliberate rather than an
+# oversight. Do not widen this to `contents: read` to match the siblings:
+# docs.yml needs that because it builds and deploys, and this one does not.
+#
+# Without any `permissions:` block the workflow inherits the repository
+# default, which is what CodeQL's actions/missing-workflow-permissions alert
+# was reporting.
+permissions: {}
+
 jobs:
   build:
     name: build
