@@ -4,7 +4,7 @@ bandit
 pip-audit
 pytest==9.1.1
 pytest-cov==7.1.0
-playwright==1.63.0
+playwright==1.64.0
 pytest-playwright==0.10.0
 shiv==1.0.8
 pyinstaller==6.22.3
