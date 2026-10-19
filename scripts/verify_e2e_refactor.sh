@@ -52,19 +52,41 @@ PRUNE_AFTER=false
 # the same images back to back.
 KEEP_PULLED=false
 ALLOW_VERSION_MISMATCH=false
+# LDM-#2241: an unrecognised argument is REFUSED, not ignored.
+#
+# This was a sequence of independent equality tests with no catch-all, so
+# anything unrecognised was silently discarded and the run proceeded as though
+# the flag had never been typed. `--keep` is used at exactly one moment -- when
+# a run has failed and someone wants the wreckage preserved -- and that is the
+# one time the artefacts cannot be recreated, because a re-run draws a new
+# random TEST_PORT and a fresh project. So a mistyped `-keep` destroyed the
+# only copy of the evidence the flag exists to protect, and the person found
+# out roughly two hours later, once teardown had already run.
+#
+# `-keep` is one character from `--keep`, and single-dash long options are
+# accepted by enough tools (`-version`, `-help`) that typing it is not
+# unreasonable.
 for arg in "$@"; do
-    if [ "$arg" == "-k" ] || [ "$arg" == "--keep" ]; then
-        KEEP_ARTIFACTS=true
-    fi
-    if [ "$arg" == "--prune-after" ]; then
-        PRUNE_AFTER=true
-    fi
-    if [ "$arg" == "--keep-pulled" ]; then
-        KEEP_PULLED=true
-    fi
-    if [ "$arg" == "--allow-version-mismatch" ]; then
-        ALLOW_VERSION_MISMATCH=true
-    fi
+    case "$arg" in
+        -k|--keep)
+            KEEP_ARTIFACTS=true
+            ;;
+        --prune-after)
+            PRUNE_AFTER=true
+            ;;
+        --keep-pulled)
+            KEEP_PULLED=true
+            ;;
+        --allow-version-mismatch)
+            ALLOW_VERSION_MISMATCH=true
+            ;;
+        *)
+            echo "❌ ERROR: unknown argument '${arg}'." >&2
+            echo "   Accepted: -k|--keep, --prune-after, --keep-pulled, --allow-version-mismatch" >&2
+            echo "   Nothing has run yet, so nothing was lost -- fix the argument and re-run." >&2
+            exit 1
+            ;;
+    esac
 done
 if [ "$KEEP_ARTIFACTS" = true ] && [ "$PRUNE_AFTER" = true ]; then
     echo "❌ ERROR: --keep and --prune-after contradict each other." >&2
@@ -6954,9 +6976,12 @@ if [ "$ROUNDTRIP_OK" = true ] && [ ! -f "${ROUNDTRIP_PKG}.sha256" ]; then
 fi
 
 # `--no-run` and an explicit port: the package carries the SOURCE project's
-# port and that project is still running on it, so an import that booted would
-# die on a port conflict. Split so a failed import and a failed boot are
-# distinguishable rather than one opaque failure.
+# port, and that project is still running here -- it is stopped further down,
+# immediately before the copy boots (LDM-#2245) -- so an import that booted
+# would die on a port conflict. The explicit port is kept regardless of that
+# stop: the copy must not depend on the source having gone away. Split so a
+# failed import and a failed boot are distinguishable rather than one opaque
+# failure.
 if [ "$ROUNDTRIP_OK" = true ]; then
     if ! ROUNDTRIP_IMPORT_OUT=$("$LDM_CMD" -y import "$ROUNDTRIP_PKG" "$ROUNDTRIP_PROJECT" \
             --port "$ROUNDTRIP_PORT" --no-run 2>&1); then
@@ -6966,6 +6991,36 @@ if [ "$ROUNDTRIP_OK" = true ]; then
         # is ONE candidate; the lines above say which it actually was.
         echo "   If that names the checksum: 'ldm package' writes '<digest>  <filename>' (LDM-#2159)." | tee -a "$RESULTS_FILE_TMP"
         ROUNDTRIP_OK=false
+    fi
+fi
+
+# LDM-#2245: stop the source before booting the imported copy.
+#
+# This is the only point in the suite where two complete Liferay stacks would
+# run at once, and it is new in v2.26.6-pre.1 -- every earlier version peaked
+# at one. On an 8 GB machine the second stack never became healthy: ten
+# consecutive probes at `Health check exceeded timeout (1m0s)`, against a
+# first stack that had been ready in 58s.
+#
+# This is NOT the cause of those failures. LDM-#2247 established that the
+# shared Elasticsearch was RED with 17 unassigned primaries, so the restored
+# stack was retrying against a cluster that would never go yellow. Reducing
+# the peak is still right -- verifying a round trip should not need two
+# portals at once -- but it is hygiene, not the fix.
+#
+# Safe here: nothing after `ldm package` needs the source RUNNING. The only
+# later uses of ${PROJECT_NAME} are the package call, the .ldmp path and an
+# error string; the PowerShell twin adds a `docker images` filter, which reads
+# image names rather than containers.
+#
+# A failed stop WARNS rather than failing the run: both stacks up is the old
+# behaviour, which is worse but not a verification error.
+if [ "$ROUNDTRIP_OK" = true ]; then
+    if ROUNDTRIP_STOP_OUT=$("$LDM_CMD" -y stop "$PROJECT_NAME" 2>&1); then
+        echo "ℹ  Stopped '${PROJECT_NAME}' so the imported copy boots alone (LDM-#2245)." | tee -a "$RESULTS_FILE_TMP"
+    else
+        echo "⚠️  Could not stop '${PROJECT_NAME}' before the round trip (LDM-#2245); both stacks will run." | tee -a "$RESULTS_FILE_TMP"
+        printf '%s\n' "$ROUNDTRIP_STOP_OUT" | sed 's/^/     /' | tee -a "$RESULTS_FILE_TMP"
     fi
 fi
 
