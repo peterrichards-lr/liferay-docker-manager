@@ -115,6 +115,42 @@ To maintain high developer velocity while preserving software quality:
 - **Verify Claims Historically**: Before asserting that a feature "never worked" or "is broken," inspect past commit history (`git log -S`) to avoid misdiagnosing a recent regression as an initial design flaw.
 - **No Unsolicited Audit Cascades**: Do not create cascades of secondary micro-debt issues during routine bug fixes unless a full audit was explicitly requested.
 
+### Do not touch the working tree while `agent_push.sh` is running
+
+`scripts/agent_push.sh` runs the full gate suite -- pre-commit, mypy and the
+whole pytest run -- and only then commits and pushes. That takes long enough
+that it is tempting to start the next task while it works. Do not.
+
+**Wait for it to report before beginning anything that edits the tree.**
+Reading, searching and reviewing are fine; editing, staging, stashing,
+branching and `git checkout` are not.
+
+Two things go wrong, and the second is the dangerous one:
+
+- It commits the **index as it finds it at the end**, not the one you handed
+  it. Staging unrelated work mid-run puts that work in the commit.
+- Its gates run against the tree **as it mutates**. A suite that passed may
+  have passed against a file you have since changed, or -- worse -- reverted.
+  A green result then means nothing, which defeats the entire point of
+  running them.
+
+This rule is in `AGENTS.md` rather than a skill because the temptation arrives
+before any skill is loaded, and because an agent memory was not enough: it was
+broken twice in one session on 2026-10-19, costing three full gate runs. Each
+time nothing was lost -- `HEAD` never moved and nothing was pushed -- but each
+time the run had to be stopped, the tree cleaned, and the gates started again
+from scratch.
+
+If work genuinely cannot wait, stash it (`git stash push -u <paths>`) so the
+tree matches what the run was given, and restore it afterwards.
+
+**Related trap, same session, hit twice.** `git checkout -b <new>
+origin/master` from a branch carrying a commit can leave that commit's files
+in the working tree, so the new branch starts dirty with someone else's
+change. They are safe in the pushed commit; restore with `git checkout HEAD --
+<paths>`, and `git rm --cached` for files that were added. Always read
+`git status` immediately after branching rather than assuming it is clean.
+
 ### Delegating to Subagents
 
 This section is in `AGENTS.md` rather than a skill on purpose: the decision to
@@ -171,4 +207,4 @@ should not need to change as work progresses.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-28* | *Last Reviewed: 2026-09-28*
+*Last Updated: 2026-10-19* | *Last Reviewed: 2026-10-19*
