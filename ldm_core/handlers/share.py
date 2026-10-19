@@ -20,6 +20,15 @@ from ldm_core.utils import (
     version_to_tuple,
 )
 
+# LDM-#2191: the words that mean "the standard gateway, whatever is stored".
+# `share_domain` is sticky -- it lives in the project's meta AND in ~/.ldmrc --
+# so `ldm share start <project> --subdomain peters` silently reused a custom
+# domain pinned at some point in the past. `--domain` could name a DIFFERENT
+# domain but had no way to name the standard one, leaving the user to edit meta
+# or ~/.ldmrc by hand. Neither word is a registrable domain, so neither can
+# collide with a real one.
+STANDARD_DOMAIN_ALIASES = ("default", "standard")
+
 
 def share_host_from_url(value):
     """The bare host from whatever the user pasted (LDM-#2008).
@@ -975,6 +984,17 @@ class ShareService:
                 domain = None
             if domain:
                 self._share_domain_source = "the command line"
+        # LDM-#2191: `--domain default` asks for the standard gateway. Resolved
+        # here rather than in the CLI so that every caller gets it -- cmd_start,
+        # `ldm run --share`, and the compose-fragment path all funnel through
+        # this function, and a sentinel honoured in only one of them would be a
+        # worse trap than the one it replaces.
+        if (
+            isinstance(domain, str)
+            and domain.strip().lower() in STANDARD_DOMAIN_ALIASES
+        ):
+            domain = self.get_default_tunnel_domain()
+            self._share_domain_source = "the command line (--domain default)"
         if not domain and project_meta:
             domain = project_meta.get("share_domain")
             if domain:
@@ -1041,6 +1061,42 @@ class ShareService:
             )
 
         return provider, domain
+
+    def _reconcile_announced_url(self, planned_url, public_url, share_domain):
+        """Withdraw the planned URL when the tunnel came up somewhere else.
+
+        LDM-#2191: `cmd_start` prints a URL composed from configuration, starts
+        the tunnel, resolves the address it actually got, and prints that too.
+        The two were never compared, so an unregistered custom domain falling
+        back to the standard gateway -- correct behaviour -- left two
+        contradictory URLs on screen and nothing saying the first had not
+        happened. The user had already been handed an address that does not
+        resolve.
+
+        Same shape as LDM-#2155, #2171 and #2188: the verdict is computed and
+        the earlier claim is never retracted.
+
+        Silent when they agree, which is every ordinary share.
+        """
+        if not planned_url or not public_url or planned_url == public_url:
+            return
+
+        UI.warning(
+            f"The tunnel came up on {public_url}, not the {planned_url} "
+            "announced above. Use the address on this line."
+        )
+
+        # The LDM-#1038 note above says approval is REQUIRED; it cannot say
+        # whether THIS domain has it. Reaching here is the evidence that it
+        # does not, so this is the first point at which that can be stated.
+        if share_domain and share_domain not in self.get_known_tunnel_base_domains():
+            UI.hint(
+                f"'{share_domain}' is a custom domain, and the gateway routes one "
+                "only once it has been registered and approved in the Liferay "
+                f"Tunnel portal ({self._tunnel_portal_urls_text()}). Until then "
+                "the standard gateway is used. Pass --domain default to ask for "
+                "it deliberately and replace the domain stored for this project."
+            )
 
     def resolve_public_tunnel_urls(self, subdomain, project_id=None):
         """Resolves all public tunnel URLs natively or via Docker API."""
@@ -1443,6 +1499,9 @@ class ShareService:
                         )
                         UI.success(
                             f"🌍 Public Tunnel Active: {UI.CYAN}{public_url}{UI.COLOR_OFF}"
+                        )
+                        self._reconcile_announced_url(
+                            planned_url, public_url, share_domain
                         )
                         self._sync_gui_state(
                             "start",

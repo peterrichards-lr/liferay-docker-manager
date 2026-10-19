@@ -2126,7 +2126,9 @@ def get_parser():  # noqa: PLR0915
         "--domain",
         help=(
             "Tunnel base domain (e.g. lfr-demo.online, lfr-demo.se), or a host "
-            "on one (e.g. peters.lfr-demo.se), or a custom vanity domain"
+            "on one (e.g. peters.lfr-demo.se), or a custom vanity domain. "
+            "Pass 'default' to use the standard gateway, ignoring any custom "
+            "domain stored for the project or in ~/.ldmrc"
         ),
     )
     share_start.add_argument(
