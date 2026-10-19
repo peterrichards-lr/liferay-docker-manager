@@ -3655,6 +3655,71 @@ if ! "$LDM_CMD" -y wait . --timeout 600; then
     exit 1
 fi
 
+# LDM-#2243: every named volume this project owns must carry its ownership
+# labels.
+#
+# Docker applies volume labels at CREATION and at no other time. Declaring
+# them in compose for a volume that already exists is inert -- measured:
+# `docker volume inspect` still reports `map[]`. A volume created without them
+# therefore never acquires them, is invisible to `ldm prune` forever, and the
+# defect is permanent rather than merely untidy.
+#
+# Nothing in this suite had ever inspected a volume. The defect reached a
+# maintainer's Docker Desktop volume list (`ldmnodedel-data`, Labels: null)
+# rather than any check here, because snapshot/volumes.py created volumes by a
+# second route that never passed through the composer.
+#
+# The volumes are DISCOVERED rather than named. Their names come from
+# `sanitize_id(host_side)` of each compose mount, so a hardcoded
+# `<project>-data` would silently find nothing -- and a check that asserts
+# over an empty set is the failure this gate exists to catch.
+#
+# `role` is asserted to EQUAL what volume_role() would return, not merely to
+# be present: `unknown` is the safe default, so a regression classifying every
+# volume as unknown would satisfy a presence check while making `ldm prune`
+# reclaim nothing.
+echo ">> Verifying volume ownership labels (LDM-#2243)..."
+VOL_LABELS_OK=true
+VOL_LABELS_SEEN=0
+for vol in $(docker volume ls --quiet --filter "name=^${PROJECT_NAME}-" 2>/dev/null); do
+    VOL_LABELS_SEEN=$((VOL_LABELS_SEEN + 1))
+
+    # Mirrors volume_role() in ldm_core/utils.py: -data before any broader
+    # match, so `<project>-db-db-data` is classified data, not unknown.
+    case "$vol" in
+        *-data) vol_expected_role="data" ;;
+        *-state) vol_expected_role="state" ;;
+        *) vol_expected_role="unknown" ;;
+    esac
+
+    vol_owner=$(docker volume inspect "$vol" --format '{{index .Labels "com.liferay.ldm.project"}}' 2>/dev/null)
+    vol_managed=$(docker volume inspect "$vol" --format '{{index .Labels "com.liferay.ldm.managed"}}' 2>/dev/null)
+    vol_role=$(docker volume inspect "$vol" --format '{{index .Labels "com.liferay.ldm.role"}}' 2>/dev/null)
+
+    if [ "$vol_owner" != "$PROJECT_NAME" ]; then
+        echo "❌ ERROR: volume '${vol}' does not name '${PROJECT_NAME}' as its owner (LDM-#2243)." | tee -a "$RESULTS_FILE_TMP"
+        echo "     com.liferay.ldm.project = '${vol_owner}'" | tee -a "$RESULTS_FILE_TMP"
+        VOL_LABELS_OK=false
+    fi
+    if [ "$vol_managed" != "true" ]; then
+        echo "❌ ERROR: volume '${vol}' is not marked LDM-managed (LDM-#2243)." | tee -a "$RESULTS_FILE_TMP"
+        echo "     com.liferay.ldm.managed = '${vol_managed}'" | tee -a "$RESULTS_FILE_TMP"
+        VOL_LABELS_OK=false
+    fi
+    if [ "$vol_role" != "$vol_expected_role" ]; then
+        echo "❌ ERROR: volume '${vol}' is classified '${vol_role}', expected '${vol_expected_role}' (LDM-#2243)." | tee -a "$RESULTS_FILE_TMP"
+        echo "     'unknown' is the safe default, so ldm prune would reclaim nothing." | tee -a "$RESULTS_FILE_TMP"
+        VOL_LABELS_OK=false
+    fi
+done
+if [ "$VOL_LABELS_SEEN" -eq 0 ]; then
+    echo "⚠️  SKIPPED (not run): no named volumes found for '${PROJECT_NAME}', so labels were NOT evaluated. This is not a pass." | tee -a "$RESULTS_FILE_TMP"
+elif [ "$VOL_LABELS_OK" = true ]; then
+    report_ok "✅ All ${VOL_LABELS_SEEN} named volume(s) carry ownership labels naming '${PROJECT_NAME}' with the right role (LDM-#2243)."
+else
+    exit 1
+fi
+
 # LDM-#1975 section: boundary (1 of 2) -- what the portal actually wrote, and
 # whether a client extension can read it. This half needs the booted portal but
 # not the client extension, so it runs before the CX is staged.
