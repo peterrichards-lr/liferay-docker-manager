@@ -302,6 +302,87 @@ def offer_shared_database_tip(manager, db_mode, is_new_project):
     return True
 
 
+def _mode_provenance(manager, key, flag_value):
+    """How a resolved mode was chosen: an explicit flag, config, or the default.
+
+    LDM-#2163. The decision recorded on the issue is that the valuable part is
+    telling the user *which* choice they landed on and *how* it was made --
+    not changing the preference.
+
+    `DefaultsManager.has_explicit` already separates "someone set this" from
+    "this fell back to convention", which is the same question LDM-#1510 asks
+    before offering a tip. Reused rather than re-derived.
+    """
+    if flag_value:
+        return "flag"
+    defaults = getattr(manager, "defaults", None)
+    if defaults is not None and hasattr(defaults, "has_explicit"):
+        with contextlib.suppress(Exception):
+            if defaults.has_explicit(key):
+                return "config"
+    return "default"
+
+
+def announce_resolved_infrastructure(
+    manager, search_mode, db_mode, is_new_project, project_id=None
+):
+    """Say which infrastructure a new project landed on, once, at creation.
+
+    LDM-#2163. Writing `ldm_version` at creation flips new `init`/`run`
+    projects from sidecar/isolated to shared, because the pre-2.14.0 guard in
+    `resolve_infrastructure_mode` stops firing on them. That is the correct
+    resolution -- but it happens silently, and it also silences the only
+    explanation the user was getting: `should_offer_shared_database_tip`
+    speaks only when the resolved mode is `isolated`, so it goes quiet for
+    exactly the projects this change moves.
+
+    So the two halves ship together. Without this, the fix would change what
+    every new project gets AND remove the sentence that mentioned it.
+
+    At creation only, never per boot -- the completion banner is already dense
+    (banner, phases, readiness, URL, path, `Next:` hints, credentials) and a
+    line added to every run gets skipped, which is the lesson of #1508 and
+    #1510. The decision is live when the project is made.
+
+    Deliberately carries no performance claim. The figures that looked like
+    evidence were refuted in LDM-#2167: two boots attributed to search mode
+    differed by host, one of them a Windows machine with 7.6 GB allocated to
+    Docker Desktop. They measured the host, not the mode.
+    """
+    if not is_new_project:
+        return False
+
+    how = {
+        "flag": "chosen with a flag",
+        "config": "from your config",
+        "default": "default",
+    }
+    search_how = how[
+        _mode_provenance(
+            manager, "search_mode", getattr(manager.args, "search_mode", None)
+        )
+    ]
+    db_how = how[
+        _mode_provenance(
+            manager, "database_mode", getattr(manager.args, "db_mode", None)
+        )
+    ]
+
+    # UI.info, NOT UI.detail: detail is gated behind --info/--verbose
+    # (LDM-#1036), so an announcement written with it would be invisible in
+    # exactly the situation it exists to explain. That is the failure LDM-#1790
+    # and LDM-#2180 each removed, and it is easy to repeat here.
+    UI.info(f"Search: {search_mode} ({search_how}). Database: {db_mode} ({db_how}).")
+    if str(search_mode).lower() == "shared" or str(db_mode).lower() == "shared":
+        name = project_id or "<project>"
+        UI.info(
+            "  Shared infrastructure lets several LDM projects run side by "
+            "side. For a self-contained project with nothing to set up first: "
+            f"ldm run {name} --search-mode sidecar --db-mode isolated"
+        )
+    return True
+
+
 class ProjectInitializationStage(PipelineStage):
     """Handles project selection, discovery, and path setup."""
 
@@ -374,6 +455,30 @@ class ProjectInitializationStage(PipelineStage):
         # RuntimeValidationStage/ConfigResolutionStage all sit after this stage.
         context.set("root_existed", root.exists())
         if is_new_project:
+            # LDM-#2163: stamp the version that created this project, which
+            # `ldm import` has always done (`workspace/importer.py`,
+            # `pipelines/import_pipeline.py`) and `init`/`run` never did.
+            #
+            # `resolve_infrastructure_mode` reads `meta.get("ldm_version",
+            # "0.0.0")` and sends anything below 2.14.0 to the legacy
+            # isolated/sidecar modes. That guard exists to stop a project
+            # created BEFORE the shared model from being hijacked into shared
+            # infrastructure -- but with no version written it fired on
+            # projects created today, so two projects made on the same machine
+            # on the same day got different infrastructure depending on which
+            # command made them.
+            #
+            # Gated on `is_new_project`, not `root_existed`: `ldm run <name>`
+            # deliberately adopts a directory the user already has, and that
+            # is still an LDM project being created now. Deliberately NOT
+            # back-filled into existing projects -- see the migration note on
+            # the issue. Their on-disk state is isolated, so writing a version
+            # would flip them to shared on the next boot, which is exactly the
+            # hijack the guard was built to prevent.
+            from ldm_core.constants import VERSION
+
+            project_meta["ldm_version"] = VERSION
+
             UI.print_banner()
             if getattr(manager.args, "vanilla", False):
                 UI.detail("Vanilla start requested: Bypassing pre-warmed seeding.")
@@ -1538,6 +1643,11 @@ class ConfigResolutionStage(PipelineStage):
         # "who owns the database" of this, not of `db_type`.
         context.set("db_mode", db_mode_resolved)
         context.set("use_shared_search", use_shared_search)
+        # LDM-#2163: the resolved mode itself, not only the boolean derived
+        # from it. The creation announcement names the mode, and inferring
+        # "sidecar" from `not use_shared_search` would be wrong the moment a
+        # third search mode exists.
+        context.set("search_mode", search_mode)
         context.set("is_samples", is_samples)
         context.set("external_snapshot", external_snapshot)
 
@@ -2964,6 +3074,16 @@ class ExecutionStage(PipelineStage):
                 # only on a run that actually succeeded -- a tip about saving
                 # memory is not what someone whose boot just timed out needs.
                 if ready:
+                    # LDM-#2163: paired with the tip below, because the two
+                    # are complementary -- the tip speaks only when the mode
+                    # is isolated, this speaks when a project is created.
+                    announce_resolved_infrastructure(
+                        manager,
+                        context.get("search_mode"),
+                        db_mode,
+                        context.get("is_new_project"),
+                        context.get("project_id"),
+                    )
                     offer_shared_database_tip(
                         manager, db_mode, context.get("is_new_project")
                     )
@@ -3033,6 +3153,17 @@ class ExecutionStage(PipelineStage):
             # LDM-#1510: the other place a run finishes. Without this, whether
             # a first-time user is told shared mode exists would depend on
             # whether they happened to pass --no-wait.
+            # LDM-#2163: the other place a run finishes, for the same reason
+            # the tip is duplicated here -- whether a user is told which
+            # infrastructure their new project landed on must not depend on
+            # whether they happened to pass --no-wait.
+            announce_resolved_infrastructure(
+                manager,
+                context.get("search_mode"),
+                db_mode,
+                context.get("is_new_project"),
+                project_id,
+            )
             offer_shared_database_tip(manager, db_mode, context.get("is_new_project"))
 
         return None
