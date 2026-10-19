@@ -12,6 +12,57 @@ if TYPE_CHECKING:
 from ldm_core.ui import UI
 from ldm_core.utils import sanitize_id
 
+# LDM-#2175: the port is OPTIONAL. A client extension fronted by a proxy on :80
+# declares `http://localhost/o/oauth2/redirect` -- which the substring guard
+# `"localhost" in uri` admits and a mandatory `:\d+` could never touch. The URI
+# was appended unchanged and `modified` left unset, so the `buildTimestamp`
+# bump was skipped too and the zip never repacked. In silence.
+_LOCALHOST_URL = re.compile(r"https?://localhost(?::\d+)?")
+
+# The only block types this rewrite claims, and so is answerable for.
+_OAUTH_BLOCK_TYPES = ("oAuthApplicationUserAgent", "oAuthApplicationHeadlessServer")
+_OAUTH_URL_FIELDS = (".serviceAddress", "homePageURL")
+_OAUTH_URL_SETTINGS = (".serviceAddress=", "homePageURL=", "redirectURIs=")
+
+
+def _rewrite_localhost(value: str, external_url: str) -> str:
+    """Swap a `localhost` origin for the externally reachable one.
+
+    The replacement is a callable rather than a template so that a `\\` or a
+    `\\g` arriving in `external_url` is inserted literally instead of being
+    read as a backreference.
+    """
+    return _LOCALHOST_URL.sub(lambda _match: external_url, value)
+
+
+def _urls_left_on_localhost(data: dict) -> list[str]:
+    """Values this rewrite is answerable for that still point at localhost.
+
+    Each guard and the action behind it are written separately, so a guard can
+    admit a value its action cannot change. That is a silent no-op, and it is
+    how LDM-#2175 went unnoticed -- the regex was only how it happened that
+    time. This asks the one question no guard can ask about itself: did the
+    rewrite actually leave anything behind?
+    """
+    stranded: list[str] = []
+    for block in data.values():
+        if not isinstance(block, dict) or block.get("type") not in _OAUTH_BLOCK_TYPES:
+            continue
+        candidates = [block.get(field, "") for field in _OAUTH_URL_FIELDS]
+        candidates += block.get("redirectURIs") or []
+        candidates += [
+            setting
+            for setting in block.get("typeSettings") or []
+            if isinstance(setting, str)
+            and any(marker in setting for marker in _OAUTH_URL_SETTINGS)
+        ]
+        stranded += [
+            value
+            for value in candidates
+            if isinstance(value, str) and "localhost" in value
+        ]
+    return stranded
+
 
 def cmd_init(self, project_id=None):
     """Scaffolds a project without starting it."""
@@ -146,10 +197,7 @@ def _rewrite_oauth_urls_in_zip(  # noqa: C901, PLR0912, PLR0915
                 return
 
             for _key, block in data.items():
-                if isinstance(block, dict) and block.get("type") in [
-                    "oAuthApplicationUserAgent",
-                    "oAuthApplicationHeadlessServer",
-                ]:
+                if isinstance(block, dict) and block.get("type") in _OAUTH_BLOCK_TYPES:
                     service_address = block.get(".serviceAddress", "")
                     if "localhost" in service_address:
                         block[".serviceAddress"] = f"{ext_name}.{host_name}"
@@ -168,15 +216,10 @@ def _rewrite_oauth_urls_in_zip(  # noqa: C901, PLR0912, PLR0915
                     if redirects and isinstance(redirects, list):
                         new_redirects = []
                         for uri in redirects:
-                            if "localhost" in uri:
-                                new_uri = re.sub(
-                                    r"https?://localhost:\d+", external_url, uri
-                                )
-                                new_redirects.append(new_uri)
-                                if new_uri != uri:
-                                    modified = True
-                            else:
-                                new_redirects.append(uri)
+                            new_uri = _rewrite_localhost(uri, external_url)
+                            new_redirects.append(new_uri)
+                            if new_uri != uri:
+                                modified = True
                         block["redirectURIs"] = new_redirects
 
                     ts = block.get("typeSettings", [])
@@ -201,10 +244,19 @@ def _rewrite_oauth_urls_in_zip(  # noqa: C901, PLR0912, PLR0915
                                 ts[i] = f"homePageURL={external_url}"
                                 modified = True
                             elif "redirectURIs=" in setting and "localhost" in setting:
-                                ts[i] = re.sub(
-                                    r"https?://localhost:\d+", external_url, setting
-                                )
-                                modified = True
+                                new_setting = _rewrite_localhost(setting, external_url)
+                                if new_setting != setting:
+                                    ts[i] = new_setting
+                                    modified = True
+
+            if "localhost" not in external_url:
+                stranded = _urls_left_on_localhost(data)
+                if stranded:
+                    UI.warning(
+                        f"These OAuth URLs in '{ext_name}' still point at "
+                        f"localhost after the rewrite to {external_url}: "
+                        + ", ".join(stranded)
+                    )
 
             if modified:
                 import time

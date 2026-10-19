@@ -64,6 +64,34 @@ its `LCP.json`. The two differ for most extensions, and reading the id-named
 path finds a real, empty, readable directory rather than an error
 (LDM-#1944).
 
+### LDM rewrites `localhost` OAuth URLs as it imports your extension
+
+Your extension's `client-extension.yaml` (or its
+`*.client-extension-config.json`) is written for local development, so its
+`.serviceAddress`, `homePageURL` and `redirectURIs` normally name `localhost`.
+When the project has a real host name, LDM rewrites those to the externally
+reachable URL while importing the zip, and bumps `buildTimestamp` so Liferay
+re-evaluates the extension instead of reusing what a restored snapshot
+database already holds.
+
+Both forms are rewritten -- `http://localhost:8080/callback` and
+`http://localhost/callback` alike. Only the `localhost` **origin** is
+replaced, so a host that merely contains the label, such as
+`https://app.localhost.example.com/callback`, is deliberately left as it is.
+
+If a URL LDM is responsible for still points at `localhost` once the rewrite
+has run, it now says so:
+
+```text
+WARNING: These OAuth URLs in 'my-ext' still point at localhost after the
+rewrite to http://my-ext.my-host.local: https://app.localhost.example.com/cb
+```
+
+That is a warning rather than an error, because the URL may well be correct.
+It exists because the rewrite used to skip any URL it could not match and
+report nothing at all, leaving the extension pointing at `localhost` with no
+indication of why (LDM-#2175).
+
 ---
 
 ## 🔄 3. Live Hot-Reloading Workflow
@@ -206,4 +234,4 @@ optimistic.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-02* | *Last Reviewed: 2026-10-02*
+*Last Updated: 2026-10-19* | *Last Reviewed: 2026-10-19*
