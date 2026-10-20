@@ -39,6 +39,8 @@ _RECLAIM_SITES = [
     "ldm_core/pipelines/run.py",
     "ldm_core/handlers/system.py",
     "ldm_core/handlers/base.py",
+    # LDM-#2266: the node-side reclaim that runs before every remote sync.
+    "ldm_core/config.py",
 ]
 
 #: The call that makes a loop a RECLAIM loop. `handlers/base.py` also carries
