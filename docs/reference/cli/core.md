@@ -393,6 +393,8 @@ ldm quickstart aica --host-name aica.demo --ssl
 ldm quickstart aica --name aica-http --host-name aica.demo --no-ssl
 ```
 
+With `--share`, the tunnel is started by the run itself once the portal is ready, so its URL arrives at the end of the boot rather than before it.
+
 Custom templates and repository mappings can be configured by defining overrides in `~/.ldm_templates.json`.
 
 ## `package`
@@ -785,4 +787,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-29* | *Last Reviewed: 2026-09-29*
+*Last Updated: 2026-10-20* | *Last Reviewed: 2026-10-20*

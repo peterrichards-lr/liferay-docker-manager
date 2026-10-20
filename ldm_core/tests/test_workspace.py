@@ -1314,9 +1314,10 @@ class TestWorkspaceQuickstart(unittest.TestCase):
         mock_cmd_run.assert_called_once_with(
             "liferay-ai-commerce-accelerator", browser=True
         )
-        self.manager.share.cmd_start.assert_called_once_with(
-            "liferay-ai-commerce-accelerator", subdomain="my-aica-sub"
-        )
+        # LDM-#2268: the run pipeline starts the tunnel; quickstart only
+        # hands the request over on args.
+        self.manager.share.cmd_start.assert_not_called()
+        self.assertIs(self.manager.args.share, True)
 
     def test_cmd_quickstart_invalid_template(self):
         with self.assertRaises(SystemExit):
@@ -1360,9 +1361,10 @@ class TestWorkspaceQuickstart(unittest.TestCase):
         mock_cmd_run.assert_called_once_with(
             "liferay-ai-commerce-accelerator", browser=True
         )
-        self.manager.share.cmd_start.assert_called_once_with(
-            "liferay-ai-commerce-accelerator", subdomain="my-aica-sub"
-        )
+        # LDM-#2268: the run pipeline starts the tunnel; quickstart only
+        # hands the request over on args.
+        self.manager.share.cmd_start.assert_not_called()
+        self.assertIs(self.manager.args.share, True)
 
     @patch("ldm_core.handlers.workspace.WorkspaceService.cmd_import")
     @patch.object(MockWorkspaceManager, "detect_project_path")
@@ -1404,9 +1406,10 @@ class TestWorkspaceQuickstart(unittest.TestCase):
             )
             mock_fetch_seed.assert_called_once()
             mock_cmd_run.assert_called_once_with("my-custom-aica", browser=True)
-            self.manager.share.cmd_start.assert_called_once_with(
-                "my-custom-aica", subdomain="my-aica-sub"
-            )
+            # LDM-#2268: the run pipeline starts the tunnel; quickstart only
+            # hands the request over on args.
+            self.manager.share.cmd_start.assert_not_called()
+            self.assertIs(self.manager.args.share, True)
         finally:
             self.manager.args.name = None
 
@@ -1460,9 +1463,10 @@ class TestWorkspaceQuickstart(unittest.TestCase):
             no_run=True,
         )
         mock_cmd_run.assert_called_once_with("custom-aica-project", browser=True)
-        self.manager.share.cmd_start.assert_called_once_with(
-            "custom-aica-project", subdomain="custom-sub"
-        )
+        # LDM-#2268: the run pipeline starts the tunnel; quickstart only
+        # hands the request over on args.
+        self.manager.share.cmd_start.assert_not_called()
+        self.assertIs(self.manager.args.share, True)
 
     @patch("ldm_core.handlers.workspace.WorkspaceService.cmd_import")
     @patch.object(MockWorkspaceManager, "detect_project_path")
@@ -1503,9 +1507,10 @@ class TestWorkspaceQuickstart(unittest.TestCase):
         mock_cmd_run.assert_called_once_with(
             "liferay-ai-commerce-accelerator", browser=True
         )
-        self.manager.share.cmd_start.assert_called_once_with(
-            "liferay-ai-commerce-accelerator", subdomain="my-aica-sub"
-        )
+        # LDM-#2268: the run pipeline starts the tunnel; quickstart only
+        # hands the request over on args.
+        self.manager.share.cmd_start.assert_not_called()
+        self.assertIs(self.manager.args.share, True)
         mock_cmd_run.assert_called_once_with(
             "liferay-ai-commerce-accelerator", browser=True
         )
@@ -1550,9 +1555,10 @@ class TestWorkspaceQuickstart(unittest.TestCase):
         mock_cmd_run.assert_called_once_with(
             "liferay-ai-commerce-accelerator", browser=True
         )
-        self.manager.share.cmd_start.assert_called_once_with(
-            "liferay-ai-commerce-accelerator", subdomain="my-aica-sub"
-        )
+        # LDM-#2268: the run pipeline starts the tunnel; quickstart only
+        # hands the request over on args.
+        self.manager.share.cmd_start.assert_not_called()
+        self.assertIs(self.manager.args.share, True)
 
     @patch.object(MockWorkspaceManager, "register_project")
     @patch("ldm_core.handlers.base.BaseHandler.write_meta")
