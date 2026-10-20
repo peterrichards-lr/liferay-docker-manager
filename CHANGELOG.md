@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.7-pre.1] - 2026-10-20
+
+### Changed
+
+- **The E2E suite asserts more of what this cycle fixed**: named volumes carry their ownership labels (LDM-#2243), a newly created project is stamped with the version that created it (LDM-#2163), `config get` reports the deciding store (LDM-#2174), and `share --domain default` chooses the standard gateway (LDM-#2191). The three fixes without an E2E assertion -- LDM-#2127, #2175 and #2247 -- are recorded in LDM-#2264.
+
+### Fixed
+
+- **`ldm reset` no longer reports success while doing nothing** (LDM-#2127). It advertised five targets and a comma-separated form, and three of the five did nothing. The target was a bare positional with no choices, so `ldm reset demo banana` printed "reset successful" having touched nothing; `search` and `global-search` reached neither branch of the wipe; and `search,db` was read as one literal target that matched nothing. `docs/TROUBLESHOOTING.md` recommended `reset global-search` as a remedy, so a reader following the guide ran a command that did nothing.
+
+  Unknown targets are now refused with exit 1, naming the valid ones. The comma form is parsed. `global-search` is implemented, reusing the LDM-#2119 index deleter, and `all` now includes it, as the documentation always said it did. `search` is **refused** rather than silently succeeding: a sidecar Elasticsearch runs inside the Liferay container, so there is nothing separate to wipe. It is refused rather than withdrawn so the implement-or-drop decision stays open.
+
+- **Volumes created by snapshot, restore and import carry ownership labels, so `ldm prune` can reclaim them** (LDM-#2243). `snapshot/volumes.py` created volumes with a bare `docker volume create <name>`, and Docker applies labels only at creation -- declaring them later in compose does not retrofit them. Every volume those paths produced was therefore invisible to the label-driven sweep for the rest of its life: neither `ldm prune` nor `ldm prune --all` could ever remove one, and `--legacy-volumes`, which could, claimed they predated ownership labelling. The label set now has one definition, shared by compose and the direct creates, and an architectural test fails on any future `volume create` that omits it.
+
+- **`ldm config get` answers from the store that actually decides** (LDM-#2174). `ldm config set` writes the top level of `~/.ldmrc`; `ldm defaults` writes its `defaults` block, and that block is what every project-creation decision reads. With both present, `config get database_mode` could report `shared` while every project was created `isolated`. A key the defaults cascade owns is now answered from it, the bare listing expands the `defaults` block and marks any top-level key it shadows, and `config set` refuses any key already present in that block. The value printed on stdout is unchanged, so scripts reading it are unaffected.
+
+- **`init` and `run` stamp `ldm_version` into a new project, as `import` always did** (LDM-#2163). Without it, the guard that keeps a pre-2.14 project on the legacy isolated/sidecar modes fired on projects created today, so two projects made on the same machine on the same day got different infrastructure depending on which command made them -- and a `search_mode` or `database_mode` default of `shared` had no effect on either command. Existing projects are deliberately **not** back-filled: their on-disk data is isolated, and stamping them would move them to shared on the next boot.
+
+  A new project now says which modes it landed on and how each was chosen, once, at creation. This half had to ship with the first: the shared-database tip speaks only when the mode is `isolated`, so the fix would otherwise have changed what new projects get while silencing the only sentence that mentioned it.
+
+- **Portless localhost OAuth redirect URIs are rewritten** (LDM-#2175). The client-extension rewriter admitted any URI containing `localhost` and then acted with a pattern that required a port, so `http://localhost/o/oauth2/redirect` -- an extension fronted by a proxy on port 80 -- passed through unchanged, and the `buildTimestamp` bump that makes Liferay re-read the extension over a restored database was skipped with it. The port is now optional, the pattern is the guard so the two cannot disagree, and the rewrite warns when a URL it is responsible for still points at localhost afterwards.
+
+- **`ldm share start` withdraws a URL it announced but did not get, and `--domain default` asks for the standard gateway** (LDM-#2191). An unregistered custom domain correctly falls back to the standard gateway, but the planned URL had already been printed and was never retracted, leaving two contradictory addresses on screen. It is now withdrawn, with a note that reaching the fallback means that domain lacks approval. And because `share_domain` is sticky, there was no way to ask for the standard gateway without editing metadata by hand: `--domain default` (or `standard`) now does it, and rewrites the project's stored domain -- not `~/.ldmrc`.
+
+- **A RED Global Search cluster is refused instead of reported ready** (LDM-#2247). Readiness meant "Elasticsearch answered HTTP", which a red cluster with zero active shards does happily, so LDM printed "Infrastructure setup complete" over a cluster Liferay cannot start against: `ElasticsearchSearchEngine.activate()` waits for yellow, times out, and takes the portal's service graph down with it every 30 seconds. LDM now asks Elasticsearch for yellow itself, refuses when it cannot get it, names the allocation cause, and treats an unreadable status as not verified rather than healthy. The check deliberately does **not** trigger the auto-repair, which deletes every project's shared search data and cannot fix an allocation failure.
+
+  This is the cause of the macOS / OrbStack verification failures previously investigated as disk and as memory pressure. LDM-#2247 stays open: why the repair leaves unassigned primaries behind is not yet known.
+
+- **The verification scripts refuse unknown arguments, and stop the source project before the `.ldmp` round trip** (LDM-#2241, LDM-#2245). A mistyped option was silently ignored, so `-keep` destroyed the very evidence it was meant to preserve -- and in PowerShell it was worse, binding `-KeepPulled` by prefix abbreviation. The round trip also booted the imported copy beside the still-running source; the source is now stopped first. That is **not** the cause of the OrbStack failures (LDM-#2247 is), and a failed stop warns rather than failing the run.
+
+### Security
+
+- **Credentials inside the `~/.ldmrc` `defaults` block are no longer printed verbatim** (LDM-#2174). LDM-#1970 masks credential-shaped key names, and `defaults` is not one, so the whole block was printed as a single unmasked value. Expanding it, above, puts each key through the mask.
+
+- **The `docs-skip` workflow declares empty permissions** (CodeQL alert 64). It was the only workflow in the repository without a `permissions:` block. Nothing here ships in the binary.
+
 ## [v2.26.6] - 2026-10-16
 
 ### Changed
