@@ -1923,6 +1923,11 @@ def get_parser():  # noqa: PLR0915
         action="store_true",
         help="Disable automatic project seeding",
     )
+    quickstart_cmd.add_argument(
+        "--replace",
+        action="store_true",
+        help="Replace an existing project of the same name, deleting its database and volumes (LDM-#2269)",
+    )
     # Command: set-version
     set_version_cmd = subparsers.add_parser(
         "set-version",

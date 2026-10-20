@@ -386,6 +386,11 @@ ldm quickstart aica --share --share-subdomain my-custom-demo
 # Bootstrap with a custom target directory and project name
 ldm quickstart aica --name custom-aica-demo
 
+# Re-run over an existing project. Without --replace quickstart refuses (and
+# asks, interactively), because replacing deletes the project's database
+# and volumes.
+ldm quickstart aica --replace
+
 # Bootstrap with a custom domain and SSL enabled
 ldm quickstart aica --host-name aica.demo --ssl
 
@@ -785,4 +790,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-29* | *Last Reviewed: 2026-09-29*
+*Last Updated: 2026-10-20* | *Last Reviewed: 2026-10-20*
