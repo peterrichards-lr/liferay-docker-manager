@@ -157,9 +157,19 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
     # Phase 4: Start Stack
     UI.phase(4, 4, "Starting Services Stack")
 
+    # LDM-#2268: the tunnel is the run pipeline's to start, not ours. This
+    # used to call share.cmd_start here, BEFORE cmd_run -- and since LDM-#2009
+    # cmd_start refuses a project that is not running, so `quickstart --share`
+    # did all the expensive work and then exited 3 with no stack. cmd_run
+    # already shares after readiness when args.share is set
+    # (ConfigResolutionStage._resolve_share_and_expose), so hand the request
+    # over on args rather than starting a second tunnel. Set explicitly
+    # because a programmatic caller passes `share=` without args carrying it.
     if share:
-        UI.detail("Exposing quickstart tunnel...")
-        self.manager.share.cmd_start(project_name, subdomain=share_subdomain)
+        self.manager.args.share = True
+        if share_subdomain:
+            self.manager.args.share_subdomain = share_subdomain
+        UI.detail("The tunnel will start once the portal is ready.")
 
     # LDM-#2155: returned, not discarded. `cmd_run` answers with the run
     # pipeline's own verdict, and this was the last statement in the function
