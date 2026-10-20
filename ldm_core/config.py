@@ -352,6 +352,70 @@ def remote_project_dir(project_name: str) -> str:
     return f"{REMOTE_PROJECTS_ROOT}/{name}"
 
 
+#: Marks, in `_probe_node_project`'s output, that the project directory exists.
+_NODE_DIR_PRESENT = ":present"
+
+
+@dataclass(frozen=True)
+class _NodeProjectView:
+    """What `_probe_node_project` learned: who the SSH user is on the node,
+    and what the project directory there already holds."""
+
+    home: str
+    uid: str
+    gid: str
+    exists: bool
+    entries: frozenset[str]
+
+
+def _probe_node_project(
+    target: "TargetNode", dest_dir: str
+) -> "_NodeProjectView | None":
+    """Ask the node for the SSH user's home, uid and gid, and list the project
+    directory, in one round trip (LDM-#2266).
+
+    The uid is the point. `reclaim_volume_permissions` chowns to THIS host's
+    uid by default, and on a node that is the wrong owner: rsync's own
+    `-p`/`-g` then attempts a chgrp on a directory the SSH user does not own,
+    is refused, and the transfer fails exactly as it did before the reclaim.
+    It only worked where the runner and the node user happened to share a uid.
+
+    None means the node did not answer, which callers report as such --
+    distinct from a node that answered and then refused an operation.
+    """
+    target_spec = f"{target.user}@{target.host}" if target.user else target.host
+    ssh_opts = ["-i", target.key_path] if target.key_path else []
+    # `; true`: run_command returns None for any non-zero exit, and a project
+    # directory that does not exist yet is an answer, not a failure.
+    res = run_command(
+        [
+            "ssh",
+            *ssh_opts,
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            f"ConnectTimeout={_REMOTE_RM_CONNECT_TIMEOUT}",
+            target_spec,
+            f'echo "$HOME $(id -u) $(id -g)"; '
+            f"cd {dest_dir} 2>/dev/null && echo {_NODE_DIR_PRESENT} && ls -A; true",
+        ],
+        check=False,
+        timeout=_REMOTE_RM_TIMEOUT,
+    )
+    lines = (res or "").strip().splitlines()
+    ident = lines[0].split() if lines else []
+    if (
+        len(ident) != 3
+        or not ident[0].startswith("/")
+        or not ident[1].isdigit()
+        or not ident[2].isdigit()
+    ):
+        return None
+    exists = len(lines) > 1 and lines[1].strip() == _NODE_DIR_PRESENT
+    entries = frozenset(line.strip() for line in lines[2:]) if exists else frozenset()
+    return _NodeProjectView(ident[0], ident[1], ident[2], exists, entries)
+
+
 def remove_project_from_target(
     project_path: Path,
     target_name: str | None = None,
@@ -389,6 +453,26 @@ def remove_project_from_target(
     # the log is how this defect stayed invisible for so long.
     UI.warning(f"Removing {dest_dir} on node '{target.name}' ({target.host})")
 
+    # LDM-#2266: a plain `rm -rf` as the SSH user cannot delete what a
+    # container wrote -- entries inside a directory uid 1000 owns. Reported
+    # from a reachable node where every teardown failed and the project
+    # directory survived into the next run, which is the state LDM-#2077 was
+    # written to end. Reclaim the whole tree first; it is about to go.
+    view = _probe_node_project(target, dest_dir)
+    if view is not None and view.exists:
+        from ldm_core.docker_service import DockerService
+        from ldm_core.utils import reclaim_volume_permissions
+
+        # Through the node's own Docker daemon -- the only thing there that
+        # can override a container's ownership.
+        reclaim_volume_permissions(
+            PurePosixPath(view.home) / REMOTE_PROJECTS_SUBPATH / project_path.name,
+            uid=view.uid,
+            gid=view.gid,
+            chmod_val="777",
+            docker_prefix=DockerService.get_docker_cmd_prefix(target.name),
+        )
+
     # LDM-#2094: BatchMode and ConnectTimeout are not optional here, and
     # this call shipped without either. Without BatchMode ssh falls back to
     # an interactive prompt when the key is missing, rejected or the host
@@ -421,10 +505,20 @@ def remove_project_from_target(
         timeout=_REMOTE_RM_TIMEOUT,
     )
     if res is None:
+        # LDM-#2266: "may be unreachable" was said whatever went wrong, and was
+        # false on the node that reported this -- it answered, then refused
+        # the deletion. Only blame reachability when the probe got no answer.
+        cause = (
+            "The node may be unreachable"
+            if view is None
+            else "The node answered, so this is not a connection problem: the "
+            "removal itself failed, most likely on files a container wrote "
+            f"that '{target.user or 'the SSH user'}' cannot delete"
+        )
         UI.warning(
-            f"  Could not remove {dest_dir} on '{target.name}'. The node may be "
-            "unreachable; the directory is still there and will be reused by "
-            "the next run of a project with this name."
+            f"  Could not remove {dest_dir} on '{target.name}'. {cause}; the "
+            "directory is still there and will be reused by the next run of a "
+            "project with this name."
         )
         return False
 
@@ -459,6 +553,38 @@ def sync_project_to_target(
     ssh_opts = ["-i", target.key_path] if target.key_path else []
     mkdir_cmd = ["ssh", *ssh_opts, target_spec, f"mkdir -p {dest_dir}"]
     run_command(mkdir_cmd, check=False)
+
+    # LDM-#2266: reclaim what containers wrote here BEFORE the transfer. The
+    # run pipeline's reclaim of the same trees runs only after this sync, so a
+    # directory a container created since then -- `routes/default/<project>`,
+    # owned by uid 1000 -- failed the rsync on the next run, and rsync drops
+    # `--delete` for the WHOLE transfer after one I/O error. Files deleted
+    # locally then survived on the node and were mounted back in. The pipeline
+    # repaired it at bring-up, so the NEXT run synced cleanly and the failure
+    # looked intermittent. `ldm start` and target migration sync too, and
+    # reclaimed nothing at all; doing it here covers every caller.
+    view = _probe_node_project(target, dest_dir)
+    if view is not None and view.exists:
+        from ldm_core.docker_service import DockerService
+        from ldm_core.utils import reclaim_volume_permissions
+
+        node_root = (
+            PurePosixPath(view.home) / REMOTE_PROJECTS_SUBPATH / project_path.name
+        )
+        docker_prefix = DockerService.get_docker_cmd_prefix(target.name)
+        # The run pipeline's list, held to it by test_routes_is_reclaimed.py.
+        # 777 for the same reason: the Liferay container (uid 1000) still has
+        # to write here. Only trees that exist -- the helper's bind mount would
+        # otherwise create the rest.
+        for sub in ["deploy", "logs", "osgi", "files", "routes"]:
+            if sub in view.entries:
+                reclaim_volume_permissions(
+                    node_root / sub,
+                    uid=view.uid,
+                    gid=view.gid,
+                    chmod_val="777",
+                    docker_prefix=docker_prefix,
+                )
 
     exclusions = [
         "--exclude=.git",

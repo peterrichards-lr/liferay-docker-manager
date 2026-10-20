@@ -290,6 +290,14 @@ unconditional: the remote branch runs whenever the target is remote, and the
 local branch only `if platform.system() == "linux" or --fix-permissions`. On
 macOS without that flag, nothing in the run pipeline reclaims anything.
 
+**A fifth loop runs on the NODE, before every remote sync** (LDM-#2266):
+`sync_project_to_target` in `config.py`, same list as `run.py`, existing trees
+only, chowned to the node's SSH uid -- never this host's, which is a stranger on
+the node and makes rsync's own chgrp fail exactly as before. Teardown
+(`remove_project_from_target`) reclaims the whole project directory before its
+`rm -rf`. Both exist because the `run.py` remote reclaim runs AFTER the sync,
+so it repaired the next run rather than the current one.
+
 `ldm_core/tests/test_routes_is_reclaimed.py` parses these lists from source and
 asserts they agree. Change a list without changing this table and the test still
 passes -- it compares the lists to each other, not to this document. Keeping
@@ -721,4 +729,4 @@ When LDM generates, deploys, or reasons about Client Extensions:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-13* | *Last Reviewed: 2026-10-13*
+*Last Updated: 2026-10-20* | *Last Reviewed: 2026-10-20*
