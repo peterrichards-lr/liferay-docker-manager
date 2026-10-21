@@ -33,7 +33,11 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
 
     name_lower = template_name.lower()
     if name_lower not in templates:
-        UI.die(f"Unrecognized quickstart template: {template_name}")
+        UI.die(
+            f"Unrecognized quickstart template: {template_name}",
+            tip=f"Available: {', '.join(sorted(templates))}. Add your own in "
+            f"{user_templates_path}.",
+        )
         return None
     template_info = templates[name_lower]
     repo_url = template_info["repo"]
