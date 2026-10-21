@@ -190,48 +190,75 @@ class TestStackInfrastructure(unittest.TestCase):
     def setUp(self):
         self.manager = MockManager()
 
-    @patch("ldm_core.utils.check_port", return_value=False)
-    @patch("ldm_core.handlers.infra.shutil.which")
-    def test_setup_global_search_installs_plugins(self, mock_which, mock_check_port):
-        mock_which.return_value = "/usr/bin/elasticsearch-plugin"
+    def _provision_search(self, plugin_list_output):
+        """Drive setup_global_search for a container that does not exist yet,
+        answering each Docker call by what it is rather than by position."""
+        import tempfile
+
+        def respond(cmd, *_a, **_k):
+            text = " ".join(str(part) for part in cmd)
+            if "_cluster/health" in text:
+                return '{"status": "green"}'
+            if "localhost:9200" in text:
+                return '{"cluster_name": "liferay-cluster"}'
+            if "elasticsearch-plugin list" in text:
+                return plugin_list_output
+            if "ps -a" in text or "ps -q" in text:
+                return ""
+            if "inspect" in text:
+                return "running"
+            return "OK"
 
         with (
+            tempfile.TemporaryDirectory() as home,
             patch(
                 "ldm_core.handlers.infra.get_actual_home",
-                return_value=Path("/tmp/home"),
+                return_value=Path(home),
             ),
             patch("time.sleep"),
-            patch.object(self.manager, "run_command") as mock_run,
+            patch.object(self.manager, "run_command", side_effect=respond) as run,
         ):
-            # Existence check: No container
-            mock_run.side_effect = [
-                "",  # 1. ps -a name=liferay-search-global
-                "",  # 2. docker run ...
-                "reclaimed_data",  # 3. _reclaim_permissions (data)
-                "reclaimed_backup",  # 4. _reclaim_permissions (backup)
-                "running",  # 5. status check (inspect)
-                '{"cluster_name": "liferay-cluster"}',  # 6. health check (readiness)
-                "OK",  # 7. PUT snapshot
-                "",  # 8. elasticsearch-plugin list
-                "OK",  # 9. install 1
-                "OK",  # 10. install 2
-                "OK",  # 11. install 3
-                "OK",  # 12. install 4
-                "OK",  # 13. docker restart
-                "running",  # 14. status check after restart
-                '{"cluster_name": "liferay-cluster"}',  # 15. health check after restart
-                "OK",  # 16. repo registration check (end of method)
-            ]
-
             self.manager.infra.setup_global_search()
+            return [" ".join(str(p) for p in c.args[0]) for c in run.call_args_list]
 
-            # Verify plugin installation was attempted
-            install_calls = [
-                c
-                for c in mock_run.call_args_list
-                if "elasticsearch-plugin" in str(c) and "install" in str(c)
-            ]
-            self.assertEqual(len(install_calls), 4)
+    @patch("ldm_core.utils.check_port", return_value=False)
+    def test_plugins_are_installed_before_the_data_is_opened(self, _port):
+        """LDM-#2284: a one-shot container installs every analyzer into the
+        mounted plugins directory BEFORE Elasticsearch starts on the data."""
+        calls = self._provision_search("")
+        pre = [c for c in calls if " run --rm " in f" {c} " and "install" in c]
+        self.assertEqual(len(pre), 1, calls)
+        for plugin in (
+            "analysis-icu",
+            "analysis-kuromoji",
+            "analysis-smartcn",
+            "analysis-stempel",
+        ):
+            self.assertIn(plugin, pre[0])
+        es_run = [
+            c for c in calls if " run -d " in f" {c} " and "liferay-search-global" in c
+        ]
+        self.assertEqual(len(es_run), 1, calls)
+        self.assertIn(":/usr/share/elasticsearch/plugins", es_run[0])
+        self.assertLess(calls.index(pre[0]), calls.index(es_run[0]))
+
+    @patch("ldm_core.utils.check_port", return_value=False)
+    def test_post_start_installs_only_what_the_list_lacks(self, _port):
+        calls = self._provision_search("analysis-icu\nanalysis-kuromoji\n")
+        post = [c for c in calls if " exec " in f" {c} " and "plugin install" in c]
+        self.assertEqual(
+            sorted(c.split()[-1] for c in post),
+            ["analysis-smartcn", "analysis-stempel"],
+        )
+
+    @patch("ldm_core.utils.check_port", return_value=False)
+    def test_nothing_is_reinstalled_when_all_are_present(self, _port):
+        calls = self._provision_search(
+            "analysis-icu\nanalysis-kuromoji\nanalysis-smartcn\nanalysis-stempel\n"
+        )
+        self.assertEqual(
+            [c for c in calls if " exec " in f" {c} " and "plugin install" in c], []
+        )
 
     def test_setup_ssl_generates_config(self):
         import tempfile

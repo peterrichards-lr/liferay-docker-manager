@@ -498,10 +498,14 @@ class TestInfraService(unittest.TestCase):
         ):
             self.infra.setup_global_search(force=True)
 
+        from ldm_core.constants import ELASTICSEARCH_VERSION
+
+        # LDM-#2284 added the plugins directory: a third bind mount, written
+        # by uid 1000 when the one-shot install populates it.
         self.assertEqual(
-            {"data", "backup"},
+            {"data", "backup", f"plugins-{ELASTICSEARCH_VERSION}"},
             set(requested),
-            f"Provisioning must reclaim both ES bind mounts; saw {sorted(requested)}",
+            f"Provisioning must reclaim every ES bind mount; saw {sorted(requested)}",
         )
 
         for tree, mode in requested.items():

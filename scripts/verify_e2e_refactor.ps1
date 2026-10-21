@@ -1479,7 +1479,12 @@ function Test-ConfigAnswersFromTheDecidingStore {
     if (Test-Path $isoHome) { Remove-Item -Recurse -Force $isoHome -ErrorAction SilentlyContinue }
     New-Item -ItemType Directory -Path $isoHome -Force | Out-Null
     $ldmrc = Join-Path $isoHome ".ldmrc"
-    '{"defaults": {"database_mode": "isolated", "ngrok_authtoken": "e2e-secret-value"}, "database_mode": "shared"}' | Out-File $ldmrc -Encoding utf8
+    # No BOM. On Windows PowerShell 5.1 `Out-File -Encoding utf8` writes one,
+    # and LDM read the BOM'd file as invalid JSON: the listing came back empty
+    # (no marker, so this check failed) and `config get` fell back to the
+    # built-in default -- which is 'isolated', so that half passed by
+    # coincidence. pwsh 7 writes no BOM. The bash half writes none either.
+    [System.IO.File]::WriteAllText($ldmrc, '{"defaults": {"database_mode": "isolated", "ngrok_authtoken": "e2e-secret-value"}, "database_mode": "shared"}', (New-Object System.Text.UTF8Encoding $false))
 
     $prevHome = $env:LDM_HOME
     $env:LDM_HOME = $isoHome
@@ -3000,7 +3005,7 @@ try {
     if ($cascadingGuard.Ok) {
         Write-Verdict $cascadingGuard.Message
     } else {
-        Write-Host $cascadingGuard.Message -ForegroundColor Red
+        Write-TrapNote $cascadingGuard.Message -Color Red
         exit 1
     }
 
@@ -3009,7 +3014,7 @@ try {
     if ($configRevert.Ok) {
         Write-Verdict $configRevert.Message
     } else {
-        Write-Host $configRevert.Message -ForegroundColor Red
+        Write-TrapNote $configRevert.Message -Color Red
         exit 1
     }
 
@@ -3018,7 +3023,7 @@ try {
     if ($configStore.Ok) {
         Write-Verdict $configStore.Message
     } else {
-        Write-Host $configStore.Message -ForegroundColor Red
+        Write-TrapNote $configStore.Message -Color Red
         exit 1
     }
 
@@ -3027,7 +3032,7 @@ try {
     if ($sslRenew.Ok) {
         Write-Verdict $sslRenew.Message
     } else {
-        Write-Host $sslRenew.Message -ForegroundColor Red
+        Write-TrapNote $sslRenew.Message -Color Red
         exit 1
     }
 
@@ -3036,7 +3041,7 @@ try {
     if ($macPin.Ok) {
         Write-Verdict $macPin.Message
     } else {
-        Write-Host $macPin.Message -ForegroundColor Red
+        Write-TrapNote $macPin.Message -Color Red
         exit 1
     }
 
@@ -3045,7 +3050,7 @@ try {
     if ($macRefusal.Ok) {
         Write-Verdict $macRefusal.Message
     } else {
-        Write-Host $macRefusal.Message -ForegroundColor Red
+        Write-TrapNote $macRefusal.Message -Color Red
         exit 1
     }
 
@@ -3054,7 +3059,7 @@ try {
     if ($notCreated.Ok) {
         Write-Verdict $notCreated.Message
     } else {
-        Write-Host $notCreated.Message -ForegroundColor Red
+        Write-TrapNote $notCreated.Message -Color Red
         exit 1
     }
 
@@ -3063,7 +3068,7 @@ try {
     if ($stopHint.Ok) {
         Write-Verdict $stopHint.Message
     } else {
-        Write-Host $stopHint.Message -ForegroundColor Red
+        Write-TrapNote $stopHint.Message -Color Red
         exit 1
     }
 
@@ -3072,7 +3077,7 @@ try {
     if ($localDel.Ok) {
         Write-Verdict $localDel.Message
     } else {
-        Write-Host $localDel.Message -ForegroundColor Red
+        Write-TrapNote $localDel.Message -Color Red
         exit 1
     }
 
@@ -3081,7 +3086,7 @@ try {
     if ($nodeDel.Ok) {
         Write-Verdict $nodeDel.Message
     } else {
-        Write-Host $nodeDel.Message -ForegroundColor Red
+        Write-TrapNote $nodeDel.Message -Color Red
         exit 1
     }
 
@@ -3090,7 +3095,7 @@ try {
     if ($bringupTmo.Ok) {
         Write-Verdict $bringupTmo.Message
     } else {
-        Write-Host $bringupTmo.Message -ForegroundColor Red
+        Write-TrapNote $bringupTmo.Message -Color Red
         exit 1
     }
 
@@ -3099,7 +3104,7 @@ try {
     if ($forcePos.Ok) {
         Write-Verdict $forcePos.Message
     } else {
-        Write-Host $forcePos.Message -ForegroundColor Red
+        Write-TrapNote $forcePos.Message -Color Red
         exit 1
     }
 
@@ -3108,7 +3113,7 @@ try {
     if ($cname.Ok) {
         Write-Verdict $cname.Message
     } else {
-        Write-Host $cname.Message -ForegroundColor Red
+        Write-TrapNote $cname.Message -Color Red
         exit 1
     }
 
@@ -3117,7 +3122,7 @@ try {
     if ($guide.Ok) {
         Write-Verdict $guide.Message
     } else {
-        Write-Host $guide.Message -ForegroundColor Red
+        Write-TrapNote $guide.Message -Color Red
         exit 1
     }
 
@@ -3126,7 +3131,7 @@ try {
     if ($linkedWs.Ok) {
         Write-Verdict $linkedWs.Message
     } else {
-        Write-Host $linkedWs.Message -ForegroundColor Red
+        Write-TrapNote $linkedWs.Message -Color Red
         exit 1
     }
 
@@ -3135,7 +3140,7 @@ try {
     if ($cloudImport.Ok) {
         Write-Verdict $cloudImport.Message
     } else {
-        Write-Host $cloudImport.Message -ForegroundColor Red
+        Write-TrapNote $cloudImport.Message -Color Red
         exit 1
     }
 
@@ -3144,7 +3149,7 @@ try {
     if ($productPin.Ok) {
         Write-Verdict $productPin.Message
     } else {
-        Write-Host $productPin.Message -ForegroundColor Red
+        Write-TrapNote $productPin.Message -Color Red
         exit 1
     }
 
@@ -3153,7 +3158,7 @@ try {
     if ($ldmpRefusal.Ok) {
         Write-Verdict $ldmpRefusal.Message
     } else {
-        Write-Host $ldmpRefusal.Message -ForegroundColor Red
+        Write-TrapNote $ldmpRefusal.Message -Color Red
         exit 1
     }
 
@@ -3167,7 +3172,7 @@ try {
     if ($ldmpHtmlRefusal.Ok) {
         Write-Verdict $ldmpHtmlRefusal.Message
     } else {
-        Write-Host $ldmpHtmlRefusal.Message -ForegroundColor Red
+        Write-TrapNote $ldmpHtmlRefusal.Message -Color Red
         exit 1
     }
 
@@ -7079,10 +7084,21 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     Finalize-Verification 0
     $script:VerificationExitCode = 0
 } catch {
-    Write-Host $_.Exception.Message -ForegroundColor Red
+    # Write-TrapNote, not Write-Host: the reason a run failed belongs in the
+    # report, not only on a console that may already be gone.
+    Write-TrapNote $_.Exception.Message -Color Red
     Finalize-Verification 1
     $script:VerificationExitCode = 1
 } finally {
+    # `exit 1` inside this try is not an exception: it skips the catch above
+    # and lands here, so a check failing that way finalised nothing and left
+    # NO report at all -- 34 sites did, including the LDM-#2174 check that
+    # surfaced it on Windows PowerShell 5.1. Finalise here instead, as the
+    # bash twin's EXIT trap does for every exit.
+    if ($null -eq $script:VerificationExitCode) {
+        Finalize-Verification 1
+        $script:VerificationExitCode = 1
+    }
     Set-Location $ORIGINAL_PWD
 
     # LDM-#2084: remove every image compose built for THIS run.

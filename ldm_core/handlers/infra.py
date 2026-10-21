@@ -22,6 +22,17 @@ _INFRA_CREATE_TIMEOUT = 600  # `docker run` for a global service -- may pull
 _INFRA_PROBE_TIMEOUT = 30  # readiness probes and inspection
 _INFRA_LIFECYCLE_TIMEOUT = 120  # start/stop/rm/network operations
 
+#: The analysis plugins Liferay's search mappings need. `analysis-icu` is the
+#: one a missing install kills a boot over: Liferay's dynamic templates use its
+#: `icu_collation_keyword` type, so Elasticsearch refuses to load an index
+#: that has them without it (LDM-#2284).
+SEARCH_ANALYZERS = (
+    "analysis-icu",
+    "analysis-kuromoji",
+    "analysis-smartcn",
+    "analysis-stempel",
+)
+
 
 class InfraService:
     """Service for global infrastructure management (Traefik, Global Search)."""
@@ -325,6 +336,61 @@ class InfraService:
             ),
             exit_code=3,
         )
+
+    def _preinstall_search_plugins(self, docker_prefix, plugins_dir):
+        """Install any missing analysis plugin before Elasticsearch opens data.
+
+        LDM-#2284. A one-shot container of the same image, with only the
+        plugins directory mounted, so nothing reads the data until the
+        plugins it needs are already there. Best-effort: a failed download is
+        left to the post-start install below, which warns, and to the
+        repair's refusal to wipe over a missing plugin. Returns the plugins
+        still missing.
+        """
+        from ldm_core.constants import ELASTICSEARCH_VERSION
+
+        missing = [p for p in SEARCH_ANALYZERS if not (plugins_dir / p).is_dir()]
+        if not missing:
+            return []
+        UI.detail(f"Installing search analyzers: {', '.join(missing)}...")
+        self.manager.run_command(
+            [
+                *docker_prefix,
+                "run",
+                "--rm",
+                "-v",
+                f"{plugins_dir}:/usr/share/elasticsearch/plugins",
+                f"elasticsearch:{ELASTICSEARCH_VERSION}",
+                "bin/elasticsearch-plugin",
+                "install",
+                "-b",
+                *missing,
+            ],
+            check=False,
+            # Downloads from the internet: the call most likely to stall on
+            # something outside the daemon.
+            timeout=_INFRA_CREATE_TIMEOUT,
+        )
+        return [p for p in missing if not (plugins_dir / p).is_dir()]
+
+    @staticmethod
+    def _failure_is_missing_plugin(log_path):
+        """True when a captured boot failure names a missing plugin (LDM-#2284).
+
+        Keyed on the message Elasticsearch 8.19 was observed to print when an
+        index uses a type only a plugin provides (`icu_collation_keyword`).
+        Anything else -- including an unreadable or absent log -- is not this,
+        and the repair proceeds as before.
+        """
+        if not log_path:
+            return False
+        from pathlib import Path
+
+        try:
+            text = Path(log_path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return False
+        return "No mapper found for type" in text
 
     def _capture_search_failure_logs(self, docker_prefix, search_name, dest_dir):
         """Save the failing search container's logs before it is removed.
@@ -1221,6 +1287,21 @@ tls:
 
             from ldm_core.constants import ELASTICSEARCH_VERSION
 
+            # LDM-#2284: the plugins live HERE, not in the container. They
+            # used to be installed into the running container's own
+            # filesystem, so recreating it -- which `ldm rm --infra` and the
+            # E2E suite both do -- discarded them, and a fresh container over
+            # data with an `icu_collation_keyword` mapping died at boot. The
+            # repair below then deleted every project's index over a missing
+            # plugin. Keyed by version: plugins are built for one exact
+            # Elasticsearch release and an upgrade must not load old ones.
+            es_plugins = (
+                home / ".ldm" / "infra" / "search" / f"plugins-{ELASTICSEARCH_VERSION}"
+            ).resolve()
+            es_plugins.mkdir(parents=True, exist_ok=True)
+            reclaim_volume_permissions(es_plugins, chmod_val="777")
+            self._preinstall_search_plugins(docker_prefix, es_plugins)
+
             es_heap = "512m"
             if hasattr(self.manager, "defaults") and self.manager.defaults is not None:
                 es_heap = self.manager.defaults.get("elasticsearch_heap_size", "512m")
@@ -1252,6 +1333,8 @@ tls:
                     f"{es_data}:/usr/share/elasticsearch/data",
                     "-v",
                     f"{es_backup}:/usr/share/elasticsearch/backup",
+                    "-v",
+                    f"{es_plugins}:/usr/share/elasticsearch/plugins",
                     f"elasticsearch:{ELASTICSEARCH_VERSION}",
                 ],
                 timeout=_INFRA_CREATE_TIMEOUT,
@@ -1368,9 +1451,32 @@ tls:
                 # occurrence had to be re-observed rather than read. Written
                 # beside the data directory, not inside it -- the rmtree below
                 # would take it otherwise.
-                self._capture_search_failure_logs(
+                failure_log = self._capture_search_failure_logs(
                     docker_prefix, search_name, es_data.parent
                 )
+
+                # LDM-#2284: a missing plugin is not corruption, and deleting
+                # the data cannot fix it -- it only destroys every project's
+                # index, which is what happened. Refuse, keep the data, and
+                # say what is actually wrong. --force still wipes, as asked.
+                if not cli_force and self._failure_is_missing_plugin(failure_log):
+                    UI.die(
+                        "Global Search could not load an existing index because a "
+                        "search plugin is missing, so the shared search data was "
+                        "left untouched.",
+                        details=(
+                            f"Failure log: {failure_log}\n"
+                            f"Plugins directory: {es_plugins}\n"
+                            "Deleting the data would not fix this; it would only "
+                            "destroy every project's index."
+                        ),
+                        tip=(
+                            "The plugins are downloaded on first use, so check the "
+                            "network and re-run. To wipe the search data anyway, "
+                            "re-run with --force."
+                        ),
+                        exit_code=3,
+                    )
 
                 UI.warning("Attempting automatic search volume repair...")
                 if live:
@@ -1463,8 +1569,7 @@ tls:
             # Proactive analyzer installation
             UI.detail("Installing missing Liferay analyzers in Global Search...")
 
-            # Tests expect a 'plugin list' call first
-            self.manager.run_command(
+            listed = self.manager.run_command(
                 [
                     *docker_prefix,
                     "exec",
@@ -1475,12 +1580,11 @@ tls:
                 timeout=_INFRA_PROBE_TIMEOUT,
             )
 
-            analyzers = [
-                "analysis-icu",
-                "analysis-kuromoji",
-                "analysis-smartcn",
-                "analysis-stempel",
-            ]
+            # LDM-#2284: only what the list does not already show. The
+            # pre-install normally put all four in the mounted plugins
+            # directory, and `install` on a present plugin is an error.
+            present = set(str(listed or "").split())
+            analyzers = [p for p in SEARCH_ANALYZERS if p not in present]
             failed_plugins = []
             for plugin in analyzers:
                 installed = self.manager.run_command(
