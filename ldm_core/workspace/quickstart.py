@@ -151,6 +151,14 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
     if not use_shared and self.manager.parse_version(tag) >= (2025, 2, 0):
         use_shared = True
     search_mode = "shared" if use_shared else "sidecar"
+    # LDM-#2267: the import's scaffold run has already resolved and persisted
+    # the mode the project will boot in. Seed for THAT one. The guess above
+    # disagreed with it -- "Seeding ... (postgresql/shared)" over a project
+    # that then booted sidecar -- and stays only as the fallback for a
+    # project with no recorded mode.
+    recorded_search = str(project_meta.get("search_mode") or "").lower()
+    if recorded_search in ("shared", "sidecar"):
+        search_mode = recorded_search
 
     restored_from_pkg = (
         str(project_meta.get("restored_from_package", "false")).lower() == "true"
