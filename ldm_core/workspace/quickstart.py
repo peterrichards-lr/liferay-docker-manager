@@ -53,12 +53,38 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
 
     UI.heading(f"Starting Quickstart: {template_name.upper()}")
 
-    # Ensure running project is stopped BEFORE downloading/provisioning from GitHub
     project_path = self.manager.detect_project_path(project_name, for_init=True)
-    self._ensure_stopped(project_name, project_path)
 
+    # LDM-#2269: decide BEFORE stopping anything. Quickstart over an existing
+    # project used to warn and carry on, and the package restore then runs
+    # `cmd_reset(target="all")` on any project with a compose file -- `down -v`
+    # plus the data directories -- so a re-run, or `--name` pointing at an
+    # unrelated project, deleted its database and volumes after one yellow
+    # line. A project is "existing" on the same evidence the reset acts on.
     if project_path and project_path.exists():
-        UI.warning(f"Project '{project_name}' already exists.")
+        from ldm_core.utils import resolve_meta_file_path
+
+        is_project = (
+            resolve_meta_file_path(project_path).exists()
+            or (project_path / "docker-compose.yml").exists()
+        )
+        if is_project:
+            wipe = (
+                f"Project '{project_name}' already exists at {project_path}. "
+                "Quickstart would replace it, deleting the project's database "
+                "and volumes"
+            )
+            if getattr(self.manager.args, "replace", False) is True:
+                UI.warning(f"{wipe} (--replace was given).")
+            elif self.manager.non_interactive:
+                UI.die(f"{wipe}; pass --replace to do that.")
+                return None
+            elif not UI.confirm(f"{wipe}. Continue?", default="N"):
+                UI.info("Nothing was changed.")
+                return None
+
+    # Ensure running project is stopped BEFORE downloading/provisioning from GitHub
+    self._ensure_stopped(project_name, project_path)
 
     # Phase 1: Download & Provision
     UI.phase(1, 4, f"Provisioning '{template_name}' from GitHub")

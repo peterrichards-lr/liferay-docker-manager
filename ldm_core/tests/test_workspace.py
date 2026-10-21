@@ -1444,6 +1444,10 @@ class TestWorkspaceQuickstart(unittest.TestCase):
 
         # Simulate custom template config overrides
         mock_exists.return_value = True
+        # LDM-#2269: Path.exists is True for EVERY path here, so the project
+        # reads as existing; replacing it is the explicit choice this test
+        # must make to reach the template lookup it is about.
+        self.manager.args.replace = True
         mock_read_text.return_value = json.dumps(
             {
                 "custom_aica": {
