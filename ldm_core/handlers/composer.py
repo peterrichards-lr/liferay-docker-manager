@@ -1747,10 +1747,19 @@ class ComposerService:
             for known_domain in self.manager.share.get_known_tunnel_base_domains():
                 valid_hosts += f",*.{known_domain}"
 
+        # AICA#1283: the header keys alone are inert. Liferay honours a
+        # forwarded header only when its `.enabled` flag is set, and all three
+        # default to false -- so behind Traefik, which terminates TLS,
+        # `portal.isSecure(request)` was false and OAuth redirect URIs were
+        # registered as http:// for an https:// origin, breaking every browser
+        # sign-in. The protocol key was also misspelt `proto` since #85; the
+        # property is `web.server.forwarded.protocol.header`.
         forwarded_props = {
             "web.server.forwarded.host.header": "X-Forwarded-Host",
             "web.server.forwarded.port.header": "X-Forwarded-Port",
-            "web.server.forwarded.proto.header": "X-Forwarded-Proto",
+            "web.server.forwarded.protocol.header": "X-Forwarded-Proto",
+            "web.server.forwarded.protocol.enabled": "true",
+            "web.server.forwarded.port.enabled": "true",
             "virtual.hosts.valid.hosts": valid_hosts,
         }
 

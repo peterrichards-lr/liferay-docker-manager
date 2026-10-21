@@ -905,7 +905,9 @@ class TestComposerService(unittest.TestCase):
             {
                 "web.server.forwarded.host.header": "X-Forwarded-Host",
                 "web.server.forwarded.port.header": "X-Forwarded-Port",
-                "web.server.forwarded.proto.header": "X-Forwarded-Proto",
+                "web.server.forwarded.protocol.header": "X-Forwarded-Proto",
+                "web.server.forwarded.protocol.enabled": "true",
+                "web.server.forwarded.port.enabled": "true",
                 "virtual.hosts.valid.hosts": "localhost,127.0.0.1,localhost,liferay,*.lfr-demo.online,*.lfr-demo.se",
                 "web.server.host": "my-sub.lfr-demo.se",
                 "web.server.https.port": "443",
@@ -940,7 +942,9 @@ class TestComposerService(unittest.TestCase):
             {
                 "web.server.forwarded.host.header": "X-Forwarded-Host",
                 "web.server.forwarded.port.header": "X-Forwarded-Port",
-                "web.server.forwarded.proto.header": "X-Forwarded-Proto",
+                "web.server.forwarded.protocol.header": "X-Forwarded-Proto",
+                "web.server.forwarded.protocol.enabled": "true",
+                "web.server.forwarded.port.enabled": "true",
                 "virtual.hosts.valid.hosts": "localhost,127.0.0.1,localhost,liferay,*.lfr-demo.online,*.lfr-demo.se",
                 "web.server.host": "",
                 "web.server.https.port": "",
