@@ -3628,7 +3628,10 @@ services:
     if (-not (Test-Path $projectDir)) { New-Item -ItemType Directory -Path $projectDir -Force | Out-Null }
     New-Item -ItemType Directory -Path (Join-Path $projectDir "files") -Force | Out-Null
     Set-Location $projectDir
-    '{"tag": "2026.q1.7-lts", "container_name": "ldm-smoke-test", "port": ' + $TEST_PORT + ', "db_type": "postgresql"}' | Out-File "meta" -Encoding utf8
+    # No BOM (LDM-#2287): on Windows PowerShell 5.1 `Out-File -Encoding utf8`
+    # writes one, LDM read the BOM'd meta as no metadata at all, and the
+    # project ran nameless -- caught by the LDM-#2243 volume-label check.
+    [System.IO.File]::WriteAllText((Join-Path (Get-Location) "meta"), '{"tag": "2026.q1.7-lts", "container_name": "ldm-smoke-test", "port": ' + $TEST_PORT + ', "db_type": "postgresql"}', (New-Object System.Text.UTF8Encoding $false))
 
     Log-AndRun "Running LDM Project" $LDM_CMD "-y run . --no-wait"
 
@@ -4491,7 +4494,8 @@ zf.close()
     Log-AndRun "Stopping project to release file locks" $LDM_CMD "-y stop ."
     $commonDir = Join-Path $LDM_WORKSPACE "common"
     New-Item -ItemType Directory -Force -Path $commonDir | Out-Null
-    "test.override.prop=456" | Out-File (Join-Path $commonDir "portal-ext.properties") -Encoding utf8
+    # No BOM (LDM-#2287): it would fuse onto 'test.override.prop' on PS 5.1.
+    [System.IO.File]::WriteAllText((Join-Path $commonDir "portal-ext.properties"), "test.override.prop=456`r`n", (New-Object System.Text.UTF8Encoding $false))
     $pePath = Join-Path $PWD.Path "files\portal-ext.properties"
     try {
         [System.IO.File]::AppendAllText($pePath, "`ntest.override.prop=123 # !important", [System.Text.Encoding]::UTF8)
