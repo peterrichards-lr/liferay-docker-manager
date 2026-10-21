@@ -2792,7 +2792,9 @@ def read_meta(path, strict=False):  # noqa: C901, PLR0912, PLR0915
         return meta
 
     try:
-        content = path.read_text(encoding="utf-8").strip()
+        # LDM-#2287: utf-8-sig, so a meta saved with a byte-order mark
+        # (Windows PowerShell 5.1, older Notepad) is not read as "no metadata".
+        content = path.read_text(encoding="utf-8-sig").strip()
         if content.startswith("{"):
             meta = json.loads(content)
         else:

@@ -345,7 +345,9 @@ class ConfigService:
             if pe_path.is_dir():
                 pe_path = pe_path / "portal-ext.properties"
 
-        content = pe_path.read_text(encoding="utf-8") if pe_path.exists() else ""
+        # LDM-#2287: utf-8-sig -- a BOM would otherwise fuse onto the first
+        # property's name and silently lose it.
+        content = pe_path.read_text(encoding="utf-8-sig") if pe_path.exists() else ""
         props = self._get_properties(content)
 
         # Update the properties dictionary
@@ -428,7 +430,7 @@ class ConfigService:
 
         from ldm_core.utils import safe_write_text
 
-        lines = pe_path.read_text(encoding="utf-8").splitlines()
+        lines = pe_path.read_text(encoding="utf-8-sig").splitlines()
         new_lines: list[str] = []
         i = 0
 
@@ -576,7 +578,7 @@ class ConfigService:
         meta_file = root / "meta"
         if meta_file.exists():
             try:
-                for line in meta_file.read_text(encoding="utf-8").splitlines():
+                for line in meta_file.read_text(encoding="utf-8-sig").splitlines():
                     if line.startswith("tag="):
                         return line.split("=", 1)[1].strip()
             except Exception:
@@ -589,7 +591,7 @@ class ConfigService:
         meta_file = root / "meta"
         if meta_file.exists():
             try:
-                for line in meta_file.read_text(encoding="utf-8").splitlines():
+                for line in meta_file.read_text(encoding="utf-8-sig").splitlines():
                     if line.startswith("db_type="):
                         return line.split("=", 1)[1].strip()
             except Exception:
@@ -772,7 +774,7 @@ class ConfigService:
             return
 
         try:
-            props = self._get_properties(target_ext.read_text(encoding="utf-8"))
+            props = self._get_properties(target_ext.read_text(encoding="utf-8-sig"))
         except OSError:
             return
 
