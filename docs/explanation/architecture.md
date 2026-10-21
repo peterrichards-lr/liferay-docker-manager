@@ -316,7 +316,7 @@ When a service is scaled via `ldm scale [project] liferay=N`:
 3. **Shared Infrastructure (Global Tier):**
     - **Traefik (`liferay-proxy-global`)**: A singleton container that handles all SSL termination and namespaced routing. It works natively on **Linux, WSL2, and Colima** by detecting the standard Docker socket. **Traefik v3** requires explicit backend network labels (`traefik.docker.network=liferay-net`) which LDM manages automatically.
     - **Elasticsearch (`liferay-search-global`)**: A shared ES8 instance that uses project-specific index prefixes, allowing multiple projects to share one search cluster efficiently.
-        - **Self-Healing Setup**: LDM automatically installs required Liferay plugins (`analysis-icu`, `analysis-kuromoji`, `analysis-smartcn`, `analysis-stempel`) upon initialization.
+        - **Self-Healing Setup**: LDM installs the Liferay analysis plugins (`analysis-icu`, `analysis-kuromoji`, `analysis-smartcn`, `analysis-stempel`) into `~/.ldm/infra/search/plugins-<version>`, mounted into the container, before Elasticsearch first opens the data. A recreated container therefore starts with them, and a boot failure caused by a missing plugin is never "repaired" by deleting the shared data (LDM-#2284).
         - **Performance Tuning**: Automatically configures `indices.query.bool.max_clause_count=10000` for optimal Liferay compatibility.
 
     - **Context-Aware Provider Detection**: LDM automatically identifies the active Docker engine context (e.g., `docker-desktop` vs. `default`) on Windows/macOS to provide tailored troubleshooting hints and optimize volume mount paths.
@@ -396,4 +396,4 @@ sequenceDiagram
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-13* | *Last Reviewed: 2026-10-13*
+*Last Updated: 2026-10-21* | *Last Reviewed: 2026-10-21*
