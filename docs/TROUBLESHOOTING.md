@@ -603,7 +603,21 @@ sudo chmod -R 777 ~/.ldm/infra/search/data
 
 ### **Elasticsearch: Failed to parse mappings**
 
-If Elasticsearch fails to start after a crash or version change due to mapping errors:
+**First, check whether a plugin is missing.** If the failure log
+(`~/.ldm/infra/search/search-failure-<timestamp>.log`) contains
+`No mapper found for type [icu_collation_keyword]`, the data is fine: the
+container started without the `analysis-icu` plugin that Liferay's indexes
+use. Deleting the data does not fix that; it only destroys every project's
+index. LDM recognises this case and refuses to wipe, exiting **3**
+(LDM-#2284).
+
+The plugins are kept in `~/.ldm/infra/search/plugins-<version>` and installed
+there before Elasticsearch first opens the data, so a recreated container
+starts with them. They are downloaded on first use. If the refusal appears,
+check the network and re-run `ldm infra-setup --search`.
+
+If Elasticsearch fails to start after a crash or version change due to some
+other mapping error:
 
 LDM includes an **Auto-Repair** feature. If the health check fails for 5 minutes, LDM will automatically wipe the `~/.ldm/infra/search/data` directory and perform a clean boot. You can trigger this manually by running:
 
@@ -896,4 +910,4 @@ Projects are discovered from the current folder, its parent, `~/ldm`, the LDM in
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-19* | *Last Reviewed: 2026-10-19*
+*Last Updated: 2026-10-21* | *Last Reviewed: 2026-10-21*
