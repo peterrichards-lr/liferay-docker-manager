@@ -246,4 +246,4 @@ This maps your local Liferay HTTP port (`8080`) to a free, secure Cloudflare tun
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-03* | *Last Reviewed: 2026-09-03*
+*Last Updated: 2026-09-03* | *Last Reviewed: 2026-10-21*
