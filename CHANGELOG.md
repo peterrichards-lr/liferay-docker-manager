@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.7-pre.3] - 2026-10-21
+
+### Fixed
+
+- **The settings LDM prepares for the Liferay container reach it again** (LDM-#2279). The run pipeline builds part of Liferay's environment itself and hands it to the compose generator, which had ignored it since v2.7.2. Three things never reached a container as a result:
+  - `--upgrade-db` did nothing; Liferay's automatic database upgrade was never switched on.
+  - The default company's virtual host from LDM-#2154, new in v2.26.6, never took effect. A project with a custom host name kept `localhost`, and Liferay published `localhost:8080` into `routes/default/dxp`. Client extensions then sent browser sign-ins there, which breaks OAuth.
+  - The display-node and redirect allow-list settings for a custom host.
+
+  All of it is now merged into the Liferay service. A variable you set yourself in `custom_env` still wins. A new test feeds the run step's real list through the real compose generator and checks every entry arrives, so a variable added later is covered too.
+
+### Known gaps
+
+- LDM-#2279 has no end-to-end assertion that can fail. The suite's check of the published DXP tree (LDM-#2154) runs against a project configured as `localhost`, which is also what Liferay publishes when the setting never arrives. So it passed on every platform throughout this bug. A project with a custom host name is needed for the check to mean anything. Recorded in LDM-#2264.
+
 ## [v2.26.7-pre.2] - 2026-10-21
 
 ### Changed
