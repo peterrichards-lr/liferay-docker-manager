@@ -1068,6 +1068,21 @@ class ComposerService:
             paths, meta, project_name, tag, has_jdbc_env, liferay_env
         )
 
+        # LDM-#2279: `base_env` is the run pipeline's environment -- the
+        # LDM-#2154 virtual host, `--upgrade-db`, LIFERAY_HOME. It was the seed
+        # of this list until eba44451 (v2.7.2) started the list empty and left
+        # the parameter unread, so none of it has reached a container since.
+        # Merged here rather than seeded, so a key the composer or the user's
+        # custom_env already set keeps that value and no key appears twice:
+        # what Compose does with a repeated list key is not something to rely
+        # on.
+        own_keys = {entry.split("=", 1)[0] for entry in liferay_env}
+        liferay_env[:0] = [
+            entry
+            for entry in (base_env or [])
+            if entry.split("=", 1)[0] not in own_keys
+        ]
+
         port_list = self._inject_liferay_share_env(
             paths, meta, host_name, project_name, ssl_enabled, port
         )
@@ -1428,18 +1443,6 @@ class ComposerService:
             liferay_env.append(
                 "LIFERAY_ELASTICSEARCH8_PERIOD_NETWORK_PERIOD_HOST_PERIOD_ADDRESSES=search:9200"
             )
-
-    def _inject_liferay_custom_env(self, meta, liferay_env, base_env):
-        if str(meta.get("reindex_required", "false")).lower() == "true":
-            liferay_env.append("LIFERAY_INDEX_PERIOD_ON_PERIOD_STARTUP=true")
-
-        has_jdbc_env = False
-        if base_env:
-            for env in base_env:
-                if env.startswith("LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_"):
-                    has_jdbc_env = True
-                liferay_env.append(env)
-        return has_jdbc_env
 
     def _inject_liferay_extensions_routes(self, paths, meta, project_name, liferay_env):
         extensions = []
