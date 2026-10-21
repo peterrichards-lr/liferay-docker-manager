@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.7-pre.2] - 2026-10-21
+
+### Changed
+
+- **`ldm quickstart` accepts templates from `~/.ldm_templates.json`** (LDM-#2270). The overrides file was documented and read, but the parser only allowed `aica`, so argparse rejected every custom template before quickstart could look it up. The feature never worked. An unknown name is still refused, now listing the templates that exist. The man page's quickstart synopsis gains the six flags it was missing, and the CLI reference documents the file's format.
+
+- **The Linux platform verification runs again.** The workflows called the verification script with `--ci`, a flag it never recognised and silently ignored, until LDM-#2241 made it refuse unknown arguments. From then on every Linux job stopped before running anything, including the run for the `v2.26.7-pre.1` tag. pre.1 was therefore never verified on Linux by CI. The flag is gone. Nothing here ships in the binary.
+
+### Fixed
+
+- **Remote sync no longer leaves deleted files on the node** (LDM-#2266). On a remote target the rsync ran before the only step able to reclaim a tree a container had written as uid 1000. A `routes/default` created since the last bring-up failed the transfer, and rsync then skipped `--delete` for the whole sync, so files deleted locally survived on the node and were mounted back in. In AICA's nightly that was a deleted script that ran and killed the container. The trees are now reclaimed on the node, to the node's own uid, before the sync; that covers `ldm run`, `ldm start` and target migration. Remote teardown reclaims the project directory before removing it, and its warning blames reachability only when the node gave no answer.
+
+- **`ldm quickstart --share` starts the stack** (LDM-#2268). It downloaded, restored and seeded, then exited 3 with nothing running, because it asked for the tunnel before the run. The documented example was the failing case. The run already starts the tunnel once the portal is ready, so quickstart now hands the request to it, and the URL arrives at the end of the boot.
+
+- **`ldm quickstart` no longer wipes an existing project without asking** (LDM-#2269). Re-running it, or pointing `--name` at an unrelated project, deleted that project's database and volumes after one warning line. It now asks, defaulting to no. With `-y` it refuses unless `--replace` is given.
+
+- **Projects created from an `.ldmp` follow your mode defaults** (LDM-#2267). The package import behind `ldm quickstart` and `ldm import` of a GitHub release never recorded which LDM created the project. LDM therefore treated every such project as predating shared infrastructure: an isolated database and sidecar search, whatever your defaults said. The import now records the version and the first boot announces the modes, as `init` and `run` have done since LDM-#2163. Quickstart also seeds for the mode the project actually boots in. Existing projects are not changed.
+
+- **`ldm quickstart --replace` resolves a replaced project's modes** (LDM-#2275). A replaced project kept its old settings, so one made by an earlier quickstart stayed isolated/sidecar. When the replaced project records no LDM version, its modes now come from your defaults; when it records one, its modes are kept. Either way the boot says which modes it got and whether they were kept. Answering yes to quickstart's prompt counts as `--replace`.
+
+### Known gaps
+
+- None of the quickstart fixes above (LDM-#2267, #2268, #2269, #2270, #2275), nor the remote sync fix (LDM-#2266), has an end-to-end assertion in the verification suite yet. Each is exercised by unit tests that drive the real code, and is recorded in LDM-#2264.
+
 ## [v2.26.7-pre.1] - 2026-10-20
 
 ### Changed
