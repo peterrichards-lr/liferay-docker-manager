@@ -129,7 +129,7 @@ jobs:
           python3 -m venv .venv
           source .venv/bin/activate
           pip install .
-          bash scripts/verify_e2e_refactor.sh --ci
+          bash scripts/verify_e2e_refactor.sh
 
       # Deliberately NOT named `verify-*.txt`.
       #

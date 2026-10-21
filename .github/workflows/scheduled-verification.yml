@@ -112,7 +112,11 @@ jobs:
           python3 -m venv .venv
           source .venv/bin/activate
           pip install .
-          bash scripts/verify_e2e_refactor.sh --ci
+          # No `--ci`. The script never recognised it -- CI behaviour keys on
+          # GITHUB_ACTIONS -- so it was silently ignored until LDM-#2241 made
+          # unknown arguments fatal, and every arm of this job then exited 1
+          # before running anything.
+          bash scripts/verify_e2e_refactor.sh
 
       - name: Run E2E Verification Suite (Fedora)
         if: matrix.distro == 'fedora'
@@ -125,7 +129,7 @@ jobs:
             -e GITHUB_ACTIONS="true" \
             -e LDM_ENV_LABEL="${{ matrix.distro }}" \
             fedora:latest \
-            bash -c "dnf install -y python3-pip git docker-compose hostname which && (dnf install -y java-21-openjdk-headless || dnf install -y java-25-openjdk-headless) && python3 -m venv .venv && source .venv/bin/activate && pip install . && bash scripts/verify_e2e_refactor.sh --ci"
+            bash -c "dnf install -y python3-pip git docker-compose hostname which && (dnf install -y java-21-openjdk-headless || dnf install -y java-25-openjdk-headless) && python3 -m venv .venv && source .venv/bin/activate && pip install . && bash scripts/verify_e2e_refactor.sh"
 
       - name: Run E2E Verification Suite (RockyLinux)
         if: matrix.distro == 'rockylinux'
@@ -138,7 +142,7 @@ jobs:
             -e GITHUB_ACTIONS="true" \
             -e LDM_ENV_LABEL="${{ matrix.distro }}" \
             rockylinux:9 \
-            bash -c "dnf install -y dnf-plugins-core && dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo && dnf install -y python3.11 python3.11-pip git hostname docker-ce-cli docker-compose-plugin which java-21-openjdk-headless && python3.11 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip && pip install . && bash scripts/verify_e2e_refactor.sh --ci"
+            bash -c "dnf install -y dnf-plugins-core && dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo && dnf install -y python3.11 python3.11-pip git hostname docker-ce-cli docker-compose-plugin which java-21-openjdk-headless && python3.11 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip && pip install . && bash scripts/verify_e2e_refactor.sh"
 
       - name: Run E2E Verification Suite (Alpine)
         if: matrix.distro == 'alpine'
@@ -151,7 +155,7 @@ jobs:
             -e GITHUB_ACTIONS="true" \
             -e LDM_ENV_LABEL="${{ matrix.distro }}" \
             alpine:latest \
-            sh -c "apk add --no-cache python3 py3-pip git bash docker-cli docker-cli-compose gcc musl-dev libffi-dev python3-dev openjdk21-jre-headless && python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip && pip install . && bash scripts/verify_e2e_refactor.sh --ci"
+            sh -c "apk add --no-cache python3 py3-pip git bash docker-cli docker-cli-compose gcc musl-dev libffi-dev python3-dev openjdk21-jre-headless && python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip && pip install . && bash scripts/verify_e2e_refactor.sh"
 
       - name: Run E2E Verification Suite (Debian)
         if: matrix.distro == 'debian'
@@ -164,7 +168,7 @@ jobs:
             -e GITHUB_ACTIONS="true" \
             -e LDM_ENV_LABEL="${{ matrix.distro }}" \
             debian:bookworm \
-            bash -c "apt-get update && apt-get install -y ca-certificates curl gnupg && mkdir -p /etc/apt/keyrings && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable\" > /etc/apt/sources.list.d/docker.list && curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public | gpg --dearmor -o /etc/apt/keyrings/adoptium.gpg && echo \"deb [signed-by=/etc/apt/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb bookworm main\" > /etc/apt/sources.list.d/adoptium.list && apt-get update && apt-get install -y python3-pip python3-venv git hostname docker-ce-cli docker-compose-plugin temurin-21-jre && python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip && pip install . && bash scripts/verify_e2e_refactor.sh --ci"
+            bash -c "apt-get update && apt-get install -y ca-certificates curl gnupg && mkdir -p /etc/apt/keyrings && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable\" > /etc/apt/sources.list.d/docker.list && curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public | gpg --dearmor -o /etc/apt/keyrings/adoptium.gpg && echo \"deb [signed-by=/etc/apt/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb bookworm main\" > /etc/apt/sources.list.d/adoptium.list && apt-get update && apt-get install -y python3-pip python3-venv git hostname docker-ce-cli docker-compose-plugin temurin-21-jre && python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip && pip install . && bash scripts/verify_e2e_refactor.sh"
 
       - name: Upload Test Results
         if: always()
@@ -295,7 +299,7 @@ jobs:
         run: |
           # Passing reports from this CI run, Linux only.
           #
-          # LDM-#1018: verify_e2e_refactor.sh --ci writes a plain
+          # LDM-#1018: verify_e2e_refactor.sh writes a plain
           # verify-{slug}-pass.txt (nothing after "pass" but the extension) --
           # the previous "-pass-*.txt" pattern required a suffix after "pass"
           # and only ever matched archived/hash-suffixed filenames, silently
