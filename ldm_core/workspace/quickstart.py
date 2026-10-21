@@ -22,7 +22,9 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
         try:
             import json
 
-            overrides = json.loads(user_templates_path.read_text())
+            # LDM-#2281: explicit utf-8-sig. The platform default is cp1252 on
+            # Windows, which turns a byte-order mark into text json rejects.
+            overrides = json.loads(user_templates_path.read_text(encoding="utf-8-sig"))
             for key, val in overrides.items():
                 if isinstance(val, dict) and "repo" in val and "default_name" in val:
                     templates[key.lower()] = val

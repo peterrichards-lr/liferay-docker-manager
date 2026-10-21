@@ -1416,7 +1416,8 @@ class ConfigService:
         config = {}
         if config_path.exists():
             with contextlib.suppress(Exception):
-                config = json.loads(config_path.read_text(encoding="utf-8"))
+                # LDM-#2281: utf-8-sig, as load_global_config_safe reads it.
+                config = json.loads(config_path.read_text(encoding="utf-8-sig"))
 
         if not key and not value:
             self._print_global_config(config)

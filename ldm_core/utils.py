@@ -5037,7 +5037,11 @@ def load_global_config_safe(config_path: Path) -> dict:
     lock = FileLock(lock_file)
     try:
         lock.acquire(exclusive=False)
-        content = config_path.read_text(encoding="utf-8")
+        # LDM-#2281: utf-8-sig, not utf-8. Windows PowerShell 5.1 and older
+        # Notepad save UTF-8 with a byte-order mark, which plain utf-8 keeps and
+        # json.loads rejects -- so a hand-edited ~/.ldmrc was ignored and every
+        # setting fell back to its default. utf-8-sig reads both forms.
+        content = config_path.read_text(encoding="utf-8-sig")
         if not content.strip():
             return {}
         return json.loads(content)
