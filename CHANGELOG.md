@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.7-pre.4] - 2026-10-21
+
+### Fixed
+
+- **OAuth redirects use `https` on SSL projects** (AICA#1283). Traefik terminates TLS and tells Liferay so with `X-Forwarded-Proto`, but Liferay honours that header only when `web.server.forwarded.protocol.enabled` is set. LDM wrote the header names and never the flags, and spelled the protocol key `proto`, which Liferay does not read. Behind the proxy Liferay therefore believed every request was plain HTTP. It registered client extensions' OAuth redirect URIs as `http://` for an `https://` page, and every browser sign-in failed with "No redirectURI … matching origin". The protocol and port flags are now set and the key is corrected. Measured before the fix was written: setting just these two flags on v2.26.7-pre.3 took the redirect refusals in an AICA end-to-end run from 210 to 0.
+
+- **Recreating the shared search container no longer deletes every project's index** (LDM-#2284). The analysis plugins Liferay's indexes need were installed into the running container, so recreating it discarded them. `ldm rm --infra` does that, and so does the verification suite on every run. A fresh container then died on any index using `icu_collation_keyword`, and LDM's automatic repair treated that as corruption and deleted the shared search data. The plugins now live in `~/.ldm/infra/search/plugins-<version>`, installed before Elasticsearch first opens the data, so a recreated container starts with them. A boot failure caused by a missing plugin is no longer "repaired" by deleting anything: LDM keeps the data, explains, and exits 3. `--force` still wipes.
+
+- **A `~/.ldmrc` saved with a byte-order mark is read** (LDM-#2281). Windows PowerShell 5.1 and older Notepad save UTF-8 with a BOM, which LDM read as invalid JSON. `ldm config` then showed an empty configuration without a warning, and every other setting fell back to its default. `~/.ldmrc` and `~/.ldm_templates.json` are now read with or without one.
+
+### Changed
+
+- **Every failure in the PowerShell verification suite writes its report.** Thirty-four checks failed with `exit 1`, which in PowerShell skips the block that writes the `-fail` report, so a failed Windows run left nothing behind. The suite now finalises on every exit, as the bash half's `EXIT` trap always has, and records the failure reason in the report. The LDM-#2174 check's fixture is also written without a BOM, which is what made it fail on PowerShell 5.1. Nothing here ships in the binary.
+
+### Known gaps
+
+- None of these four has an end-to-end assertion that can fail. The suite's published-domain check still runs against a `localhost` project (see pre.3). Recorded in LDM-#2264.
+
 ## [v2.26.7-pre.3] - 2026-10-21
 
 ### Fixed
