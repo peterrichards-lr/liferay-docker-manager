@@ -33,7 +33,11 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
 
     name_lower = template_name.lower()
     if name_lower not in templates:
-        UI.die(f"Unrecognized quickstart template: {template_name}")
+        UI.die(
+            f"Unrecognized quickstart template: {template_name}",
+            tip=f"Available: {', '.join(sorted(templates))}. Add your own in "
+            f"{user_templates_path}.",
+        )
         return None
     template_info = templates[name_lower]
     repo_url = template_info["repo"]
@@ -53,12 +57,41 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
 
     UI.heading(f"Starting Quickstart: {template_name.upper()}")
 
-    # Ensure running project is stopped BEFORE downloading/provisioning from GitHub
     project_path = self.manager.detect_project_path(project_name, for_init=True)
-    self._ensure_stopped(project_name, project_path)
 
+    # LDM-#2269: decide BEFORE stopping anything. Quickstart over an existing
+    # project used to warn and carry on, and the package restore then runs
+    # `cmd_reset(target="all")` on any project with a compose file -- `down -v`
+    # plus the data directories -- so a re-run, or `--name` pointing at an
+    # unrelated project, deleted its database and volumes after one yellow
+    # line. A project is "existing" on the same evidence the reset acts on.
     if project_path and project_path.exists():
-        UI.warning(f"Project '{project_name}' already exists.")
+        from ldm_core.utils import resolve_meta_file_path
+
+        is_project = (
+            resolve_meta_file_path(project_path).exists()
+            or (project_path / "docker-compose.yml").exists()
+        )
+        if is_project:
+            wipe = (
+                f"Project '{project_name}' already exists at {project_path}. "
+                "Quickstart would replace it, deleting the project's database "
+                "and volumes"
+            )
+            if getattr(self.manager.args, "replace", False) is True:
+                UI.warning(f"{wipe} (--replace was given).")
+            elif self.manager.non_interactive:
+                UI.die(f"{wipe}; pass --replace to do that.")
+                return None
+            elif not UI.confirm(f"{wipe}. Continue?", default="N"):
+                UI.info("Nothing was changed.")
+                return None
+            # LDM-#2275: a confirmed prompt is a replacement too, and the
+            # package import reads this to resolve the replaced project's modes.
+            self.manager.args.replace = True
+
+    # Ensure running project is stopped BEFORE downloading/provisioning from GitHub
+    self._ensure_stopped(project_name, project_path)
 
     # Phase 1: Download & Provision
     UI.phase(1, 4, f"Provisioning '{template_name}' from GitHub")
@@ -125,6 +158,27 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
     if not use_shared and self.manager.parse_version(tag) >= (2025, 2, 0):
         use_shared = True
     search_mode = "shared" if use_shared else "sidecar"
+    # LDM-#2267: the import's scaffold run has already resolved and persisted
+    # the mode the project will boot in. Seed for THAT one. The guess above
+    # disagreed with it -- "Seeding ... (postgresql/shared)" over a project
+    # that then booted sidecar -- and stays only as the fallback for a
+    # project with no recorded mode.
+    recorded_search = str(project_meta.get("search_mode") or "").lower()
+    if recorded_search in ("shared", "sidecar"):
+        search_mode = recorded_search
+    elif project_meta.get("ldm_version"):
+        # LDM-#2275: a replaced project has had its recorded modes dropped,
+        # and the restore skips the scaffold run when a compose file exists,
+        # so nothing records one before the boot. Ask the resolver the boot
+        # will ask, rather than guessing from the tag.
+        from ldm_core.utils import resolve_infrastructure_mode
+
+        search_mode = resolve_infrastructure_mode(
+            "search_mode",
+            project_meta,
+            self.manager.defaults,
+            getattr(self.manager.args, "search_mode", None),
+        )
 
     restored_from_pkg = (
         str(project_meta.get("restored_from_package", "false")).lower() == "true"
@@ -157,9 +211,19 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
     # Phase 4: Start Stack
     UI.phase(4, 4, "Starting Services Stack")
 
+    # LDM-#2268: the tunnel is the run pipeline's to start, not ours. This
+    # used to call share.cmd_start here, BEFORE cmd_run -- and since LDM-#2009
+    # cmd_start refuses a project that is not running, so `quickstart --share`
+    # did all the expensive work and then exited 3 with no stack. cmd_run
+    # already shares after readiness when args.share is set
+    # (ConfigResolutionStage._resolve_share_and_expose), so hand the request
+    # over on args rather than starting a second tunnel. Set explicitly
+    # because a programmatic caller passes `share=` without args carrying it.
     if share:
-        UI.detail("Exposing quickstart tunnel...")
-        self.manager.share.cmd_start(project_name, subdomain=share_subdomain)
+        self.manager.args.share = True
+        if share_subdomain:
+            self.manager.args.share_subdomain = share_subdomain
+        UI.detail("The tunnel will start once the portal is ready.")
 
     # LDM-#2155: returned, not discarded. `cmd_run` answers with the run
     # pipeline's own verdict, and this was the last statement in the function

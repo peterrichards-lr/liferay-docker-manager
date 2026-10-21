@@ -99,6 +99,28 @@ names the parent where the pre-boot check names the children.
   without that flag it does not run, because Docker Desktop's mounts make it
   unnecessary.
 
+### On a remote node, the reclaim also runs before the sync
+
+The run pipeline's reclaim happens **after** the project is synced to the node,
+and a container keeps writing once it is up. Anything it creates after that,
+such as `routes/default/<project>`, belongs to uid 1000. The SSH user cannot
+change or delete it, so on the next run the sync failed. rsync then skips its
+`--delete` step for the whole transfer, which leaves files you deleted locally
+on the node, where they are mounted back in (LDM-#2266).
+
+So against a remote target LDM now also reclaims, through the node's Docker
+daemon:
+
+- **before every sync** (`ldm run`, `ldm start`, and moving a project to
+  another target): it reclaims the run pipeline's own list of trees, but only
+  those that already exist on the node, and gives them to the **node's** SSH
+  user rather than to your local uid;
+- **before `ldm rm --delete` removes the node's copy**: it reclaims the whole
+  project directory, which is about to be deleted anyway.
+
+If the removal still fails, the warning now says whether the node answered.
+"May be unreachable" is reserved for a node that really did not answer.
+
 ## The `routes` tree is a special case
 
 `routes/default/<project>` is written by **Liferay**, at runtime, after the
@@ -131,4 +153,4 @@ read its own config. `ldm rescue <project>` repairs it (LDM-#2144).
   symptoms rather than mechanism.
 
 ---
-*Last Updated: 2026-10-13* | *Last Reviewed: 2026-10-13*
+*Last Updated: 2026-10-20* | *Last Reviewed: 2026-10-20*

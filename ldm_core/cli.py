@@ -1883,10 +1883,13 @@ def get_parser():  # noqa: PLR0915
         conflict_handler="resolve",
         help="Bootstrap and start a predefined accelerator demo stack",
     )
+    # LDM-#2270: no `choices`. A fixed list made argparse reject every
+    # template from ~/.ldm_templates.json before cmd_quickstart could look it
+    # up, so the override feature was dead from the day it shipped.
+    # cmd_quickstart validates instead, against built-ins and overrides alike.
     quickstart_cmd.add_argument(
         "template",
-        choices=["aica"],
-        help="Predefined accelerator template to bootstrap",
+        help="Accelerator template to bootstrap: 'aica', or one defined in ~/.ldm_templates.json",
     )
     quickstart_cmd.add_argument(
         "--share",
@@ -1922,6 +1925,11 @@ def get_parser():  # noqa: PLR0915
         "--no-seed",
         action="store_true",
         help="Disable automatic project seeding",
+    )
+    quickstart_cmd.add_argument(
+        "--replace",
+        action="store_true",
+        help="Replace an existing project of the same name, deleting its database and volumes (LDM-#2269)",
     )
     # Command: set-version
     set_version_cmd = subparsers.add_parser(

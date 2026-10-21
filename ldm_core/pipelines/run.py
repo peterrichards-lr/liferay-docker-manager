@@ -323,8 +323,48 @@ def _mode_provenance(manager, key, flag_value):
     return "default"
 
 
+#: LDM-#2267: meta key marking a project as created but not yet announced.
+#: Written by the `.ldmp` import, which creates the project's meta before its
+#: first boot -- so by that boot `is_new_project` ("no meta yet") is False and
+#: the announcement below would never fire for it.
+CREATION_ANNOUNCEMENT_PENDING = "creation_announcement_pending"
+
+#: LDM-#2275: the marker's value when `quickstart --replace` kept the modes the
+#: replaced project recorded. "true" means they were resolved now. The
+#: announcement must not call a kept mode "default" -- it may not be.
+CREATION_MODES_KEPT = "kept"
+
+
+def announce_creation(manager, context, db_mode, started):
+    """The end-of-run announcement and tip, for a project created now.
+
+    One body for the two places a run finishes, so they cannot drift.
+    `is_new_project` keeps its exact old behaviour. A pending marker counts as
+    "new" only on a run that actually started the stack, and is cleared only
+    then: the import's own scaffold run (`no_up`) passes through here too, and
+    consuming the marker there would announce nothing to nobody.
+    """
+    pending = bool(context.get("creation_announcement_pending")) and started
+    is_creation = bool(context.get("is_new_project")) or pending
+    announce_resolved_infrastructure(
+        manager,
+        context.get("search_mode"),
+        db_mode,
+        is_creation,
+        context.get("project_id"),
+        kept=pending and bool(context.get("creation_modes_kept")),
+    )
+    offer_shared_database_tip(manager, db_mode, is_creation)
+    if pending:
+        project_meta = context.get("project_meta")
+        paths = context.get("paths")
+        if isinstance(project_meta, dict) and paths:
+            project_meta.pop(CREATION_ANNOUNCEMENT_PENDING, None)
+            manager.write_meta(paths["root"], project_meta)
+
+
 def announce_resolved_infrastructure(
-    manager, search_mode, db_mode, is_new_project, project_id=None
+    manager, search_mode, db_mode, is_new_project, project_id=None, *, kept=False
 ):
     """Say which infrastructure a new project landed on, once, at creation.
 
@@ -356,17 +396,17 @@ def announce_resolved_infrastructure(
         "flag": "chosen with a flag",
         "config": "from your config",
         "default": "default",
+        "kept": "kept from the project it replaced",
     }
-    search_how = how[
-        _mode_provenance(
-            manager, "search_mode", getattr(manager.args, "search_mode", None)
-        )
-    ]
-    db_how = how[
-        _mode_provenance(
-            manager, "database_mode", getattr(manager.args, "db_mode", None)
-        )
-    ]
+
+    def _how(key, flag_value):
+        provenance = _mode_provenance(manager, key, flag_value)
+        # LDM-#2275: a flag still wins over a kept mode, as it does in
+        # `resolve_infrastructure_mode`.
+        return how["kept" if kept and provenance != "flag" else provenance]
+
+    search_how = _how("search_mode", getattr(manager.args, "search_mode", None))
+    db_how = _how("database_mode", getattr(manager.args, "db_mode", None))
 
     # UI.info, NOT UI.detail: detail is gated behind --info/--verbose
     # (LDM-#1036), so an announcement written with it would be invisible in
@@ -386,7 +426,7 @@ def announce_resolved_infrastructure(
 class ProjectInitializationStage(PipelineStage):
     """Handles project selection, discovery, and path setup."""
 
-    def execute(self, context: PipelineContext) -> None:  # noqa: C901, PLR0912
+    def execute(self, context: PipelineContext) -> None:  # noqa: C901, PLR0912, PLR0915
         context = typing.cast(RunPipelineContext, context)
         manager = context.manager
         paths = context.get("paths")
@@ -456,8 +496,10 @@ class ProjectInitializationStage(PipelineStage):
         context.set("root_existed", root.exists())
         if is_new_project:
             # LDM-#2163: stamp the version that created this project, which
-            # `ldm import` has always done (`workspace/importer.py`,
-            # `pipelines/import_pipeline.py`) and `init`/`run` never did.
+            # the local `ldm import` pipeline (`pipelines/import_pipeline.py`)
+            # did and `init`/`run` never did. The `.ldmp` import -- quickstart,
+            # and `ldm import` of a release -- did not either, until LDM-#2267
+            # (`workspace/importer.py`, `_hydrate_ldm_package_to_project`).
             #
             # `resolve_infrastructure_mode` reads `meta.get("ldm_version",
             # "0.0.0")` and sends anything below 2.14.0 to the legacy
@@ -511,6 +553,11 @@ class ProjectInitializationStage(PipelineStage):
         context.set("project_id", project_id)
         context.set("root", root)
         context.set("is_new_project", is_new_project)
+        marker = str(project_meta.get(CREATION_ANNOUNCEMENT_PENDING, "")).lower()
+        context.set(
+            "creation_announcement_pending", marker in ("true", CREATION_MODES_KEPT)
+        )
+        context.set("creation_modes_kept", marker == CREATION_MODES_KEPT)
         context.set("paths", paths)
         context.set("project_meta", project_meta)
         context.set(
@@ -3077,16 +3124,7 @@ class ExecutionStage(PipelineStage):
                     # LDM-#2163: paired with the tip below, because the two
                     # are complementary -- the tip speaks only when the mode
                     # is isolated, this speaks when a project is created.
-                    announce_resolved_infrastructure(
-                        manager,
-                        context.get("search_mode"),
-                        db_mode,
-                        context.get("is_new_project"),
-                        context.get("project_id"),
-                    )
-                    offer_shared_database_tip(
-                        manager, db_mode, context.get("is_new_project")
-                    )
+                    announce_creation(manager, context, db_mode, started=True)
                     return ready
 
                 # LDM-#1790. A boot that never became healthy must not exit 0.
@@ -3157,14 +3195,7 @@ class ExecutionStage(PipelineStage):
             # the tip is duplicated here -- whether a user is told which
             # infrastructure their new project landed on must not depend on
             # whether they happened to pass --no-wait.
-            announce_resolved_infrastructure(
-                manager,
-                context.get("search_mode"),
-                db_mode,
-                context.get("is_new_project"),
-                project_id,
-            )
-            offer_shared_database_tip(manager, db_mode, context.get("is_new_project"))
+            announce_creation(manager, context, db_mode, started=not no_up)
 
         return None
 

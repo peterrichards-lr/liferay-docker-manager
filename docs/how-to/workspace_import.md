@@ -112,6 +112,22 @@ and `import` regenerates those rather than carrying the publisher's across.
 `jdbc.default.url` and `virtual.hosts.valid.hosts` have always worked this way.
 **Search topology joins them** (LDM-#1773).
 
+So do the **database and search modes**. A project created by an `.ldmp` import
+(`ldm quickstart`, or `ldm import` of a GitHub release) picks them from your
+defaults, exactly as `ldm run` does, and says which it got on its first boot.
+Until LDM-#2267 such a project carried no record of the LDM version that made
+it. LDM therefore treated it as predating shared infrastructure, and it always
+got an isolated database and sidecar search, whatever your defaults said.
+Importing over an **existing** project leaves its modes alone, because its data
+already lives in them.
+
+`ldm quickstart --replace` (or answering yes to its prompt) is different,
+because the replacement deletes that data (LDM-#2275). A replaced project that
+records no LDM version, which is any project made by a quickstart before
+LDM-#2267, gets its modes from your defaults as a new project would. One that
+records a version keeps its modes. Either way, the next boot says which modes
+it got and whether they were kept.
+
 Two routes used to carry the publisher's search settings in and win:
 
 | Route | Where it lands | Why it won |
@@ -248,4 +264,4 @@ This scaffolds a `.github/workflows/ldm-package-release.yml` file which:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-18* | *Last Reviewed: 2026-09-18*
+*Last Updated: 2026-10-21* | *Last Reviewed: 2026-10-21*

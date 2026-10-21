@@ -112,8 +112,8 @@ Clone a Git repository and initialize it as an LDM project workspace.
 \fBimport\fR \fISOURCE\fR [\fINAME\fR]
 One-time static import of a Liferay workspace or data package archive from a Git remote, URL, or archive file. Pointing it at a local workspace \fIdirectory\fR is an error that redirects to \fBldm link\fR, which keeps the workspace in sync rather than copying it once.
 .TP
-\fBquickstart\fR \fITEMPLATE\fR [\fB--share\fR] [\fB--share-subdomain\fR \fISUBDOMAIN\fR]
-Bootstrap and start a predefined accelerator demo stack (e.g. \fBaica\fR).
+\fBquickstart\fR \fITEMPLATE\fR [\fB--name\fR \fINAME\fR] [\fB--host-name\fR \fIHOST\fR] [\fB--ssl\fR|\fB--no-ssl\fR] [\fB--no-seed\fR] [\fB--replace\fR] [\fB--share\fR] [\fB--share-subdomain\fR \fISUBDOMAIN\fR]
+Bootstrap and start an accelerator demo stack: \fBaica\fR, or a template defined in \fI~/.ldm_templates.json\fR.
 .TP
 \fBmonitor\fR [\fIPROJECT\fR]
 Start/restart the background sync process for linked projects.

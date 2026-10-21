@@ -386,6 +386,13 @@ ldm quickstart aica --share --share-subdomain my-custom-demo
 # Bootstrap with a custom target directory and project name
 ldm quickstart aica --name custom-aica-demo
 
+# Re-run over an existing project. Without --replace quickstart refuses (and
+# asks, interactively), because replacing deletes the project's database
+# and volumes. A project that records no LDM version (any quickstart project
+# made before 2.26.7) gets its database and search modes from your defaults;
+# one that records a version keeps the modes it had.
+ldm quickstart aica --replace
+
 # Bootstrap with a custom domain and SSL enabled
 ldm quickstart aica --host-name aica.demo --ssl
 
@@ -393,7 +400,24 @@ ldm quickstart aica --host-name aica.demo --ssl
 ldm quickstart aica --name aica-http --host-name aica.demo --no-ssl
 ```
 
-Custom templates and repository mappings can be configured by defining overrides in `~/.ldm_templates.json`.
+With `--share`, the tunnel is started by the run itself once the portal is ready, so its URL arrives at the end of the boot rather than before it.
+
+Custom templates and repository mappings can be configured by defining overrides in `~/.ldm_templates.json`. Each key is a template name (matched case-insensitively) and needs both `repo` and `default_name`; an entry missing either is ignored. Set `"private": true` for a repository that needs your GitHub token. A key named `aica` replaces the built-in.
+
+```json
+{
+  "my_demo": {
+    "repo": "https://github.com/example/my-demo.git",
+    "default_name": "my-demo"
+  }
+}
+```
+
+```bash
+ldm quickstart my_demo
+```
+
+An unrecognized name is refused with the list of templates available, built-in and custom.
 
 ## `package`
 
@@ -785,4 +809,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-29* | *Last Reviewed: 2026-09-29*
+*Last Updated: 2026-10-21* | *Last Reviewed: 2026-10-21*

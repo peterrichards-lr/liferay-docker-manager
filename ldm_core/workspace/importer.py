@@ -478,7 +478,16 @@ def _verify_ldm_package_manifest(self, temp_extract_dir, temp_pkg_dir, owner, re
 def _hydrate_ldm_package_to_project(
     self, project_path, project_name, manifest, temp_extract_dir
 ):
-    from ldm_core.utils import UI
+    from ldm_core.utils import UI, resolve_meta_file_path
+
+    # LDM-#2267: decided before anything below writes meta. A project this
+    # import creates gets the version that created it, exactly as LDM-#2163
+    # gave `init`/`run` -- without it `resolve_infrastructure_mode` reads the
+    # project as pre-2.14.0 and sends it to isolated/sidecar whatever the
+    # user's defaults say, which is what every quickstart project got. An
+    # existing project is deliberately NOT back-filled, for #2163's reason:
+    # its on-disk data is isolated, and a version would flip it to shared.
+    is_new_project = not resolve_meta_file_path(project_path).exists()
 
     paths = self.manager.setup_paths(project_path)
     for p in [v for v in paths.values() if isinstance(v, Path) and not v.suffix]:
@@ -531,6 +540,36 @@ def _hydrate_ldm_package_to_project(
             ).lower(),
         }
     )
+    # LDM-#2275: `quickstart --replace` (or a confirmed prompt) over an
+    # existing project. #2163's reason not to back-fill -- the data on disk is
+    # isolated -- does not hold here: the restore below resets the project,
+    # deleting that data. So a project with no `ldm_version` (the #2267
+    # signature) is treated as new, and its recorded modes are dropped, or the
+    # resolver would keep returning them. A versioned project keeps its modes.
+    is_replacement = (
+        not is_new_project and getattr(self.manager.args, "replace", False) is True
+    )
+    resolve_afresh = is_new_project or (
+        is_replacement and not project_meta.get("ldm_version")
+    )
+    if resolve_afresh:
+        project_meta["ldm_version"] = VERSION
+        for key in ("database_mode", "search_mode", "use_shared_search"):
+            project_meta.pop(key, None)
+    if is_new_project or is_replacement:
+        from ldm_core.pipelines.run import (
+            CREATION_ANNOUNCEMENT_PENDING,
+            CREATION_MODES_KEPT,
+        )
+
+        # The run pipeline announces a new project's infrastructure when it
+        # sees no meta -- which this project already has by its first boot.
+        # The marker carries "new" across to that boot (LDM-#2163's
+        # announcement must ship with the mode change, or the change is
+        # silent and the isolated-mode tip goes quiet with it).
+        project_meta[CREATION_ANNOUNCEMENT_PENDING] = (
+            "true" if resolve_afresh else CREATION_MODES_KEPT
+        )
     self.manager.write_meta(project_path, project_meta)
 
     UI.detail("Restoring database and volume assets from LDM package...")
