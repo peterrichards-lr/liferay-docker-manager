@@ -82,6 +82,9 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
             elif not UI.confirm(f"{wipe}. Continue?", default="N"):
                 UI.info("Nothing was changed.")
                 return None
+            # LDM-#2275: a confirmed prompt is a replacement too, and the
+            # package import reads this to resolve the replaced project's modes.
+            self.manager.args.replace = True
 
     # Ensure running project is stopped BEFORE downloading/provisioning from GitHub
     self._ensure_stopped(project_name, project_path)
@@ -159,6 +162,19 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
     recorded_search = str(project_meta.get("search_mode") or "").lower()
     if recorded_search in ("shared", "sidecar"):
         search_mode = recorded_search
+    elif project_meta.get("ldm_version"):
+        # LDM-#2275: a replaced project has had its recorded modes dropped,
+        # and the restore skips the scaffold run when a compose file exists,
+        # so nothing records one before the boot. Ask the resolver the boot
+        # will ask, rather than guessing from the tag.
+        from ldm_core.utils import resolve_infrastructure_mode
+
+        search_mode = resolve_infrastructure_mode(
+            "search_mode",
+            project_meta,
+            self.manager.defaults,
+            getattr(self.manager.args, "search_mode", None),
+        )
 
     restored_from_pkg = (
         str(project_meta.get("restored_from_package", "false")).lower() == "true"
