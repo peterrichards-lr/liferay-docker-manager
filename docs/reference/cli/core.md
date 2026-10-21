@@ -388,7 +388,9 @@ ldm quickstart aica --name custom-aica-demo
 
 # Re-run over an existing project. Without --replace quickstart refuses (and
 # asks, interactively), because replacing deletes the project's database
-# and volumes.
+# and volumes. A project that records no LDM version (any quickstart project
+# made before 2.26.7) gets its database and search modes from your defaults;
+# one that records a version keeps the modes it had.
 ldm quickstart aica --replace
 
 # Bootstrap with a custom domain and SSL enabled
