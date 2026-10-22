@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.7-pre.5] - 2026-10-22
+
+### Fixed
+
+- **A project `meta` or `portal-ext.properties` saved with a byte-order mark is read** (LDM-#2287). The same defect as LDM-#2281, in the other two files people edit by hand. Windows PowerShell 5.1 and older Notepad save UTF-8 with a BOM. LDM read a BOM'd `meta` as no metadata at all, so the project ran nameless: it lost its configuration, and its volumes lost their ownership labels. A BOM'd `portal-ext.properties` silently lost its first property. Both are now read with or without one. Found by the PowerShell 5.1 verification run on pre.4. The suite itself also writes those two files without a BOM now.
+
+### Known issues
+
+- **On macOS with OrbStack, the `.ldmp` round trip's imported copy did not boot in one pre.4 verification run.** Its Liferay never answered a healthcheck within about 20 minutes. The original project booted and passed every check, and the round trip passed on Linux, Windows (PowerShell 7 and WSL2) and macOS with Colima. The captured log lacks the error itself, so the cause is not yet known. That machine also had an expired DXP licence and about 5% free disk at the time. Tracked in LDM-#2290.
+
 ## [v2.26.7-pre.4] - 2026-10-21
 
 ### Fixed
