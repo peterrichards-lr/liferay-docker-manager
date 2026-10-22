@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.7-pre.6] - 2026-10-22
+
+### Fixed
+
+- **`ldm node power` works in an installed `ldm`** (LDM-#2291). Every subcommand (`status`, `wake`, `sleep`, `enforce`, `sync-dns`) failed with "Target node power management script not found". It ran a script from the repository's `scripts/` directory, which no build ships, and under the standalone binary its way of launching Python would have started `ldm` again rather than Python. The utility now lives inside `ldm` and runs in-process. `sync-dns`, which the CLI has offered since v2.15.30 but which had gone missing, is back: it re-reads each node's public IPv4 address from EC2 and updates `~/.ldmrc`, the node-power config and the Docker context. It no longer syncs DNS names.
+
+  Node definitions and wake state now live in `~/.ldm/node-power-config.json` and `~/.ldm/node-power-state.json`, alongside the targets in `~/.ldmrc`. **No nodes are built in, and nothing is downloaded:** previously the utility seeded two named nodes and fetched a config describing them from this repository when none existed locally. Those were the maintainer's own servers for this repository's CI, and are now confined to the repository.
+
+### Changed
+
+- **The PowerShell verification suite's volume-label check works on Windows PowerShell 5.1.** Windows PowerShell 5.1 strips double quotes from arguments it passes to other programs. The check's `docker --format` template therefore reached Docker broken, and every label read as empty, a failure on volumes that were in fact correctly labelled. It now reads the labels as JSON. Nothing here ships in the binary.
+
+- **A failing container's report now shows its first errors**, not only its last 50 lines, in both halves of the verification suite. A boot that hangs ends in stack frames, so the tail held no error message: the OrbStack round-trip failure (LDM-#2290) could not be diagnosed from its own report. Nothing here ships in the binary.
+
+### Known issues
+
+- LDM-#2290: on macOS with OrbStack, the `.ldmp` round trip's imported copy did not boot in one pre.4 run. The cause is still unknown; the next occurrence's report will now carry the error.
+
 ## [v2.26.7-pre.5] - 2026-10-22
 
 ### Fixed
