@@ -451,6 +451,17 @@ capture_container_diagnostics() {
                 docker inspect --format \
                     '{{if .State.Health}}{{range .State.Health.Log}}   probe exit={{.ExitCode}}: {{.Output}}
 {{end}}{{end}}' "$container" 2>/dev/null | head -c 2000
+                # LDM-#2290: the FIRST errors, not only the tail. A boot that
+                # hangs ends in a wall of stack frames, so the last 50 lines
+                # held no exception message at all -- an OrbStack round-trip
+                # failure could not be diagnosed from its own report. Messages
+                # and their causes come first; frames ("at ...") are dropped.
+                echo "   first errors:"
+                docker logs "$container" 2>&1 \
+                    | grep -E 'ERROR|FATAL|Exception|Caused by' \
+                    | grep -vE '^[[:space:]]+at ' \
+                    | head -n 25 | cut -c1-400 | sed 's/^/     /'
+                echo "   last 50 lines:"
                 docker logs "$container" --tail 50 2>&1
             } >> "$RESULTS_FILE_TMP"
         fi

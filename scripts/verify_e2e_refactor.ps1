@@ -526,6 +526,18 @@ function Write-FailureDebugLogs {
                 Write-TrapNote $probeText
             }
 
+            # LDM-#2290: the FIRST errors, not only the tail. A boot that hangs
+            # ends in a wall of stack frames, so the last 50 lines held no
+            # exception message at all -- an OrbStack round-trip failure could
+            # not be diagnosed from its own report. Parity with the bash twin.
+            $allLogs = (ConvertTo-LdmText (& docker logs $container 2>&1)) -split "`r?`n"
+            $firstErrors = @($allLogs |
+                Where-Object { $_ -cmatch 'ERROR|FATAL|Exception|Caused by' -and $_ -notmatch '^\s+at ' } |
+                Select-Object -First 25 |
+                ForEach-Object { if ($_.Length -gt 400) { $_.Substring(0, 400) } else { $_ } })
+            Write-TrapNote "   first errors:"
+            foreach ($line in $firstErrors) { Write-TrapNote "     $line" }
+            Write-TrapNote "   last 50 lines:"
             $logs = & docker logs $container --tail 50 2>&1
             Write-TrapNote (ConvertTo-LdmText $logs)
         } catch {
