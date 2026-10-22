@@ -382,30 +382,27 @@ class TestDispatcherPropagatesReturnedExitCodes(unittest.TestCase):
         _dispatch(lambda: ["snapshot-a", "snapshot-b"])
         _dispatch(lambda: Path("/some/project"))
 
-    @patch("subprocess.run")
-    def test_ldm_node_wake_reports_the_scripts_failure(self, mock_run):
-        # End to end over the real handler: NodeService returns the script's
-        # exit code and the dispatcher must now honour it.
-        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=7)
+    def test_ldm_node_wake_reports_the_utilitys_failure(self):
+        # End to end over the real handler: the node-power utility fails through
+        # sys.exit, NodeService returns that code, and the dispatcher must
+        # honour it. LDM-#2291 moved the utility in-process, so the failure is a
+        # SystemExit from ldm_core.node_power rather than a child's returncode.
+        from ldm_core import node_power
+
         node = NodeService(MagicMock())
-        node.script_path = Path(__file__)  # must exist, or the handler returns 1
-        with self.assertRaises(SystemExit) as ctx:
+        with (
+            patch.object(node_power, "cmd_wake", side_effect=SystemExit(7)),
+            self.assertRaises(SystemExit) as ctx,
+        ):
             _dispatch(lambda: node.cmd_node_power_wake("aws-1"))
         self.assertEqual(ctx.exception.code, 7)
 
-    @patch("subprocess.run")
-    def test_a_successful_node_command_still_exits_0(self, mock_run):
-        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
-        node = NodeService(MagicMock())
-        node.script_path = Path(__file__)
-        _dispatch(lambda: node.cmd_node_power_wake("aws-1"))
+    def test_a_successful_node_command_still_exits_0(self):
+        from ldm_core import node_power
 
-    def test_a_missing_node_script_is_a_failure(self):
         node = NodeService(MagicMock())
-        node.script_path = Path("/definitely/not/here/manage_target_nodes.py")
-        with self.assertRaises(SystemExit) as ctx:
-            _dispatch(node.cmd_node_power_status)
-        self.assertEqual(ctx.exception.code, 1)
+        with patch.object(node_power, "cmd_wake"):
+            _dispatch(lambda: node.cmd_node_power_wake("aws-1"))
 
 
 # --------------------------------------------------------------------------
