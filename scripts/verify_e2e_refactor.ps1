@@ -526,6 +526,18 @@ function Write-FailureDebugLogs {
                 Write-TrapNote $probeText
             }
 
+            # LDM-#2290: the FIRST errors, not only the tail. A boot that hangs
+            # ends in a wall of stack frames, so the last 50 lines held no
+            # exception message at all -- an OrbStack round-trip failure could
+            # not be diagnosed from its own report. Parity with the bash twin.
+            $allLogs = (ConvertTo-LdmText (& docker logs $container 2>&1)) -split "`r?`n"
+            $firstErrors = @($allLogs |
+                Where-Object { $_ -cmatch 'ERROR|FATAL|Exception|Caused by' -and $_ -notmatch '^\s+at ' } |
+                Select-Object -First 25 |
+                ForEach-Object { if ($_.Length -gt 400) { $_.Substring(0, 400) } else { $_ } })
+            Write-TrapNote "   first errors:"
+            foreach ($line in $firstErrors) { Write-TrapNote "     $line" }
+            Write-TrapNote "   last 50 lines:"
             $logs = & docker logs $container --tail 50 2>&1
             Write-TrapNote (ConvertTo-LdmText $logs)
         } catch {
@@ -3673,9 +3685,16 @@ services:
         elseif ($vol.EndsWith("-state", [System.StringComparison]::Ordinal)) { $volExpectedRole = "state" }
         else { $volExpectedRole = "unknown" }
 
-        $volOwner = (& docker volume inspect $vol --format '{{index .Labels "com.liferay.ldm.project"}}' 2>$null | Out-String).Trim()
-        $volManaged = (& docker volume inspect $vol --format '{{index .Labels "com.liferay.ldm.managed"}}' 2>$null | Out-String).Trim()
-        $volRole = (& docker volume inspect $vol --format '{{index .Labels "com.liferay.ldm.role"}}' 2>$null | Out-String).Trim()
+        # One JSON read, no embedded double quotes. Windows PowerShell 5.1
+        # strips `"` from arguments it passes to a native program, so
+        # `--format '{{index .Labels "com.liferay.ldm.project"}}'` reached
+        # docker as an invalid template, the error went to 2>$null, and all
+        # three labels read as empty -- a failure on volumes that were in fact
+        # correctly labelled. pwsh 7.3+ passes the quotes, so it passed there.
+        $volLabels = (& docker volume inspect $vol --format '{{json .Labels}}' 2>$null | Out-String) | ConvertFrom-Json
+        $volOwner = [string]$volLabels.'com.liferay.ldm.project'
+        $volManaged = [string]$volLabels.'com.liferay.ldm.managed'
+        $volRole = [string]$volLabels.'com.liferay.ldm.role'
 
         if ($volOwner -cne $PROJECT_NAME) {
             Write-Verdict "[ERROR] volume '$vol' does not name '$PROJECT_NAME' as its owner (LDM-#2243)."
