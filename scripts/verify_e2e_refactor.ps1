@@ -3673,9 +3673,16 @@ services:
         elseif ($vol.EndsWith("-state", [System.StringComparison]::Ordinal)) { $volExpectedRole = "state" }
         else { $volExpectedRole = "unknown" }
 
-        $volOwner = (& docker volume inspect $vol --format '{{index .Labels "com.liferay.ldm.project"}}' 2>$null | Out-String).Trim()
-        $volManaged = (& docker volume inspect $vol --format '{{index .Labels "com.liferay.ldm.managed"}}' 2>$null | Out-String).Trim()
-        $volRole = (& docker volume inspect $vol --format '{{index .Labels "com.liferay.ldm.role"}}' 2>$null | Out-String).Trim()
+        # One JSON read, no embedded double quotes. Windows PowerShell 5.1
+        # strips `"` from arguments it passes to a native program, so
+        # `--format '{{index .Labels "com.liferay.ldm.project"}}'` reached
+        # docker as an invalid template, the error went to 2>$null, and all
+        # three labels read as empty -- a failure on volumes that were in fact
+        # correctly labelled. pwsh 7.3+ passes the quotes, so it passed there.
+        $volLabels = (& docker volume inspect $vol --format '{{json .Labels}}' 2>$null | Out-String) | ConvertFrom-Json
+        $volOwner = [string]$volLabels.'com.liferay.ldm.project'
+        $volManaged = [string]$volLabels.'com.liferay.ldm.managed'
+        $volRole = [string]$volLabels.'com.liferay.ldm.role'
 
         if ($volOwner -cne $PROJECT_NAME) {
             Write-Verdict "[ERROR] volume '$vol' does not name '$PROJECT_NAME' as its owner (LDM-#2243)."
