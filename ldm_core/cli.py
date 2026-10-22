@@ -2600,7 +2600,7 @@ def get_parser():  # noqa: PLR0915
             parents=[base_sub_parent],
             help="Wake a target compute node during off-hours",
         )
-        n_wake.add_argument("name", help="Target node name (e.g. aws-1, aws-2)")
+        n_wake.add_argument("name", help="Target node name (e.g. my-node)")
         n_wake.add_argument(
             "--ttl", default="2h", help="Wake duration (e.g. 2h, 4h). Default: 2h"
         )
@@ -2609,7 +2609,7 @@ def get_parser():  # noqa: PLR0915
             parents=[base_sub_parent],
             help="Immediately shut down a target compute node",
         )
-        n_sleep.add_argument("name", help="Target node name (e.g. aws-1, aws-2)")
+        n_sleep.add_argument("name", help="Target node name (e.g. my-node)")
         sub_p.add_parser(
             "enforce",
             parents=[base_sub_parent],
@@ -2618,7 +2618,7 @@ def get_parser():  # noqa: PLR0915
         sub_p.add_parser(
             "sync-dns",
             parents=[base_sub_parent],
-            help="Query AWS EC2 for live public IPv4 and DNS names and update config",
+            help="Re-read each node's public IPv4 from AWS EC2 and update config",
         )
 
     reset_props = config_subparsers.add_parser(

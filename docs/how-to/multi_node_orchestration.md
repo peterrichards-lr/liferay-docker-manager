@@ -150,7 +150,7 @@ ldm target add prod-node --host <new-ip>
 > [!TIP]
 > On AWS, an instance without an Elastic IP is assigned a **new public address every time it is stopped and started**. Allocating an Elastic IP per node removes this class of problem entirely; note that AWS bills for public IPv4 addresses either way.
 
-If you use `scripts/manage_target_nodes.py` to power nodes on, it resolves the new address and updates `~/.ldmrc`, `.node-power-config.json` and the Docker context together. Starting an instance from the AWS console -- or via the `node-power-manager` workflow, which runs on a CI runner and updates that runner's files -- leaves your own machine unaware, and re-registering is the fix.
+If you use `ldm node power wake` (or `scripts/manage_target_nodes.py` in the repository) to power nodes on, it resolves the new address and updates `~/.ldmrc`, the node-power config and the Docker context together. `ldm node power sync-dns` does the same for a node that is already running. Starting an instance from the AWS console -- or via the `node-power-manager` workflow, which runs on a CI runner and updates that runner's files -- leaves your own machine unaware, and re-registering is the fix.
 
 ### When a Node's SSH User Changes
 
@@ -311,4 +311,4 @@ ldm run my-project --target prod-node --share --share-provider lfr-tunnel-docker
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-13* | *Last Reviewed: 2026-10-13*
+*Last Updated: 2026-10-22* | *Last Reviewed: 2026-10-22*

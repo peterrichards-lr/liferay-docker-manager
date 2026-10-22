@@ -1,26 +1,11 @@
 """Target Node Power & Cost Control Management Service Handler."""
 
-import subprocess
-import sys
-from pathlib import Path
-
-from ldm_core.constants import SCRIPT_DIR
-from ldm_core.ui import UI
-
 
 class NodeService:
     """Service handler for 'ldm node power' commands."""
 
     def __init__(self, manager) -> None:
         self.manager = manager
-        self.script_path = SCRIPT_DIR / "scripts" / "manage_target_nodes.py"
-        if not self.script_path.exists():
-            # Fallback to current repository root if running in source tree
-            self.script_path = (
-                Path(__file__).resolve().parents[2]
-                / "scripts"
-                / "manage_target_nodes.py"
-            )
 
     def cmd_node_power_status(self) -> int:
         """Handler for 'ldm node power status'."""
@@ -43,11 +28,20 @@ class NodeService:
         return self._run_node_script(["sync-dns"])
 
     def _run_node_script(self, args: list[str]) -> int:
-        if not self.script_path.exists():
-            UI.error(
-                f"Target node power management script not found: {self.script_path}"
-            )
-            return 1
-        cmd = [sys.executable, str(self.script_path), *args]
-        res = subprocess.run(cmd, check=False)
-        return res.returncode
+        """Run the node-power utility in-process (LDM-#2291).
+
+        It used to be launched as `[sys.executable, scripts/manage_target_nodes.py]`.
+        No build ships that `scripts/` directory, and in a PyInstaller binary
+        `sys.executable` is ldm itself rather than Python, so it could not have
+        worked even with the file present. The utility now lives in ldm_core and
+        exits through `sys.exit` on failure, which is caught here so the exit
+        code is returned rather than raised.
+        """
+        from ldm_core import node_power
+
+        try:
+            node_power.main(args)
+        except SystemExit as exc:
+            code = exc.code
+            return code if isinstance(code, int) else (0 if code is None else 1)
+        return 0

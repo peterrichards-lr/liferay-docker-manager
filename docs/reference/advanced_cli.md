@@ -270,8 +270,10 @@ In `isolated` mode the database is always called `lportal` and the project name 
 - **`ldm node power sleep <node>`**: Immediately shuts down a target compute node.
 - **`ldm node power status`**: Displays active compute node power states and wake TTLs.
 - **`ldm node power enforce`**: Enforces scheduled off-hours shutdowns.
-- **`ldm node power sync-dns`**: Queries AWS EC2 for live public IP/DNS names and updates local node configurations.
+- **`ldm node power sync-dns`**: Re-reads each node's public IPv4 address from AWS EC2 and updates `~/.ldmrc`, the node-power config and the Docker context wherever it changed.
+
+These commands keep their node definitions and wake state in `~/.ldm/node-power-config.json` and `~/.ldm/node-power-state.json`, falling back to the targets in `~/.ldmrc` when there is no config file. They run inside `ldm` itself (LDM-#2291); before v2.26.7 they failed in every packaged build because the utility they called was not shipped. In the repository, `scripts/manage_target_nodes.py` runs the same code against the repo-root `.node-power-config.json`, which is what the `node-power-manager` workflow uses.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-03* | *Last Reviewed: 2026-09-03*
+*Last Updated: 2026-10-22* | *Last Reviewed: 2026-10-22*
