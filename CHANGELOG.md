@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.7] - 2026-10-23
+
+Verified on v2.26.7-pre.6 across six environments: Fedora 44 (native Docker), macOS 27 with Colima, macOS 27 with OrbStack, Windows 11 with WSL2, and Windows 11 Docker Desktop under both PowerShell 5.1 and PowerShell 7. The five Linux distributions in CI passed on every pre-release tag from pre.2 on. Stable is byte-identical to pre.6 except for the version stamp and this release's announcements. The details of each change are in the pre-release entries below.
+
+### Fixed
+
+- **The settings LDM prepares for the Liferay container reach it again** (LDM-#2279). Since v2.7.2 the run pipeline's Liferay environment was dropped by the compose generator: `--upgrade-db` did nothing, and LDM-#2154's virtual host never took effect.
+- **OAuth redirect URIs use `https` behind LDM's proxy** (AICA#1283). Liferay's forwarded protocol and port headers are enabled, and the misspelt protocol key is corrected.
+- **Recreating the shared search container no longer deletes every project's index** (LDM-#2284). Its analysis plugins persist across recreation, and a missing plugin is reported instead of "repaired" by deletion.
+- **`ldm quickstart`**: `--share` starts the stack (LDM-#2268); an existing project is not replaced without `--replace` (LDM-#2269), and a replaced project's modes are resolved correctly (LDM-#2275); custom templates from `~/.ldm_templates.json` work (LDM-#2270); `.ldmp` projects follow your mode defaults and announce them (LDM-#2267).
+- **Remote nodes**: a container-written tree no longer disables rsync `--delete`, and teardown reclaims the project before removing it (LDM-#2266).
+- **`ldm node power`** works in the installed binary, with no built-in nodes (LDM-#2291).
+- **Files saved with a UTF-8 byte-order mark are read**: `~/.ldmrc`, `~/.ldm_templates.json` (LDM-#2281), a project `meta` and `portal-ext.properties` (LDM-#2287).
+- From pre.1: `ldm reset` refuses unknown targets and implements `global-search` (LDM-#2127); snapshot, restore and import volumes carry ownership labels (LDM-#2243); `ldm config get` answers from the store that decides (LDM-#2174); `init` and `run` stamp `ldm_version` (LDM-#2163); portless localhost OAuth redirects are rewritten (LDM-#2175); `share start` withdraws a URL it did not get (LDM-#2191); a RED shared search cluster is refused rather than reported ready (LDM-#2247).
+
+### Changed
+
+- The verification suite: refuses unknown arguments (LDM-#2241); the CI workflows no longer pass the `--ci` flag it never accepted; every PowerShell failure writes its report; the PowerShell half works on Windows PowerShell 5.1; a failing container's first errors are captured (LDM-#2290).
+
+### Security
+
+- Credentials inside the `~/.ldmrc` `defaults` block are masked (LDM-#2174).
+
+### Known issues
+
+- On Windows, `ldm system upgrade` can appear to freeze in PowerShell: the updater shares the console and prints nothing on success (LDM-#2212, next cycle).
+- Liferay's first DXP-tree write on a custom-host project can carry `:8080` before being corrected (LDM-#2289, under investigation).
+
 ## [v2.26.7-pre.6] - 2026-10-22
 
 ### Fixed
