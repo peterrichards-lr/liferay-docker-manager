@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.8-pre.2] - 2026-10-23
+
+### Changed
+
+- **No code changes from pre.1.** This pre-release exists so the Windows updater rewritten in pre.1 (LDM-#2212) can be exercised: an upgrade always runs the **installed** version's updater, so upgrading from pre.1 to pre.2 is the first time the new one does the swap. On Windows it should open in its own window, say "Replacing …" and then "[OK] LDM upgraded", leave the PowerShell window usable throughout, and kill no other `ldm.exe`.
+
+## [v2.26.8-pre.1] - 2026-10-23
+
+### Fixed
+
+- **A boot is refused when the shared search disk cannot take it** (LDM-#2247). A shared Elasticsearch can report a healthy status on a disk too full to create the next index. Past its high watermark (90% by default) it will not place a new index, so a new project's Liferay waited for search, timed out and hung for its whole healthcheck window. Past flood stage (95%) every index is read-only. LDM now reads the node's disk and the cluster's own thresholds on every boot against shared search. Past flood stage it refuses. Past the high watermark it refuses a project whose index does not exist yet. Past the low watermark it warns. Each refusal names how to free space. Found on an OrbStack Mac during v2.26.7 verification, which hung for 20 minutes at 96% (LDM-#2290).
+
+- **The Windows self-upgrade no longer looks like a frozen terminal** (LDM-#2212). The updater ran in the same PowerShell window as the prompt, so after `ldm` exited the two shared the console and the keyboard. It printed nothing until a retry failed and nothing on success, and every attempt force-killed every `ldm.exe` on the machine. It now runs in its own window, says what it is doing and when it has finished, and kills nothing. Note that an upgrade runs the **previous** version's updater: the new behaviour shows from the upgrade **after** this one.
+
+- **Old builds no longer pile up in `~/.shiv`** (LDM-#2296). On macOS and Linux each LDM version unpacks into its own `~/.shiv/ldm_<build id>/` directory, about 80 MB, and none was ever removed: 12 GB was measured on one machine. On the first run after an upgrade, LDM now removes the earlier versions' directories, leaving the running one and anything that is not LDM's untouched, and says how much it freed.
+
+### Changed
+
+- **The node-power workflows read their configuration from an Actions secret** (LDM-#2292). The maintainer's compute nodes are no longer named in the repository, the binary, the docs or the tests, and every node value is masked in the public Actions logs. Nothing here changes `ldm` for users.
+
+### Known gaps
+
+- None of these has an end-to-end assertion; recorded in LDM-#2302. The Windows updater is first exercised live by the upgrade from this pre-release to the next.
+
 ## [v2.26.7] - 2026-10-23
 
 Verified on v2.26.7-pre.6 across six environments: Fedora 44 (native Docker), macOS 27 with Colima, macOS 27 with OrbStack, Windows 11 with WSL2, and Windows 11 Docker Desktop under both PowerShell 5.1 and PowerShell 7. The five Linux distributions in CI passed on every pre-release tag from pre.2 on. Stable is byte-identical to pre.6 except for the version stamp and this release's announcements. The details of each change are in the pre-release entries below.
