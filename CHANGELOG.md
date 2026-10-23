@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.8-pre.2] - 2026-10-23
+
+### Changed
+
+- **No code changes from pre.1.** This pre-release exists so the Windows updater rewritten in pre.1 (LDM-#2212) can be exercised: an upgrade always runs the **installed** version's updater, so upgrading from pre.1 to pre.2 is the first time the new one does the swap. On Windows it should open in its own window, say "Replacing …" and then "[OK] LDM upgraded", leave the PowerShell window usable throughout, and kill no other `ldm.exe`.
+
 ## [v2.26.8-pre.1] - 2026-10-23
 
 ### Fixed
