@@ -337,6 +337,146 @@ class InfraService:
             exit_code=3,
         )
 
+    def _search_json(self, docker_prefix, search_name, path):
+        """GET a path on the shared search node; parsed JSON, or None."""
+        raw = self.manager.run_command(
+            [
+                *docker_prefix,
+                "exec",
+                search_name,
+                "curl",
+                "-s",
+                f"http://localhost:9200{path}",
+            ],
+            check=False,
+            capture_output=True,
+            timeout=_INFRA_PROBE_TIMEOUT,
+        )
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _watermarks(settings):
+        """(low, high, flood) disk watermarks as percentages.
+
+        Transient over persistent over defaults, as Elasticsearch resolves
+        them. A watermark set in bytes, or one that cannot be read, falls back
+        to Elasticsearch's own default for that level.
+        """
+        defaults = {"low": 85.0, "high": 90.0, "flood_stage": 95.0}
+        merged: dict = {}
+        if isinstance(settings, dict):
+            for layer in ("defaults", "persistent", "transient"):
+                merged.update(settings.get(layer) or {})
+        result = []
+        for level, fallback in defaults.items():
+            raw = str(
+                merged.get(f"cluster.routing.allocation.disk.watermark.{level}", "")
+            )
+            value = fallback
+            try:
+                if raw.endswith("%"):
+                    value = float(raw[:-1])
+                elif raw and float(raw) <= 1:
+                    value = float(raw) * 100
+            except ValueError:
+                pass
+            result.append(value)
+        return tuple(result)
+
+    def ensure_search_has_room(self, index_prefix=None):
+        """Refuse a boot that the shared search node's disk cannot take (LDM-#2247).
+
+        Remediation 3 on the issue. `_assert_search_cluster_is_usable` asks
+        whether the cluster is yellow, which it can be on a full disk: the
+        indices already there are allocated. What a full disk refuses is the
+        NEXT index. Above the high watermark Elasticsearch will not place a new
+        index's primary, so a project creating its index never sees yellow,
+        Liferay's search engine times out and takes the portal down with it, and
+        the boot hangs for its whole healthcheck window. Above flood stage every
+        index is made read-only, so no project can index.
+
+        Observed on v2.26.7-pre.6 verification (#2290): an OrbStack Mac at 96%
+        passed infra setup, and a new project then hung for 20 minutes.
+
+        Runs on every boot against shared search, not only when the container
+        is created, because the disk fills while it runs. Best effort: a value
+        that cannot be read is reported as unverified, never as a pass.
+        """
+        from ldm_core.docker_service import DockerService
+
+        target_name = getattr(self.manager, "target", None)
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+        search_name = "liferay-search-global"
+        if not DockerService.is_running(search_name, target_name=target_name):
+            return
+
+        nodes = self._search_json(
+            docker_prefix, search_name, "/_cat/allocation?format=json&bytes=b"
+        )
+        percents = []
+        for node in nodes if isinstance(nodes, list) else []:
+            try:
+                if node.get("node") not in (None, "UNASSIGNED"):
+                    percents.append(float(node.get("disk.percent")))
+            except (TypeError, ValueError):
+                continue
+        if not percents:
+            UI.detail(
+                "Global Search disk usage could not be read, so it was NOT verified."
+            )
+            return
+        used = max(percents)
+
+        low, high, flood = self._watermarks(
+            self._search_json(
+                docker_prefix,
+                search_name,
+                "/_cluster/settings?include_defaults=true&flat_settings=true",
+            )
+        )
+
+        index_exists = False
+        if index_prefix:
+            existing = self._search_json(
+                docker_prefix, search_name, f"/_cat/indices/{index_prefix}*?format=json"
+            )
+            index_exists = isinstance(existing, list) and len(existing) > 0
+
+        tip = (
+            "Free space where Docker keeps its data, then re-run:\n"
+            "      docker system df                 # what is using it\n"
+            "      ldm system prune -y --images     # unused images and build cache\n"
+            "      On OrbStack or Colima, the VM's disk limit (or the Mac's free "
+            "space) is what Elasticsearch sees."
+        )
+        if used >= flood:
+            UI.die(
+                f"Global Search's disk is {used:.0f}% full, past Elasticsearch's "
+                f"flood stage ({flood:.0f}%): every index is read-only, so no "
+                "project can index.",
+                tip=tip,
+                exit_code=3,
+            )
+        if used >= high and not index_exists:
+            UI.die(
+                f"Global Search's disk is {used:.0f}% full, past Elasticsearch's "
+                f"high watermark ({high:.0f}%): it will not create this project's "
+                "search index, and Liferay would hang waiting for it.",
+                tip=tip,
+                exit_code=3,
+            )
+        if used >= low:
+            UI.warning(
+                f"Global Search's disk is {used:.0f}% full. At {high:.0f}% "
+                "Elasticsearch stops accepting new indices, and new projects will "
+                "not start (LDM-#2247)."
+            )
+
     def _preinstall_search_plugins(self, docker_prefix, plugins_dir):
         """Install any missing analysis plugin before Elasticsearch opens data.
 
