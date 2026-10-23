@@ -96,6 +96,78 @@ def _announce_post_upgrade_actions(upgraded_from, upgraded_to):
     )
 
 
+def _windows_updater_script(temp_new, exe_path):
+    """The batch file that swaps the binary once this ldm.exe has exited.
+
+    LDM-#2212. Windows cannot replace a running executable, so the swap
+    happens after ldm exits, retrying while the image is still locked. Three
+    things made it read as a hang:
+
+    - it printed nothing until a retry failed, and nothing on success, so the
+      first word it ever said was "Access denied" even when it then worked;
+    - it ran in the caller's PowerShell console (see _launch_windows_updater),
+      so after ldm exited the prompt and the batch shared one console;
+    - every attempt ran `taskkill /F /IM ldm.exe /T`, killing EVERY ldm.exe
+      on the machine -- including a command typed while it retried. It is
+      gone rather than narrowed to a PID: ldm exits on its own straight after
+      staging (sys.exit(0)), and once it has, its PID can be reused by an
+      unrelated process.
+    """
+    return f"""@echo off
+setlocal enabledelayedexpansion
+set "RETRIES=0"
+set "MAX_RETRIES=10"
+title LDM upgrade
+echo Replacing "{exe_path}" ...
+
+:RETRY
+timeout /t 2 /nobreak > nul
+
+move /y "{temp_new}" "{exe_path}" >nul 2>&1
+if !errorlevel! equ 0 (
+echo [OK] LDM upgraded. Starting it to finish setting up...
+start "" "{exe_path}" doctor --skip-project
+goto :CLEANUP
+)
+
+set /a "RETRIES+=1"
+if !RETRIES! lss !MAX_RETRIES! (
+echo [!RETRIES!/!MAX_RETRIES!] The old ldm.exe is still in use, retrying in 2 seconds...
+goto :RETRY
+)
+
+echo [ERROR] Failed to apply update after !MAX_RETRIES! attempts.
+echo [ERROR] Please try running the following command manually in an elevated terminal:
+echo move /y "{temp_new}" "{exe_path}"
+pause
+
+:CLEANUP
+(goto) 2>nul & del "%~f0"
+"""
+
+
+def _launch_windows_updater(bat_path, has_access):
+    """Start the updater in its OWN console window (LDM-#2212).
+
+    It used to run as `cmd.exe /c` under shell=True, inheriting the caller's
+    console. ldm then exited, PowerShell printed its prompt, and the batch
+    kept running in the same window: two programs reading one keyboard and
+    interleaving output, which read as a frozen terminal -- and on failure its
+    `pause` waited there too. CREATE_NEW_CONSOLE gives it a window of its own.
+    """
+    if has_access:
+        # getattr: the flag exists only on Windows, and the tests run elsewhere.
+        flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0x00000010)
+        subprocess.Popen(["cmd.exe", "/c", str(bat_path)], creationflags=flags)
+    else:
+        UI.detail(
+            "\nRequesting administrative privileges to replace the binary in system path..."
+        )
+        # Start-Process opens its own (elevated) window already.
+        ps_cmd = f"Start-Process cmd -ArgumentList '/c \"{bat_path}\"' -Verb RunAs"
+        subprocess.Popen(["powershell.exe", "-Command", ps_cmd])
+
+
 def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
     """Self-upgrade the LDM binary to the latest version."""
     UI.heading("LDM Self-Upgrade")
@@ -376,37 +448,11 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
             # Windows replacement logic via temporary batch file with retry loop
             # We need to ensure the calling process has exited before we can move the file.
             bat_path = temp_new.with_suffix(".update.bat")
-            bat_content = f"""@echo off
-setlocal enabledelayedexpansion
-set "RETRIES=0"
-set "MAX_RETRIES=10"
-
-:RETRY
-timeout /t 2 /nobreak > nul
-taskkill /F /IM ldm.exe /T >nul 2>&1
-
-move /y "{temp_new}" "{exe_path}" >nul 2>&1
-if !errorlevel! equ 0 (
-start "" "{exe_path}" doctor --skip-project
-goto :CLEANUP
-)
-
-set /a "RETRIES+=1"
-if !RETRIES! lss !MAX_RETRIES! (
-echo [!RETRIES!/!MAX_RETRIES!] Access denied, retrying in 2 seconds...
-goto :RETRY
-)
-
-echo [ERROR] Failed to apply update after !MAX_RETRIES! attempts.
-echo [ERROR] Please try running the following command manually in an elevated terminal:
-echo move /y "{temp_new}" "{exe_path}"
-pause
-
-:CLEANUP
-(goto) 2>nul & del "%~f0"
-"""
-            bat_path.write_text(bat_content)
-            UI.success("Update staged. LDM will restart in a new window to complete.")
+            bat_path.write_text(_windows_updater_script(temp_new, exe_path))
+            UI.success(
+                "Update staged. It completes in a separate window, which "
+                "reports the result and then starts LDM."
+            )
 
             # Check if we have write access to the target directory
             try:
@@ -417,18 +463,7 @@ pause
             except (PermissionError, OSError):
                 has_access = False
 
-            if has_access:
-                # Bandit: B602 (shell=True) is necessary here to launch the independent Windows batch updater.
-                # The path is internally generated and sanitized.
-                subprocess.Popen(["cmd.exe", "/c", str(bat_path)], shell=True)  # nosec B602
-            else:
-                UI.detail(
-                    "\nRequesting administrative privileges to replace the binary in system path..."
-                )
-                ps_cmd = (
-                    f"Start-Process cmd -ArgumentList '/c \"{bat_path}\"' -Verb RunAs"
-                )
-                subprocess.Popen(["powershell.exe", "-Command", ps_cmd])
+            _launch_windows_updater(bat_path, has_access)
 
             sys.exit(0)
         else:
