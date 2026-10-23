@@ -2744,7 +2744,7 @@ class ConfigService:
         re-passed reverted to its default. The documented repair for a wrong
         SSH user --
 
-            ldm target add aws-1 --host 13.49.210.78 --user ec2-user
+            ldm target add node-a --host 203.0.113.10 --user ec2-user
 
         -- therefore reported "registered successfully" and silently destroyed
         the node's `mac_address`. The next `ldm run` booted a container with a

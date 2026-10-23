@@ -2244,12 +2244,12 @@ class DoctorRunner:
         hand-edited `~/.ldmrc`, or a context rebuilt by anything other than LDM
         separates them silently.
 
-        Measured on `aws-1`:
+        Measured on `node-a`:
 
-            context : ssh://ldm-automation@13.49.210.78
+            context : ssh://ldm-automation@203.0.113.10
             ~/.ldmrc: user=ec2-user
-            $ docker --context aws-1 version
-              ldm-automation@13.49.210.78: Permission denied (publickey,...).
+            $ docker --context node-a version
+              ldm-automation@203.0.113.10: Permission denied (publickey,...).
 
         That is the worst shape a failure can take: `ldm target ls` showed a
         correct configuration, the node was genuinely reachable, and every
@@ -2322,7 +2322,7 @@ class DoctorRunner:
         VM's disk is the one actually full (confirmed directly against a
         real Colima setup during the #1083 investigation this same day).
 
-        `docker_prefix` (e.g. `["docker", "--context", "aws-1"]`) redirects
+        `docker_prefix` (e.g. `["docker", "--context", "node-a"]`) redirects
         this to a remote target's engine -- disk space is a property of
         whichever engine you're asking, so an explicit --node/--target
         should reflect that engine's disk, not always the local one.

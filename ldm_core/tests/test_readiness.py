@@ -252,7 +252,9 @@ class TestReadiness(unittest.TestCase):
         """_wait_for_ready's docker logs/inspect calls must honor the project's target (#1133)."""
         from ldm_core.config import TargetNode
 
-        self.mock_active_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        self.mock_active_target.return_value = TargetNode(
+            name="node-a", host="34.1.1.1"
+        )
 
         def mock_time_side_effect():
             yield 1000
@@ -279,35 +281,35 @@ class TestReadiness(unittest.TestCase):
             ),
         ):
             mock_time.side_effect = mock_time_side_effect()
-            project_meta = {"container_name": "test-container", "target": "aws-1"}
+            project_meta = {"container_name": "test-container", "target": "node-a"}
             self.handler.handler.readiness._wait_for_ready(project_meta, "test.local")
 
         has_context = any(
-            "--context" in cmd and "aws-1" in cmd
+            "--context" in cmd and "node-a" in cmd
             for cmd in called_cmds
             if isinstance(cmd, list)
         )
         self.assertTrue(
-            has_context, f"Expected --context aws-1 in one of {called_cmds}"
+            has_context, f"Expected --context node-a in one of {called_cmds}"
         )
 
     def test_cmd_wait_uses_remote_target_context(self):
         """cmd_wait's docker stats CPU-idle poll must honor the project's target (#1133)."""
         from ldm_core.config import TargetContext, TargetNode
 
-        target_node = TargetNode(name="aws-1", host="34.1.1.1")
+        target_node = TargetNode(name="node-a", host="34.1.1.1")
         self.mock_active_target.return_value = target_node
         target_ctx = TargetContext(
             target=target_node,
             is_remote=True,
-            docker_prefix=["docker", "--context", "aws-1"],
-            compose_prefix=["docker-compose", "--context", "aws-1"],
+            docker_prefix=["docker", "--context", "node-a"],
+            compose_prefix=["docker-compose", "--context", "node-a"],
         )
 
         meta_val = {
             "container_name": "test-runtime",
             "host_name": "localhost",
-            "target": "aws-1",
+            "target": "node-a",
         }
         self.handler.read_meta = MagicMock(return_value=meta_val)  # type: ignore[method-assign]
         self.handler.manager.workspace.read_meta = MagicMock(return_value=meta_val)  # type: ignore[method-assign]
@@ -327,19 +329,19 @@ class TestReadiness(unittest.TestCase):
         self.assertTrue(mock_wfr.called)
         called_cmds = [c.args[0] for c in mock_run.call_args_list]
         has_context = any(
-            "--context" in cmd and "aws-1" in cmd
+            "--context" in cmd and "node-a" in cmd
             for cmd in called_cmds
             if isinstance(cmd, list)
         )
         self.assertTrue(
-            has_context, f"Expected --context aws-1 in one of {called_cmds}"
+            has_context, f"Expected --context node-a in one of {called_cmds}"
         )
 
     def test_cmd_wait_remote_target_http_probe_uses_node_host(self):
         """Issue #1223: cmd_wait HTTP readiness probe must use remote node host IP instead of 127.0.0.1."""
         from ldm_core.config import TargetContext, TargetNode
 
-        target_node = TargetNode(name="aws-1", host="51.20.52.201")
+        target_node = TargetNode(name="node-a", host="203.0.113.20")
         target_ctx = TargetContext(
             target=target_node, is_remote=True, docker_prefix=[], compose_prefix=[]
         )
@@ -348,7 +350,7 @@ class TestReadiness(unittest.TestCase):
             return_value={
                 "container_name": "test-runtime",
                 "host_name": "localhost",
-                "target": "aws-1",
+                "target": "node-a",
                 "port": 8080,
             }
         )
@@ -372,7 +374,7 @@ class TestReadiness(unittest.TestCase):
         self.assertTrue(res)
         self.assertTrue(mock_http_get.called)
         called_url = mock_http_get.call_args[0][0]
-        self.assertIn("51.20.52.201", called_url)
+        self.assertIn("203.0.113.20", called_url)
         self.assertNotIn("127.0.0.1", called_url)
 
     @patch("ldm_core.ui.UI.raw")

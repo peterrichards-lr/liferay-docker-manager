@@ -39,6 +39,9 @@ ldm-debug-bundle*.zip
 e2e-work-dir/
 test-results/
 .node-power-state.json
+# LDM-#2292: written from the NODE_POWER_CONFIG Actions secret at run time;
+# never committed (it names the maintainer's own compute nodes).
+.node-power-config.json
 /verify-*.txt
 # Transient results file written by scripts/verify_e2e_refactor.{sh,ps1}
 /.ldm-verify-tmp-*.txt

@@ -1656,7 +1656,7 @@ class TestCommandRunner(unittest.TestCase):
             "DOCKER_HOST": "unix:///Users/me/.colima/default/docker.sock",
         }
         runner = CommandRunner(env=env_with_docker_host)
-        runner.run(["docker", "--context", "aws-1", "ps"], capture_output=True)
+        runner.run(["docker", "--context", "node-a", "ps"], capture_output=True)
 
         actual_env = mock_run.call_args.kwargs["env"]
         self.assertNotIn("DOCKER_HOST", actual_env)
@@ -2235,20 +2235,20 @@ class TestSearchSnapshotAcceptance(unittest.TestCase):
 class TestRemoteContextFailureDiagnosis(unittest.TestCase):
     """LDM-#1345: a node we cannot reach gets a diagnosis, not an HTTP/SSH blob."""
 
-    # The exact stderr observed on v2.17.0 with aws-1 powered down.
+    # The exact stderr observed on v2.17.0 with node-a powered down.
     REAL_STDERR = (
         'error during connect: Get "http://docker.example.com/v1.44/containers/'
         "json?all=1&filters=%7B%22label%22%3A%7B%22com.docker.compose.config-hash"
         "%22%3Atrue%2C%22com.docker.compose.project%3De2e-test-env%22%3Atrue%7D%7D"
-        '": command [ssh -l ec2-user -o ConnectTimeout=30 -T -- 51.20.52.201 '
+        '": command [ssh -l ec2-user -o ConnectTimeout=30 -T -- 203.0.113.20 '
         "docker system dial-stdio] has exited with exit status 255, make sure "
         "the URL is valid, and Docker 18.09 or later is installed on the remote "
-        "host: stderr=ssh: connect to host 51.20.52.201 port 22: Operation timed out"
+        "host: stderr=ssh: connect to host 203.0.113.20 port 22: Operation timed out"
     )
     REAL_CMD: typing.ClassVar[list[str]] = [
         "/opt/homebrew/bin/docker",
         "--context",
-        "aws-1",
+        "node-a",
         "compose",
         "down",
         "-v",
@@ -2263,14 +2263,14 @@ class TestRemoteContextFailureDiagnosis(unittest.TestCase):
     def test_the_observed_failure_names_node_user_host_and_cause(self):
         message, tip = self._diagnose(self.REAL_CMD, self.REAL_STDERR)
         self.assertEqual(
-            "Cannot reach compute node 'aws-1' over SSH "
-            "(ec2-user@51.20.52.201:22 timed out).",
+            "Cannot reach compute node 'node-a' over SSH "
+            "(ec2-user@203.0.113.20:22 timed out).",
             message,
         )
         # The tip must point at the commands that actually exist, and name the
         # node, because the usual cause is a stale stored host (LDM-#1346).
-        self.assertIn("ldm target status aws-1", tip)
-        self.assertIn("ldm target add aws-1 --host <ip> --user ec2-user", tip)
+        self.assertIn("ldm target status node-a", tip)
+        self.assertIn("ldm target add node-a --host <ip> --user ec2-user", tip)
 
     def test_the_alarming_placeholder_host_is_not_repeated_back(self):
         """`docker.example.com` is a Docker placeholder, not a real endpoint."""
@@ -2289,13 +2289,13 @@ class TestRemoteContextFailureDiagnosis(unittest.TestCase):
         """For most commands the stderr *is* the useful output -- do not eat it."""
         self.assertIsNone(
             self._diagnose(
-                ["docker", "--context", "aws-1", "compose", "up"],
+                ["docker", "--context", "node-a", "compose", "up"],
                 "service 'liferay' has neither an image nor a build context",
             )
         )
 
     def test_empty_stderr_is_not_diagnosed(self):
-        self.assertIsNone(self._diagnose(["docker", "--context", "aws-1", "ps"], ""))
+        self.assertIsNone(self._diagnose(["docker", "--context", "node-a", "ps"], ""))
 
     def test_other_ssh_causes_are_named_distinctly(self):
         cases = {
@@ -2307,7 +2307,7 @@ class TestRemoteContextFailureDiagnosis(unittest.TestCase):
         for stderr, expected in cases.items():
             with self.subTest(stderr=stderr):
                 message, _ = self._diagnose(
-                    ["docker", "--context", "aws-1", "ps"],
+                    ["docker", "--context", "node-a", "ps"],
                     f"error during connect: ... stderr={stderr}",
                 )
                 self.assertIn(expected, message)
@@ -2315,9 +2315,9 @@ class TestRemoteContextFailureDiagnosis(unittest.TestCase):
     def test_a_string_command_is_handled_as_well_as_a_list(self):
         """run_command accepts shell strings too; the parser must not assume a list."""
         message, _ = self._diagnose(
-            "docker --context aws-1 compose down", self.REAL_STDERR
+            "docker --context node-a compose down", self.REAL_STDERR
         )
-        self.assertIn("aws-1", message)
+        self.assertIn("node-a", message)
 
     # LDM-#1863: the tip is the half a caller acts on, and every reason used to
     # share one. Reported from liferay-ai-commerce-accelerator, where an EC2
@@ -2325,7 +2325,7 @@ class TestRemoteContextFailureDiagnosis(unittest.TestCase):
 
     def test_a_refused_connection_points_at_a_node_that_may_still_be_booting(self):
         _, tip = self._diagnose(
-            ["docker", "--context", "aws-2", "ps"],
+            ["docker", "--context", "node-b", "ps"],
             "error during connect: ... stderr=ssh: connect to host "
             "16.192.101.229 port 22: Connection refused",
         )
@@ -2335,7 +2335,7 @@ class TestRemoteContextFailureDiagnosis(unittest.TestCase):
     def test_refused_credentials_are_not_blamed_on_a_changed_ip(self):
         """sshd answered, so connectivity is proven -- do not send them to re-register."""
         _, tip = self._diagnose(
-            ["docker", "--context", "aws-2", "ps"],
+            ["docker", "--context", "node-b", "ps"],
             "error during connect: ... stderr=ssh: connect to host "
             "16.192.101.229 port 22: ssh -l ec2-user\nPermission denied (publickey).",
         )
@@ -2345,7 +2345,7 @@ class TestRemoteContextFailureDiagnosis(unittest.TestCase):
 
     def test_a_host_key_failure_names_the_entry_to_purge(self):
         _, tip = self._diagnose(
-            ["docker", "--context", "aws-2", "ps"],
+            ["docker", "--context", "node-b", "ps"],
             "error during connect: ... stderr=ssh: connect to host 10.0.0.5 "
             "port 22: Host key verification failed.",
         )
@@ -2361,11 +2361,11 @@ class TestRemoteContextFailureDiagnosis(unittest.TestCase):
     def test_an_unrecognised_cause_still_gets_the_general_advice(self):
         """The fallback must survive: an unknown stderr is the commonest case."""
         _, tip = self._diagnose(
-            ["docker", "--context", "aws-2", "ps"],
+            ["docker", "--context", "node-b", "ps"],
             "error during connect: ... stderr=ssh: something entirely new",
         )
         self.assertIn("public IP may have changed", tip)
-        self.assertIn("ldm target status aws-2", tip)
+        self.assertIn("ldm target status node-b", tip)
 
 
 class TestSshTransportRetry(unittest.TestCase):
@@ -2380,7 +2380,7 @@ class TestSshTransportRetry(unittest.TestCase):
     earlier retry test in this repo measured nothing.
     """
 
-    CMD: typing.ClassVar[list[str]] = ["docker", "--context", "aws-2", "compose", "ps"]
+    CMD: typing.ClassVar[list[str]] = ["docker", "--context", "node-b", "compose", "ps"]
     REFUSED = (
         "error during connect: ... stderr=ssh: connect to host 10.0.0.5 "
         "port 22: Connection refused"
@@ -2520,18 +2520,18 @@ class TestAnnounceRemoteTargets(unittest.TestCase):
         self.assertEqual([], self._announce({"alpha": "local", "beta": "local"}))
 
     def test_a_single_remote_project_is_announced_with_its_node(self):
-        said = self._announce({"e2e-test-env": "aws-1"})
+        said = self._announce({"e2e-test-env": "node-a"})
         self.assertEqual(1, len(said))
         self.assertIn("1 project targets", said[0])
-        self.assertIn("e2e-test-env -> aws-1", said[0])
+        self.assertIn("e2e-test-env -> node-a", said[0])
         self.assertIn("will wait if the node is asleep", said[0])
 
     def test_it_is_said_once_for_the_command_not_once_per_project(self):
-        said = self._announce({"alpha": "aws-1", "beta": "aws-2", "gamma": "local"})
+        said = self._announce({"alpha": "node-a", "beta": "node-b", "gamma": "local"})
         self.assertEqual(1, len(said), "expected a single announcement")
         self.assertIn("2 projects target", said[0])
-        self.assertIn("alpha -> aws-1", said[0])
-        self.assertIn("beta -> aws-2", said[0])
+        self.assertIn("alpha -> node-a", said[0])
+        self.assertIn("beta -> node-b", said[0])
         self.assertNotIn("gamma", said[0], "local projects are not worth naming")
 
     def test_an_unreadable_meta_does_not_break_the_announcement(self):
@@ -2576,15 +2576,15 @@ class TestRemoteFailureIsReportedNotDumped(unittest.TestCase):
         return errors, details, printed
 
     def test_the_user_sees_a_diagnosis_and_not_the_blob(self):
-        cmd = ["docker", "--context", "aws-1", "compose", "down"]
+        cmd = ["docker", "--context", "node-a", "compose", "down"]
         errors, details, printed = self._run_failing_docker(
             cmd, TestRemoteContextFailureDiagnosis.REAL_STDERR
         )
 
         self.assertEqual(1, len(errors))
         message, kwargs = errors[0]
-        self.assertIn("Cannot reach compute node 'aws-1' over SSH", message)
-        self.assertIn("ldm target status aws-1", kwargs.get("tip", ""))
+        self.assertIn("Cannot reach compute node 'node-a' over SSH", message)
+        self.assertIn("ldm target status node-a", kwargs.get("tip", ""))
 
         # The old unconditional `print("Error Details: ...")` must be gone.
         printed.assert_not_called()

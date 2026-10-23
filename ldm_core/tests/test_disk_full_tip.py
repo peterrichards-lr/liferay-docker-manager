@@ -44,13 +44,13 @@ class TestTheRemedyIsNamed(unittest.TestCase):
 
     def test_a_remote_failure_carries_the_node_so_the_command_is_copy_pasteable(self):
         """Without the node the user has to work out which host filled up."""
-        err, _ = _run(["docker", "--context", "aws-1", "compose", "up", "-d"], ENOSPC)
-        self.assertIn("ldm system prune --images --node aws-1", err)
-        self.assertIn("aws-1", err)
+        err, _ = _run(["docker", "--context", "node-a", "compose", "up", "-d"], ENOSPC)
+        self.assertIn("ldm system prune --images --node node-a", err)
+        self.assertIn("node-a", err)
 
     def test_a_shell_string_command_is_handled_as_well_as_a_list(self):
-        err, _ = _run("docker --context aws-1 compose up -d", ENOSPC)
-        self.assertIn("--node aws-1", err)
+        err, _ = _run("docker --context node-a compose up -d", ENOSPC)
+        self.assertIn("--node node-a", err)
 
 
 class TestItDoesNotFireOnEverythingElse(unittest.TestCase):

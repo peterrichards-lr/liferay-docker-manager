@@ -234,7 +234,7 @@ class TestInfraService(unittest.TestCase):
             "ldm_core.docker_service.DockerService.inspect",
             return_value=mock_inspect_json,
         ):
-            ports = self.infra.get_proxy_ports(target_name="aws-1")
+            ports = self.infra.get_proxy_ports(target_name="node-a")
             self.assertEqual(ports, {"http": 8080, "https": 8443, "admin": 18081})
 
     def test_get_proxy_ports_null_settings(self):
@@ -585,7 +585,7 @@ class TestInfraService(unittest.TestCase):
 
     def test_cmd_infra_setup_remote_target(self) -> None:
         """Test cmd_infra_setup passes target context prefix to docker compose command."""
-        self.manager.target = "aws-1"
+        self.manager.target = "node-a"
         self.manager.args.search = False
         self.manager.check_docker = MagicMock(return_value=True)  # type: ignore[attr-defined]
         self.manager.detect_project_path = MagicMock(return_value=None)  # type: ignore[attr-defined]
@@ -595,14 +595,14 @@ class TestInfraService(unittest.TestCase):
         ):
             from ldm_core.config import TargetNode
 
-            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+            mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
             mock_run.return_value = "OK"
 
             self.infra.cmd_infra_setup()
             mock_run.assert_called()
             called_cmds = [call[0][0] for call in mock_run.call_args_list]
             has_context = any(
-                "--context" in cmd and "aws-1" in cmd
+                "--context" in cmd and "node-a" in cmd
                 for cmd in called_cmds
                 if isinstance(cmd, list)
             )

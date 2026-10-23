@@ -665,7 +665,7 @@ Running `target add` against a name that already exists **merges** onto the
 stored node: any flag you do not pass keeps its stored value (LDM-#1797).
 
 ```bash
-ldm target add aws-1 --user ec2-user     # host, key, MAC pin and default kept
+ldm target add node-a --user ec2-user     # host, key, MAC pin and default kept
 ```
 
 It used to replace the node wholesale, so the obvious repair for a wrong SSH
@@ -676,8 +676,8 @@ Clearing a value is still possible -- an absent flag and a flag passed with an
 empty value are different inputs:
 
 ```bash
-ldm target add aws-1 --mac-address ""    # removes the pin
-ldm target add aws-1 --user ""           # removes the SSH user
+ldm target add node-a --mac-address ""    # removes the pin
+ldm target add node-a --user ""           # removes the SSH user
 ```
 
 `--default` is the exception: a `store_true` flag has no empty spelling, so
@@ -686,10 +686,10 @@ ldm target add aws-1 --user ""           # removes the SSH user
 An update reports what it changed and what it kept:
 
 ```text
-✅  Target node 'aws-1' (13.49.210.78) updated.
+✅  Target node 'node-a' (203.0.113.10) updated.
 ℹ  Changed SSH user: ldm-automation -> ec2-user
-ℹ  Docker context 'aws-1' rebuilt to dial ssh://ec2-user@13.49.210.78.
-ℹ  Kept host 13.49.210.78, MAC pin 06:ff:c5:f9:cf:a5 (not passed).
+ℹ  Docker context 'node-a' rebuilt to dial ssh://ec2-user@203.0.113.10.
+ℹ  Kept host 203.0.113.10, MAC pin 06:ff:c5:f9:cf:a5 (not passed).
 ```
 
 An update that moves nothing reports `stored settings unchanged` rather than a
@@ -704,7 +704,7 @@ Activation page** instead of the Sign In form -- with a healthy container and
 `License registered` in the log, so nothing looks wrong.
 
 ```bash
-ldm target add aws-1 --host 10.0.0.9 --user ec2-user \
+ldm target add node-a --host 10.0.0.9 --user ec2-user \
   --mac-address 06:d0:95:e5:26:a7
 ```
 
@@ -718,7 +718,7 @@ re-run keeps every other setting you do not pass.
 you gave matches none of them, naming each one so you can pick the right one:
 
 ```text
-⚠️  MAC 02:42:de:ad:be:ef matches none of 'aws-1's interfaces
+⚠️  MAC 02:42:de:ad:be:ef matches none of 'node-a's interfaces
     (docker0 02:42:11:22:33:44, ens5 06:1a:2b:3c:4d:5e).
 ```
 
@@ -733,7 +733,7 @@ registering a node that is currently stopped is legitimate and pays the full
 connect timeout there -- measured 6s to 16s against an unroutable host:
 
 ```text
-ℹ  Checking 'aws-1's interfaces for the pinned MAC (up to 10s if the node is
+ℹ  Checking 'node-a's interfaces for the pinned MAC (up to 10s if the node is
    unreachable)...
 ```
 
@@ -753,11 +753,11 @@ Migrate a running project workload live between target compute nodes with zero m
 
 ```bash
 ldm target migrate local win-wsl
-ldm target migrate win-wsl aws-1
+ldm target migrate win-wsl node-a
 ```
 
 *(Performs pre-flight target probe -> creates live snapshot on source -> stops source stack -> syncs workspace via `rsync` -> reassigns project target metadata -> starts workload on destination node).*
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-14* | *Last Reviewed: 2026-10-14*
+*Last Updated: 2026-10-23* | *Last Reviewed: 2026-10-23*

@@ -16,7 +16,7 @@ The identical bug appeared independently in three different files, because there
 |---|---|---|
 | `handlers/base.py` (`_pre_flight_checks`) | Brand-new project's `ldm run --node X` ran the local-only port check anyway | `meta["target"]` is never populated during `run` itself, and `self.target` wasn't checked first |
 | `handlers/composer.py` (`write_docker_compose`) | Bind-mount paths stayed local even with a persisted default target set | `get_active_target()` was only called inside `if target_name:` — skipped entirely when nothing explicit was set, so the persisted-default fallback never ran |
-| `diagnostics/info.py` (`run_list`/`run_status`/`run_info`) | `ldm list` displayed `Target: local` while the project was actually running on the persisted default `aws-2` | `meta.get("target", "local")` — passing the literal string `"local"` into `get_active_target()` makes it treat that as an *explicit* choice, which short-circuits its own persisted-default check |
+| `diagnostics/info.py` (`run_list`/`run_status`/`run_info`) | `ldm list` displayed `Target: local` while the project was actually running on the persisted default `node-b` | `meta.get("target", "local")` — passing the literal string `"local"` into `get_active_target()` makes it treat that as an *explicit* choice, which short-circuits its own persisted-default check |
 
 Three fixes, three files, one underlying cause. Without a shared abstraction, there will be a fourth place with the same bug the next time someone touches this.
 
@@ -41,7 +41,7 @@ Separately, categories that are ambiguous by *design*, not just unfixed — thes
 
 ## 3. Additional UX gaps found via live use
 
-- **Silent remote provisioning.** When a persisted default target is set via `ldm target use`, `ldm run` on a plain project (no explicit `--node`) silently provisions against that remote target with no upfront indication — the first sign is `--verbose` output showing `docker --context aws-2 ...` mid-run. A user who forgot they'd set a default, or inherited a machine with one already set, has no warning before real infrastructure gets touched.
+- **Silent remote provisioning.** When a persisted default target is set via `ldm target use`, `ldm run` on a plain project (no explicit `--node`) silently provisions against that remote target with no upfront indication — the first sign is `--verbose` output showing `docker --context node-b ...` mid-run. A user who forgot they'd set a default, or inherited a machine with one already set, has no warning before real infrastructure gets touched.
 - **Redundant double confirmation.** Re-running `ldm run` against an existing, currently-running project shows *two* separate confirmations in sequence: an `interruptible_pause` ("already exists, CTRL+C to cancel") from `ProjectInitializationStage`, followed by a blocking `UI.confirm` ("already running, reconfigure and restart? [Y/n]") from `RuntimeValidationStage`. These fire independently because the two stages don't share what they each already know. The CTRL+C style pause is preferred where one is sufficient, since it doesn't block indefinitely on input.
 
 Neither of these is a "remote node" bug specifically, but both stem from the same underlying issue: state (is this remote? is this already running? has the user already been warned once this command?) isn't tracked as a single resolved thing and passed along — it's recomputed piecemeal at each point that happens to need it.
@@ -55,7 +55,7 @@ Two of the gaps above have been closed:
   remote context is dialled, naming the project/node pairs involved:
 
   ```text
-  ℹ  1 project targets a remote compute node (e2e-test-env -> aws-1); this may
+  ℹ  1 project targets a remote compute node (e2e-test-env -> node-a); this may
      take longer than usual, and will wait if the node is asleep.
   ```
 
@@ -76,11 +76,11 @@ Two of the gaps above have been closed:
   eight words -- the one fact that mattered. It now reports:
 
   ```text
-  ❌  Cannot reach compute node 'aws-1' over SSH (ec2-user@51.20.52.201:22 timed out).
+  ❌  Cannot reach compute node 'node-a' over SSH (ec2-user@203.0.113.20:22 timed out).
   💡 Tip:  Nothing answered within the connect timeout. That is usually a firewall
            or security group dropping the packets, or a node that is stopped and
            whose public IP has changed since it was registered. Check with
-           'ldm target status aws-1', then re-register with 'ldm target add aws-1
+           'ldm target status node-a', then re-register with 'ldm target add node-a
            --host <ip> --user ec2-user --key <key>'.
   ```
 
@@ -188,7 +188,7 @@ If an explicit `--node` disagrees with a project that's **already pinned** to a 
 
 ### Pinning
 
-If a project has **no pinned target yet**, whatever it resolves to — whether from an explicit `--node` or by falling through to the global default — is written back into the project's metadata. This stops a project's effective target from silently drifting if the global default changes later: without pinning, a project that only ever inherited the ambient default would appear to move to a different node the moment someone runs `ldm target use` for something unrelated, even though its actual files and volumes never moved. This is exactly the failure mode observed live: a project provisioned on `aws-2` (the default at creation time) was later displayed as a `local` node project once other commands re-derived the target independently instead of reading a pinned value.
+If a project has **no pinned target yet**, whatever it resolves to — whether from an explicit `--node` or by falling through to the global default — is written back into the project's metadata. This stops a project's effective target from silently drifting if the global default changes later: without pinning, a project that only ever inherited the ambient default would appear to move to a different node the moment someone runs `ldm target use` for something unrelated, even though its actual files and volumes never moved. This is exactly the failure mode observed live: a project provisioned on `node-b` (the default at creation time) was later displayed as a `local` node project once other commands re-derived the target independently instead of reading a pinned value.
 
 ### Open question: sync strategy for `deploy`/`monitor`
 
@@ -273,7 +273,7 @@ a bridge-assigned address and validation fails -- the portal boots healthy,
 logs `License registered`, and then serves the **DXP Activation page** instead
 of the Sign In form.
 
-Measured on `aws-1` with `liferay/dxp:2026.q3.0`, the container recreated
+Measured on `node-a` with `liferay/dxp:2026.q3.0`, the container recreated
 identically except for `--mac-address`:
 
 | | Before | After |
@@ -309,7 +309,7 @@ Check your key for a `mac-address` field before configuring anything.
 ### Configure it per node
 
 ```bash
-ldm target add aws-1 --host <node-ip> --user ec2-user \
+ldm target add node-a --host <node-ip> --user ec2-user \
   --mac-address 06:d0:95:e5:26:a7
 ```
 
@@ -383,7 +383,7 @@ without it:
 
 ```text
 node configured : mac_address = 06:ff:c5:f9:cf:a5
-$ ldm-2.22.0 -y run myproject --node aws-1
+$ ldm-2.22.0 -y run myproject --node node-a
   exit          : 0
   container MAC : 02:42:ac:12:00:03     <- bridge address
 ```
@@ -492,17 +492,17 @@ A remote target is described twice, and only one of the two is LDM's:
 afterwards keeps them in step. A `docker context update`, a hand-edited
 `~/.ldmrc`, or a context rebuilt by anything other than LDM separates them
 silently -- and the result is the least legible failure in the product,
-measured on `aws-1` while preparing `v2.23.0-pre.5`:
+measured on `node-a` while preparing `v2.23.0-pre.5`:
 
 ```text
-$ docker context inspect aws-1 --format '{{.Endpoints.docker.Host}}'
-ssh://ldm-automation@13.49.210.78
+$ docker context inspect node-a --format '{{.Endpoints.docker.Host}}'
+ssh://ldm-automation@203.0.113.10
 
 $ ldm target ls    # ~/.ldmrc
-aws-1  host=13.49.210.78  user=ec2-user
+node-a  host=203.0.113.10  user=ec2-user
 
-$ docker --context aws-1 version
-ldm-automation@13.49.210.78: Permission denied (publickey,...).
+$ docker --context node-a version
+ldm-automation@203.0.113.10: Permission denied (publickey,...).
 ```
 
 `ldm target ls` showed a correct configuration, the node was genuinely
@@ -513,7 +513,7 @@ nobody had configured.
 configured state compared against reality rather than trusted:
 
 ```text
-[aws-1] SSH user     DRIFTED (ldm-automation)
+[node-a] SSH user     DRIFTED (ldm-automation)
 ```
 
 The host half of the same divergence is reported by `ldm target status`
@@ -529,7 +529,7 @@ trap rather than the fix. `save_target_node` does
 built a fresh node from only the flags it was given, so:
 
 ```bash
-ldm target add aws-1 --host 13.49.210.78 --user ec2-user   # no --mac-address
+ldm target add node-a --host 203.0.113.10 --user ec2-user   # no --mac-address
 ```
 
 reported *"registered successfully"* and **destroyed the node's MAC pin**. The
@@ -545,8 +545,8 @@ is still expressible, because an absent flag and a flag passed empty are
 different inputs:
 
 ```bash
-ldm target add aws-1 --user ec2-user        # keeps host, key and MAC pin
-ldm target add aws-1 --mac-address ""       # removes the pin, deliberately
+ldm target add node-a --user ec2-user        # keeps host, key and MAC pin
+ldm target add node-a --mac-address ""       # removes the pin, deliberately
 ```
 
 `--default` is the one exception. A `store_true` flag has no empty spelling, so
@@ -558,10 +558,10 @@ rather than `UI.detail`, because detail is gated behind `--info`/`--verbose`
 (LDM-#1036) and would be invisible in exactly the invocation that matters:
 
 ```text
-✅  Target node 'aws-1' (13.49.210.78) updated.
+✅  Target node 'node-a' (203.0.113.10) updated.
 ℹ  Changed SSH user: ldm-automation -> ec2-user
-ℹ  Docker context 'aws-1' rebuilt to dial ssh://ec2-user@13.49.210.78.
-ℹ  Kept host 13.49.210.78, MAC pin 06:ff:c5:f9:cf:a5 (not passed).
+ℹ  Docker context 'node-a' rebuilt to dial ssh://ec2-user@203.0.113.10.
+ℹ  Kept host 203.0.113.10, MAC pin 06:ff:c5:f9:cf:a5 (not passed).
 ℹ  Pass a flag with an empty value to clear one, e.g. --mac-address "".
 ```
 
@@ -570,10 +570,10 @@ rather than "nothing changed" -- because the Docker context is rebuilt on every
 remote add, and in the drift repair above `~/.ldmrc` was right all along:
 
 ```text
-✅  Target node 'aws-1' (13.49.210.78) already matched; stored settings unchanged.
-ℹ  Docker context 'aws-1' rebuilt to dial ssh://ec2-user@13.49.210.78.
+✅  Target node 'node-a' (203.0.113.10) already matched; stored settings unchanged.
+ℹ  Docker context 'node-a' rebuilt to dial ssh://ec2-user@203.0.113.10.
 ```
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-30* | *Last Reviewed: 2026-09-30*
+*Last Updated: 2026-10-23* | *Last Reviewed: 2026-10-23*

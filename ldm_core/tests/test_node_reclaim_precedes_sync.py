@@ -32,7 +32,7 @@ _HOME = "/home/ldm"
 
 
 def _target():
-    return SimpleNamespace(name="aws-2", host="10.0.0.9", user="ldm", key_path=None)
+    return SimpleNamespace(name="node-b", host="10.0.0.9", user="ldm", key_path=None)
 
 
 class _Node:
@@ -90,7 +90,7 @@ class _Harness:
             patch("shutil.which", return_value="/usr/bin/rsync"),
             patch(
                 "ldm_core.docker_service.DockerService.get_docker_cmd_prefix",
-                return_value=["docker", "--context", "aws-2"],
+                return_value=["docker", "--context", "node-b"],
             ),
             patch.dict("os.environ", {"LDM_DRY_RUN": ""}),
         ]
@@ -115,7 +115,7 @@ class TheSyncReclaimsFirst(unittest.TestCase):
 
         node = _Node(probe)
         with _Harness(node):
-            sync_project_to_target(Path("/tmp/aica-e2e"), target_name="aws-2")
+            sync_project_to_target(Path("/tmp/aica-e2e"), target_name="node-b")
         return node
 
     def test_container_written_trees_are_reclaimed_before_the_rsync(self):

@@ -101,7 +101,7 @@ class TestDatabaseQueryCommand(unittest.TestCase):
         # DockerService.get_docker_cmd_prefix() now always consults
         # get_active_target(), even with no explicit target_name, so an
         # unmocked call here would otherwise pick up e.g. a tester's own
-        # persisted "aws-2" default instead of "local".
+        # persisted "node-b" default instead of "local".
         from ldm_core.config import TargetNode
 
         self.target_patcher = patch(
@@ -277,7 +277,7 @@ class TestDatabaseQueryCommand(unittest.TestCase):
                 patch.object(
                     self.manager,
                     "read_meta",
-                    return_value={"db_type": "postgresql", "target": "aws-1"},
+                    return_value={"db_type": "postgresql", "target": "node-a"},
                 ),
                 patch.object(
                     self.manager, "run_command", return_value="container-id"
@@ -287,7 +287,7 @@ class TestDatabaseQueryCommand(unittest.TestCase):
             ):
                 from ldm_core.config import TargetNode
 
-                mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+                mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
                 mock_res = MagicMock()
                 mock_res.returncode = 0
                 mock_res.stdout = b"companyid\n10154\n"
@@ -307,7 +307,7 @@ class TestDatabaseQueryCommand(unittest.TestCase):
                     if isinstance(call[0][0], list)
                 ]
                 has_context = any(
-                    "--context" in cmd and "aws-1" in cmd
+                    "--context" in cmd and "node-a" in cmd
                     for cmd in called_cmds
                     if isinstance(cmd, list)
                 )
@@ -411,12 +411,12 @@ class TestSharedDatabaseCommandsResolvePerTarget(SharedDatabaseCommandTestCase):
     # it is now passed: into DockerService.
     def test_cmd_start_passes_the_explicit_target_through(self):
         fake = self.install_docker(containers={PG_GLOBAL: False})
-        self.manager.target = "aws-1"
+        self.manager.target = "node-a"
 
         self.manager.database.cmd_start()
 
-        self.assertIn((PG_GLOBAL, "aws-1"), fake.existence_checks)
-        self.assertEqual([(PG_GLOBAL, "aws-1")], fake.started)
+        self.assertIn((PG_GLOBAL, "node-a"), fake.existence_checks)
+        self.assertEqual([(PG_GLOBAL, "node-a")], fake.started)
 
     def test_cmd_start_stays_local_without_explicit_target(self):
         fake = self.install_docker(containers={PG_GLOBAL: False})
@@ -429,11 +429,11 @@ class TestSharedDatabaseCommandsResolvePerTarget(SharedDatabaseCommandTestCase):
 
     def test_cmd_stop_passes_the_explicit_target_through(self):
         fake = self.install_docker(containers={PG_GLOBAL: True})
-        self.manager.target = "aws-2"
+        self.manager.target = "node-b"
 
         self.manager.database.cmd_stop()
 
-        self.assertEqual([(PG_GLOBAL, "aws-2")], fake.stopped)
+        self.assertEqual([(PG_GLOBAL, "node-b")], fake.stopped)
 
     def test_cmd_start_provisions_when_the_container_does_not_exist(self):
         """Previously the user was told to run a command that could not create

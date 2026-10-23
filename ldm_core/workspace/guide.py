@@ -164,10 +164,10 @@ def _print_compute_sharing():
   Remote Compute & Tunnel Sharing:
 
   • Add Remote Compute Node:
-    $ ldm target add aws-1 --host 192.168.1.50
+    $ ldm target add node-a --host 192.168.1.50
 
   • Run Environment on Remote Target:
-    $ ldm run --node aws-1
+    $ ldm run --node node-a
 
   • Share Local Instance via Public Tunnel:
     $ ldm share start --subdomain my-demo

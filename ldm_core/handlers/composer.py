@@ -1214,7 +1214,7 @@ class ComposerService:
         # LDM-#1752: Liferay's licence binds to a MAC. On a remote node the
         # container takes a bridge-assigned address (02:42:...), validation
         # fails with "MAC address matching failed", and the portal serves the
-        # Activation page rather than Sign In. Measured on aws-1: pinning to
+        # Activation page rather than Sign In. Measured on node-a: pinning to
         # the host's own NIC address was the only difference between a failed
         # and a passed validation, same image, mounts, env and licence.
         #

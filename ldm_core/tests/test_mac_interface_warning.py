@@ -41,7 +41,7 @@ from ldm_core.config import TargetNode
 from ldm_core.handlers.config import ConfigService
 
 
-def node(mac="02:42:ac:11:00:99", name="aws-1"):
+def node(mac="02:42:ac:11:00:99", name="node-a"):
     return TargetNode(name=name, host="192.0.2.10", user="ubuntu", mac_address=mac)
 
 
@@ -84,7 +84,7 @@ class TheWarningFires(unittest.TestCase):
             ConfigService._warn_if_mac_matches_no_interface(node("02:42:de:ad:be:ef"))
 
         self.assertTrue(announced, "the probe blocked without saying why")
-        self.assertIn("aws-1", announced[0])
+        self.assertIn("node-a", announced[0])
 
     def test_nothing_is_announced_when_no_probe_happens(self):
         """No MAC configured means no round trip, so no line. A message about
@@ -223,7 +223,7 @@ class ItIsWiredIntoTargetAdd(unittest.TestCase):
         ):
             ConfigService.cmd_target_add(
                 handler,
-                name="aws-1",
+                name="node-a",
                 host="192.0.2.10",
                 mac_address="02:42:AC:11:00:99",
             )

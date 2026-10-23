@@ -1488,14 +1488,14 @@ class TestShareService(unittest.TestCase):
         mock_run.return_value = mock_res
 
         with patch("ldm_core.docker_service.get_active_target") as mock_target:
-            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+            mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
 
             self.service._get_docker_installed_version(
-                "peterrichards/lfr-tunnel:latest", target_name="aws-1"
+                "peterrichards/lfr-tunnel:latest", target_name="node-a"
             )
             call_cmd = mock_run.call_args[0][0]
             self.assertIn("--context", call_cmd)
-            self.assertIn("aws-1", call_cmd)
+            self.assertIn("node-a", call_cmd)
 
     @patch.dict(
         "os.environ",

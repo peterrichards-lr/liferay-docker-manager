@@ -23,7 +23,7 @@ from unittest.mock import patch
 from ldm_core.config import TargetNode
 from ldm_core.docker_service import DockerService
 
-REMOTE = TargetNode(name="aws-1", host="51.20.52.201")
+REMOTE = TargetNode(name="node-a", host="203.0.113.20")
 LOCAL = TargetNode(name="local", host="localhost")
 LOOPBACK = TargetNode(name="loopback-node", host="127.0.0.2")
 
@@ -44,7 +44,7 @@ class TestPrefixIsBuiltFromTheTarget(unittest.TestCase):
         """The assertion that matters: the node's context, by name."""
         self.assertEqual(
             self._prefix(REMOTE),
-            ["docker", "--context", "aws-1"],
+            ["docker", "--context", "node-a"],
             "a project on a remote node must be reached through its context, "
             "or the tunnel container is created on the wrong daemon",
         )
@@ -65,8 +65,8 @@ class TestPrefixIsBuiltFromTheTarget(unittest.TestCase):
         """`compose` inherits the same routing; a divergence would be silent."""
         with patch("ldm_core.docker_service.get_active_target", return_value=REMOTE):
             self.assertEqual(
-                DockerService.get_compose_cmd_prefix("aws-1"),
-                ["docker", "--context", "aws-1", "compose"],
+                DockerService.get_compose_cmd_prefix("node-a"),
+                ["docker", "--context", "node-a", "compose"],
             )
 
 

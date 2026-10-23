@@ -78,8 +78,8 @@ class TestDockerContextRefresh(unittest.TestCase):
             json.dumps(
                 {
                     "targets": {
-                        "aws-1": {
-                            "host": "51.20.52.201",
+                        "node-a": {
+                            "host": "203.0.113.20",
                             "user": "ec2-user",
                             "key_path": "~/.ssh/aws-key.pem",
                         }
@@ -104,20 +104,20 @@ class TestDockerContextRefresh(unittest.TestCase):
             mock_run.return_value.returncode = 0
             mock_run.return_value.stderr = ""
             ok = manage_target_nodes.update_docker_context(
-                "aws-1", "13.49.210.78", "ec2-user"
+                "node-a", "203.0.113.10", "ec2-user"
             )
 
         self.assertTrue(ok)
         calls = self._docker_calls(mock_run)
-        self.assertIn(["docker", "context", "rm", "aws-1"], calls)
+        self.assertIn(["docker", "context", "rm", "node-a"], calls)
         self.assertIn(
             [
                 "docker",
                 "context",
                 "create",
-                "aws-1",
+                "node-a",
                 "--docker",
-                "host=ssh://ec2-user@13.49.210.78",
+                "host=ssh://ec2-user@203.0.113.10",
             ],
             calls,
         )
@@ -126,7 +126,7 @@ class TestDockerContextRefresh(unittest.TestCase):
         """The power config names the automation account, which cannot reach the daemon."""
         with patch.object(manage_target_nodes, "LDMRC_FILE", self.ldmrc):
             self.assertEqual(
-                "ec2-user", manage_target_nodes.get_docker_context_user("aws-1")
+                "ec2-user", manage_target_nodes.get_docker_context_user("node-a")
             )
             self.assertEqual(
                 "", manage_target_nodes.get_docker_context_user("no-such-node")
@@ -139,10 +139,10 @@ class TestDockerContextRefresh(unittest.TestCase):
         ):
             mock_run.return_value.returncode = 0
             mock_run.return_value.stderr = ""
-            manage_target_nodes.update_docker_context("aws-1", "13.49.210.78")
+            manage_target_nodes.update_docker_context("node-a", "203.0.113.10")
 
         create = next(c for c in self._docker_calls(mock_run) if "create" in c)
-        self.assertIn("host=ssh://ec2-user@13.49.210.78", create)
+        self.assertIn("host=ssh://ec2-user@203.0.113.10", create)
 
     def test_an_unknown_user_still_produces_a_usable_endpoint(self):
         """Better a context Docker can complete from ~/.ssh/config than none."""
@@ -152,10 +152,10 @@ class TestDockerContextRefresh(unittest.TestCase):
         ):
             mock_run.return_value.returncode = 0
             mock_run.return_value.stderr = ""
-            manage_target_nodes.update_docker_context("aws-1", "13.49.210.78")
+            manage_target_nodes.update_docker_context("node-a", "203.0.113.10")
 
         create = next(c for c in self._docker_calls(mock_run) if "create" in c)
-        self.assertIn("host=ssh://13.49.210.78", create)
+        self.assertIn("host=ssh://203.0.113.10", create)
 
     def test_a_docker_failure_is_reported_but_not_fatal(self):
         """The config files are already correct; losing the context is not worth aborting."""
@@ -163,13 +163,13 @@ class TestDockerContextRefresh(unittest.TestCase):
             mock_run.return_value.returncode = 1
             mock_run.return_value.stderr = "docker: command not found"
             ok = manage_target_nodes.update_docker_context(
-                "aws-1", "13.49.210.78", "ec2-user"
+                "node-a", "203.0.113.10", "ec2-user"
             )
         self.assertFalse(ok)
 
     def test_an_empty_ip_touches_nothing(self):
         with patch("manage_target_nodes.subprocess.run") as mock_run:
-            self.assertFalse(manage_target_nodes.update_docker_context("aws-1", ""))
+            self.assertFalse(manage_target_nodes.update_docker_context("node-a", ""))
         mock_run.assert_not_called()
 
     def test_update_node_host_ip_refreshes_ldmrc_and_the_context_together(self):
@@ -183,13 +183,13 @@ class TestDockerContextRefresh(unittest.TestCase):
         ):
             mock_run.return_value.returncode = 0
             mock_run.return_value.stderr = ""
-            manage_target_nodes.update_node_host_ip("aws-1", "13.49.210.78")
+            manage_target_nodes.update_node_host_ip("node-a", "203.0.113.10")
 
-        stored = json.loads(self.ldmrc.read_text())["targets"]["aws-1"]["host"]
-        self.assertEqual("13.49.210.78", stored)
+        stored = json.loads(self.ldmrc.read_text())["targets"]["node-a"]["host"]
+        self.assertEqual("203.0.113.10", stored)
 
         create = next(c for c in self._docker_calls(mock_run) if "create" in c)
-        self.assertIn("host=ssh://ec2-user@13.49.210.78", create)
+        self.assertIn("host=ssh://ec2-user@203.0.113.10", create)
 
 
 class TestEnforceNeverPowersOn(unittest.TestCase):
@@ -204,8 +204,8 @@ class TestEnforceNeverPowersOn(unittest.TestCase):
         import argparse
 
         nodes = {
-            "aws-1": {
-                "name": "aws-1",
+            "node-a": {
+                "name": "node-a",
                 "schedule": "auto",
                 "ec2_instance_id": "i-1",
                 "region": "eu-north-1",
@@ -266,7 +266,11 @@ class TestWakeDeadlineIsDurable(unittest.TestCase):
         import argparse
 
         nodes = {
-            "aws-1": {"name": "aws-1", "ec2_instance_id": "i-1", "region": "eu-north-1"}
+            "node-a": {
+                "name": "node-a",
+                "ec2_instance_id": "i-1",
+                "region": "eu-north-1",
+            }
         }
         with (
             patch.object(manage_target_nodes, "load_target_nodes", return_value=nodes),
@@ -277,7 +281,7 @@ class TestWakeDeadlineIsDurable(unittest.TestCase):
                 manage_target_nodes, "write_wake_tag", return_value=True
             ) as tag,
         ):
-            manage_target_nodes.cmd_wake(argparse.Namespace(node="aws-1", ttl="4h"))
+            manage_target_nodes.cmd_wake(argparse.Namespace(node="node-a", ttl="4h"))
         tag.assert_called_once()
         self.assertTrue(
             tag.call_args[0][1], "a deadline must be written, not an empty value"
@@ -287,7 +291,11 @@ class TestWakeDeadlineIsDurable(unittest.TestCase):
         import argparse
 
         nodes = {
-            "aws-1": {"name": "aws-1", "ec2_instance_id": "i-1", "region": "eu-north-1"}
+            "node-a": {
+                "name": "node-a",
+                "ec2_instance_id": "i-1",
+                "region": "eu-north-1",
+            }
         }
         with (
             patch.object(manage_target_nodes, "load_target_nodes", return_value=nodes),
@@ -298,8 +306,8 @@ class TestWakeDeadlineIsDurable(unittest.TestCase):
                 manage_target_nodes, "write_wake_tag", return_value=True
             ) as tag,
         ):
-            manage_target_nodes.cmd_sleep(argparse.Namespace(node="aws-1"))
-        tag.assert_called_once_with(nodes["aws-1"], "")
+            manage_target_nodes.cmd_sleep(argparse.Namespace(node="node-a"))
+        tag.assert_called_once_with(nodes["node-a"], "")
 
 
 class TestReadWakeTagFailsSafe(unittest.TestCase):
@@ -323,13 +331,48 @@ class TestReadWakeTagFailsSafe(unittest.TestCase):
 class TestScheduleTimezoneIsExplicit(unittest.TestCase):
     """The window must not depend on where enforce happens to run (LDM-#1543)."""
 
-    def test_the_shipped_config_declares_a_timezone(self):
-        cfg = json.loads(manage_target_nodes.CONFIG_FILE.read_text())
-        self.assertTrue(
-            cfg.get("timezone"),
-            "without this the window is evaluated in the runner's clock, which "
-            "is UTC on GitHub hosted runners",
+    # LDM-#2292: the config is no longer committed; it is the NODE_POWER_CONFIG
+    # secret, written by scripts/write_node_power_config.py. That writer now
+    # refuses a config with no timezone, so the guarantee moved there.
+    def _write(self, config, target):
+        import os
+        import subprocess
+        import sys
+
+        script = (
+            Path(__file__).resolve().parents[2]
+            / "scripts"
+            / "write_node_power_config.py"
         )
+        env = {**os.environ, "NODE_POWER_CONFIG": json.dumps(config)}
+        return subprocess.run(
+            [sys.executable, str(script), str(target)],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_a_config_without_a_timezone_is_refused(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / "cfg.json"
+            res = self._write({"nodes": {}}, target)
+            self.assertEqual(res.returncode, 1, res.stdout)
+            self.assertIn("timezone", res.stdout)
+            self.assertFalse(target.exists())
+
+    def test_a_config_with_a_timezone_is_written(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / "cfg.json"
+            res = self._write({"timezone": "Europe/London", "nodes": {}}, target)
+            self.assertEqual(res.returncode, 0, res.stdout)
+            self.assertEqual(
+                json.loads(target.read_text())["timezone"], "Europe/London"
+            )
 
     def test_schedule_now_is_timezone_aware(self):
         # A naive datetime is what caused the drift; anything aware is correct.

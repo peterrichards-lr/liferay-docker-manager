@@ -55,7 +55,7 @@ class TestTheDefaultIsUnchanged(_Base):
             return_value=self._target_ctx(is_remote, host),
         ):
             return self.svc._derive_probe_url(
-                self.meta, "aica-e2e.demo", ssl, "aws-2", self.root
+                self.meta, "aica-e2e.demo", ssl, "node-b", self.root
             )
 
     def test_a_remote_node_is_probed_at_its_own_address(self):

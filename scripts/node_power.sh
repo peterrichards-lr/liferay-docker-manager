@@ -1,8 +1,8 @@
 #!/bin/bash
 # Standalone Target Node Power & Cost Control Wrapper
 # Usage:
-#   ./scripts/node_power.sh wake aws-1 [2h]
-#   ./scripts/node_power.sh sleep aws-1
+#   ./scripts/node_power.sh wake node-a [2h]
+#   ./scripts/node_power.sh sleep node-a
 #   ./scripts/node_power.sh status
 #   ./scripts/node_power.sh enforce
 

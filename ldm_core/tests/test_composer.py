@@ -351,7 +351,7 @@ class TestComposerService(unittest.TestCase):
 
         from ldm_core.config import TargetNode
 
-        remote_target = TargetNode(name="aws-1", host="1.2.3.4", user="ec2-user")
+        remote_target = TargetNode(name="node-a", host="1.2.3.4", user="ec2-user")
 
         with (
             patch("ldm_core.handlers.composer.dict_to_yaml", return_value="yaml"),

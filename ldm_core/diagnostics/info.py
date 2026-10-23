@@ -112,7 +112,7 @@ def run_info(  # noqa: C901, PLR0912, PLR0915
     # so a project with no explicit target correctly reflects the
     # persisted default, not always "local" regardless of what's
     # actually configured. Reported: `ldm info`/`ldm list` displayed
-    # "local" while the actual run used the persisted "aws-2" default.
+    # "local" while the actual run used the persisted "node-b" default.
     from ldm_core.config import get_active_target
 
     raw_target = getattr(handler.manager, "target", None) or meta.get("target")
@@ -1169,7 +1169,7 @@ def run_list(handler, as_json=False):  # noqa: C901, PLR0912, PLR0915
         # persisted-default (`ldm target use`) fallback instead of always
         # resolving to "local" regardless of what's actually configured.
         # Reported: `ldm list` displayed "local" while the actual run
-        # used the persisted "aws-2" default.
+        # used the persisted "node-b" default.
         from ldm_core.config import get_active_target
 
         target_node = get_active_target(meta.get("target")).name

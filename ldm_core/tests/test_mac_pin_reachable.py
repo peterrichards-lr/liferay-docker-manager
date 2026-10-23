@@ -43,12 +43,12 @@ from ldm_core.runtime.mac_pin import configured_mac, verify_pinned_mac
 
 PINNED = "06:d0:95:e5:26:a7"
 WRONG = "02:aa:bb:cc:dd:ee"
-META = {"container_name": "macver", "target": "aws-1"}
+META = {"container_name": "macver", "target": "node-a"}
 
 
 def node(mac=PINNED):
     return SimpleNamespace(
-        name="aws-1", host="192.0.2.10", user="ec2-user", key_path="", mac_address=mac
+        name="node-a", host="192.0.2.10", user="ec2-user", key_path="", mac_address=mac
     )
 
 
@@ -74,7 +74,8 @@ class Harness(unittest.TestCase):
 
         with (
             patch(
-                "ldm_core.config.load_targets", return_value={"aws-1": node(configured)}
+                "ldm_core.config.load_targets",
+                return_value={"node-a": node(configured)},
             ),
             patch(
                 "ldm_core.docker_service.DockerService.container_mac_address",
@@ -86,7 +87,7 @@ class Harness(unittest.TestCase):
             patch("ldm_core.ui.UI.die", side_effect=die),
         ):
             try:
-                verify_pinned_mac(META, "aws-1", **kwargs)
+                verify_pinned_mac(META, "node-a", **kwargs)
             except SystemExit as exc:
                 return exc.code, "\n".join(said)
         return None, "\n".join(said)
@@ -165,7 +166,7 @@ class TheDryRunGuardFires(Harness):
             "ldm_core.docker_service.DockerService.container_mac_address",
             side_effect=spy,
         ):
-            verify_pinned_mac(META, "aws-1", dry_run=True)
+            verify_pinned_mac(META, "node-a", dry_run=True)
 
         self.assertEqual(called, [], "a dry run inspected a container it never created")
 
@@ -234,7 +235,7 @@ class BothLifecycleCommandsRunIt(unittest.TestCase):
         return seen
 
     def test_restart_runs_the_check(self):
-        self.assertEqual(self._drive("cmd_restart"), ["aws-1"])
+        self.assertEqual(self._drive("cmd_restart"), ["node-a"])
 
 
 if __name__ == "__main__":

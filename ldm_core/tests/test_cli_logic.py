@@ -32,11 +32,11 @@ class TestCLILogic(unittest.TestCase):
         # LDM-#1131: Verify global flags with option values before subcommands expand correctly
         from ldm_core.cli import preprocess_args
 
-        res = preprocess_args(["ldm", "--node", "aws-1", "init-common"])
-        self.assertEqual(res, ["ldm", "--node", "aws-1", "infra", "init-common"])
+        res = preprocess_args(["ldm", "--node", "node-a", "init-common"])
+        self.assertEqual(res, ["ldm", "--node", "node-a", "infra", "init-common"])
 
-        res = preprocess_args(["ldm", "--node", "aws-1", "version"])
-        self.assertEqual(res, ["ldm", "--node", "aws-1", "system", "version"])
+        res = preprocess_args(["ldm", "--node", "node-a", "version"])
+        self.assertEqual(res, ["ldm", "--node", "node-a", "system", "version"])
 
     def test_package_resources_integrity(self):
         # Verify essential package resource files exist in ldm_core/resources

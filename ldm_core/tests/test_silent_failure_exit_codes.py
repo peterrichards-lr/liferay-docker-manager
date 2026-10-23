@@ -394,7 +394,7 @@ class TestDispatcherPropagatesReturnedExitCodes(unittest.TestCase):
             patch.object(node_power, "cmd_wake", side_effect=SystemExit(7)),
             self.assertRaises(SystemExit) as ctx,
         ):
-            _dispatch(lambda: node.cmd_node_power_wake("aws-1"))
+            _dispatch(lambda: node.cmd_node_power_wake("node-a"))
         self.assertEqual(ctx.exception.code, 7)
 
     def test_a_successful_node_command_still_exits_0(self):
@@ -402,7 +402,7 @@ class TestDispatcherPropagatesReturnedExitCodes(unittest.TestCase):
 
         node = NodeService(MagicMock())
         with patch.object(node_power, "cmd_wake"):
-            _dispatch(lambda: node.cmd_node_power_wake("aws-1"))
+            _dispatch(lambda: node.cmd_node_power_wake("node-a"))
 
 
 # --------------------------------------------------------------------------

@@ -65,7 +65,7 @@ newgrp docker
    - Add a host entry to `~/.ssh/config` on your local machine so OpenSSH and Docker CLI automatically use the key pair for this host:
 
      ```ssh-config
-     Host 51.20.52.201
+     Host 203.0.113.20
          User ec2-user
          IdentityFile ~/.ssh/aws-key.pem
      ```
@@ -74,8 +74,8 @@ newgrp docker
 
    ```bash
    # Amazon Linux 2023 uses ec2-user (Ubuntu uses ubuntu)
-   ldm target add aws-1 --host 51.20.52.201 --user ec2-user --key ~/.ssh/aws-key.pem
-   ldm target status aws-1
+   ldm target add node-a --host 203.0.113.20 --user ec2-user --key ~/.ssh/aws-key.pem
+   ldm target status node-a
    ```
 
 ### Platform Example 2: Windows WSL2 Compute Node Setup
@@ -142,9 +142,9 @@ ldm target add prod-node --host <new-ip>
 `ldm target status` compares the two and warns when they disagree, because the probe result belongs to whichever host the context names -- not the one the table shows:
 
 ```text
-⚠️  Target 'aws-1' is registered as 13.49.210.78, but its Docker context points
-    at 51.20.52.201. The status above was probed against 51.20.52.201.
-💡  Next step: Re-register the node to rebuild the context: ldm target add aws-1 …
+⚠️  Target 'node-a' is registered as 203.0.113.10, but its Docker context points
+    at 203.0.113.20. The status above was probed against 203.0.113.20.
+💡  Next step: Re-register the node to rebuild the context: ldm target add node-a …
 ```
 
 > [!TIP]
@@ -157,20 +157,20 @@ If you use `ldm node power wake` (or `scripts/manage_target_nodes.py` in the rep
 The user is held in the same two places -- `user` in `~/.ldmrc`, and the `ssh://<user>@<host>` endpoint of the Docker context -- and they drift for the same reasons. The failure is harder to read than a changed IP, because `ldm target ls` keeps showing a correct configuration while every command fails as somebody else:
 
 ```text
-$ docker --context aws-1 version
-ldm-automation@13.49.210.78: Permission denied (publickey,...).
+$ docker --context node-a version
+ldm-automation@203.0.113.10: Permission denied (publickey,...).
 ```
 
 `ldm doctor` compares the two and reports the disagreement (LDM-#1797):
 
 ```text
-[aws-1] SSH user     DRIFTED (ldm-automation)
+[node-a] SSH user     DRIFTED (ldm-automation)
 ```
 
 Re-register to rebuild the context. Nothing else about the node is disturbed:
 
 ```bash
-ldm target add aws-1 --user ec2-user
+ldm target add node-a --user ec2-user
 ```
 
 ### SSH Key Selection and `IdentitiesOnly`
@@ -186,7 +186,7 @@ Host *
 Give the node its own block **above** any `Host *` block, since SSH takes the first value it finds for each keyword:
 
 ```ssh-config
-Host 13.49.210.78
+Host 203.0.113.10
   User ec2-user
   IdentityFile ~/.ssh/aws-key.pem
   IdentitiesOnly yes
@@ -311,4 +311,4 @@ ldm run my-project --target prod-node --share --share-provider lfr-tunnel-docker
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-22* | *Last Reviewed: 2026-10-22*
+*Last Updated: 2026-10-23* | *Last Reviewed: 2026-10-23*

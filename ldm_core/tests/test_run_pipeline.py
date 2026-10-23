@@ -115,10 +115,10 @@ class TestRunPipeline(unittest.TestCase):
         from ldm_core.config import TargetContext, TargetNode
 
         target_ctx = TargetContext(
-            target=TargetNode(name="aws-2", host="5.6.7.8"),
+            target=TargetNode(name="node-b", host="5.6.7.8"),
             is_remote=True,
-            docker_prefix=["docker", "--context", "aws-2"],
-            compose_prefix=["docker", "--context", "aws-2", "compose"],
+            docker_prefix=["docker", "--context", "node-b"],
+            compose_prefix=["docker", "--context", "node-b", "compose"],
         )
 
         self.context.set("dry_run", True)
@@ -142,10 +142,10 @@ class TestRunPipeline(unittest.TestCase):
         from ldm_core.config import TargetContext, TargetNode
 
         target_ctx = TargetContext(
-            target=TargetNode(name="aws-2", host="5.6.7.8"),
+            target=TargetNode(name="node-b", host="5.6.7.8"),
             is_remote=True,
-            docker_prefix=["docker", "--context", "aws-2"],
-            compose_prefix=["docker", "--context", "aws-2", "compose"],
+            docker_prefix=["docker", "--context", "node-b"],
+            compose_prefix=["docker", "--context", "node-b", "compose"],
         )
 
         self.context.set("dry_run", True)
@@ -160,7 +160,7 @@ class TestRunPipeline(unittest.TestCase):
             stage = ComposerStage()
             stage.execute(self.context)
 
-        self.context.manager.infra._ensure_network.assert_called_once_with("aws-2")
+        self.context.manager.infra._ensure_network.assert_called_once_with("node-b")
 
     def test_execution_stage_dry_run(self):
         self.context.set("dry_run", True)
@@ -351,10 +351,10 @@ class TestRunPipeline(unittest.TestCase):
         from ldm_core.config import TargetContext, TargetNode
 
         target_ctx = TargetContext(
-            target=TargetNode(name="aws-2", host="5.6.7.8"),
+            target=TargetNode(name="node-b", host="5.6.7.8"),
             is_remote=True,
-            docker_prefix=["docker", "--context", "aws-2"],
-            compose_prefix=["docker", "--context", "aws-2", "compose"],
+            docker_prefix=["docker", "--context", "node-b"],
+            compose_prefix=["docker", "--context", "node-b", "compose"],
         )
 
         self.context.set("dry_run", True)
@@ -367,7 +367,7 @@ class TestRunPipeline(unittest.TestCase):
             stage.execute(self.context)
 
         mock_sync.assert_called_once_with(
-            Path(f"{TEST_TMP_ROOT}/proj"), target_name="aws-2"
+            Path(f"{TEST_TMP_ROOT}/proj"), target_name="node-b"
         )
         self.context.manager.run_command.assert_not_called()
 
@@ -381,10 +381,10 @@ class TestRunPipeline(unittest.TestCase):
         from ldm_core.config import TargetContext, TargetNode
 
         target_ctx = TargetContext(
-            target=TargetNode(name="aws-1", host="34.1.1.1"),
+            target=TargetNode(name="node-a", host="34.1.1.1"),
             is_remote=True,
-            docker_prefix=["docker", "--context", "aws-1"],
-            compose_prefix=["docker", "--context", "aws-1", "compose"],
+            docker_prefix=["docker", "--context", "node-a"],
+            compose_prefix=["docker", "--context", "node-a", "compose"],
             local_root=Path(f"{TEST_TMP_ROOT}/proj"),
             remote_root="/home/ec2-user/.liferay-docker/projects/proj",
         )
@@ -776,13 +776,13 @@ class TestResolvePipelineTargetContext(unittest.TestCase):
         from ldm_core.pipelines.run import _resolve_pipeline_target_context
 
         manager = MagicMock()
-        manager.target = "aws-2"
+        manager.target = "node-b"
         _resolve_pipeline_target_context(
             manager, {"container_name": "p"}, Path("/tmp/p")
         )
 
         mock_resolve.assert_called_once()
-        self.assertEqual(mock_resolve.call_args.kwargs["explicit_target"], "aws-2")
+        self.assertEqual(mock_resolve.call_args.kwargs["explicit_target"], "node-b")
 
 
 class TestStackBringupTimeoutOverride(unittest.TestCase):

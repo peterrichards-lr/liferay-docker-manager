@@ -18,14 +18,13 @@ on:
           - wake
           - sleep
           - enforce
+      # LDM-#2292: free text, not a choice list. A choice list publishes the
+      # node names in this file; they now live only in NODE_POWER_CONFIG.
+      # Note that a value typed here is visible on the run page.
       node:
-        description: 'Target Node Name'
+        description: 'Target node name (wake/sleep; defaults to secrets.LDM_NODE_TARGET)'
         required: false
-        default: 'aws-1'
-        type: choice
-        options:
-          - aws-1
-          - aws-2
+        type: string
       ttl:
         description: 'Wake TTL Duration (e.g. 2h, 4h, 30m)'
         required: false
@@ -51,12 +50,18 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
+      # LDM-#2292: the config is a secret, written for this run only, with
+      # every node name, instance id, host and region masked in the log.
+      - name: Write node-power config
+        env:
+          NODE_POWER_CONFIG: ${{ secrets.NODE_POWER_CONFIG }}
+        run: python3 scripts/write_node_power_config.py
+
       - name: Execute Node Power Command
         run: |
           TARGET_NODE="${{ secrets.LDM_NODE_TARGET }}"
           TARGET_NODE="${TARGET_NODE:-${{ secrets.AWS_TARGET_NODE }}}"
           TARGET_NODE="${TARGET_NODE:-${{ inputs.node }}}"
-          TARGET_NODE="${TARGET_NODE:-aws-1}"
 
           if [ "${{ github.event_name }}" = "schedule" ]; then
             python3 scripts/manage_target_nodes.py enforce
@@ -65,11 +70,16 @@ jobs:
               status)
                 python3 scripts/manage_target_nodes.py status
                 ;;
-              wake)
-                python3 scripts/manage_target_nodes.py wake "$TARGET_NODE" --ttl "${{ inputs.ttl }}"
-                ;;
-              sleep)
-                python3 scripts/manage_target_nodes.py sleep "$TARGET_NODE"
+              wake|sleep)
+                if [ -z "$TARGET_NODE" ]; then
+                  echo "::error::No target node: set the 'node' input or the LDM_NODE_TARGET secret."
+                  exit 1
+                fi
+                if [ "${{ inputs.action }}" = "wake" ]; then
+                  python3 scripts/manage_target_nodes.py wake "$TARGET_NODE" --ttl "${{ inputs.ttl }}"
+                else
+                  python3 scripts/manage_target_nodes.py sleep "$TARGET_NODE"
+                fi
                 ;;
               enforce)
                 python3 scripts/manage_target_nodes.py enforce

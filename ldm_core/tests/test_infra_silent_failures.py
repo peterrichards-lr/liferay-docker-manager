@@ -815,21 +815,21 @@ class TestDockerSocketBridgeFollowsTheTarget(unittest.TestCase):
 
     def test_a_remote_target_creates_the_bridge_on_the_remote_daemon(self):
         manager = _Manager()
-        manager.target = "aws-1"
+        manager.target = "node-a"
         infra = InfraService(manager)
         with (
             _no_real_docker(),
             patch("ldm_core.docker_service.DockerService.exists", return_value=False),
             patch(
                 "ldm_core.docker_service.DockerService.get_docker_cmd_prefix",
-                return_value=["docker", "--context", "aws-1"],
+                return_value=["docker", "--context", "node-a"],
             ),
         ):
-            infra._ensure_docker_proxy("aws-1")
+            infra._ensure_docker_proxy("node-a")
 
         call = manager.run_command.call_args
         argv = call[0][0]
-        self.assertEqual(argv[:3], ["docker", "--context", "aws-1"])
+        self.assertEqual(argv[:3], ["docker", "--context", "node-a"])
         # A host path from this machine would just become an empty directory on
         # the remote engine, so the remote daemon's own socket is bound.
         self.assertIn("/var/run/docker.sock:/var/run/docker.sock:ro", argv)
