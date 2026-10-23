@@ -5,6 +5,155 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.7] - 2026-10-23
+
+Verified on v2.26.7-pre.6 across six environments: Fedora 44 (native Docker), macOS 27 with Colima, macOS 27 with OrbStack, Windows 11 with WSL2, and Windows 11 Docker Desktop under both PowerShell 5.1 and PowerShell 7. The five Linux distributions in CI passed on every pre-release tag from pre.2 on. Stable is byte-identical to pre.6 except for the version stamp and this release's announcements. The details of each change are in the pre-release entries below.
+
+### Fixed
+
+- **The settings LDM prepares for the Liferay container reach it again** (LDM-#2279). Since v2.7.2 the run pipeline's Liferay environment was dropped by the compose generator: `--upgrade-db` did nothing, and LDM-#2154's virtual host never took effect.
+- **OAuth redirect URIs use `https` behind LDM's proxy** (AICA#1283). Liferay's forwarded protocol and port headers are enabled, and the misspelt protocol key is corrected.
+- **Recreating the shared search container no longer deletes every project's index** (LDM-#2284). Its analysis plugins persist across recreation, and a missing plugin is reported instead of "repaired" by deletion.
+- **`ldm quickstart`**: `--share` starts the stack (LDM-#2268); an existing project is not replaced without `--replace` (LDM-#2269), and a replaced project's modes are resolved correctly (LDM-#2275); custom templates from `~/.ldm_templates.json` work (LDM-#2270); `.ldmp` projects follow your mode defaults and announce them (LDM-#2267).
+- **Remote nodes**: a container-written tree no longer disables rsync `--delete`, and teardown reclaims the project before removing it (LDM-#2266).
+- **`ldm node power`** works in the installed binary, with no built-in nodes (LDM-#2291).
+- **Files saved with a UTF-8 byte-order mark are read**: `~/.ldmrc`, `~/.ldm_templates.json` (LDM-#2281), a project `meta` and `portal-ext.properties` (LDM-#2287).
+- From pre.1: `ldm reset` refuses unknown targets and implements `global-search` (LDM-#2127); snapshot, restore and import volumes carry ownership labels (LDM-#2243); `ldm config get` answers from the store that decides (LDM-#2174); `init` and `run` stamp `ldm_version` (LDM-#2163); portless localhost OAuth redirects are rewritten (LDM-#2175); `share start` withdraws a URL it did not get (LDM-#2191); a RED shared search cluster is refused rather than reported ready (LDM-#2247).
+
+### Changed
+
+- The verification suite: refuses unknown arguments (LDM-#2241); the CI workflows no longer pass the `--ci` flag it never accepted; every PowerShell failure writes its report; the PowerShell half works on Windows PowerShell 5.1; a failing container's first errors are captured (LDM-#2290).
+
+### Security
+
+- Credentials inside the `~/.ldmrc` `defaults` block are masked (LDM-#2174).
+
+### Known issues
+
+- On Windows, `ldm system upgrade` can appear to freeze in PowerShell: the updater shares the console and prints nothing on success (LDM-#2212, next cycle).
+- Liferay's first DXP-tree write on a custom-host project can carry `:8080` before being corrected (LDM-#2289, under investigation).
+
+## [v2.26.7-pre.6] - 2026-10-22
+
+### Fixed
+
+- **`ldm node power` works in an installed `ldm`** (LDM-#2291). Every subcommand (`status`, `wake`, `sleep`, `enforce`, `sync-dns`) failed with "Target node power management script not found". It ran a script from the repository's `scripts/` directory, which no build ships, and under the standalone binary its way of launching Python would have started `ldm` again rather than Python. The utility now lives inside `ldm` and runs in-process. `sync-dns`, which the CLI has offered since v2.15.30 but which had gone missing, is back: it re-reads each node's public IPv4 address from EC2 and updates `~/.ldmrc`, the node-power config and the Docker context. It no longer syncs DNS names.
+
+  Node definitions and wake state now live in `~/.ldm/node-power-config.json` and `~/.ldm/node-power-state.json`, alongside the targets in `~/.ldmrc`. **No nodes are built in, and nothing is downloaded:** previously the utility seeded two named nodes and fetched a config describing them from this repository when none existed locally. Those were the maintainer's own servers for this repository's CI, and are now confined to the repository.
+
+### Changed
+
+- **The PowerShell verification suite's volume-label check works on Windows PowerShell 5.1.** Windows PowerShell 5.1 strips double quotes from arguments it passes to other programs. The check's `docker --format` template therefore reached Docker broken, and every label read as empty, a failure on volumes that were in fact correctly labelled. It now reads the labels as JSON. Nothing here ships in the binary.
+
+- **A failing container's report now shows its first errors**, not only its last 50 lines, in both halves of the verification suite. A boot that hangs ends in stack frames, so the tail held no error message: the OrbStack round-trip failure (LDM-#2290) could not be diagnosed from its own report. Nothing here ships in the binary.
+
+### Known issues
+
+- LDM-#2290: on macOS with OrbStack, the `.ldmp` round trip's imported copy did not boot in one pre.4 run. The cause is still unknown; the next occurrence's report will now carry the error.
+
+## [v2.26.7-pre.5] - 2026-10-22
+
+### Fixed
+
+- **A project `meta` or `portal-ext.properties` saved with a byte-order mark is read** (LDM-#2287). The same defect as LDM-#2281, in the other two files people edit by hand. Windows PowerShell 5.1 and older Notepad save UTF-8 with a BOM. LDM read a BOM'd `meta` as no metadata at all, so the project ran nameless: it lost its configuration, and its volumes lost their ownership labels. A BOM'd `portal-ext.properties` silently lost its first property. Both are now read with or without one. Found by the PowerShell 5.1 verification run on pre.4. The suite itself also writes those two files without a BOM now.
+
+### Known issues
+
+- **On macOS with OrbStack, the `.ldmp` round trip's imported copy did not boot in one pre.4 verification run.** Its Liferay never answered a healthcheck within about 20 minutes. The original project booted and passed every check, and the round trip passed on Linux, Windows (PowerShell 7 and WSL2) and macOS with Colima. The captured log lacks the error itself, so the cause is not yet known. That machine also had an expired DXP licence and about 5% free disk at the time. Tracked in LDM-#2290.
+
+## [v2.26.7-pre.4] - 2026-10-21
+
+### Fixed
+
+- **OAuth redirects use `https` on SSL projects** (AICA#1283). Traefik terminates TLS and tells Liferay so with `X-Forwarded-Proto`, but Liferay honours that header only when `web.server.forwarded.protocol.enabled` is set. LDM wrote the header names and never the flags, and spelled the protocol key `proto`, which Liferay does not read. Behind the proxy Liferay therefore believed every request was plain HTTP. It registered client extensions' OAuth redirect URIs as `http://` for an `https://` page, and every browser sign-in failed with "No redirectURI … matching origin". The protocol and port flags are now set and the key is corrected. Measured before the fix was written: setting just these two flags on v2.26.7-pre.3 took the redirect refusals in an AICA end-to-end run from 210 to 0.
+
+- **Recreating the shared search container no longer deletes every project's index** (LDM-#2284). The analysis plugins Liferay's indexes need were installed into the running container, so recreating it discarded them. `ldm rm --infra` does that, and so does the verification suite on every run. A fresh container then died on any index using `icu_collation_keyword`, and LDM's automatic repair treated that as corruption and deleted the shared search data. The plugins now live in `~/.ldm/infra/search/plugins-<version>`, installed before Elasticsearch first opens the data, so a recreated container starts with them. A boot failure caused by a missing plugin is no longer "repaired" by deleting anything: LDM keeps the data, explains, and exits 3. `--force` still wipes.
+
+- **A `~/.ldmrc` saved with a byte-order mark is read** (LDM-#2281). Windows PowerShell 5.1 and older Notepad save UTF-8 with a BOM, which LDM read as invalid JSON. `ldm config` then showed an empty configuration without a warning, and every other setting fell back to its default. `~/.ldmrc` and `~/.ldm_templates.json` are now read with or without one.
+
+### Changed
+
+- **Every failure in the PowerShell verification suite writes its report.** Thirty-four checks failed with `exit 1`, which in PowerShell skips the block that writes the `-fail` report, so a failed Windows run left nothing behind. The suite now finalises on every exit, as the bash half's `EXIT` trap always has, and records the failure reason in the report. The LDM-#2174 check's fixture is also written without a BOM, which is what made it fail on PowerShell 5.1. Nothing here ships in the binary.
+
+### Known gaps
+
+- None of these four has an end-to-end assertion that can fail. The suite's published-domain check still runs against a `localhost` project (see pre.3). Recorded in LDM-#2264.
+
+## [v2.26.7-pre.3] - 2026-10-21
+
+### Fixed
+
+- **The settings LDM prepares for the Liferay container reach it again** (LDM-#2279). The run pipeline builds part of Liferay's environment itself and hands it to the compose generator, which had ignored it since v2.7.2. Three things never reached a container as a result:
+  - `--upgrade-db` did nothing; Liferay's automatic database upgrade was never switched on.
+  - The default company's virtual host from LDM-#2154, new in v2.26.6, never took effect. A project with a custom host name kept `localhost`, and Liferay published `localhost:8080` into `routes/default/dxp`. Client extensions then sent browser sign-ins there, which breaks OAuth.
+  - The display-node and redirect allow-list settings for a custom host.
+
+  All of it is now merged into the Liferay service. A variable you set yourself in `custom_env` still wins. A new test feeds the run step's real list through the real compose generator and checks every entry arrives, so a variable added later is covered too.
+
+### Known gaps
+
+- LDM-#2279 has no end-to-end assertion that can fail. The suite's check of the published DXP tree (LDM-#2154) runs against a project configured as `localhost`, which is also what Liferay publishes when the setting never arrives. So it passed on every platform throughout this bug. A project with a custom host name is needed for the check to mean anything. Recorded in LDM-#2264.
+
+## [v2.26.7-pre.2] - 2026-10-21
+
+### Changed
+
+- **`ldm quickstart` accepts templates from `~/.ldm_templates.json`** (LDM-#2270). The overrides file was documented and read, but the parser only allowed `aica`, so argparse rejected every custom template before quickstart could look it up. The feature never worked. An unknown name is still refused, now listing the templates that exist. The man page's quickstart synopsis gains the six flags it was missing, and the CLI reference documents the file's format.
+
+- **The Linux platform verification runs again.** The workflows called the verification script with `--ci`, a flag it never recognised and silently ignored, until LDM-#2241 made it refuse unknown arguments. From then on every Linux job stopped before running anything, including the run for the `v2.26.7-pre.1` tag. pre.1 was therefore never verified on Linux by CI. The flag is gone. Nothing here ships in the binary.
+
+### Fixed
+
+- **Remote sync no longer leaves deleted files on the node** (LDM-#2266). On a remote target the rsync ran before the only step able to reclaim a tree a container had written as uid 1000. A `routes/default` created since the last bring-up failed the transfer, and rsync then skipped `--delete` for the whole sync, so files deleted locally survived on the node and were mounted back in. In AICA's nightly that was a deleted script that ran and killed the container. The trees are now reclaimed on the node, to the node's own uid, before the sync; that covers `ldm run`, `ldm start` and target migration. Remote teardown reclaims the project directory before removing it, and its warning blames reachability only when the node gave no answer.
+
+- **`ldm quickstart --share` starts the stack** (LDM-#2268). It downloaded, restored and seeded, then exited 3 with nothing running, because it asked for the tunnel before the run. The documented example was the failing case. The run already starts the tunnel once the portal is ready, so quickstart now hands the request to it, and the URL arrives at the end of the boot.
+
+- **`ldm quickstart` no longer wipes an existing project without asking** (LDM-#2269). Re-running it, or pointing `--name` at an unrelated project, deleted that project's database and volumes after one warning line. It now asks, defaulting to no. With `-y` it refuses unless `--replace` is given.
+
+- **Projects created from an `.ldmp` follow your mode defaults** (LDM-#2267). The package import behind `ldm quickstart` and `ldm import` of a GitHub release never recorded which LDM created the project. LDM therefore treated every such project as predating shared infrastructure: an isolated database and sidecar search, whatever your defaults said. The import now records the version and the first boot announces the modes, as `init` and `run` have done since LDM-#2163. Quickstart also seeds for the mode the project actually boots in. Existing projects are not changed.
+
+- **`ldm quickstart --replace` resolves a replaced project's modes** (LDM-#2275). A replaced project kept its old settings, so one made by an earlier quickstart stayed isolated/sidecar. When the replaced project records no LDM version, its modes now come from your defaults; when it records one, its modes are kept. Either way the boot says which modes it got and whether they were kept. Answering yes to quickstart's prompt counts as `--replace`.
+
+### Known gaps
+
+- None of the quickstart fixes above (LDM-#2267, #2268, #2269, #2270, #2275), nor the remote sync fix (LDM-#2266), has an end-to-end assertion in the verification suite yet. Each is exercised by unit tests that drive the real code, and is recorded in LDM-#2264.
+
+## [v2.26.7-pre.1] - 2026-10-20
+
+### Changed
+
+- **The E2E suite asserts more of what this cycle fixed**: named volumes carry their ownership labels (LDM-#2243), a newly created project is stamped with the version that created it (LDM-#2163), `config get` reports the deciding store (LDM-#2174), and `share --domain default` chooses the standard gateway (LDM-#2191). The three fixes without an E2E assertion -- LDM-#2127, #2175 and #2247 -- are recorded in LDM-#2264.
+
+### Fixed
+
+- **`ldm reset` no longer reports success while doing nothing** (LDM-#2127). It advertised five targets and a comma-separated form, and three of the five did nothing. The target was a bare positional with no choices, so `ldm reset demo banana` printed "reset successful" having touched nothing; `search` and `global-search` reached neither branch of the wipe; and `search,db` was read as one literal target that matched nothing. `docs/TROUBLESHOOTING.md` recommended `reset global-search` as a remedy, so a reader following the guide ran a command that did nothing.
+
+  Unknown targets are now refused with exit 1, naming the valid ones. The comma form is parsed. `global-search` is implemented, reusing the LDM-#2119 index deleter, and `all` now includes it, as the documentation always said it did. `search` is **refused** rather than silently succeeding: a sidecar Elasticsearch runs inside the Liferay container, so there is nothing separate to wipe. It is refused rather than withdrawn so the implement-or-drop decision stays open.
+
+- **Volumes created by snapshot, restore and import carry ownership labels, so `ldm prune` can reclaim them** (LDM-#2243). `snapshot/volumes.py` created volumes with a bare `docker volume create <name>`, and Docker applies labels only at creation -- declaring them later in compose does not retrofit them. Every volume those paths produced was therefore invisible to the label-driven sweep for the rest of its life: neither `ldm prune` nor `ldm prune --all` could ever remove one, and `--legacy-volumes`, which could, claimed they predated ownership labelling. The label set now has one definition, shared by compose and the direct creates, and an architectural test fails on any future `volume create` that omits it.
+
+- **`ldm config get` answers from the store that actually decides** (LDM-#2174). `ldm config set` writes the top level of `~/.ldmrc`; `ldm defaults` writes its `defaults` block, and that block is what every project-creation decision reads. With both present, `config get database_mode` could report `shared` while every project was created `isolated`. A key the defaults cascade owns is now answered from it, the bare listing expands the `defaults` block and marks any top-level key it shadows, and `config set` refuses any key already present in that block. The value printed on stdout is unchanged, so scripts reading it are unaffected.
+
+- **`init` and `run` stamp `ldm_version` into a new project, as `import` always did** (LDM-#2163). Without it, the guard that keeps a pre-2.14 project on the legacy isolated/sidecar modes fired on projects created today, so two projects made on the same machine on the same day got different infrastructure depending on which command made them -- and a `search_mode` or `database_mode` default of `shared` had no effect on either command. Existing projects are deliberately **not** back-filled: their on-disk data is isolated, and stamping them would move them to shared on the next boot.
+
+  A new project now says which modes it landed on and how each was chosen, once, at creation. This half had to ship with the first: the shared-database tip speaks only when the mode is `isolated`, so the fix would otherwise have changed what new projects get while silencing the only sentence that mentioned it.
+
+- **Portless localhost OAuth redirect URIs are rewritten** (LDM-#2175). The client-extension rewriter admitted any URI containing `localhost` and then acted with a pattern that required a port, so `http://localhost/o/oauth2/redirect` -- an extension fronted by a proxy on port 80 -- passed through unchanged, and the `buildTimestamp` bump that makes Liferay re-read the extension over a restored database was skipped with it. The port is now optional, the pattern is the guard so the two cannot disagree, and the rewrite warns when a URL it is responsible for still points at localhost afterwards.
+
+- **`ldm share start` withdraws a URL it announced but did not get, and `--domain default` asks for the standard gateway** (LDM-#2191). An unregistered custom domain correctly falls back to the standard gateway, but the planned URL had already been printed and was never retracted, leaving two contradictory addresses on screen. It is now withdrawn, with a note that reaching the fallback means that domain lacks approval. And because `share_domain` is sticky, there was no way to ask for the standard gateway without editing metadata by hand: `--domain default` (or `standard`) now does it, and rewrites the project's stored domain -- not `~/.ldmrc`.
+
+- **A RED Global Search cluster is refused instead of reported ready** (LDM-#2247). Readiness meant "Elasticsearch answered HTTP", which a red cluster with zero active shards does happily, so LDM printed "Infrastructure setup complete" over a cluster Liferay cannot start against: `ElasticsearchSearchEngine.activate()` waits for yellow, times out, and takes the portal's service graph down with it every 30 seconds. LDM now asks Elasticsearch for yellow itself, refuses when it cannot get it, names the allocation cause, and treats an unreadable status as not verified rather than healthy. The check deliberately does **not** trigger the auto-repair, which deletes every project's shared search data and cannot fix an allocation failure.
+
+  This is the cause of the macOS / OrbStack verification failures previously investigated as disk and as memory pressure. LDM-#2247 stays open: why the repair leaves unassigned primaries behind is not yet known.
+
+- **The verification scripts refuse unknown arguments, and stop the source project before the `.ldmp` round trip** (LDM-#2241, LDM-#2245). A mistyped option was silently ignored, so `-keep` destroyed the very evidence it was meant to preserve -- and in PowerShell it was worse, binding `-KeepPulled` by prefix abbreviation. The round trip also booted the imported copy beside the still-running source; the source is now stopped first. That is **not** the cause of the OrbStack failures (LDM-#2247 is), and a failed stop warns rather than failing the run.
+
+### Security
+
+- **Credentials inside the `~/.ldmrc` `defaults` block are no longer printed verbatim** (LDM-#2174). LDM-#1970 masks credential-shaped key names, and `defaults` is not one, so the whole block was printed as a single unmasked value. Expanding it, above, puts each key through the mask.
+
+- **The `docs-skip` workflow declares empty permissions** (CodeQL alert 64). It was the only workflow in the repository without a `permissions:` block. Nothing here ships in the binary.
+
 ## [v2.26.6] - 2026-10-16
 
 ### Changed

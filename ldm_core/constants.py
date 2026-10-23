@@ -2,8 +2,8 @@ import os
 from pathlib import Path
 
 # --- Constants & Configuration ---
-# LDM_MAGIC_VERSION: 2.26.6
-VERSION = "2.26.6"
+# LDM_MAGIC_VERSION: 2.26.7
+VERSION = "2.26.7"
 
 # Release commit v2.11.30
 
@@ -102,6 +102,39 @@ PIP_INSTALL_TIMEOUT = 600  # 10 min -- plugin/completion dependency installs
 RELEASE_ANNOUNCEMENTS = {
     # LDM-#1663: a patch needs its OWN key, or the banner falls back to the
     # minor series and re-prints highlights the user has already seen.
+    "2.26.7": [
+        (
+            "Settings LDM prepares for Liferay now reach it",
+            "Since v2.7.2 the environment the run pipeline built for the "
+            "Liferay container was silently dropped. '--upgrade-db' did "
+            "nothing, and the virtual host introduced in v2.26.6 never took "
+            "effect, so a custom-host project published localhost:8080 to its "
+            "client extensions. Behind the HTTPS proxy, Liferay now also "
+            "honours the forwarded protocol and port, so OAuth redirect URIs "
+            "use https.",
+        ),
+        (
+            "Recreating shared search no longer deletes every index",
+            "A recreated search container lost its analysis plugins, refused "
+            "to load existing indexes, and the automatic repair then wiped "
+            "the shared data. Plugins now persist in "
+            "~/.ldm/infra/search/plugins-<version>, and a missing plugin is "
+            "reported instead of repaired by deletion.",
+        ),
+        (
+            "ldm quickstart is safer and more capable",
+            "It refuses to replace an existing project unless told to "
+            "(--replace), '--share' starts the stack instead of exiting, "
+            "templates from ~/.ldm_templates.json work, and a project created "
+            "from an .ldmp follows your database and search defaults.",
+        ),
+        (
+            "ldm node power works in the installed binary",
+            "Every subcommand failed because its utility was never shipped. "
+            "It now runs inside ldm, with no built-in nodes: configure yours "
+            "in ~/.ldmrc or ~/.ldm/node-power-config.json.",
+        ),
+    ],
     "2.26.5": [
         (
             "A port Windows had reserved is no longer offered to Docker",
