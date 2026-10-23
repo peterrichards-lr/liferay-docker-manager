@@ -158,6 +158,9 @@ ldm system upgrade --check           # Check for updates without installing
 ldm upgrade --beta
 ```
 
+> [!NOTE]
+> **Old builds are cleaned up**: on macOS and Linux each LDM version unpacks itself into its own `~/.shiv/ldm_<build id>/` directory (about 80 MB). On that same first run after an upgrade, LDM now removes the previous versions' directories, leaving the running one and anything that is not LDM's untouched (LDM-#2296). Before this, nothing removed them. To reclaim the space on an older install, delete every `~/.shiv/ldm_*` directory except the newest while no `ldm` command is running.
+
 ## `system completion` (legacy: `completion`)
 
 Configure shell autocompletion for `ldm`. Supports **Bash**, **Zsh**, **Fish**, and **PowerShell**.

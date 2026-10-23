@@ -3085,6 +3085,17 @@ def check_and_display_upgrade_banner():
                         print(f"  * {item}")
                 print()
 
+            # LDM-#2296: the first run of a new version is when the previous
+            # build's shiv extraction becomes dead weight. Best effort.
+            from ldm_core.shiv_cache import prune_stale_extractions
+
+            removed, freed = prune_stale_extractions()
+            if removed:
+                UI.info(
+                    f"Removed {removed} old LDM extraction(s) from the shiv cache, "
+                    f"freeing {freed // (1024 * 1024)} MB."
+                )
+
             root_data["last_run_version"] = VERSION
             save_global_config_safe(user_path, root_data)
     except Exception:
