@@ -1106,7 +1106,9 @@ class TestConfigService(unittest.TestCase):
 
         from ldm_core.config import TargetNode
 
-        self.mock_active_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        self.mock_active_target.return_value = TargetNode(
+            name="node-a", host="34.1.1.1"
+        )
         mock_run.return_value = "elastic/elasticsearch:8.11.0"
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1125,12 +1127,12 @@ class TestConfigService(unittest.TestCase):
             }
 
             self.config._sync_common_assets_files(
-                paths, {"use_shared_search": "true", "target": "aws-1"}
+                paths, {"use_shared_search": "true", "target": "node-a"}
             )
 
         called_cmd = mock_run.call_args[0][0]
         self.assertIn("--context", called_cmd)
-        self.assertIn("aws-1", called_cmd)
+        self.assertIn("node-a", called_cmd)
 
     @patch("subprocess.run")
     def test_cmd_ssl_mode_hosts(self, mock_run):
@@ -1213,7 +1215,9 @@ class TestConfigService(unittest.TestCase):
 
         from ldm_core.config import TargetNode
 
-        self.mock_active_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        self.mock_active_target.return_value = TargetNode(
+            name="node-a", host="34.1.1.1"
+        )
         mock_inspect = MagicMock()
         mock_inspect.stdout = "true\n"
         mock_run.return_value = mock_inspect
@@ -1233,7 +1237,7 @@ class TestConfigService(unittest.TestCase):
             self.manager.detect_project_path = MagicMock(return_value=tmp_path)  # type: ignore[method-assign]
             self.manager.setup_paths = MagicMock(return_value=paths)  # type: ignore[method-assign]
             self.manager.read_meta = MagicMock(  # type: ignore[method-assign]
-                return_value={"container_name": "test-c", "target": "aws-1"}
+                return_value={"container_name": "test-c", "target": "node-a"}
             )
             self.manager.write_meta = MagicMock()  # type: ignore[method-assign]
             self.manager.runtime.cmd_stop = MagicMock()  # type: ignore[method-assign]
@@ -1245,7 +1249,7 @@ class TestConfigService(unittest.TestCase):
 
         inspect_cmd = mock_run.call_args[0][0]
         self.assertIn("--context", inspect_cmd)
-        self.assertIn("aws-1", inspect_cmd)
+        self.assertIn("node-a", inspect_cmd)
 
     @patch("subprocess.run")
     def test_cmd_ssl_mode_share(self, mock_run):
@@ -1627,7 +1631,7 @@ class TheNodeCopyIsRemovedToo(unittest.TestCase):
             patch("ldm_core.config.run_command", _run),
         ):
             gat.return_value = SimpleNamespace(
-                name="aws-2", host="10.0.0.9", user="ldm", key_path=None
+                name="node-b", host="10.0.0.9", user="ldm", key_path=None
             )
             ok = remove_project_from_target(Path("/tmp/myproj"))
 
@@ -1657,7 +1661,7 @@ class TheNodeCopyIsRemovedToo(unittest.TestCase):
             patch("ldm_core.config.run_command", _run),
         ):
             gat.return_value = SimpleNamespace(
-                name="aws-2", host="10.0.0.9", user="ldm", key_path=None
+                name="node-b", host="10.0.0.9", user="ldm", key_path=None
             )
             remove_project_from_target(Path("/tmp/myproj"))
 
@@ -1682,7 +1686,7 @@ class TheNodeCopyIsRemovedToo(unittest.TestCase):
             patch("ldm_core.config.run_command", _run),
         ):
             gat.return_value = SimpleNamespace(
-                name="aws-2", host="10.0.0.9", user="ldm", key_path=None
+                name="node-b", host="10.0.0.9", user="ldm", key_path=None
             )
             remove_project_from_target(Path("/tmp/myproj"))
 
@@ -1710,7 +1714,7 @@ class TheNodeCopyIsRemovedToo(unittest.TestCase):
             patch("ldm_core.config.run_command", _run),
         ):
             gat.return_value = SimpleNamespace(
-                name="aws-2", host="10.0.0.9", user="ldm", key_path=None
+                name="node-b", host="10.0.0.9", user="ldm", key_path=None
             )
             remove_project_from_target(Path("/tmp/myproj"))
 
@@ -1729,7 +1733,7 @@ class TheNodeCopyIsRemovedToo(unittest.TestCase):
             patch("ldm_core.config.run_command", return_value=None),
         ):
             gat.return_value = SimpleNamespace(
-                name="aws-2", host="10.0.0.9", user="ldm", key_path=None
+                name="node-b", host="10.0.0.9", user="ldm", key_path=None
             )
             self.assertFalse(remove_project_from_target(Path("/tmp/myproj")))
 
@@ -1744,7 +1748,9 @@ class BothOutcomesAnnounceThemselves(unittest.TestCase):
     """
 
     def _target(self):
-        return SimpleNamespace(name="aws-2", host="10.0.0.9", user="ldm", key_path=None)
+        return SimpleNamespace(
+            name="node-b", host="10.0.0.9", user="ldm", key_path=None
+        )
 
     def _run_with(self, run_result):
         from ldm_core.config import remove_project_from_target
@@ -1800,7 +1806,7 @@ class TheTwoRemotePathFormsAgree(unittest.TestCase):
 
         with patch("ldm_core.config.resolve_remote_home", return_value="/home/ldm"):
             absolute = get_remote_project_root(
-                TargetNode(name="aws-2", host="h"), "myproj"
+                TargetNode(name="node-b", host="h"), "myproj"
             )
 
         tilde = remote_project_dir("myproj")
@@ -1813,5 +1819,5 @@ class TheTwoRemotePathFormsAgree(unittest.TestCase):
 
         with patch("ldm_core.config.resolve_remote_home", return_value=None):
             self.assertIsNone(
-                get_remote_project_root(TargetNode(name="aws-2", host="h"), "myproj")
+                get_remote_project_root(TargetNode(name="node-b", host="h"), "myproj")
             )

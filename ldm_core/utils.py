@@ -4426,7 +4426,7 @@ def reclaim_volume_permissions(
     caller gets least privilege for free; `777` is opt-in and every opt-in
     carries a comment naming the container and uid it is for.
 
-    `docker_prefix` (e.g. `["docker", "--context", "aws-1"]`, from
+    `docker_prefix` (e.g. `["docker", "--context", "node-a"]`, from
     `TargetContext.docker_prefix`) lets a caller redirect this to a remote
     target -- pass `path` already remapped onto the remote filesystem (e.g.
     via `TargetContext.map_path()`) when doing so. When given, this skips

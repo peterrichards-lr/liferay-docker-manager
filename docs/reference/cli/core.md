@@ -505,7 +505,7 @@ ldm wait [project]
 ldm wait demo
 
 # Probe a URL of your choosing instead of the derived one
-ldm wait demo --node aws-2 --probe-url https://my-project.demo
+ldm wait demo --node node-b --probe-url https://my-project.demo
 ```
 
 ### Choosing the URL to probe (`--probe-url`)
@@ -809,4 +809,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-21* | *Last Reviewed: 2026-10-21*
+*Last Updated: 2026-10-23* | *Last Reviewed: 2026-10-23*

@@ -198,7 +198,7 @@ class TunnelIsReachableFromTheCLI(unittest.TestCase):
 
         with patch.dict(os.environ, {}, clear=True):
             self.assertFalse(tunnelling_enabled())
-            self.assertIsNone(active_tunnel(_target(name="aws-1")))
+            self.assertIsNone(active_tunnel(_target(name="node-a")))
 
     def test_the_variable_is_read_tolerantly(self):
         from ldm_core.docker_tunnel import tunnelling_enabled
@@ -226,11 +226,11 @@ class TunnelIsReachableFromTheCLI(unittest.TestCase):
             patch.dict(os.environ, {"LDM_DOCKER_TUNNEL": "1"}),
             patch(
                 "ldm_core.docker_service.get_active_target",
-                return_value=_target(name="aws-1"),
+                return_value=_target(name="node-a"),
             ),
             patch("ldm_core.docker_tunnel.active_tunnel", return_value=fake),
         ):
-            cmd = DockerService.get_docker_cmd_prefix("aws-1")
+            cmd = DockerService.get_docker_cmd_prefix("node-a")
         self.assertEqual(cmd, ["docker", "--host", "tcp://127.0.0.1:54321"])
         self.assertNotIn("--context", cmd)
 
@@ -241,11 +241,11 @@ class TunnelIsReachableFromTheCLI(unittest.TestCase):
             patch.dict(os.environ, {}, clear=True),
             patch(
                 "ldm_core.docker_service.get_active_target",
-                return_value=_target(name="aws-1"),
+                return_value=_target(name="node-a"),
             ),
         ):
-            cmd = DockerService.get_docker_cmd_prefix("aws-1")
-        self.assertEqual(cmd, ["docker", "--context", "aws-1"])
+            cmd = DockerService.get_docker_cmd_prefix("node-a")
+        self.assertEqual(cmd, ["docker", "--context", "node-a"])
 
     def test_a_tunnel_is_opened_once_and_reused(self):
         """N connections become 1 -- reuse is the entire mechanism."""
@@ -268,7 +268,7 @@ class TunnelIsReachableFromTheCLI(unittest.TestCase):
             patch.object(docker_tunnel, "DockerSshTunnel", lambda *_a, **_k: _Fake()),
         ):
             for _ in range(5):
-                docker_tunnel.active_tunnel(_target(name="aws-1"))
+                docker_tunnel.active_tunnel(_target(name="node-a"))
         self.assertEqual(len(started), 1, "a tunnel was opened per call")
 
     def test_a_tunnel_that_dies_is_reported_as_a_tunnel(self):
@@ -283,20 +283,20 @@ class TunnelIsReachableFromTheCLI(unittest.TestCase):
         dead = MagicMock()
         dead.is_alive.return_value = False
         dead._proc = None
-        docker_tunnel._TUNNELS["aws-1"] = dead
+        docker_tunnel._TUNNELS["node-a"] = dead
 
         with (
             patch.dict(os.environ, {"LDM_DOCKER_TUNNEL": "1"}),
             patch("ldm_core.docker_tunnel.UI.error") as err,
             patch("ldm_core.docker_tunnel.UI.detail") as detail,
         ):
-            result = docker_tunnel.active_tunnel(_target(name="aws-1"))
+            result = docker_tunnel.active_tunnel(_target(name="node-a"))
 
         self.assertIsNone(result, "a dead tunnel must not be handed out")
         err.assert_called_once()
         message = err.call_args[0][0]
         self.assertIn("SSH tunnel", message)
-        self.assertIn("aws-1", message)
+        self.assertIn("node-a", message)
         self.assertIn(
             "detected at", message, "we know when we noticed, not when it died"
         )
@@ -316,8 +316,8 @@ class TunnelIsReachableFromTheCLI(unittest.TestCase):
             patch("ldm_core.docker_tunnel.UI.detail"),
         ):
             for _ in range(3):
-                docker_tunnel._TUNNELS["aws-1"] = dead
-                docker_tunnel.active_tunnel(_target(name="aws-1"))
+                docker_tunnel._TUNNELS["node-a"] = dead
+                docker_tunnel.active_tunnel(_target(name="node-a"))
         err.assert_called_once()
 
     def test_a_dead_tunnel_falls_back_rather_than_failing_the_run(self):
@@ -328,9 +328,9 @@ class TunnelIsReachableFromTheCLI(unittest.TestCase):
             patch.dict(os.environ, {"LDM_DOCKER_TUNNEL": "1"}),
             patch(
                 "ldm_core.docker_service.get_active_target",
-                return_value=_target(name="aws-1"),
+                return_value=_target(name="node-a"),
             ),
             patch("ldm_core.docker_tunnel.active_tunnel", return_value=None),
         ):
-            cmd = DockerService.get_docker_cmd_prefix("aws-1")
-        self.assertEqual(cmd, ["docker", "--context", "aws-1"])
+            cmd = DockerService.get_docker_cmd_prefix("node-a")
+        self.assertEqual(cmd, ["docker", "--context", "node-a"])

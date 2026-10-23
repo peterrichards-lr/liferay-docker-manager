@@ -173,21 +173,21 @@ class TestDiagnostics(unittest.TestCase):
     def test_check_docker_runtime_redirects_to_remote_node(
         self, mock_which, mock_sub_run, mock_target
     ):
-        """LDM-#1090: 'ldm system doctor --node aws-1' used to report this
+        """LDM-#1090: 'ldm system doctor --node node-a' used to report this
         machine's local Docker/Colima info, ignoring --node entirely. The
         Docker Engine/Context/Provider lines must reflect the resolved
         remote target instead."""
         from ldm_core.config import TargetNode
 
         mock_which.side_effect = lambda x: "/usr/bin/" + x
-        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
 
         mock_res = MagicMock()
         mock_res.returncode = 0
         mock_res.stdout = "24.0.0"
         mock_sub_run.return_value = mock_res
 
-        self.manager.target = "aws-1"
+        self.manager.target = "node-a"
         with patch.object(self.manager, "run_command", return_value=""):
             runner = DoctorRunner(self.manager.diagnostics)
             runner._check_docker_runtime()
@@ -195,11 +195,11 @@ class TestDiagnostics(unittest.TestCase):
         # The remote-context subprocess call must have been made.
         call_args = mock_sub_run.call_args[0][0]
         self.assertIn("--context", call_args)
-        self.assertIn("aws-1", call_args)
+        self.assertIn("node-a", call_args)
 
-        self.assertTrue(any("Docker Engine (aws-1)" in r[0] for r in runner.results))
+        self.assertTrue(any("Docker Engine (node-a)" in r[0] for r in runner.results))
         self.assertTrue(
-            any(r[0] == "Docker Context" and r[1] == "aws-1" for r in runner.results)
+            any(r[0] == "Docker Context" and r[1] == "node-a" for r in runner.results)
         )
         self.assertTrue(
             any(
@@ -250,11 +250,11 @@ class TestDiagnostics(unittest.TestCase):
         _check_elasticsearch_watermarks(
             self.manager.diagnostics,
             mock_hint,
-            docker_prefix=["docker", "--context", "aws-1"],
+            docker_prefix=["docker", "--context", "node-a"],
         )
         for call in mock_run.call_args_list:
             self.assertIn("--context", call.args[0])
-            self.assertIn("aws-1", call.args[0])
+            self.assertIn("node-a", call.args[0])
 
     @patch("ldm_core.diagnostics.doctor.DoctorRunner.add_hint")
     @patch("ldm_core.diagnostics.doctor.run_command")
@@ -358,13 +358,13 @@ class TestDiagnostics(unittest.TestCase):
         that target, not always the local daemon."""
         from ldm_core.config import TargetNode
 
-        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
         mock_run.return_value = ""
 
         with patch.object(
             self.manager,
             "read_meta",
-            return_value={"tag": "2026.q1.4-lts", "env_args": [], "target": "aws-1"},
+            return_value={"tag": "2026.q1.4-lts", "env_args": [], "target": "node-a"},
         ):
             runner = DoctorRunner(self.manager.diagnostics)
             runner.project_paths = [Path(f"{TEST_TMP_ROOT}/proj1")]
@@ -378,7 +378,7 @@ class TestDiagnostics(unittest.TestCase):
         self.assertTrue(ps_calls, "Expected at least one docker ps call")
         for call_args in ps_calls:
             self.assertIn("--context", call_args)
-            self.assertIn("aws-1", call_args)
+            self.assertIn("node-a", call_args)
 
     def test_check_dangling_and_print(self):
         runner = DoctorRunner(self.manager.diagnostics)
@@ -401,8 +401,8 @@ class TestDiagnostics(unittest.TestCase):
         always the local daemon."""
         from ldm_core.config import TargetNode
 
-        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
-        self.manager.target = "aws-1"
+        mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
+        self.manager.target = "node-a"
         runner = DoctorRunner(self.manager.diagnostics)
         runner.results.append(("Test", "Warning", "warn"))
 
@@ -418,9 +418,9 @@ class TestDiagnostics(unittest.TestCase):
         calls_with_context = [
             c for c in mock_run.call_args_list if "--context" in c.args[0]
         ]
-        self.assertTrue(calls_with_context, "No run_command call used --context aws-1")
+        self.assertTrue(calls_with_context, "No run_command call used --context node-a")
         for c in calls_with_context:
-            self.assertIn("aws-1", c.args[0])
+            self.assertIn("node-a", c.args[0])
 
     def test_check_absolute_disk_space_warns_below_threshold(self):
         # LDM-#1095: docker system df's "Reclaimable" figure says nothing
@@ -482,12 +482,12 @@ class TestDiagnostics(unittest.TestCase):
             "ldm_core.diagnostics.doctor.run_command", return_value=df_output
         ) as mock_run:
             runner._check_absolute_disk_space(
-                docker_prefix=["docker", "--context", "aws-1"]
+                docker_prefix=["docker", "--context", "node-a"]
             )
 
         call_args = mock_run.call_args[0][0]
         self.assertIn("--context", call_args)
-        self.assertIn("aws-1", call_args)
+        self.assertIn("node-a", call_args)
 
     @patch("ldm_core.diagnostics.doctor.get_actual_home", return_value=Path("/tmp"))
     @patch("pathlib.Path.exists", return_value=True)
@@ -871,8 +871,10 @@ class TestDiagnostics(unittest.TestCase):
         hardcoded "docker" regardless."""
         from ldm_core.config import TargetNode
 
-        self.mock_active_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
-        self.manager.target = "aws-1"
+        self.mock_active_target.return_value = TargetNode(
+            name="node-a", host="34.1.1.1"
+        )
+        self.manager.target = "node-a"
         self.manager.args.images = True
         mock_run.side_effect = [
             "",  # orphaned containers query -> none found
@@ -886,8 +888,8 @@ class TestDiagnostics(unittest.TestCase):
             self.manager.diagnostics.cmd_prune()
 
         commands = [c.args[0] for c in mock_run.call_args_list]
-        has_context = any("--context" in cmd and "aws-1" in cmd for cmd in commands)
-        self.assertTrue(has_context, f"Expected --context aws-1 in {commands}")
+        has_context = any("--context" in cmd and "node-a" in cmd for cmd in commands)
+        self.assertTrue(has_context, f"Expected --context node-a in {commands}")
 
     @patch("ldm_core.diagnostics.info.run_command")
     def test_cmd_status_global_infra_uses_explicit_node_override(self, mock_run):
@@ -898,8 +900,10 @@ class TestDiagnostics(unittest.TestCase):
         shared-infra health checks."""
         from ldm_core.config import TargetNode
 
-        self.mock_active_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
-        self.manager.target = "aws-1"
+        self.mock_active_target.return_value = TargetNode(
+            name="node-a", host="34.1.1.1"
+        )
+        self.manager.target = "node-a"
         mock_run.side_effect = [
             "container-id\n",  # liferay-proxy-global ps
             "running liferay/proxy:latest",  # liferay-proxy-global inspect
@@ -912,11 +916,11 @@ class TestDiagnostics(unittest.TestCase):
 
         called_cmds = [c.args[0] for c in mock_run.call_args_list]
         has_context = any(
-            "--context" in cmd and "aws-1" in cmd
+            "--context" in cmd and "node-a" in cmd
             for cmd in called_cmds
             if isinstance(cmd, list)
         )
-        self.assertTrue(has_context, f"Expected --context aws-1 in {called_cmds}")
+        self.assertTrue(has_context, f"Expected --context node-a in {called_cmds}")
 
     def test_sum_reclaimed_space_parses_and_combines_units(self):
         from ldm_core.diagnostics.prune import _sum_reclaimed_space
@@ -1827,7 +1831,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
         # daemon even for a project running on a remote --node target.
         from ldm_core.config import TargetNode
 
-        mock_target.return_value = TargetNode(name="aws-1", host="10.0.0.5")
+        mock_target.return_value = TargetNode(name="node-a", host="10.0.0.5")
         mock_run.side_effect = [
             "",  # liferay-proxy-global
             "",  # liferay-search-global
@@ -1844,7 +1848,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
                 return_value={
                     "tag": "2024.q1.3",
                     "container_name": "myproj",
-                    "target": "aws-1",
+                    "target": "node-a",
                 },
             ),
         ):
@@ -1854,14 +1858,14 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
         project_ps_call = mock_run.call_args_list[-1]
         cmd = project_ps_call[0][0]
         self.assertIn("--context", cmd)
-        self.assertIn("aws-1", cmd)
+        self.assertIn("node-a", cmd)
 
     @patch("ldm_core.docker_service.get_active_target")
     @patch("ldm_core.diagnostics.info.run_command")
     def test_cmd_status_detailed_uses_remote_context(self, mock_run, mock_target):
         from ldm_core.config import TargetNode
 
-        mock_target.return_value = TargetNode(name="aws-1", host="10.0.0.5")
+        mock_target.return_value = TargetNode(name="node-a", host="10.0.0.5")
         mock_run.return_value = "myproj-liferay-1\tUp 5 minutes (healthy)\tliferay/portal\t0.0.0.0:8080->8080/tcp\tliferay\n"
         with (
             patch.object(
@@ -1873,7 +1877,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
                 return_value={
                     "tag": "2024.q1.3",
                     "container_name": "myproj",
-                    "target": "aws-1",
+                    "target": "node-a",
                 },
             ),
         ):
@@ -1882,7 +1886,7 @@ class TestDiagnosticsSetupCompletion(unittest.TestCase):
 
         cmd = mock_run.call_args_list[-1][0][0]
         self.assertIn("--context", cmd)
-        self.assertIn("aws-1", cmd)
+        self.assertIn("node-a", cmd)
 
     @patch("ldm_core.diagnostics.completions.platform.system")
     @patch("ldm_core.diagnostics.completions.get_actual_home")

@@ -365,7 +365,7 @@ def _new_base_sub_parent():
         "--target",
         "--node",
         dest="target",
-        help="Specify compute target node identifier (e.g. local, aws-1)",
+        help="Specify compute target node identifier (e.g. local, node-a)",
     )
     _p.add_argument(
         "-n",
@@ -544,7 +544,7 @@ def get_parser():  # noqa: PLR0915
         "--target",
         "--node",
         dest="target",
-        help="Specify compute target node identifier (e.g. local, aws-1)",
+        help="Specify compute target node identifier (e.g. local, node-a)",
     )
 
     base_parent.add_argument(
@@ -2498,13 +2498,13 @@ def get_parser():  # noqa: PLR0915
         "add", parents=[base_sub_parent], help="Register a new compute target node"
     )
     t_add.add_argument(
-        "name", help="Name identifier for the target node (e.g. win-wsl, aws-1)"
+        "name", help="Name identifier for the target node (e.g. win-wsl, node-a)"
     )
     # LDM-#1797: every default is None -- the sentinel for "the flag was not
     # given". `add` on an existing node merges, so an omitted flag keeps the
     # stored value; passing a flag with an empty string clears it. A literal
     # default here would be indistinguishable from an omission, which is how
-    # `ldm target add aws-1 --user ec2-user` used to erase the node's MAC pin.
+    # `ldm target add node-a --user ec2-user` used to erase the node's MAC pin.
     t_add.add_argument(
         "--host",
         default=None,

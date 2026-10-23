@@ -1,6 +1,6 @@
 """The port pre-flight must ask the machine the container will run on (LDM-#1727).
 
-`ldm --target aws-2 run <project>` refused on a conflict detected on the
+`ldm --target node-b run <project>` refused on a conflict detected on the
 operator's laptop:
 
     Port conflict detected: Port 8080 is already in use on the host ...
@@ -118,7 +118,7 @@ class PreflightTestCase(unittest.TestCase):
 class RemoteTarget(PreflightTestCase):
     def test_a_locally_held_port_does_not_refuse_a_remote_run(self):
         """The exact report: local java on 8080, node free, run refused."""
-        died = self._run(target=_target("aws-2", True), local_free=False)
+        died = self._run(target=_target("node-b", True), local_free=False)
 
         self.assertIsNone(
             died,
@@ -126,48 +126,48 @@ class RemoteTarget(PreflightTestCase):
         )
 
     def test_the_allocator_is_asked_about_the_node(self):
-        self._run(target=_target("aws-2", True))
+        self._run(target=_target("node-b", True))
 
         self.assertEqual(
             self.calls["allocator"].args[0],
-            "aws-2",
+            "node-b",
             "asked the local daemon which ports are taken",
         )
 
     def test_the_container_check_is_asked_about_the_node(self):
-        self._run(target=_target("aws-2", True))
+        self._run(target=_target("node-b", True))
 
-        self.assertEqual(self.calls["is_running"].args[1], "aws-2")
+        self.assertEqual(self.calls["is_running"].args[1], "node-b")
 
     def test_a_port_held_on_the_node_still_refuses(self):
         """The other direction: the check must not become a no-op."""
-        died = self._run(target=_target("aws-2", True), node_ports={8080})
+        died = self._run(target=_target("node-b", True), node_ports={8080})
 
         self.assertIsNotNone(died, "a genuine conflict on the node was cleared")
         self.assertEqual(died["exit_code"], 4)
 
     def test_the_message_names_the_node_not_the_host(self):
-        died = self._run(target=_target("aws-2", True), node_ports={8080})
+        died = self._run(target=_target("node-b", True), node_ports={8080})
 
-        self.assertIn("node 'aws-2'", died["msg"])
+        self.assertIn("node 'node-b'", died["msg"])
         self.assertNotIn("on the host", died["msg"])
 
     def test_the_advice_names_the_node(self):
         """'Free up port 8080' is useless if it does not say where."""
-        died = self._run(target=_target("aws-2", True), node_ports={8080})
+        died = self._run(target=_target("node-b", True), node_ports={8080})
 
-        self.assertIn("aws-2", died["tip"] or "")
+        self.assertIn("node-b", died["tip"] or "")
 
     def test_no_local_pid_is_offered_as_the_holder(self):
         """Naming a local PID for a remote conflict is the original bug."""
-        died = self._run(target=_target("aws-2", True), node_ports={8080})
+        died = self._run(target=_target("node-b", True), node_ports={8080})
 
         self.assertNotIn("PID 1", died["msg"])
 
     def test_the_holder_lookup_is_asked_about_the_node(self):
-        self._run(target=_target("aws-2", True), node_ports={8080})
+        self._run(target=_target("node-b", True), node_ports={8080})
 
-        self.assertEqual(self.calls["publisher"].args[1], "aws-2")
+        self.assertEqual(self.calls["publisher"].args[1], "node-b")
 
 
 class LocalTargetIsUnchanged(PreflightTestCase):

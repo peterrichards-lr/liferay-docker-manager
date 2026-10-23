@@ -166,17 +166,17 @@ class TestOrchestration(unittest.TestCase):
         runs."""
         from ldm_core.config import TargetNode
 
-        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
         with (
             patch.object(
-                self.handler.manager, "read_meta", return_value={"target": "aws-1"}
+                self.handler.manager, "read_meta", return_value={"target": "node-a"}
             ),
             patch.object(BaseHandler, "run_command") as mock_run,
         ):
             self.handler.cmd_stop("test")
             call_args = mock_run.call_args[0][0]
             self.assertIn("--context", call_args)
-            self.assertIn("aws-1", call_args)
+            self.assertIn("node-a", call_args)
             self.assertIn("stop", call_args)
 
     @patch("ldm_core.docker_service.get_active_target")
@@ -197,17 +197,17 @@ class TestOrchestration(unittest.TestCase):
         """LDM-#1090/#1133: same issue/fix as test_cmd_stop_remote_target."""
         from ldm_core.config import TargetNode
 
-        mock_target.return_value = TargetNode(name="aws-2", host="5.6.7.8")
+        mock_target.return_value = TargetNode(name="node-b", host="5.6.7.8")
         with (
             patch.object(
-                self.handler.manager, "read_meta", return_value={"target": "aws-2"}
+                self.handler.manager, "read_meta", return_value={"target": "node-b"}
             ),
             patch.object(BaseHandler, "run_command") as mock_run,
         ):
             self.handler.cmd_restart("test")
             call_args = mock_run.call_args[0][0]
             self.assertIn("--context", call_args)
-            self.assertIn("aws-2", call_args)
+            self.assertIn("node-b", call_args)
             self.assertIn("restart", call_args)
 
     @patch("ldm_core.docker_service.get_active_target")
@@ -233,10 +233,10 @@ class TestOrchestration(unittest.TestCase):
         always the local daemon."""
         from ldm_core.config import TargetNode
 
-        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
         with (
             patch.object(
-                self.handler.manager, "read_meta", return_value={"target": "aws-1"}
+                self.handler.manager, "read_meta", return_value={"target": "node-a"}
             ),
             patch.object(BaseHandler, "run_command") as mock_run,
             patch.object(Path, "exists", return_value=True),
@@ -247,10 +247,10 @@ class TestOrchestration(unittest.TestCase):
                 c for c in mock_run.call_args_list if "--context" in c.args[0]
             ]
             self.assertTrue(
-                calls_with_context, "No run_command call used --context aws-1"
+                calls_with_context, "No run_command call used --context node-a"
             )
             for c in calls_with_context:
-                self.assertIn("aws-1", c.args[0])
+                self.assertIn("node-a", c.args[0])
 
     @patch("ldm_core.docker_service.get_active_target")
     @patch("ldm_core.runtime.orchestration.subprocess.run")
@@ -264,13 +264,13 @@ class TestOrchestration(unittest.TestCase):
         instead of the remote one actually hosting it."""
         from ldm_core.config import TargetNode
 
-        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
         with (
             patch.object(
                 self.handler.manager,
                 "read_meta",
                 return_value={
-                    "target": "aws-1",
+                    "target": "node-a",
                     "database_mode": "shared",
                     "db_type": "postgresql",
                     "project_name": "test",
@@ -298,7 +298,7 @@ class TestOrchestration(unittest.TestCase):
         )
         drop_cmd = drop_cmds[0]
         self.assertIn("--context", drop_cmd)
-        self.assertIn("aws-1", drop_cmd)
+        self.assertIn("node-a", drop_cmd)
         self.assertIn("dropdb", drop_cmd)
 
     @patch("ldm_core.docker_service.get_active_target")
@@ -307,10 +307,10 @@ class TestOrchestration(unittest.TestCase):
         resolved target (#1133)."""
         from ldm_core.config import TargetNode
 
-        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
         with (
             patch.object(
-                self.handler.manager, "read_meta", return_value={"target": "aws-1"}
+                self.handler.manager, "read_meta", return_value={"target": "node-a"}
             ),
             patch.object(BaseHandler, "run_command", return_value="proj-liferay-1"),
             patch("ldm_core.runtime.orchestration.subprocess.run") as mock_sub_run,
@@ -320,7 +320,7 @@ class TestOrchestration(unittest.TestCase):
         self.assertTrue(mock_sub_run.called)
         exec_cmd = mock_sub_run.call_args[0][0]
         self.assertIn("--context", exec_cmd)
-        self.assertIn("aws-1", exec_cmd)
+        self.assertIn("node-a", exec_cmd)
 
     @patch("ldm_core.docker_service.get_active_target")
     @patch("ldm_core.runtime.orchestration.shutil.rmtree")
@@ -336,7 +336,7 @@ class TestOrchestration(unittest.TestCase):
         """Test cmd_start triggers auto-sync and uses target context prefix."""
         with (
             patch.object(
-                self.handler.manager, "read_meta", return_value={"target": "aws-1"}
+                self.handler.manager, "read_meta", return_value={"target": "node-a"}
             ),
             patch("ldm_core.config.sync_project_to_target") as mock_sync,
             patch.object(BaseHandler, "run_command") as mock_run,
@@ -344,12 +344,12 @@ class TestOrchestration(unittest.TestCase):
         ):
             from ldm_core.config import TargetNode
 
-            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+            mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
             self.handler.handler.orchestration.cmd_start("test")
             mock_sync.assert_called_once()
             called_cmd = mock_run.call_args[0][0]
             self.assertIn("--context", called_cmd)
-            self.assertIn("aws-1", called_cmd)
+            self.assertIn("node-a", called_cmd)
 
     @patch("ldm_core.ui.UI.die")
     def test_cmd_start_refuses_when_containers_absent(self, mock_die) -> None:
@@ -551,7 +551,7 @@ class TestOrchestration(unittest.TestCase):
         """
         from ldm_core.config import TargetNode
 
-        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
         mock_die.side_effect = SystemExit
 
         pushed = []
@@ -568,7 +568,7 @@ class TestOrchestration(unittest.TestCase):
                 patch.object(
                     self.handler.manager,
                     "read_meta",
-                    return_value={"target": "aws-1"},
+                    return_value={"target": "node-a"},
                 ),
                 patch("ldm_core.utils.atomic_copy") as mock_copy,
                 patch(
@@ -592,11 +592,11 @@ class TestOrchestration(unittest.TestCase):
         single-artifact copy."""
         from ldm_core.config import TargetNode
 
-        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
 
         with (
             patch.object(
-                self.handler.manager, "read_meta", return_value={"target": "aws-1"}
+                self.handler.manager, "read_meta", return_value={"target": "node-a"}
             ),
             patch.object(BaseHandler, "run_command") as mock_run,
         ):
@@ -604,7 +604,7 @@ class TestOrchestration(unittest.TestCase):
 
         call_args = mock_run.call_args[0][0]
         self.assertIn("--context", call_args)
-        self.assertIn("aws-1", call_args)
+        self.assertIn("node-a", call_args)
         self.assertIn("up", call_args)
 
     @patch("ldm_core.ui.UI.die")
@@ -698,7 +698,7 @@ class TestOrchestration(unittest.TestCase):
         daemon."""
         from ldm_core.config import TargetNode
 
-        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
         with (
             patch.object(
                 self.handler, "detect_project_path", return_value=self.tmp_dir
@@ -706,7 +706,7 @@ class TestOrchestration(unittest.TestCase):
             patch.object(
                 self.handler.manager,
                 "read_meta",
-                return_value={"target": "aws-1", "container_name": "test-runtime"},
+                return_value={"target": "node-a", "container_name": "test-runtime"},
             ),
             patch.object(
                 self.handler,
@@ -722,10 +722,10 @@ class TestOrchestration(unittest.TestCase):
                 c for c in mock_run.call_args_list if "--context" in c.args[0]
             ]
             self.assertTrue(
-                calls_with_context, "No run_command call used --context aws-1"
+                calls_with_context, "No run_command call used --context node-a"
             )
             for c in calls_with_context:
-                self.assertIn("aws-1", c.args[0])
+                self.assertIn("node-a", c.args[0])
 
     @patch("ldm_core.ui.UI.error")
     @patch("ldm_core.ui.UI.confirm", return_value=True)

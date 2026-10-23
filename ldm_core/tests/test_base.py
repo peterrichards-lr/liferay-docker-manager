@@ -361,19 +361,19 @@ class TestBaseProject(unittest.TestCase):
         with (
             patch(
                 "ldm_core.docker_service.get_active_target",
-                return_value=TargetNode(name="aws-1", host="34.1.1.1"),
+                return_value=TargetNode(name="node-a", host="34.1.1.1"),
             ),
             patch.object(
                 self.handler, "run_command", return_value="proj-liferay-1"
             ) as mock_run,
         ):
             result = self.handler.resolve_container(
-                "proj", "liferay", target_name="aws-1"
+                "proj", "liferay", target_name="node-a"
             )
             self.assertEqual(result, "proj-liferay-1")
             called_cmd = mock_run.call_args[0][0]
             self.assertIn("--context", called_cmd)
-            self.assertIn("aws-1", called_cmd)
+            self.assertIn("node-a", called_cmd)
 
     def test_select_project_interactively_basic(self):
         self.handler.non_interactive = False
@@ -404,7 +404,7 @@ class TestBaseProject(unittest.TestCase):
         meta = {
             "root": "/tmp/p1",
             "project_name": "p1",
-            "target": "aws-1",
+            "target": "node-a",
         }
         with patch.object(self.handler, "check_port") as mock_check_port:
             res_port = self.handler._pre_flight_checks("localhost", 8080, meta=meta)
@@ -422,7 +422,7 @@ class TestBaseProject(unittest.TestCase):
         # consulted instead/first, since it's authoritative and available
         # immediately regardless of whether meta has been persisted yet.
         meta = {"root": "/tmp/p1", "project_name": "p1"}  # no "target" key at all
-        self.handler.target = "aws-1"  # type: ignore[attr-defined]
+        self.handler.target = "node-a"  # type: ignore[attr-defined]
         with patch.object(self.handler, "check_port") as mock_check_port:
             res_port = self.handler._pre_flight_checks("localhost", 8080, meta=meta)
             self.assertEqual(res_port, 8080)
@@ -436,7 +436,7 @@ class TestBaseProject(unittest.TestCase):
         from ldm_core.config import TargetNode
 
         mock_get_target.return_value = TargetNode(
-            name="aws-2", host="10.0.0.1", is_default=True
+            name="node-b", host="10.0.0.1", is_default=True
         )
 
         meta = {"root": "/tmp/p1", "project_name": "p1"}
@@ -449,7 +449,7 @@ class TestBaseProject(unittest.TestCase):
     def test_check_ram_uses_docker_context_for_remote_node(self):
         # LDM-#1130: verify check_ram passes --context for remote target
         handler = MockBaseManager()
-        handler.target = "aws-1"
+        handler.target = "node-a"
         with patch.object(handler, "run_command") as mock_run:
             mock_run.return_value = "8589934592"
             from ldm_core.handlers.base import BaseHandler
@@ -458,7 +458,7 @@ class TestBaseProject(unittest.TestCase):
             self.assertTrue(mock_run.called)
             cmd = mock_run.call_args[0][0]
             self.assertIn("--context", cmd)
-            self.assertIn("aws-1", cmd)
+            self.assertIn("node-a", cmd)
 
     @patch("ldm_core.config.get_active_target")
     def test_pre_flight_checks_still_checks_port_for_local_target(

@@ -11,14 +11,14 @@ reported as correctly configured.
 nothing afterwards keeps them in step or notices divergence:
 
 ```
-$ docker context inspect aws-1 --format '{{.Endpoints.docker.Host}}'
-ssh://ldm-automation@13.49.210.78
+$ docker context inspect node-a --format '{{.Endpoints.docker.Host}}'
+ssh://ldm-automation@203.0.113.10
 
 $ ldm target ls    # ~/.ldmrc
-aws-1  host=13.49.210.78  user=ec2-user
+node-a  host=203.0.113.10  user=ec2-user
 
-$ docker --context aws-1 version
-ldm-automation@13.49.210.78: Permission denied (publickey,...).
+$ docker --context node-a version
+ldm-automation@203.0.113.10: Permission denied (publickey,...).
 ```
 
 `ldm doctor` already compares configured state against reality for the MAC pin
@@ -30,7 +30,7 @@ ldm-automation@13.49.210.78: Permission denied (publickey,...).
 handler built a fresh `TargetNode` from only the flags it was given. So the
 obvious repair for defect 1 --
 
-    ldm target add aws-1 --host 13.49.210.78 --user ec2-user
+    ldm target add node-a --host 203.0.113.10 --user ec2-user
 
 -- reported "registered successfully" and silently destroyed the node's MAC
 pin, after which Liferay refuses the licence and the operator gets the
@@ -72,50 +72,50 @@ class TheContextUserIsReadBack(unittest.TestCase):
         return patch("ldm_core.docker_service.run_command", return_value=value)
 
     def test_it_returns_the_user_an_ssh_endpoint_dials(self):
-        with self._endpoint("ssh://ldm-automation@13.49.210.78"):
-            self.assertEqual(DIALLED, DockerService.get_context_endpoint_user("aws-1"))
+        with self._endpoint("ssh://ldm-automation@203.0.113.10"):
+            self.assertEqual(DIALLED, DockerService.get_context_endpoint_user("node-a"))
 
     def test_a_port_does_not_confuse_it(self):
-        with self._endpoint("ssh://ec2-user@13.49.210.78:2222"):
+        with self._endpoint("ssh://ec2-user@203.0.113.10:2222"):
             self.assertEqual(
-                CONFIGURED, DockerService.get_context_endpoint_user("aws-1")
+                CONFIGURED, DockerService.get_context_endpoint_user("node-a")
             )
 
     def test_an_ipv6_literal_does_not_confuse_it(self):
         """The address is full of colons but contains no '@'."""
         with self._endpoint("ssh://ec2-user@[2001:db8::1]:2222"):
             self.assertEqual(
-                CONFIGURED, DockerService.get_context_endpoint_user("aws-1")
+                CONFIGURED, DockerService.get_context_endpoint_user("node-a")
             )
 
     def test_an_ssh_endpoint_with_no_user_is_empty_not_unknown(self):
         """SSH then falls back to the *local* username, which is itself a
         divergence from a configured user and must stay reportable."""
-        with self._endpoint("ssh://13.49.210.78"):
-            self.assertEqual("", DockerService.get_context_endpoint_user("aws-1"))
+        with self._endpoint("ssh://203.0.113.10"):
+            self.assertEqual("", DockerService.get_context_endpoint_user("node-a"))
 
     def test_a_non_ssh_endpoint_dials_no_user(self):
         with self._endpoint("unix:///var/run/docker.sock"):
-            self.assertIsNone(DockerService.get_context_endpoint_user("aws-1"))
+            self.assertIsNone(DockerService.get_context_endpoint_user("node-a"))
 
     def test_an_unreadable_context_is_none(self):
         for value in ("", "   ", None):
             with self._endpoint(value):
-                self.assertIsNone(DockerService.get_context_endpoint_user("aws-1"))
+                self.assertIsNone(DockerService.get_context_endpoint_user("node-a"))
 
     def test_the_host_half_still_works(self):
         """Both halves now parse one inspect result; the older reader (LDM-#1346)
         must be unaffected by that."""
-        with self._endpoint("ssh://ldm-automation@13.49.210.78"):
+        with self._endpoint("ssh://ldm-automation@203.0.113.10"):
             self.assertEqual(
-                "13.49.210.78", DockerService.get_context_endpoint_host("aws-1")
+                "203.0.113.10", DockerService.get_context_endpoint_host("node-a")
             )
 
 
 class DoctorHarness(unittest.TestCase):
     """Drives the real `_check_target_ssh_users`."""
 
-    def check(self, *, host="13.49.210.78", configured=CONFIGURED, dialled=DIALLED):
+    def check(self, *, host="203.0.113.10", configured=CONFIGURED, dialled=DIALLED):
         from ldm_core.diagnostics.doctor import DoctorRunner
 
         doctor = DoctorRunner.__new__(DoctorRunner)
@@ -127,7 +127,7 @@ class DoctorHarness(unittest.TestCase):
 
         doctor.add_hint = record_hint  # type: ignore[method-assign]
 
-        targets = {"aws-1": TargetNode(name="aws-1", host=host, user=configured)}
+        targets = {"node-a": TargetNode(name="node-a", host=host, user=configured)}
 
         with (
             patch("ldm_core.config.load_targets", return_value=targets),
@@ -147,7 +147,7 @@ class DriftIsDetectedAndNamed(DoctorHarness):
 
         self.assertTrue(results, "doctor said nothing about the drift")
         self.assertEqual("warn", results[0][2])
-        self.assertIn("aws-1", results[0][0])
+        self.assertIn("node-a", results[0][0])
         self.assertIn(DIALLED, results[0][1])
 
     def test_the_hint_names_both_users_and_the_repair(self):
@@ -156,7 +156,7 @@ class DriftIsDetectedAndNamed(DoctorHarness):
 
         self.assertIn(CONFIGURED, hint)
         self.assertIn(DIALLED, hint)
-        self.assertIn("ldm target add aws-1 --user ec2-user", strip(hint))
+        self.assertIn("ldm target add node-a --user ec2-user", strip(hint))
 
     def test_it_explains_why_target_ls_looked_correct(self):
         """The whole difficulty of this failure is that the configuration reads
@@ -314,64 +314,64 @@ class AnOmittedFlagKeepsTheStoredValue(TargetAddHarness):
         symptom -- healthy container, `License registered`, Activation page.
         """
         self.target_add(
-            "aws-1", "--host", "13.49.210.78", "--user", DIALLED, "--mac-address", PIN
+            "node-a", "--host", "203.0.113.10", "--user", DIALLED, "--mac-address", PIN
         )
 
-        self.target_add("aws-1", "--host", "13.49.210.78", "--user", CONFIGURED)
+        self.target_add("node-a", "--host", "203.0.113.10", "--user", CONFIGURED)
 
-        node = self.stored("aws-1")
+        node = self.stored("node-a")
         self.assertEqual(PIN, node.mac_address, "target add destroyed the MAC pin")
         self.assertEqual(CONFIGURED, node.user)
 
     def test_the_pin_survives_in_the_file_on_disk(self):
         """`load_targets` is not the only reader of `~/.ldmrc`."""
-        self.target_add("aws-1", "--host", "13.49.210.78", "--mac-address", PIN)
-        self.target_add("aws-1", "--user", CONFIGURED)
+        self.target_add("node-a", "--host", "203.0.113.10", "--mac-address", PIN)
+        self.target_add("node-a", "--user", CONFIGURED)
 
         self.assertIn(PIN, self.ldmrc().read_text(encoding="utf-8"))
 
     def test_omitting_the_host_keeps_it(self):
         """The repair for a drifted user need not restate the address."""
-        self.target_add("aws-1", "--host", "13.49.210.78", "--user", DIALLED)
-        self.target_add("aws-1", "--user", CONFIGURED)
+        self.target_add("node-a", "--host", "203.0.113.10", "--user", DIALLED)
+        self.target_add("node-a", "--user", CONFIGURED)
 
-        self.assertEqual("13.49.210.78", self.stored("aws-1").host)
+        self.assertEqual("203.0.113.10", self.stored("node-a").host)
 
     def test_omitting_the_key_keeps_it(self):
-        self.target_add("aws-1", "--host", "13.49.210.78", "--key", "~/.ssh/aws.pem")
-        self.target_add("aws-1", "--user", CONFIGURED)
+        self.target_add("node-a", "--host", "203.0.113.10", "--key", "~/.ssh/aws.pem")
+        self.target_add("node-a", "--user", CONFIGURED)
 
-        self.assertEqual("~/.ssh/aws.pem", self.stored("aws-1").key_path)
+        self.assertEqual("~/.ssh/aws.pem", self.stored("node-a").key_path)
 
     def test_omitting_default_does_not_demote_the_node(self):
         """`--default` is `store_true`, so an omission and a false are the same
         token to argparse unless the default is the None sentinel."""
-        self.target_add("aws-1", "--host", "13.49.210.78", "--default")
-        self.assertTrue(self.stored("aws-1").is_default)
+        self.target_add("node-a", "--host", "203.0.113.10", "--default")
+        self.assertTrue(self.stored("node-a").is_default)
 
-        self.target_add("aws-1", "--user", CONFIGURED)
+        self.target_add("node-a", "--user", CONFIGURED)
 
         self.assertTrue(
-            self.stored("aws-1").is_default, "target add demoted the default node"
+            self.stored("node-a").is_default, "target add demoted the default node"
         )
 
     def test_registration_time_belongs_to_the_registration(self):
-        self.target_add("aws-1", "--host", "13.49.210.78")
-        first = self.stored("aws-1").created_at
+        self.target_add("node-a", "--host", "203.0.113.10")
+        first = self.stored("node-a").created_at
 
-        self.target_add("aws-1", "--user", CONFIGURED)
+        self.target_add("node-a", "--user", CONFIGURED)
 
-        self.assertEqual(first, self.stored("aws-1").created_at)
+        self.assertEqual(first, self.stored("node-a").created_at)
 
     def test_the_context_is_rebuilt_against_the_stored_host(self):
         """The whole repair: `--user` alone must still produce a context that
         dials the stored address as the new user."""
         self.target_add(
-            "aws-1", "--host", "13.49.210.78", "--user", DIALLED, "--mac-address", PIN
+            "node-a", "--host", "203.0.113.10", "--user", DIALLED, "--mac-address", PIN
         )
         self.run_command.reset_mock()
 
-        self.target_add("aws-1", "--user", CONFIGURED)
+        self.target_add("node-a", "--user", CONFIGURED)
 
         created = [
             call.args[0]
@@ -380,25 +380,25 @@ class AnOmittedFlagKeepsTheStoredValue(TargetAddHarness):
             and call.args[0][:3] == ["docker", "context", "create"]
         ]
         self.assertTrue(created, "no docker context was rebuilt")
-        self.assertIn("host=ssh://ec2-user@13.49.210.78", created[-1])
+        self.assertIn("host=ssh://ec2-user@203.0.113.10", created[-1])
 
 
 class AValueCanStillBeCleared(TargetAddHarness):
     def test_an_explicitly_empty_mac_address_removes_the_pin(self):
         """Merging must not make "unset this" unsayable. `None` (absent) and
         `""` (given, empty) are different inputs, which is what buys both."""
-        self.target_add("aws-1", "--host", "13.49.210.78", "--mac-address", PIN)
+        self.target_add("node-a", "--host", "203.0.113.10", "--mac-address", PIN)
 
-        self.target_add("aws-1", "--mac-address", "")
+        self.target_add("node-a", "--mac-address", "")
 
-        self.assertEqual("", self.stored("aws-1").mac_address)
+        self.assertEqual("", self.stored("node-a").mac_address)
 
     def test_an_explicitly_empty_user_removes_the_user(self):
-        self.target_add("aws-1", "--host", "13.49.210.78", "--user", CONFIGURED)
+        self.target_add("node-a", "--host", "203.0.113.10", "--user", CONFIGURED)
 
-        self.target_add("aws-1", "--user", "")
+        self.target_add("node-a", "--user", "")
 
-        self.assertEqual("", self.stored("aws-1").user)
+        self.assertEqual("", self.stored("node-a").user)
 
 
 class ANewNodeStillGetsTheDefaults(TargetAddHarness):
@@ -413,9 +413,9 @@ class ANewNodeStillGetsTheDefaults(TargetAddHarness):
 
     def test_the_flags_are_still_recorded(self):
         self.target_add(
-            "aws-1",
+            "node-a",
             "--host",
-            "13.49.210.78",
+            "203.0.113.10",
             "--user",
             CONFIGURED,
             "--mac-address",
@@ -423,8 +423,8 @@ class ANewNodeStillGetsTheDefaults(TargetAddHarness):
             "--default",
         )
 
-        node = self.stored("aws-1")
-        self.assertEqual("13.49.210.78", node.host)
+        node = self.stored("node-a")
+        self.assertEqual("203.0.113.10", node.host)
         self.assertEqual(CONFIGURED, node.user)
         # LDM-#1752: lower-cased so casing cannot read as a mismatch against
         # `docker inspect`.
@@ -434,9 +434,9 @@ class ANewNodeStillGetsTheDefaults(TargetAddHarness):
 
 class AnUpdateIsNeverSilent(TargetAddHarness):
     def test_it_names_what_changed(self):
-        self.target_add("aws-1", "--host", "13.49.210.78", "--user", DIALLED)
+        self.target_add("node-a", "--host", "203.0.113.10", "--user", DIALLED)
 
-        out = self.target_add("aws-1", "--user", CONFIGURED)
+        out = self.target_add("node-a", "--user", CONFIGURED)
 
         self.assertIn("updated", out)
         self.assertIn(DIALLED, out)
@@ -445,9 +445,9 @@ class AnUpdateIsNeverSilent(TargetAddHarness):
     def test_it_names_what_it_kept(self):
         """ "Did I just lose my MAC pin?" is the question this command used to
         answer wrong. The answer is now on screen, not in `~/.ldmrc`."""
-        self.target_add("aws-1", "--host", "13.49.210.78", "--mac-address", PIN)
+        self.target_add("node-a", "--host", "203.0.113.10", "--mac-address", PIN)
 
-        out = self.target_add("aws-1", "--user", CONFIGURED)
+        out = self.target_add("node-a", "--user", CONFIGURED)
 
         self.assertIn("Kept", out)
         self.assertIn(PIN, out)
@@ -455,9 +455,9 @@ class AnUpdateIsNeverSilent(TargetAddHarness):
     def test_it_says_when_the_stored_settings_did_not_move(self):
         """Silence would read as "it took my flags" -- the misreading that made
         the old behaviour so damaging."""
-        self.target_add("aws-1", "--host", "13.49.210.78", "--user", CONFIGURED)
+        self.target_add("node-a", "--host", "203.0.113.10", "--user", CONFIGURED)
 
-        out = self.target_add("aws-1", "--user", CONFIGURED)
+        out = self.target_add("node-a", "--user", CONFIGURED)
 
         self.assertIn("stored settings unchanged", out)
 
@@ -466,12 +466,12 @@ class AnUpdateIsNeverSilent(TargetAddHarness):
         untouched (it was right all along) and rebuilds the Docker context. A
         bare "nothing changed" there would be false, and would read as though
         the repair had not been applied."""
-        self.target_add("aws-1", "--host", "13.49.210.78", "--user", CONFIGURED)
+        self.target_add("node-a", "--host", "203.0.113.10", "--user", CONFIGURED)
 
-        out = self.target_add("aws-1", "--user", CONFIGURED)
+        out = self.target_add("node-a", "--user", CONFIGURED)
 
         self.assertNotIn("nothing changed.", out)
-        self.assertIn("rebuilt to dial ssh://ec2-user@13.49.210.78", out)
+        self.assertIn("rebuilt to dial ssh://ec2-user@203.0.113.10", out)
 
     def test_a_local_node_has_no_context_to_report(self):
         self.target_add("wsl")
@@ -481,7 +481,7 @@ class AnUpdateIsNeverSilent(TargetAddHarness):
         self.assertNotIn("Docker context", out)
 
     def test_a_first_registration_still_reads_as_a_registration(self):
-        out = self.target_add("aws-1", "--host", "13.49.210.78")
+        out = self.target_add("node-a", "--host", "203.0.113.10")
 
         self.assertIn("registered successfully", out)
         self.assertNotIn("Kept", out)
@@ -490,9 +490,9 @@ class AnUpdateIsNeverSilent(TargetAddHarness):
         """LDM-#1036: `UI.detail` is invisible without --info/--verbose, which
         is exactly the ordinary invocation where this matters."""
         self.assertFalse(UI.INFO_MODE and UI.VERBOSE, "test ran in info mode")
-        self.target_add("aws-1", "--host", "13.49.210.78", "--mac-address", PIN)
+        self.target_add("node-a", "--host", "203.0.113.10", "--mac-address", PIN)
 
-        out = self.target_add("aws-1", "--user", CONFIGURED)
+        out = self.target_add("node-a", "--user", CONFIGURED)
 
         self.assertIn("Kept", out)
 

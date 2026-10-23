@@ -475,20 +475,20 @@ class TestLogs(unittest.TestCase):
         """Test cmd_logs routes compose log commands via target context prefix."""
         with (
             patch.object(
-                self.handler.manager, "read_meta", return_value={"target": "aws-1"}
+                self.handler.manager, "read_meta", return_value={"target": "node-a"}
             ),
             patch.object(BaseHandler, "run_command") as mock_run,
             patch("ldm_core.docker_service.get_active_target") as mock_target,
         ):
             from ldm_core.config import TargetNode
 
-            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
-            mock_run.return_value = "aws-1-liferay-1"
+            mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
+            mock_run.return_value = "node-a-liferay-1"
             self.handler.cmd_logs(project_id="test", no_wait=True)
             mock_run.assert_called()
             called_cmds = [call[0][0] for call in mock_run.call_args_list]
             has_context = any(
-                "--context" in cmd and "aws-1" in cmd
+                "--context" in cmd and "node-a" in cmd
                 for cmd in called_cmds
                 if isinstance(cmd, list)
             )
@@ -502,7 +502,7 @@ class TestLogs(unittest.TestCase):
                 self.handler.manager,
                 "read_meta",
                 return_value={
-                    "target": "aws-1",
+                    "target": "node-a",
                     "container_name": "test",
                     "scale_liferay": 2,
                     "container_name_pattern_liferay": "test-liferay-{index}",
@@ -514,19 +514,19 @@ class TestLogs(unittest.TestCase):
         ):
             from ldm_core.config import TargetNode
 
-            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+            mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
             self.handler.handler.logs._cmd_logs_instance(
                 project_id="test", service="liferay", instance=1
             )
             called_cmds = [call[0][0] for call in mock_run.call_args_list]
             has_context = any(
-                "--context" in cmd and "aws-1" in cmd
+                "--context" in cmd and "node-a" in cmd
                 for cmd in called_cmds
                 if isinstance(cmd, list)
             )
             self.assertTrue(
                 has_context,
-                f"Expected --context aws-1 in one of {called_cmds}",
+                f"Expected --context node-a in one of {called_cmds}",
             )
 
     def test_print_ngrok_url_uses_remote_target_context(self) -> None:
@@ -537,17 +537,17 @@ class TestLogs(unittest.TestCase):
         ):
             from ldm_core.config import TargetNode
 
-            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
-            self.handler.handler.logs._print_ngrok_url("test", target_name="aws-1")
+            mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
+            self.handler.handler.logs._print_ngrok_url("test", target_name="node-a")
             mock_run.assert_called_once()
             called_cmd = mock_run.call_args[0][0]
             self.assertIn("--context", called_cmd)
-            self.assertIn("aws-1", called_cmd)
+            self.assertIn("node-a", called_cmd)
 
     def test_cmd_logs_infra_uses_remote_target_context(self) -> None:
         """cmd_logs(infra=True)'s docker ps/compose logs calls honor an
         explicit --node override for global shared infra (#1133)."""
-        self.handler.target = "aws-1"
+        self.handler.target = "node-a"
         with (
             patch.object(BaseHandler, "run_command", return_value="") as mock_run,
             patch("ldm_core.docker_service.get_active_target") as mock_target,
@@ -559,16 +559,16 @@ class TestLogs(unittest.TestCase):
         ):
             from ldm_core.config import TargetNode
 
-            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+            mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
             self.handler.manager.infra._get_infra_env.return_value = {}  # type: ignore[attr-defined]
             self.handler.cmd_logs(infra=True, no_wait=True)
             called_cmds = [call[0][0] for call in mock_run.call_args_list]
             has_context = any(
-                "--context" in cmd and "aws-1" in cmd
+                "--context" in cmd and "node-a" in cmd
                 for cmd in called_cmds
                 if isinstance(cmd, list)
             )
             self.assertTrue(
                 has_context,
-                f"Expected --context aws-1 in one of {called_cmds}",
+                f"Expected --context node-a in one of {called_cmds}",
             )

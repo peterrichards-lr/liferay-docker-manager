@@ -183,7 +183,7 @@ class TestFragments(unittest.TestCase):
             "tag": "2025.Q1.0",
             "container_name": "liferay-demo",
             "share": "false",
-            "target": "aws-1",
+            "target": "node-a",
         }
         paths = {"root": self.tmp_dir}
 
@@ -199,7 +199,7 @@ class TestFragments(unittest.TestCase):
             patch.object(BaseHandler, "run_command", return_value="8080") as mock_run,
             patch(
                 "ldm_core.docker_service.get_active_target",
-                return_value=TargetNode(name="aws-1", host="34.1.1.1"),
+                return_value=TargetNode(name="node-a", host="34.1.1.1"),
             ),
         ):
             self.handler.handler.fragments._patch_fragment_overrides(
@@ -208,12 +208,12 @@ class TestFragments(unittest.TestCase):
 
         called_cmds = [call[0][0] for call in mock_run.call_args_list]
         has_context = any(
-            "--context" in cmd and "aws-1" in cmd
+            "--context" in cmd and "node-a" in cmd
             for cmd in called_cmds
             if isinstance(cmd, list)
         )
         self.assertTrue(
-            has_context, f"Expected --context aws-1 in one of {called_cmds}"
+            has_context, f"Expected --context node-a in one of {called_cmds}"
         )
 
     @patch("time.sleep")
@@ -1207,26 +1207,26 @@ class TestPatchDatabaseFragmentEntryLink(unittest.TestCase):
             ) as mock_run,
             patch(
                 "ldm_core.docker_service.get_active_target",
-                return_value=TargetNode(name="aws-1", host="34.1.1.1"),
+                return_value=TargetNode(name="node-a", host="34.1.1.1"),
             ),
         ):
             project_meta = {
                 "db_type": "postgresql",
                 "project_name": "aica",
                 "container_name": "aica",
-                "target": "aws-1",
+                "target": "node-a",
             }
             self.handler.handler.fragments._patch_database_fragmententrylink(
                 project_meta, self.overrides
             )
             called_cmds = [call[0][0] for call in mock_run.call_args_list]
             has_context = any(
-                "--context" in cmd and "aws-1" in cmd
+                "--context" in cmd and "node-a" in cmd
                 for cmd in called_cmds
                 if isinstance(cmd, list)
             )
             self.assertTrue(
-                has_context, f"Expected --context aws-1 in one of {called_cmds}"
+                has_context, f"Expected --context node-a in one of {called_cmds}"
             )
 
     def test_no_gogo_cache_flush_attempted(self):

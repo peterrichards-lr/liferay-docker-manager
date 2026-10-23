@@ -42,7 +42,7 @@ class TestSnapshotService(unittest.TestCase):
         # persisted default target -- get_docker_cmd_prefix() always calls
         # get_active_target() even for a falsy target_name (see PR #1150),
         # so an unmocked call here would silently pick up e.g. a real
-        # "aws-2" default and inject an unexpected --context flag.
+        # "node-b" default and inject an unexpected --context flag.
         from ldm_core.config import TargetNode
 
         self.active_target_patcher = patch("ldm_core.docker_service.get_active_target")
@@ -1560,14 +1560,14 @@ class TestSnapshotService(unittest.TestCase):
             patch.object(
                 self.manager,
                 "read_meta",
-                return_value={"db_type": "postgresql", "target": "aws-1"},
+                return_value={"db_type": "postgresql", "target": "node-a"},
             ),
             patch.object(self.manager, "run_command") as mock_run,
             patch("ldm_core.docker_service.get_active_target") as mock_target,
         ):
             from ldm_core.config import TargetNode
 
-            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+            mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
 
             def mock_run_cmd(cmd, stdout_file=None, **kwargs):
                 if stdout_file:
@@ -1581,18 +1581,18 @@ class TestSnapshotService(unittest.TestCase):
             paths = {"root": self.test_dir}
 
             self.manager.snapshot.database._snapshot_database(
-                {"db_type": "postgresql", "target": "aws-1"}, "proj", snap_dir, paths
+                {"db_type": "postgresql", "target": "node-a"}, "proj", snap_dir, paths
             )
             mock_run.assert_called()
             called_cmds = [call[0][0] for call in mock_run.call_args_list]
             has_context = any(
-                "--context" in cmd and "aws-1" in cmd
+                "--context" in cmd and "node-a" in cmd
                 for cmd in called_cmds
                 if isinstance(cmd, list)
             )
             self.assertTrue(has_context)
 
-    def _assert_has_remote_context(self, called_cmds, target_name="aws-1"):
+    def _assert_has_remote_context(self, called_cmds, target_name="node-a"):
         has_context = any(
             "--context" in cmd and target_name in cmd
             for cmd in called_cmds
@@ -1606,12 +1606,14 @@ class TestSnapshotService(unittest.TestCase):
         """search.py's docker ps/exec calls must honor the project's target (#1179)."""
         from ldm_core.config import TargetNode
 
-        self.mock_active_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        self.mock_active_target.return_value = TargetNode(
+            name="node-a", host="34.1.1.1"
+        )
         with patch.object(
             self.manager, "run_command", return_value="container-id"
         ) as mock_run:
             self.manager.snapshot.search._snapshot_search(
-                {"use_shared_search": "true", "target": "aws-1"},
+                {"use_shared_search": "true", "target": "node-a"},
                 self.test_dir,
                 "20260101_000000",
                 "proj",
@@ -1626,7 +1628,7 @@ class TestSnapshotService(unittest.TestCase):
             with patch("time.sleep"):
                 self.manager.snapshot.search._restore_search(
                     self.test_dir,
-                    {"search_snapshot": "snap1", "target": "aws-1"},
+                    {"search_snapshot": "snap1", "target": "node-a"},
                     "proj",
                 )
             self._assert_has_remote_context(
@@ -1637,7 +1639,9 @@ class TestSnapshotService(unittest.TestCase):
         """utils.py's shared-search-snapshot deletion must honor the project's target (#1179)."""
         from ldm_core.config import TargetNode
 
-        self.mock_active_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        self.mock_active_target.return_value = TargetNode(
+            name="node-a", host="34.1.1.1"
+        )
         backups_dir = self.test_dir / "backups"
         snap_dir = backups_dir / "20260101_000000"
         snap_dir.mkdir(parents=True)
@@ -1650,7 +1654,7 @@ class TestSnapshotService(unittest.TestCase):
                 "read_meta",
                 side_effect=[
                     {"name": "snap1", "search_snapshot": "snap1"},
-                    {"target": "aws-1"},
+                    {"target": "node-a"},
                 ],
             ),
             patch.object(
@@ -1669,7 +1673,9 @@ class TestSnapshotService(unittest.TestCase):
         """archive.py's active-services docker ps lookup must honor the project's target (#1179)."""
         from ldm_core.config import TargetNode
 
-        self.mock_active_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        self.mock_active_target.return_value = TargetNode(
+            name="node-a", host="34.1.1.1"
+        )
         paths = {"root": self.test_dir}
         snap_dir = self.test_dir / "snap"
         snap_dir.mkdir(exist_ok=True)
@@ -1678,7 +1684,7 @@ class TestSnapshotService(unittest.TestCase):
             self.manager.snapshot.archive._generate_snapshot_metadata(
                 "name",
                 "ts",
-                {"container_name": "proj", "target": "aws-1"},
+                {"container_name": "proj", "target": "node-a"},
                 self.test_dir,
                 paths,
                 snap_dir,
@@ -1693,14 +1699,16 @@ class TestSnapshotService(unittest.TestCase):
         """custom_containers.py's docker save/load must honor the project's target (#1179)."""
         from ldm_core.config import TargetNode
 
-        self.mock_active_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        self.mock_active_target.return_value = TargetNode(
+            name="node-a", host="34.1.1.1"
+        )
         snap_dir = self.test_dir / "snap"
         snap_dir.mkdir(exist_ok=True)
 
         with patch.object(self.manager, "run_command", return_value="ok") as mock_run:
             self.manager.snapshot.custom_containers._snapshot_custom_containers(
                 {
-                    "target": "aws-1",
+                    "target": "node-a",
                     "custom_containers": [
                         {"service_name": "wp", "image": "wordpress:latest"}
                     ],
@@ -1715,7 +1723,7 @@ class TestSnapshotService(unittest.TestCase):
         (custom_images / "wp.tar").touch()
         with patch.object(self.manager, "run_command", return_value="ok") as mock_run:
             self.manager.snapshot.custom_containers._restore_custom_images(
-                snap_dir, {"target": "aws-1"}
+                snap_dir, {"target": "node-a"}
             )
             self._assert_has_remote_context(
                 [c.args[0] for c in mock_run.call_args_list]
@@ -1725,7 +1733,9 @@ class TestSnapshotService(unittest.TestCase):
         """cmd_restore's pre-reset container existence check must honor the project's target (#1179)."""
         from ldm_core.config import TargetNode
 
-        self.mock_active_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        self.mock_active_target.return_value = TargetNode(
+            name="node-a", host="34.1.1.1"
+        )
         paths = {
             "root": self.test_dir / "proj",
             "data": self.test_dir / "proj/data",
@@ -1743,7 +1753,7 @@ class TestSnapshotService(unittest.TestCase):
                 self.manager, "detect_project_path", return_value=paths["root"]
             ),
             patch.object(self.manager, "setup_paths", return_value=paths),
-            patch.object(self.manager, "read_meta", return_value={"target": "aws-1"}),
+            patch.object(self.manager, "read_meta", return_value={"target": "node-a"}),
             patch.object(self.manager.snapshot, "flag_reindex", return_value=True),
             patch.object(self.manager.runtime, "cmd_run"),
             patch.object(self.manager.runtime, "cmd_reset"),
@@ -1869,7 +1879,7 @@ class TestVolumesSnapshotService(unittest.TestCase):
         from ldm_core.snapshot.volumes import VolumesSnapshotService
 
         vol_service = VolumesSnapshotService(self.manager.snapshot)
-        self.manager.target = "aws-1"
+        self.manager.target = "node-a"
 
         with (
             patch.object(self.manager, "run_command") as mock_run,
@@ -1877,20 +1887,20 @@ class TestVolumesSnapshotService(unittest.TestCase):
         ):
             from ldm_core.config import TargetNode
 
-            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+            mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
             vol_service._sync_volume(
                 self.test_dir, "myproj-data", direction="to_volume"
             )
 
             called_cmds = [call[0][0] for call in mock_run.call_args_list]
             has_context = any(
-                "--context" in cmd and "aws-1" in cmd
+                "--context" in cmd and "node-a" in cmd
                 for cmd in called_cmds
                 if isinstance(cmd, list)
             )
             self.assertTrue(
                 has_context,
-                "Remote --context aws-1 missing from _sync_volume docker calls",
+                "Remote --context node-a missing from _sync_volume docker calls",
             )
 
     def test_hydrate_named_volumes_initializes_empty_volume_ownership(self):

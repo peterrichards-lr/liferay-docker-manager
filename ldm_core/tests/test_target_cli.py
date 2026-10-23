@@ -12,21 +12,21 @@ from ldm_core.tests.tmproot import TEST_TMP_ROOT
 class TestTargetCLI(unittest.TestCase):
     def test_cli_target_and_node_parsing(self) -> None:
         parser, _ = get_parser()
-        args1 = parser.parse_args(["run", "vanilla", "--target", "aws-1"])
-        self.assertEqual(getattr(args1, "target", None), "aws-1")
+        args1 = parser.parse_args(["run", "vanilla", "--target", "node-a"])
+        self.assertEqual(getattr(args1, "target", None), "node-a")
 
-        args2 = parser.parse_args(["run", "vanilla", "--node", "aws-1"])
-        self.assertEqual(getattr(args2, "target", None), "aws-1")
+        args2 = parser.parse_args(["run", "vanilla", "--node", "node-a"])
+        self.assertEqual(getattr(args2, "target", None), "node-a")
 
-        args3 = parser.parse_args(["--target", "aws-1", "run", "vanilla"])
-        self.assertEqual(getattr(args3, "target", None), "aws-1")
+        args3 = parser.parse_args(["--target", "node-a", "run", "vanilla"])
+        self.assertEqual(getattr(args3, "target", None), "node-a")
 
         args4 = parser.parse_args(["logs", "vanilla", "--target", "prod-node"])
         self.assertEqual(getattr(args4, "target", None), "prod-node")
 
     def test_manager_target_initialization(self) -> None:
         args = argparse.Namespace(
-            target="aws-1",
+            target="node-a",
             node=None,
             verbose=False,
             info=False,
@@ -35,7 +35,7 @@ class TestTargetCLI(unittest.TestCase):
             dry_run=False,
         )
         mgr = LiferayManager(args)
-        self.assertEqual(mgr.target, "aws-1")
+        self.assertEqual(mgr.target, "node-a")
 
     def test_manager_broadened_ci_detection(self) -> None:
         # LDM-#1092: previously only CI/GITHUB_ACTIONS/GITLAB_CI were
@@ -104,15 +104,15 @@ class TestTargetCLI(unittest.TestCase):
         handler = MagicMock()
         handler.manager.detect_project_path.return_value = Path("/tmp/vanilla")
         handler.manager.read_meta.return_value = {
-            "target": "aws-1",
+            "target": "node-a",
             "host_name": "vanilla.local",
             "container_name": "vanilla",
         }
         handler.manager.parse_version.return_value = (7, 4, 3)
-        handler.manager.target = "aws-1"
+        handler.manager.target = "node-a"
 
         run_info(handler, "vanilla")
-        mock_get_status.assert_called_once_with("vanilla", target_name="aws-1")
+        mock_get_status.assert_called_once_with("vanilla", target_name="node-a")
 
     @patch("ldm_core.diagnostics.info.UI")
     @patch("ldm_core.diagnostics.info.run_command")
@@ -126,7 +126,7 @@ class TestTargetCLI(unittest.TestCase):
         ]
         handler.manager.read_meta.return_value = {
             "container_name": "proj1",
-            "target": "aws-1",
+            "target": "node-a",
             "host_name": "localhost",
             "port": 8080,
             "ssl": False,

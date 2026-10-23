@@ -26,11 +26,11 @@ def service() -> NodeService:
     [
         (lambda s: s.cmd_node_power_status(), "cmd_status", {}),
         (
-            lambda s: s.cmd_node_power_wake("aws-1", ttl="4h"),
+            lambda s: s.cmd_node_power_wake("node-a", ttl="4h"),
             "cmd_wake",
-            {"node": "aws-1", "ttl": "4h"},
+            {"node": "node-a", "ttl": "4h"},
         ),
-        (lambda s: s.cmd_node_power_sleep("aws-1"), "cmd_sleep", {"node": "aws-1"}),
+        (lambda s: s.cmd_node_power_sleep("node-a"), "cmd_sleep", {"node": "node-a"}),
         (lambda s: s.cmd_node_power_enforce(), "cmd_enforce", {}),
         (lambda s: s.cmd_node_power_sync_dns(), "cmd_sync_dns", {}),
     ],
@@ -47,7 +47,7 @@ def test_each_subcommand_reaches_its_handler(service, call, handler, expected):
 def test_a_failing_handler_returns_its_exit_code(service):
     """The utility fails through sys.exit; ldm must return that, not raise."""
     with patch.object(node_power, "cmd_sleep", side_effect=SystemExit(1)):
-        assert service.cmd_node_power_sleep("aws-1") == 1
+        assert service.cmd_node_power_sleep("node-a") == 1
 
 
 def test_nothing_is_launched_as_a_subprocess(service):
@@ -78,7 +78,7 @@ class TestSyncDns:
     def test_a_changed_ip_is_written_everywhere(self):
         _, update = self._run(
             {
-                "aws-2": {
+                "node-b": {
                     "ec2_instance_id": "i-1",
                     "region": "eu-west-1",
                     "host": "1.1.1.1",
@@ -86,11 +86,11 @@ class TestSyncDns:
             },
             "2.2.2.2",
         )
-        update.assert_called_once_with("aws-2", "2.2.2.2")
+        update.assert_called_once_with("node-b", "2.2.2.2")
 
     def test_an_unchanged_ip_writes_nothing(self):
         _, update = self._run(
-            {"aws-2": {"ec2_instance_id": "i-1", "host": "2.2.2.2"}}, "2.2.2.2"
+            {"node-b": {"ec2_instance_id": "i-1", "host": "2.2.2.2"}}, "2.2.2.2"
         )
         update.assert_not_called()
 

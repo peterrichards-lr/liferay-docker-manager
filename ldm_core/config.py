@@ -26,7 +26,7 @@ class TargetNode:
     # LDM-#1752: Liferay's licence binds to a MAC. On a remote node the
     # container gets a bridge-assigned address (02:42:...), the licence check
     # fails, and the portal serves the Activation page instead of Sign In --
-    # measured on aws-1, where pinning to the host's own `ens5` address was the
+    # measured on node-a, where pinning to the host's own `ens5` address was the
     # only difference between a failed and a passed validation.
     #
     # Deliberately NOT auto-populated. `ip a` on these nodes shows `ens5`

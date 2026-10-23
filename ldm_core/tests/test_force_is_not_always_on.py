@@ -162,8 +162,8 @@ class TheDeliberateShortFlagResolutionsSurvive(unittest.TestCase):
             (["restore", "demo", "-n", "s1"], "name", "s1"),
             (["quickstart", "aica", "-n", "proj"], "name", "proj"),
             (["db", "query", "demo", "-f", "json"], "format", "json"),
-            (["run", "demo", "--target", "aws-1"], "target", "aws-1"),
-            (["run", "demo", "--node", "aws-1"], "target", "aws-1"),
+            (["run", "demo", "--target", "node-a"], "target", "node-a"),
+            (["run", "demo", "--node", "node-a"], "target", "node-a"),
             (["run", "demo", "--nightly"], "nightly", True),
         ]
         for argv, attr, expected in cases:

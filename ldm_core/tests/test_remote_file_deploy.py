@@ -60,12 +60,12 @@ class _DeployBase(unittest.TestCase):
             "project_name": "proj",
             "liferay_container_name": "proj",
         }
-        mgr.target = "aws-2" if remote else None
+        mgr.target = "node-b" if remote else None
         mgr.setup_paths.return_value = self._paths()
         svc = OrchestrationService(mgr)
 
         tgt = MagicMock()
-        tgt.name = "aws-2" if remote else "local"
+        tgt.name = "node-b" if remote else "local"
         tgt.host = "16.0.0.1" if remote else "localhost"
 
         def fake_push(_t, _n, f, subdir):

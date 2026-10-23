@@ -274,7 +274,7 @@ class TestSearch(unittest.TestCase):
         from ldm_core.runtime.search import SearchService
 
         search_svc = SearchService(self.handler)
-        self.handler.read_meta = MagicMock(return_value={"target": "aws-1"})  # type: ignore[method-assign]
+        self.handler.read_meta = MagicMock(return_value={"target": "node-a"})  # type: ignore[method-assign]
         self.handler.detect_project_path = MagicMock(return_value=self.tmp_dir)  # type: ignore[method-assign]
 
         files_dir = self.tmp_dir / "files"
@@ -296,7 +296,7 @@ class TestSearch(unittest.TestCase):
         self.handler.run_command = MagicMock(return_value="")  # type: ignore[method-assign]
 
         with patch("ldm_core.docker_service.get_active_target") as mock_target:
-            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+            mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
             with (
                 patch("ldm_core.ui.UI.heading"),
                 patch("ldm_core.ui.UI.ask", return_value="N"),
@@ -310,4 +310,4 @@ class TestSearch(unittest.TestCase):
         calls = [c[0][0] for c in self.handler.run_command.call_args_list]
         for cmd in calls:
             self.assertIn("--context", cmd)
-            self.assertIn("aws-1", cmd)
+            self.assertIn("node-a", cmd)

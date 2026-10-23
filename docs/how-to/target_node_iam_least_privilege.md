@@ -2,6 +2,12 @@
 
 This document defines the minimal AWS IAM policy required for automated target compute node power management (`scripts/manage_target_nodes.py`, GitHub Action `.github/workflows/node-power-manager.yml`).
 
+The workflows read their node definitions from the **`NODE_POWER_CONFIG`** Actions secret: the full JSON of a `.node-power-config.json` (`timezone` plus a `nodes` object). `scripts/write_node_power_config.py` writes it to disk for the run and masks every node name, instance ID, host and region in the log, because this repository's Actions logs are public. The file is not committed (LDM-#2292). Set or rotate it with:
+
+```bash
+gh secret set NODE_POWER_CONFIG < .node-power-config.json
+```
+
 ---
 
 ## 1. Minimal IAM Policy Schema
@@ -28,8 +34,8 @@ Attach this custom policy to your CI/CD service account or IAM User (`AWS_ACCESS
         "ec2:StopInstances"
       ],
       "Resource": [
-        "arn:aws:ec2:eu-north-1:*:instance/i-049889a61ec29e7ce",
-        "arn:aws:ec2:eu-north-1:*:instance/i-01194b1b4476dd3d7"
+        "arn:aws:ec2:eu-north-1:*:instance/i-0123456789abcdef0",
+        "arn:aws:ec2:eu-north-1:*:instance/i-0fedcba9876543210"
       ]
     }
   ]
@@ -41,7 +47,7 @@ Attach this custom policy to your CI/CD service account or IAM User (`AWS_ACCESS
 ## 2. Security Guardrails
 
 1. **Strict Resource Scoping**:
-   - `ec2:StartInstances` and `ec2:StopInstances` actions are scoped **exclusively** to specific EC2 instance IDs (`i-049889a61ec29e7ce` for `aws-1` and `i-01194b1b4476dd3d7` for `aws-2`).
+   - `ec2:StartInstances` and `ec2:StopInstances` actions are scoped **exclusively** to specific EC2 instance IDs (`i-0123456789abcdef0` for `node-a` and `i-0fedcba9876543210` for `node-b`).
    - The user/role cannot modify, terminate, or power off any other EC2 instances in your AWS account.
 
 2. **Read-Only Inspection**:
@@ -52,4 +58,4 @@ Attach this custom policy to your CI/CD service account or IAM User (`AWS_ACCESS
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-20* | *Last Reviewed: 2026-08-20*
+*Last Updated: 2026-10-23* | *Last Reviewed: 2026-10-23*

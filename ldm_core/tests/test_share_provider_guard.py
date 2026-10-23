@@ -38,7 +38,7 @@ class _Base(unittest.TestCase):
             service._assert_provider_can_reach_target(provider, meta, project_id)
 
 
-REMOTE = TargetNode(name="aws-1", host="10.0.1.7")
+REMOTE = TargetNode(name="node-a", host="10.0.1.7")
 LOCAL = TargetNode(name="local", host="localhost")
 LOOPBACK = TargetNode(name="loopback-node", host="127.0.0.2")
 
@@ -69,7 +69,7 @@ class TestNativeProviderIsRefusedForARemoteNode(_Base):
             if c.args
         )
         self.assertIn("myproject", printed)
-        self.assertIn("aws-1", printed)
+        self.assertIn("node-a", printed)
         self.assertIn("10.0.1.7", printed)
         self.assertIn("lfr-tunnel-docker", printed)
 

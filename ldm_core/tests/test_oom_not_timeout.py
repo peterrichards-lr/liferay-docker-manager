@@ -83,10 +83,10 @@ class TheFlagIsReadHonestly(unittest.TestCase):
         with patch(
             "ldm_core.docker_service.run_command", return_value="true"
         ) as called:
-            DockerService.container_was_oom_killed("liferay-x", target_name="aws-1")
+            DockerService.container_was_oom_killed("liferay-x", target_name="node-a")
 
         cmd = called.call_args[0][0]
-        self.assertIn("aws-1", cmd)
+        self.assertIn("node-a", cmd)
         self.assertIn("{{.State.OOMKilled}}", cmd)
 
 

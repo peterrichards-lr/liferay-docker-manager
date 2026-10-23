@@ -36,12 +36,12 @@ from ldm_core.runtime.mac_pin import verify_pinned_mac
 
 PINNED = "06:d0:95:e5:26:a7"
 OTHER = "02:aa:bb:cc:dd:ee"
-META = {"container_name": "macver", "target": "aws-1"}
+META = {"container_name": "macver", "target": "node-a"}
 
 
 def node(mac=PINNED):
     return SimpleNamespace(
-        name="aws-1", host="192.0.2.10", user="ec2-user", key_path="", mac_address=mac
+        name="node-a", host="192.0.2.10", user="ec2-user", key_path="", mac_address=mac
     )
 
 
@@ -58,7 +58,7 @@ class TheCrossCheckIsConditional(unittest.TestCase):
             return {"ens5": PINNED}
 
         with (
-            patch("ldm_core.config.load_targets", return_value={"aws-1": node()}),
+            patch("ldm_core.config.load_targets", return_value={"node-a": node()}),
             patch(
                 "ldm_core.docker_service.DockerService.container_mac_address",
                 return_value=PINNED,
@@ -67,7 +67,7 @@ class TheCrossCheckIsConditional(unittest.TestCase):
             patch("ldm_core.ui.UI.warning"),
             patch("ldm_core.ui.UI.detail"),
         ):
-            verify_pinned_mac(META, "aws-1", **kwargs)
+            verify_pinned_mac(META, "node-a", **kwargs)
         return len(calls)
 
     def test_it_runs_by_default(self):
@@ -92,7 +92,7 @@ class TheCrossCheckIsConditional(unittest.TestCase):
             raise SystemExit(kw.get("exit_code", 1))
 
         with (
-            patch("ldm_core.config.load_targets", return_value={"aws-1": node()}),
+            patch("ldm_core.config.load_targets", return_value={"node-a": node()}),
             patch(
                 "ldm_core.docker_service.DockerService.container_mac_address",
                 return_value=OTHER,
@@ -103,7 +103,7 @@ class TheCrossCheckIsConditional(unittest.TestCase):
             patch("ldm_core.ui.UI.die", side_effect=capture),
         ):
             with self.assertRaises(SystemExit):
-                verify_pinned_mac(META, "aws-1", check_interfaces=False)
+                verify_pinned_mac(META, "node-a", check_interfaces=False)
 
         self.assertEqual(died.get("code"), 3)
         probe.assert_not_called()
@@ -126,7 +126,7 @@ class TheLifecycleCommandsOptOut(unittest.TestCase):
 
         with patch("ldm_core.runtime.mac_pin.verify_pinned_mac", side_effect=record):
             svc._verify_pinned_mac_after_lifecycle(
-                SimpleNamespace(name="macver"), META, "aws-1"
+                SimpleNamespace(name="macver"), META, "node-a"
             )
         return seen
 
@@ -152,7 +152,7 @@ class TheLifecycleCommandsOptOut(unittest.TestCase):
 
         with patch("ldm_core.runtime.mac_pin.verify_pinned_mac", side_effect=record):
             svc._verify_pinned_mac_after_lifecycle(
-                SimpleNamespace(name="macver"), META, "aws-1"
+                SimpleNamespace(name="macver"), META, "node-a"
             )
 
         self.assertFalse(seen.get("check_interfaces"))

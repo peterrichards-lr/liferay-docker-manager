@@ -18,15 +18,13 @@ permissions:
 on:
   workflow_dispatch:
     inputs:
+      # LDM-#2292: free text, not a choice list, so this file names no
+      # remote node. 'local' is tier 2; any other value is a remote target.
       node:
-        description: 'Compute target to verify against'
+        description: "Compute target to verify against ('local', or a remote node name)"
         required: true
         default: 'local'
-        type: choice
-        options:
-          - local
-          - aws-1
-          - aws-2
+        type: string
       wake_node:
         description: 'Wake the node first (remote targets only)'
         required: false
@@ -35,7 +33,7 @@ on:
 
 jobs:
   share-verification:
-    name: Share Tunnel Verification (${{ inputs.node }})
+    name: Share Tunnel Verification
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -98,6 +96,12 @@ jobs:
         run: |
           echo "::error title=Tier 3 not yet supported::Verifying against '${{ inputs.node }}' needs a docker context to that node, which CI cannot currently create. Re-run with node=local for tier 2, or run the share checks locally against a configured target."
           exit 1
+
+      - name: Write node-power config
+        if: steps.preflight.outputs.tier == '3' && inputs.wake_node
+        env:
+          NODE_POWER_CONFIG: ${{ secrets.NODE_POWER_CONFIG }}
+        run: python3 scripts/write_node_power_config.py
 
       - name: Wake the target node
         if: steps.preflight.outputs.tier == '3' && inputs.wake_node

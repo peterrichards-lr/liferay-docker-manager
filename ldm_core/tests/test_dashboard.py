@@ -63,18 +63,18 @@ class TestDashboard(unittest.TestCase):
             "port": "8080",
             "ssl": "false",
             "db_type": "postgresql",
-            "target": "aws-1",
+            "target": "node-a",
         }
         mock_run_command.return_value = "running\n"
 
         response = self.client.get("/api/projects")
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
-        self.assertEqual(data[0]["target"], "aws-1")
+        self.assertEqual(data[0]["target"], "node-a")
 
         call_args = mock_run_command.call_args[0][0]
         self.assertIn("--context", call_args)
-        self.assertIn("aws-1", call_args)
+        self.assertIn("node-a", call_args)
 
     @patch("ldm_core.docker_service.get_active_target")
     @patch("ldm_core.docker_service.run_command")
@@ -107,13 +107,13 @@ class TestDashboard(unittest.TestCase):
         for fetching its logs, not always the local daemon."""
         from ldm_core.config import TargetNode
 
-        mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
+        mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
         self.manager.find_dxp_roots.return_value = [
             {"path": Path("/dummy/project1"), "version": "7.4"}
         ]
         self.manager.read_meta.return_value = {
             "liferay_container_name": "my-project1",
-            "target": "aws-1",
+            "target": "node-a",
         }
         mock_run_command.return_value = "remote logs"
 
@@ -122,7 +122,7 @@ class TestDashboard(unittest.TestCase):
 
         call_args = mock_run_command.call_args[0][0]
         self.assertIn("--context", call_args)
-        self.assertIn("aws-1", call_args)
+        self.assertIn("node-a", call_args)
 
     def test_dashboard_api_logs_invalid(self):
         response = self.client.get("/api/logs/invalid@name")
@@ -718,8 +718,8 @@ class TestDashboard(unittest.TestCase):
 
         mock_load_targets.return_value = {
             "local": TargetNode(name="local", host="localhost", is_default=True),
-            "aws-1": TargetNode(
-                name="aws-1", host="51.20.52.201", user="ec2-user", is_default=False
+            "node-a": TargetNode(
+                name="node-a", host="203.0.113.20", user="ec2-user", is_default=False
             ),
         }
         mock_run_command.side_effect = [
@@ -735,7 +735,7 @@ class TestDashboard(unittest.TestCase):
         self.assertEqual(data[0]["status"], "ONLINE")
         self.assertTrue(data[0]["active"])
         self.assertEqual(data[0]["engine_version"], "v29.2.1")
-        self.assertEqual(data[1]["name"], "aws-1")
-        self.assertEqual(data[1]["host"], "51.20.52.201")
+        self.assertEqual(data[1]["name"], "node-a")
+        self.assertEqual(data[1]["host"], "203.0.113.20")
         self.assertEqual(data[1]["status"], "ONLINE")
         self.assertFalse(data[1]["active"])

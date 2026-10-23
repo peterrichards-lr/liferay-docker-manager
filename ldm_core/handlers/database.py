@@ -196,7 +196,7 @@ class DatabaseService(BaseHandler):
 
         "Shared" means shared among projects resolving to the *same*
         target -- not a single global instance for every target. A
-        project running on aws-1 sharing a DB with other aws-1 projects
+        project running on node-a sharing a DB with other node-a projects
         makes sense (same host, no cross-network DB latency, and the
         orchestrating laptop that isn't even network-reachable from a
         remote VPC never needs to be in the loop); a single shared

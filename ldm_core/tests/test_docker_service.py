@@ -13,7 +13,7 @@ class TestDockerService(unittest.TestCase):
         # get_*_cmd_prefix tests below, which override this per-test via
         # their own @patch). Without this, get_docker_cmd_prefix() now
         # correctly consulting get_active_target(None) for every call means
-        # these would silently pick up e.g. a tester's own persisted "aws-2"
+        # these would silently pick up e.g. a tester's own persisted "node-b"
         # default instead of "local".
         from ldm_core.config import TargetNode
 
@@ -200,9 +200,9 @@ class TestDockerService(unittest.TestCase):
         run."""
         from ldm_core.config import TargetNode
 
-        mock_get_target.return_value = TargetNode(name="aws-2", host="5.6.7.8")
+        mock_get_target.return_value = TargetNode(name="node-b", host="5.6.7.8")
         prefix = DockerService.get_docker_cmd_prefix(None)
-        self.assertEqual(prefix, ["docker", "--context", "aws-2"])
+        self.assertEqual(prefix, ["docker", "--context", "node-b"])
 
     @patch("ldm_core.docker_service.get_active_target")
     def test_get_docker_cmd_prefix_remote(self, mock_get_target):
@@ -309,31 +309,31 @@ class TestContextEndpointHost(unittest.TestCase):
         return patch("ldm_core.docker_service.run_command", return_value=value)
 
     def test_strips_scheme_and_user(self):
-        with self._endpoint("ssh://ec2-user@13.49.210.78"):
+        with self._endpoint("ssh://ec2-user@203.0.113.10"):
             self.assertEqual(
-                "13.49.210.78", DockerService.get_context_endpoint_host("aws-1")
+                "203.0.113.10", DockerService.get_context_endpoint_host("node-a")
             )
 
     def test_handles_an_endpoint_without_a_user(self):
-        with self._endpoint("ssh://13.49.210.78"):
+        with self._endpoint("ssh://203.0.113.10"):
             self.assertEqual(
-                "13.49.210.78", DockerService.get_context_endpoint_host("aws-1")
+                "203.0.113.10", DockerService.get_context_endpoint_host("node-a")
             )
 
     def test_strips_a_port(self):
-        with self._endpoint("ssh://ec2-user@13.49.210.78:2222"):
+        with self._endpoint("ssh://ec2-user@203.0.113.10:2222"):
             self.assertEqual(
-                "13.49.210.78", DockerService.get_context_endpoint_host("aws-1")
+                "203.0.113.10", DockerService.get_context_endpoint_host("node-a")
             )
 
     def test_keeps_a_bracketed_ipv6_literal_intact(self):
         """Splitting an IPv6 address on ':' would truncate it to '['."""
         with self._endpoint("ssh://ec2-user@[2001:db8::1]:2222"):
             self.assertEqual(
-                "[2001:db8::1]", DockerService.get_context_endpoint_host("aws-1")
+                "[2001:db8::1]", DockerService.get_context_endpoint_host("node-a")
             )
 
     def test_returns_none_when_the_context_has_no_endpoint(self):
         for value in ("", "   ", None):
             with self._endpoint(value):
-                self.assertIsNone(DockerService.get_context_endpoint_host("aws-1"))
+                self.assertIsNone(DockerService.get_context_endpoint_host("node-a"))

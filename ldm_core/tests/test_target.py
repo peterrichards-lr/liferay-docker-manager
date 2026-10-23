@@ -351,38 +351,38 @@ class TestTargetContext(unittest.TestCase):
     ) -> None:
         from ldm_core.config import TargetContext, resolve_target_context
 
-        node = TargetNode(name="aws-1", host="34.1.1.1", user="ec2-user")
+        node = TargetNode(name="node-a", host="34.1.1.1", user="ec2-user")
         save_target_node(node, self.config_path)
 
         meta: dict = {}
         ctx = resolve_target_context(
-            explicit_target="aws-1", meta=meta, config_path=self.config_path
+            explicit_target="node-a", meta=meta, config_path=self.config_path
         )
         self.assertIsInstance(ctx, TargetContext)
-        self.assertEqual(ctx.target.name, "aws-1")
+        self.assertEqual(ctx.target.name, "node-a")
         self.assertTrue(ctx.is_remote)
         self.assertTrue(ctx.newly_pinned)
         self.assertFalse(ctx.conflict_overridden)
         # Pinning must mutate the meta dict handed in, so the caller's own
         # meta (which it will likely write to disk itself) reflects it.
-        self.assertEqual(meta["target"], "aws-1")
+        self.assertEqual(meta["target"], "node-a")
 
     def test_falls_through_to_persisted_default_and_pins_it(self) -> None:
         from ldm_core.config import resolve_target_context
 
-        node = TargetNode(name="aws-2", host="13.1.1.1", is_default=True)
+        node = TargetNode(name="node-b", host="13.1.1.1", is_default=True)
         save_target_node(node, self.config_path)
 
         meta: dict = {}
         ctx = resolve_target_context(meta=meta, config_path=self.config_path)
-        self.assertEqual(ctx.target.name, "aws-2")
+        self.assertEqual(ctx.target.name, "node-b")
         self.assertTrue(ctx.newly_pinned)
-        self.assertEqual(meta["target"], "aws-2")
+        self.assertEqual(meta["target"], "node-b")
 
     def test_pinning_persists_to_disk_when_project_root_given(self) -> None:
         from ldm_core.config import resolve_target_context
 
-        node = TargetNode(name="aws-2", host="13.1.1.1", is_default=True)
+        node = TargetNode(name="node-b", host="13.1.1.1", is_default=True)
         save_target_node(node, self.config_path)
 
         meta: dict = {}
@@ -416,7 +416,7 @@ class TestTargetContext(unittest.TestCase):
         decision."""
         from ldm_core.config import resolve_target_context
 
-        node = TargetNode(name="aws-2", host="13.1.1.1", is_default=True)
+        node = TargetNode(name="node-b", host="13.1.1.1", is_default=True)
         save_target_node(node, self.config_path)
 
         meta: dict = {}
@@ -438,7 +438,7 @@ class TestTargetContext(unittest.TestCase):
             )
             mock_write_meta.assert_not_called()
 
-        self.assertEqual(ctx.target.name, "aws-2")
+        self.assertEqual(ctx.target.name, "node-b")
         self.assertTrue(ctx.is_remote)
         self.assertFalse(ctx.newly_pinned)
         self.assertNotIn("target", meta)
@@ -446,7 +446,7 @@ class TestTargetContext(unittest.TestCase):
     def test_already_pinned_project_is_not_rewritten(self) -> None:
         from ldm_core.config import resolve_target_context
 
-        node = TargetNode(name="aws-2", host="13.1.1.1", is_default=True)
+        node = TargetNode(name="node-b", host="13.1.1.1", is_default=True)
         save_target_node(node, self.config_path)
 
         meta = {"target": "local"}
@@ -465,21 +465,21 @@ class TestTargetContext(unittest.TestCase):
     ) -> None:
         from ldm_core.config import resolve_target_context
 
-        for name, host in (("aws-1", "34.1.1.1"), ("aws-2", "13.1.1.1")):
+        for name, host in (("node-a", "34.1.1.1"), ("node-b", "13.1.1.1")):
             save_target_node(TargetNode(name=name, host=host), self.config_path)
 
-        meta = {"target": "aws-1"}
+        meta = {"target": "node-a"}
         ctx = resolve_target_context(
-            explicit_target="aws-2", meta=meta, config_path=self.config_path
+            explicit_target="node-b", meta=meta, config_path=self.config_path
         )
 
         self.assertTrue(mock_warning.called)
         self.assertTrue(mock_pause.called)
         self.assertTrue(ctx.conflict_overridden)
         # The override applies for this run...
-        self.assertEqual(ctx.target.name, "aws-2")
+        self.assertEqual(ctx.target.name, "node-b")
         # ...but must NOT silently and permanently reassign the project.
-        self.assertEqual(meta["target"], "aws-1")
+        self.assertEqual(meta["target"], "node-a")
         self.assertFalse(ctx.newly_pinned)
 
     @patch("ldm_core.ui.UI.interruptible_pause")
@@ -489,10 +489,10 @@ class TestTargetContext(unittest.TestCase):
     ) -> None:
         from ldm_core.config import resolve_target_context
 
-        save_target_node(TargetNode(name="aws-1", host="34.1.1.1"), self.config_path)
-        meta = {"target": "aws-1"}
+        save_target_node(TargetNode(name="node-a", host="34.1.1.1"), self.config_path)
+        meta = {"target": "node-a"}
         resolve_target_context(
-            explicit_target="aws-1", meta=meta, config_path=self.config_path
+            explicit_target="node-a", meta=meta, config_path=self.config_path
         )
         mock_warning.assert_not_called()
         mock_pause.assert_not_called()
@@ -510,10 +510,10 @@ class TestTargetContext(unittest.TestCase):
         from ldm_core.config import TargetContext
 
         ctx = TargetContext(
-            target=TargetNode(name="aws-1", host="34.1.1.1"),
+            target=TargetNode(name="node-a", host="34.1.1.1"),
             is_remote=True,
-            docker_prefix=["docker", "--context", "aws-1"],
-            compose_prefix=["docker", "--context", "aws-1", "compose"],
+            docker_prefix=["docker", "--context", "node-a"],
+            compose_prefix=["docker", "--context", "node-a", "compose"],
             local_root=self.project_root,
             remote_root="/home/ec2-user/.liferay-docker/projects/myproj",
         )
@@ -529,10 +529,10 @@ class TestTargetContext(unittest.TestCase):
         from ldm_core.config import TargetContext
 
         ctx = TargetContext(
-            target=TargetNode(name="aws-1", host="34.1.1.1"),
+            target=TargetNode(name="node-a", host="34.1.1.1"),
             is_remote=True,
-            docker_prefix=["docker", "--context", "aws-1"],
-            compose_prefix=["docker", "--context", "aws-1", "compose"],
+            docker_prefix=["docker", "--context", "node-a"],
+            compose_prefix=["docker", "--context", "node-a", "compose"],
             local_root=self.project_root,
             remote_root=None,
         )
@@ -557,8 +557,8 @@ class TestTargetStatusContextDrift(unittest.TestCase):
         self.config_path = Path(self.temp_dir.name) / ".ldmrc"
         save_target_node(
             TargetNode(
-                name="aws-1",
-                host="13.49.210.78",
+                name="node-a",
+                host="203.0.113.10",
                 user="ec2-user",
                 key_path="~/.ssh/aws-key.pem",
             ),
@@ -577,7 +577,7 @@ class TestTargetStatusContextDrift(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def _run_status(self, context_host, probe=""):
-        """Runs `target status aws-1` and returns (warnings, hints)."""
+        """Runs `target status node-a` and returns (warnings, hints)."""
         from ldm_core.ui import UI
 
         warnings: list[str] = []
@@ -593,24 +593,24 @@ class TestTargetStatusContextDrift(unittest.TestCase):
             patch.object(UI, "hint", side_effect=hints.append),
             patch.object(UI, "table"),
         ):
-            self.service.cmd_target_status("aws-1")
+            self.service.cmd_target_status("node-a")
         return warnings, hints
 
     def test_drift_is_reported_with_both_addresses(self):
-        warnings, _ = self._run_status("51.20.52.201")
+        warnings, _ = self._run_status("203.0.113.20")
         self.assertEqual(1, len(warnings))
-        self.assertIn("13.49.210.78", warnings[0])
-        self.assertIn("51.20.52.201", warnings[0])
+        self.assertIn("203.0.113.10", warnings[0])
+        self.assertIn("203.0.113.20", warnings[0])
 
     def test_drift_hint_rebuilds_the_context_with_the_stored_values(self):
-        _, hints = self._run_status("51.20.52.201")
+        _, hints = self._run_status("203.0.113.20")
         self.assertEqual(1, len(hints))
-        self.assertIn("ldm target add aws-1 --host 13.49.210.78", hints[0])
+        self.assertIn("ldm target add node-a --host 203.0.113.10", hints[0])
         self.assertIn("--user ec2-user", hints[0])
         self.assertIn("--key ~/.ssh/aws-key.pem", hints[0])
 
     def test_matching_context_is_silent(self):
-        warnings, hints = self._run_status("13.49.210.78")
+        warnings, hints = self._run_status("203.0.113.10")
         self.assertEqual([], warnings)
         self.assertEqual([], hints)
 
@@ -621,7 +621,7 @@ class TestTargetStatusContextDrift(unittest.TestCase):
 
     def test_drift_is_reported_even_when_the_probe_succeeds(self):
         """An ONLINE row can still have been probed against the wrong host."""
-        warnings, _ = self._run_status("51.20.52.201", probe="25.0.16|4|17179869184|0")
+        warnings, _ = self._run_status("203.0.113.20", probe="25.0.16|4|17179869184|0")
         self.assertEqual(1, len(warnings))
 
     def test_a_local_target_is_never_checked_for_drift(self):

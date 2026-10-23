@@ -555,8 +555,8 @@ class TestSystemService(unittest.TestCase):
         from ldm_core.config import TargetNode
 
         with patch("ldm_core.docker_service.get_active_target") as mock_target:
-            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
-            self.manager.target = "aws-1"
+            mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
+            self.manager.target = "node-a"
 
             with patch.object(self.system, "_remove_hosts_entries"):
                 self.system.cmd_nuke(force=False, keep_config=True)
@@ -564,15 +564,15 @@ class TestSystemService(unittest.TestCase):
         calls = [c[0][0] for c in self.manager.run_command.call_args_list]
         for cmd in calls:
             self.assertIn("--context", cmd)
-            self.assertIn("aws-1", cmd)
+            self.assertIn("node-a", cmd)
 
     def test_cmd_rescue_uses_remote_target_context(self):
         """cmd_rescue's network creation must honor active target context (#1133)."""
         from ldm_core.config import TargetNode
 
         with patch("ldm_core.docker_service.get_active_target") as mock_target:
-            mock_target.return_value = TargetNode(name="aws-1", host="34.1.1.1")
-            self.manager.target = "aws-1"
+            mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
+            self.manager.target = "node-a"
 
             with patch("socket.socket"):
                 self.system.cmd_rescue()
@@ -580,7 +580,7 @@ class TestSystemService(unittest.TestCase):
         calls = [c[0][0] for c in self.manager.run_command.call_args_list]
         network_create_cmd = next(c for c in calls if "network" in c and "create" in c)
         self.assertIn("--context", network_create_cmd)
-        self.assertIn("aws-1", network_create_cmd)
+        self.assertIn("node-a", network_create_cmd)
 
 
 if __name__ == "__main__":
