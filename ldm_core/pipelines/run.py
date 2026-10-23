@@ -2242,6 +2242,15 @@ class ComposerStage(PipelineStage):
             if use_shared_search:
                 UI.detail("Ensuring global search service is running...")
                 manager.infra.setup_global_search()
+                # LDM-#2247: a cluster can be yellow on a disk too full to take
+                # this project's new index; refuse before the boot hangs.
+                from ldm_core.utils import search_index_prefix
+
+                manager.infra.ensure_search_has_room(
+                    search_index_prefix(
+                        project_meta.get("container_name") or context.get("project_id")
+                    )
+                )
             if use_shared_db:
                 UI.detail("Ensuring global database service is running...")
                 manager.infra.setup_global_database(db_type=shared_db_type)

@@ -589,6 +589,23 @@ container's logs to `~/.ldm/infra/search/search-failure-<timestamp>.log`
 loaded machine is not corruption, and in that case the right fix is usually to
 re-run rather than to wipe anything.
 
+### **"Global Search's disk is N% full"**
+
+LDM refused to boot a project against shared search because the disk Elasticsearch writes to is too full (LDM-#2247). It checks this on every boot:
+
+- **Past the high watermark** (90% by default), Elasticsearch will not create a new index. A project whose index already exists still boots; a **new** project is refused, because its Liferay would wait for an index that never appears and hang for its whole healthcheck window.
+- **Past flood stage** (95% by default), every index is read-only, so every project is refused.
+- **Past the low watermark** (85%), LDM warns.
+
+The thresholds are read from the cluster, so custom watermarks are respected. Free space where Docker keeps its data, then re-run:
+
+```bash
+docker system df                 # what is using it
+ldm system prune -y --images     # unused images and build cache
+```
+
+On macOS with OrbStack or Colima, Docker's disk lives inside a VM: what Elasticsearch sees is the VM's disk limit, or the Mac's free space for a dynamically sized disk.
+
 ### **Elasticsearch: Failed to obtain node locks**
 
 If Elasticsearch fails to boot with `AccessDeniedException: /usr/share/elasticsearch/data/node.lock`:
@@ -910,4 +927,4 @@ Projects are discovered from the current folder, its parent, `~/ldm`, the LDM in
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-21* | *Last Reviewed: 2026-10-21*
+*Last Updated: 2026-10-23* | *Last Reviewed: 2026-10-23*
