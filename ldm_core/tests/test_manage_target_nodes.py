@@ -331,13 +331,48 @@ class TestReadWakeTagFailsSafe(unittest.TestCase):
 class TestScheduleTimezoneIsExplicit(unittest.TestCase):
     """The window must not depend on where enforce happens to run (LDM-#1543)."""
 
-    def test_the_shipped_config_declares_a_timezone(self):
-        cfg = json.loads(manage_target_nodes.CONFIG_FILE.read_text())
-        self.assertTrue(
-            cfg.get("timezone"),
-            "without this the window is evaluated in the runner's clock, which "
-            "is UTC on GitHub hosted runners",
+    # LDM-#2292: the config is no longer committed; it is the NODE_POWER_CONFIG
+    # secret, written by scripts/write_node_power_config.py. That writer now
+    # refuses a config with no timezone, so the guarantee moved there.
+    def _write(self, config, target):
+        import os
+        import subprocess
+        import sys
+
+        script = (
+            Path(__file__).resolve().parents[2]
+            / "scripts"
+            / "write_node_power_config.py"
         )
+        env = {**os.environ, "NODE_POWER_CONFIG": json.dumps(config)}
+        return subprocess.run(
+            [sys.executable, str(script), str(target)],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_a_config_without_a_timezone_is_refused(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / "cfg.json"
+            res = self._write({"nodes": {}}, target)
+            self.assertEqual(res.returncode, 1, res.stdout)
+            self.assertIn("timezone", res.stdout)
+            self.assertFalse(target.exists())
+
+    def test_a_config_with_a_timezone_is_written(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / "cfg.json"
+            res = self._write({"timezone": "Europe/London", "nodes": {}}, target)
+            self.assertEqual(res.returncode, 0, res.stdout)
+            self.assertEqual(
+                json.loads(target.read_text())["timezone"], "Europe/London"
+            )
 
     def test_schedule_now_is_timezone_aware(self):
         # A naive datetime is what caused the drift; anything aware is correct.

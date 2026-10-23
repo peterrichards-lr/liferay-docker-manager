@@ -35,12 +35,24 @@ def main() -> int:
         print(f"::error::NODE_POWER_CONFIG is not valid JSON ({exc.msg}).")
         return 1
 
+    # LDM-#1543: without an explicit timezone the shutdown window is evaluated
+    # in the runner's clock -- UTC on GitHub-hosted runners. This used to be
+    # asserted against the committed file; the secret is checked here instead.
+    if not config.get("timezone"):
+        print("::error::NODE_POWER_CONFIG declares no 'timezone' (LDM-#1543).")
+        return 1
+
     for name, node in (config.get("nodes") or {}).items():
         values = [name] + [str(node.get(field) or "") for field in _MASKED_FIELDS]
         for value in {v for v in values if v}:
             print(f"::add-mask::{value}")
 
-    target = Path(__file__).resolve().parent.parent / ".node-power-config.json"
+    # Optional target path, so the tests never write the repository's file.
+    target = (
+        Path(sys.argv[1])
+        if len(sys.argv) > 1
+        else Path(__file__).resolve().parent.parent / ".node-power-config.json"
+    )
     target.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     print(f"Wrote {len(config.get('nodes') or {})} node(s) to {target.name}.")
     return 0
