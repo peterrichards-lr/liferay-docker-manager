@@ -287,6 +287,76 @@ class TestComposerService(unittest.TestCase):
         )
         self.assertIn("-Djdk.util.zip.disableZip64ExtraFieldValidation=true", jvm_opts)
 
+    def _rendered_jvm_opts(self, system, tiered, meta_extra=None):
+        """`LIFERAY_JVM_OPTS` for a meta whose `jvm_args` is what
+        `_render_jvm_args` writes, on the given `platform.system()`."""
+        from ldm_core.handlers.composer import ComposerService
+
+        jvm_args = ComposerService._render_jvm_args(
+            {
+                "heap_min_mb": 2048,
+                "heap_max_mb": 3072,
+                "metaspace": "512m",
+                "new_size_mb": 1013,
+                "tiered_stop_at_level": tiered,
+            }
+        )
+        meta = {"tag": "2026.q3.5", "container_name": "proj", "jvm_args": jvm_args}
+        meta.update(meta_extra or {})
+        paths = {
+            key: Path(f"{TEST_TMP_ROOT}/proj/{key}")
+            for key in [
+                "root",
+                "deploy",
+                "files",
+                "data",
+                "configs",
+                "modules",
+                "cx",
+                "scripts",
+                "state",
+                "logs",
+                "portal_log4j",
+            ]
+        }
+        with patch("ldm_core.handlers.composer.platform.system", return_value=system):
+            service = self.composer._build_liferay_service(
+                paths, meta, "localhost", "proj", False, None
+            )
+        return next(
+            e.split("=", 1)[1]
+            for e in service["environment"]
+            if e.startswith("LIFERAY_JVM_OPTS=")
+        )
+
+    def test_tiered_stop_at_level_false_is_honoured_on_macos_and_windows(self):
+        """LDM-#2308: the compose step re-added the flag after the cascade had
+        resolved it off, so `jvm_tiered_stop_at_level=false` did nothing."""
+        for system in ("Darwin", "Windows", "Linux"):
+            with self.subTest(system=system):
+                self.assertNotIn(
+                    "TieredStopAtLevel",
+                    self._rendered_jvm_opts(system, tiered=False),
+                )
+
+    def test_tiered_stop_at_level_true_still_applies(self):
+        for system in ("Darwin", "Linux"):
+            with self.subTest(system=system):
+                self.assertEqual(
+                    self._rendered_jvm_opts(system, tiered=True).count(
+                        "-XX:TieredStopAtLevel=1"
+                    ),
+                    1,
+                )
+
+    def test_a_pending_reindex_still_strips_it(self):
+        opts = self._rendered_jvm_opts(
+            "Darwin", tiered=True, meta_extra={"reindex_required": "true"}
+        )
+
+        self.assertNotIn("TieredStopAtLevel", opts)
+        self.assertIn("-XX:ReservedCodeCacheSize=512m", opts)
+
     def test_is_ssl_active_meta(self):
         self.manager.args.ssl = None
         # Use a non-localhost host name

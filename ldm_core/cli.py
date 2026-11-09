@@ -765,9 +765,9 @@ def get_parser():  # noqa: PLR0915
         "--jvm-tiered-stop-at-level",
         choices=["true", "false"],
         help=(
-            "Force -XX:TieredStopAtLevel=1 on or off. LDM enables it on "
-            "macOS/Windows for faster bundle resolution; note it also reduces "
-            "the JVM code cache from 240MB to 48MB (see docs/reference/tuning.md)"
+            "Force -XX:TieredStopAtLevel=1 on or off. Off by default; --lean "
+            "turns it on. It reduces the JVM code cache from 240MB to 48MB "
+            "(see docs/reference/tuning.md)"
         ),
     )
     run.add_argument(
