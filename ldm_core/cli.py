@@ -765,9 +765,9 @@ def get_parser():  # noqa: PLR0915
         "--jvm-tiered-stop-at-level",
         choices=["true", "false"],
         help=(
-            "Force -XX:TieredStopAtLevel=1 on or off. LDM enables it on "
-            "macOS/Windows for faster bundle resolution; note it also reduces "
-            "the JVM code cache from 240MB to 48MB (see docs/reference/tuning.md)"
+            "Force -XX:TieredStopAtLevel=1 on or off. Off by default; --lean "
+            "turns it on. It reduces the JVM code cache from 240MB to 48MB "
+            "(see docs/reference/tuning.md)"
         ),
     )
     run.add_argument(
@@ -1297,7 +1297,15 @@ def get_parser():  # noqa: PLR0915
     # Command: fork
     fork = subparsers.add_parser("fork", parents=[base_sub_parent])
     fork.add_argument("source", help="The ID/name of the source project to fork from")
-    fork.add_argument("target", help="The ID/name of the new forked project")
+    # LDM-#2314: `dest` is not `target`. `manager.py` reads `args.target` as
+    # the compute target, so the new project's name was taken for a remote
+    # node and fork failed with "context not found". The positional and its
+    # help are unchanged.
+    fork.add_argument(
+        "fork_target",
+        metavar="target",
+        help="The ID/name of the new forked project",
+    )
     fork.add_argument(
         "--snapshot",
         help="The name of the snapshot to use. If not specified, a new one will be created",
@@ -3348,7 +3356,7 @@ def _build_command_map(args, manager):
             getattr(args, "project", None)
         ),
         ("fork", None): lambda: manager.workspace.cmd_fork(
-            args.source, args.target, snapshot=getattr(args, "snapshot", None)
+            args.source, args.fork_target, snapshot=getattr(args, "snapshot", None)
         ),
         ("monitor", None): lambda: manager.workspace.cmd_monitor(args.source),
         ("init", None): lambda: manager.workspace.cmd_init(

@@ -1688,6 +1688,99 @@ class TestWorkspaceQuickstart(unittest.TestCase):
             backup_dir=str(source_dir / "snapshots" / "auto-snap"),
         )
 
+    @patch.object(MockWorkspaceManager, "register_project")
+    @patch("ldm_core.handlers.base.BaseHandler.write_meta")
+    @patch("ldm_core.handlers.base.BaseHandler.read_meta")
+    @patch.object(MockWorkspaceManager, "detect_project_path")
+    @patch.object(MockWorkspaceManager, "setup_paths")
+    @patch.object(MockWorkspaceManager, "check_port")
+    @patch("ldm_core.handlers.runtime.RuntimeService.cmd_run")
+    def test_cmd_fork_gives_the_new_project_its_own_identity(
+        self,
+        _mock_cmd_run,
+        mock_check_port,
+        mock_setup_paths,
+        mock_detect_path,
+        mock_read_meta,
+        mock_write_meta,
+        _mock_register_project,
+    ):
+        """LDM-#2314. The source meta is what `ldm run` actually writes: a
+        uuid, `root`, `liferay_container_name`, and `custom_env` as a JSON
+        string carrying an index prefix from an earlier LDM."""
+        import json
+
+        source_dir = self.test_project_dir / "devcon2026"
+        target_dir = self.test_project_dir / "masterclass-approach2"
+        snapshot_dir = source_dir / "snapshots" / "snap"
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        mock_detect_path.side_effect = lambda project_id, **_kw: (
+            source_dir if project_id == "devcon2026" else None
+        )
+        mock_read_meta.return_value = {
+            "project_name": "devcon2026",
+            "uuid": "f57c8ce8-0000-4000-8000-000000000000",
+            "root": str(source_dir),
+            "container_name": "devcon2026",
+            "liferay_container_name": "devcon2026",
+            "port": "8080",
+            "custom_env": json.dumps(
+                {
+                    "LIFERAY_ELASTICSEARCH_PERIOD_INDEX_PERIOD_NAME_PERIOD_PREFIX": (
+                        "ldm-devcon2026-"
+                    ),
+                    "LIFERAY_AICA_PERIOD_X": "1",
+                }
+            ),
+        }
+        mock_setup_paths.side_effect = lambda path: {
+            "root": Path(path),
+            "backups": Path(path) / "snapshots",
+        }
+        mock_check_port.return_value = True
+
+        self.manager.workspace.cmd_fork(
+            "devcon2026", "masterclass-approach2", snapshot="snap"
+        )
+
+        written = mock_write_meta.call_args[0][1]
+        self.assertNotIn("uuid", written, "the source's uuid was copied")
+        self.assertEqual(written["liferay_container_name"], "masterclass-approach2")
+        self.assertEqual(written["root"], str(target_dir.resolve()))
+        self.assertEqual(
+            json.loads(written["custom_env"]), {"LIFERAY_AICA_PERIOD_X": "1"}
+        )
+
+
+class TestForkTargetIsNotAComputeTarget(unittest.TestCase):
+    """LDM-#2314: `ldm fork <source> <target>` stored the new project's name in
+    `args.target`, which `manager.py` reads as the compute target."""
+
+    def test_the_new_project_name_is_not_args_target(self):
+        from ldm_core.cli import get_parser
+
+        parser, _ = get_parser()
+        args = parser.parse_args(["fork", "devcon2026", "masterclass-approach2"])
+
+        self.assertNotEqual(getattr(args, "target", None), "masterclass-approach2")
+        self.assertEqual(args.fork_target, "masterclass-approach2")
+
+    def test_the_command_map_hands_it_to_cmd_fork(self):
+        """The seam: a renamed dest is only right if the dispatch reads it."""
+        from unittest.mock import MagicMock
+
+        from ldm_core.cli import _build_command_map, get_parser
+
+        parser, _ = get_parser()
+        args = parser.parse_args(["fork", "devcon2026", "masterclass-approach2"])
+        manager = MagicMock()
+
+        _build_command_map(args, manager)[("fork", None)]()
+
+        manager.workspace.cmd_fork.assert_called_once_with(
+            "devcon2026", "masterclass-approach2", snapshot=None
+        )
+
 
 class TestAtomicZipRepackaging(unittest.TestCase):
     """Tests for atomic zip replacement in _rewrite_oauth_urls_in_zip (Issue #469)."""

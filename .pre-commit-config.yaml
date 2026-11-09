@@ -8,7 +8,7 @@ repos:
   # passed" cycle. They happened to agree when this was found; nothing kept
   # them agreeing.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.8
+    rev: v0.17.3
     hooks:
       - id: ruff
         args: [ --fix ]
@@ -27,7 +27,7 @@ repos:
   # was chasing findings CI would never raise, while CI-only failures stayed
   # invisible until push.
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.4.0
+    rev: v2.4.1
     hooks:
       - id: mypy
         stages: [pre-push, manual]
