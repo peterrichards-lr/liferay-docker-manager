@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.8-pre.3] - 2026-11-09
+
+### Fixed
+
+- **A restore no longer brings back the snapshot's search settings** (LDM-#2315). Restore is meant to drop LDM's own `LIFERAY_ELASTICSEARCH*` settings from a snapshot's `custom_env` (LDM-#1773), but a snapshot stores `custom_env` as a JSON string and the removal only handled a parsed one, so it never ran. A snapshot taken by another project therefore restored that project's index prefix. Two projects from the same database share a company ID, so the restored project's reindex then emptied the other project's search index. This happened on 2026-11-02.
+
+- **One project's search operations no longer reach another project whose name starts with its own** (LDM-#2313). A project's indices were matched as `ldm-<name>-*`, which also matches `ldm-<name>-<anything>-*`. So restoring `devcon2026` deleted `devcon2026-approach2`'s indices, and snapshotting it captured them. LDM now excludes every registered project whose prefix extends this one, for example `ldm-devcon2026-*,-ldm-devcon2026-approach2-*`. This applies to snapshots, restores and `ldm reset global-search`. Verified against Elasticsearch 8.19.1.
+
+- **`ldm fork` works, and the new project is its own project** (LDM-#2314). The new project's name was read as the compute target, so every fork failed with `context "<name>": context not found`. Fork also copied four things that identify the source project: its UUID, which scopes volume labels and `prune`; its index prefix in `custom_env`; its Liferay container name; and its project root. Restore resolves the container from that copied name, so fork's own restore step acted on the source's container and search indices. The new project now gets its own of each, and fork says which search settings it dropped.
+
+- **`jvm_tiered_stop_at_level=false` works on macOS and Windows** (LDM-#2308). LDM-#1464 removed `-XX:TieredStopAtLevel=1` as a default, but the compose step added it back on macOS and Windows after the tuning had resolved it. So the flag was always on there, and the JVM code cache stayed at 48 MB. Measured on DXP 2026.q3.5: an authenticated headless request took 1.9 s with the flag and 0.22 s without, because Basic auth re-derives a PBKDF2 hash on every request. The flag now comes only from `jvm_tiered_stop_at_level=true` or `--lean`. The workaround of setting `reindex_required` in `meta` is no longer needed. To apply this to a running project, run `ldm stop` and then `ldm run`; `ldm restart` does not re-render the compose file (LDM-#2317).
+
+### Known gaps
+
+- None of the four has an end-to-end assertion; recorded in LDM-#2302.
+
 ## [v2.26.8-pre.2] - 2026-10-23
 
 ### Changed
