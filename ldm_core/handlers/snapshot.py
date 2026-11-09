@@ -1,3 +1,4 @@
+import json
 import os
 import tarfile
 import time
@@ -33,7 +34,8 @@ LDM_SEARCH_PROPERTY_PREFIX = (
 def strip_ldm_search_env(custom_env):
     """Removes LDM's own search environment from a restored `custom_env`.
 
-    Returns `(kept, removed)`, both dicts.
+    Returns `(kept, removed)`. `removed` is a dict; `kept` takes the form
+    `custom_env` arrived in (see LDM-#2315 below).
 
     A snapshot's `custom_env` is captured from the **rendered compose file** of
     the publisher's machine (`snapshot/archive.py`), so these entries are not a
@@ -57,8 +59,24 @@ def strip_ldm_search_env(custom_env):
     an entry that agrees is redundant and one that disagrees is harmful. There
     is no third case, and comparing values would add a way to be subtly wrong
     about which is which.
+
+    LDM-#2315: a snapshot's `meta` holds `custom_env` as a **JSON string**
+    (`archive.py` writes `json.dumps(...)`), not a dict, so a dict-only check
+    returned every real snapshot's value untouched and the strip never ran. A
+    JSON object string is parsed, stripped, and returned as a string again, so
+    `meta` keeps the form it was read in. Anything else that is not a dict is
+    returned unchanged.
     """
-    if not isinstance(custom_env, dict):
+    as_string = False
+    if isinstance(custom_env, str):
+        try:
+            parsed = json.loads(custom_env)
+        except ValueError:
+            return custom_env, {}
+        if not isinstance(parsed, dict):
+            return custom_env, {}
+        custom_env, as_string = parsed, True
+    elif not isinstance(custom_env, dict):
         return custom_env, {}
 
     kept, removed = {}, {}
@@ -67,6 +85,8 @@ def strip_ldm_search_env(custom_env):
             removed[key] = value
         else:
             kept[key] = value
+    if as_string:
+        return json.dumps(kept), removed
     return kept, removed
 
 

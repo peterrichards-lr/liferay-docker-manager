@@ -124,11 +124,62 @@ class TheCapturedEnvironmentIsCleaned(unittest.TestCase):
         self.assertEqual(kept, {"LIFERAY_AICA_PERIOD_X": "1"})
         self.assertEqual(removed, {})
 
-    def test_a_non_dict_is_returned_untouched(self):
-        """`custom_env` is a dict in a snapshot, but meta is user-editable."""
+    def test_an_unparseable_string_is_returned_untouched(self):
+        """meta is user-editable, so not every string is JSON."""
         value, removed = strip_ldm_search_env("LIFERAY_X=1")
 
         self.assertEqual(value, "LIFERAY_X=1")
+        self.assertEqual(removed, {})
+
+
+# What `archive.py` captures from a project that once had an index prefix in
+# its custom_env (LDM-#2315).
+SNAPSHOT_ENV = {
+    "LIFERAY_ELASTICSEARCH_PERIOD_INDEX_PERIOD_NAME_PERIOD_PREFIX": "ldm-devcon2026-",
+    "LIFERAY_AICA_PERIOD_X": "1",
+}
+
+
+class TheSnapshotsOwnFormIsCleaned(unittest.TestCase):
+    """LDM-#2315: a snapshot's meta holds `custom_env` as a JSON string.
+
+    The fixture goes through the real `write_meta`/`read_meta`, with the value
+    `archive.py` writes, because a dict fixture is the one shape in which the
+    defect cannot appear -- every test above passed throughout it.
+    """
+
+    def snapshot_custom_env(self):
+        import json
+        import tempfile
+
+        from ldm_core.utils import read_meta, write_meta
+
+        with tempfile.TemporaryDirectory() as tmp:
+            meta_file = Path(tmp) / "meta"
+            write_meta(meta_file, {"custom_env": json.dumps(SNAPSHOT_ENV)})
+            return read_meta(meta_file)["custom_env"]
+
+    def test_the_fixture_is_the_string_form(self):
+        """Pins the premise: if meta ever reads back a dict, this test, not
+        the ones below, is the one that should change."""
+        self.assertIsInstance(self.snapshot_custom_env(), str)
+
+    def test_the_index_prefix_is_removed_and_the_form_kept(self):
+        import json
+
+        kept, removed = strip_ldm_search_env(self.snapshot_custom_env())
+
+        self.assertIsInstance(kept, str)
+        self.assertEqual(json.loads(kept), {"LIFERAY_AICA_PERIOD_X": "1"})
+        self.assertEqual(
+            list(removed),
+            ["LIFERAY_ELASTICSEARCH_PERIOD_INDEX_PERIOD_NAME_PERIOD_PREFIX"],
+        )
+
+    def test_a_json_string_that_is_not_an_object_is_untouched(self):
+        value, removed = strip_ldm_search_env('["LIFERAY_ELASTICSEARCH_X"]')
+
+        self.assertEqual(value, '["LIFERAY_ELASTICSEARCH_X"]')
         self.assertEqual(removed, {})
 
 
@@ -294,6 +345,24 @@ class TheCustomEnvCleanerIsDriven(unittest.TestCase):
         )
 
         self.assertEqual(kept, {"LIFERAY_AICA_PERIOD_X": "1"})
+
+    def test_the_string_form_restore_reads_is_cleaned(self):
+        """LDM-#2315 at the seam `cmd_restore` crosses: it hands the cleaner
+        whatever `read_meta` returned, which for a snapshot is a string."""
+        import json
+
+        kept = self.clean(
+            json.dumps(
+                {
+                    "LIFERAY_ELASTICSEARCH_PERIOD_INDEX_PERIOD_NAME_PERIOD_PREFIX": (
+                        "ldm-devcon2026-"
+                    ),
+                    "LIFERAY_AICA_PERIOD_X": "1",
+                }
+            )
+        )
+
+        self.assertEqual(json.loads(kept), {"LIFERAY_AICA_PERIOD_X": "1"})
 
 
 class ItRunsDuringRestore(unittest.TestCase):
