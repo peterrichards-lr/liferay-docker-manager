@@ -48,6 +48,25 @@ LIVE_INDICES = (
     f"{INDEX_PREFIX}14683668377142-workflow-metrics-transitions",
 )
 FOREIGN_INDEX = "ldm-otherproject-14683668377142-object-entry"
+# LDM-#2313: a project whose name starts with PROJECT plus "-". Its indices
+# begin with INDEX_PREFIX, so `<prefix>*` alone matches them.
+EXTENDING_PROJECT = f"{PROJECT}-approach2"
+EXTENDING_INDEX = f"ldm-{EXTENDING_PROJECT}-14683668377142-object-entry"
+
+
+def _pattern_matches(name, pattern):
+    """Elasticsearch's multi-target syntax: comma-separated wildcards, where a
+    leading `-` excludes what the patterns before it matched."""
+    import fnmatch
+
+    included = False
+    for part in pattern.split(","):
+        if part.startswith("-"):
+            if fnmatch.fnmatchcase(name, part[1:]):
+                included = False
+        elif fnmatch.fnmatchcase(name, part):
+            included = True
+    return included
 
 
 def _curl_url(argv):
@@ -75,8 +94,9 @@ class _FakeElasticsearch:
     fix that keeps the wildcard cannot pass by accident.
     """
 
-    def __init__(self):
+    def __init__(self, extra_indices=()):
         self.deleted = []
+        self.extra_indices = tuple(extra_indices)
 
     def __call__(self, argv, *_args, **_kwargs):
         if not isinstance(argv, list):
@@ -112,10 +132,11 @@ class _FakeElasticsearch:
     def _get(self, target):
         if target.startswith("_cat/indices"):
             pattern = target[len("_cat/indices/") :].split("?")[0]
-            stem = pattern.rstrip("*")
-            known = [*LIVE_INDICES, FOREIGN_INDEX]
+            known = [*LIVE_INDICES, FOREIGN_INDEX, *self.extra_indices]
             return "\n".join(
-                i for i in known if i.startswith(stem) and i not in self.deleted
+                i
+                for i in known
+                if _pattern_matches(i, pattern) and i not in self.deleted
             )
         if "_recovery" in target:
             return '{"x":{"shards":[{"stage":"DONE"}]}}'
@@ -210,6 +231,105 @@ class TestRestoreClearsStaleSearch(unittest.TestCase):
             order.index("restore"),
             "the restore ran before the indices were cleared",
         )
+
+
+class TestAnExtendingProjectsIndicesAreUntouched(unittest.TestCase):
+    """LDM-#2313: `ldm-devcon2026-*` also matches `ldm-devcon2026-approach2-*`.
+
+    The registry is a real file under `LDM_HOME`, read by the real
+    `registered_project_names`, so the seam between the registry and the
+    pattern is crossed rather than patched.
+    """
+
+    def setUp(self):
+        import json
+        import os
+
+        from ldm_core.config import TargetNode
+        from ldm_core.constants import REGISTRY_FILE
+
+        self.manager = MockSnapshotManager()
+        self.home = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.home)
+        (self.home / ".ldm").mkdir()
+        (self.home / ".ldm" / REGISTRY_FILE).write_text(
+            json.dumps(
+                {
+                    name: {"path": str(self.home / name), "host": None}
+                    for name in (PROJECT, EXTENDING_PROJECT)
+                }
+            ),
+            encoding="utf-8",
+        )
+        env = patch.dict(os.environ, {"LDM_HOME": str(self.home)})
+        env.start()
+        self.addCleanup(env.stop)
+        target = patch("ldm_core.docker_service.get_active_target")
+        target.start().return_value = TargetNode(
+            name="local", host="localhost", is_default=True
+        )
+        self.addCleanup(target.stop)
+
+    def _restore(self, meta):
+        es = _FakeElasticsearch(extra_indices=(EXTENDING_INDEX,))
+        with (
+            patch.object(self.manager, "run_command", side_effect=es) as mock_run,
+            patch("time.sleep"),
+        ):
+            self.manager.snapshot.search._restore_search(self.home, meta, PROJECT)
+        return es, mock_run
+
+    def test_the_restore_deletes_only_this_projects_indices(self):
+        es, _ = self._restore({"use_shared_search": "true"})
+
+        self.assertNotIn(EXTENDING_INDEX, es.deleted)
+        self.assertEqual(sorted(es.deleted), sorted(LIVE_INDICES))
+
+    def test_the_search_snapshot_restore_excludes_it_too(self):
+        """A snapshot taken before this fix may hold the other project's
+        indices; restoring it must not bring them back."""
+        import json
+
+        _, mock_run = self._restore({"search_snapshot": "snap1"})
+
+        bodies = [
+            json.loads(c.args[0][c.args[0].index("-d") + 1])
+            for c in mock_run.call_args_list
+            if c.args
+            and isinstance(c.args[0], list)
+            and "_restore" in (_curl_url(c.args[0]) or "")
+        ]
+        self.assertEqual(len(bodies), 1)
+        self.assertFalse(
+            _pattern_matches(EXTENDING_INDEX, bodies[0]["indices"]),
+            bodies[0]["indices"],
+        )
+        self.assertTrue(_pattern_matches(LIVE_INDICES[0], bodies[0]["indices"]))
+
+
+class TestSearchIndexPattern(unittest.TestCase):
+    def test_extending_projects_are_excluded(self):
+        from ldm_core.utils import search_index_pattern
+
+        self.assertEqual(
+            search_index_pattern("a", ["a", "a-b", "a-b-c", "ab", "b"]),
+            "ldm-a-*,-ldm-a-b-*,-ldm-a-b-c-*",
+        )
+
+    def test_a_numbered_sibling_is_excluded(self):
+        """Why a company-ID digit match was not used: `a-2`'s indices are
+        `ldm-a-2-<companyId>-...`, which `ldm-a-<digits>-` would match."""
+        from ldm_core.utils import search_index_pattern
+
+        pattern = search_index_pattern("a", ["a", "a-2"])
+
+        self.assertFalse(_pattern_matches("ldm-a-2-20097-object-entry", pattern))
+        self.assertTrue(_pattern_matches("ldm-a-20097-object-entry", pattern))
+
+    def test_no_other_project_is_the_plain_prefix(self):
+        from ldm_core.utils import search_index_pattern
+
+        self.assertEqual(search_index_pattern("a", ["a", "b"]), "ldm-a-*")
 
 
 if __name__ == "__main__":

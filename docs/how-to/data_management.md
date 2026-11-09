@@ -259,8 +259,9 @@ ldm re-seed [project]             # Wipe ALL data and re-apply vanilla seed
 - **`logs`**: Clears the project's log directory.
 - **`db`**: Removes the project's database volume (`<project>-db-db-data`).
 - **`global-search`**: Deletes this project's indices from the shared Global
-  Search node. Scoped by the project's own index prefix, so no other project's
-  indices are touched.
+  Search node. Scoped by the project's own index prefix, excluding any
+  registered project whose prefix extends it (LDM-#2313), so no other
+  project's indices are touched.
 - **`all`**: Clears `state`, `data`, `logs`, `db` and `global-search`, and
   tears the stack down with `docker compose down -v` so anonymous volumes go
   too.
@@ -295,4 +296,4 @@ ldm re-seed demo              # Total project reset to Day Zero (Seeded)
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-12* | *Last Reviewed: 2026-10-12*
+*Last Updated: 2026-11-09* | *Last Reviewed: 2026-11-09*

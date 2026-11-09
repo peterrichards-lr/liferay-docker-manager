@@ -175,6 +175,12 @@ ldm-<project name, sanitized, lowercased>-
 Liferay appends the company ID, so the actual indices look like
 `ldm-myproject-20101-workflow-metrics-tasks`. The prefix is written lowercase because Liferay lowercases it regardless (`StringUtil.toLowerCase`), and a mixed-case value would not match the indices it creates.
 
+One project's prefix can be the start of another's: `ldm-myproject-` begins
+`ldm-myproject-v2-`. When LDM snapshots, restores or clears a project's indices
+it therefore excludes every registered project whose prefix extends this one,
+for example `ldm-myproject-*,-ldm-myproject-v2-*`. Before LDM-#2313 it did not,
+and restoring `myproject` deleted `myproject-v2`'s indices.
+
 > [!NOTE]
 > Search settings are OSGi configuration, **not** portal properties, so they cannot be set with `LIFERAY_*` environment variables. This is why the `.config` file is the mechanism.
 
@@ -276,4 +282,4 @@ These commands keep their node definitions and wake state in `~/.ldm/node-power-
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-23* | *Last Reviewed: 2026-10-23*
+*Last Updated: 2026-11-09* | *Last Reviewed: 2026-11-09*
