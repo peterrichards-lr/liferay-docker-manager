@@ -405,6 +405,36 @@ def search_index_prefix(identifier):
     return f"ldm-{sanitize_id(identifier)}-".lower()
 
 
+def search_index_pattern(identifier, project_names=None):
+    """The Elasticsearch pattern that matches this project's indices and no
+    other registered project's. LDM-#2313.
+
+    `<prefix>*` alone is not that: `ldm-a-*` also matches `ldm-a-b-*`, so
+    restoring `a` deleted `a-b`'s indices and snapshotting `a` captured them.
+    Every registered project whose prefix extends this one is excluded with
+    Elasticsearch's multi-target `-` syntax, e.g. `ldm-a-*,-ldm-a-b-*`.
+
+    Matching on the company ID instead (`<prefix><digits>-`) was rejected: an
+    index pattern has no character classes, and a project named `a-2` has
+    indices `ldm-a-2-<companyId>-...`, which a digit match would still give to
+    `a`.
+
+    `project_names` defaults to the global registry. An index left by a
+    project that is no longer registered is still matched, as before.
+    """
+    prefix = search_index_prefix(identifier)
+    if project_names is None:
+        project_names = registered_project_names()
+    extending = sorted(
+        {
+            other
+            for other in (search_index_prefix(name) for name in project_names)
+            if other != prefix and other.startswith(prefix)
+        }
+    )
+    return ",".join([f"{prefix}*", *(f"-{other}*" for other in extending)])
+
+
 def liferay_container_of(meta):
     """The container name compose actually creates for this project's Liferay.
 
@@ -576,16 +606,23 @@ def registered_project_count():
     the first one starts from -- and a corrupt one must not turn a cosmetic tip
     into a failed `ldm run`.
     """
+    return len(registered_project_names())
+
+
+def registered_project_names():
+    """The project names the global registry records, or `[]` when it is
+    missing or unreadable. See `registered_project_count` for why the file is
+    read directly."""
     from ldm_core.constants import REGISTRY_FILE
 
     registry_path = get_actual_home() / ".ldm" / REGISTRY_FILE
     try:
         registry = json.loads(registry_path.read_text(encoding="utf-8"))
     except Exception:
-        return 0
+        return []
     if not isinstance(registry, dict):
-        return 0
-    return len(registry)
+        return []
+    return list(registry)
 
 
 # --- LDM-#1511: the database model has two axes, not one -------------------
