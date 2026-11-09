@@ -6,6 +6,25 @@ if TYPE_CHECKING:
 from ldm_core.ui import UI
 
 
+def _drop_source_search_env(target_meta, source):
+    """LDM-#2314: LDM's own search settings in `custom_env` -- the index
+    prefix above all -- name the source project's indices. The composer
+    appends `custom_env` after its own values, so a copied prefix wins and the
+    fork indexes into the source's indices."""
+    if not target_meta.get("custom_env"):
+        return
+    from ldm_core.handlers.snapshot import strip_ldm_search_env
+
+    target_meta["custom_env"], removed = strip_ldm_search_env(target_meta["custom_env"])
+    if removed:
+        UI.warning(
+            f"Dropped {len(removed)} search setting(s) from '{source}''s "
+            "custom_env; they point at the source project's indices."
+        )
+        for key in sorted(removed):
+            UI.detail(f"  - {key}")
+
+
 def cmd_fork(self, source, target, snapshot=None):
     """Forks an existing project into a new one, cloning database and DL assets."""
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
@@ -72,12 +91,25 @@ def cmd_fork(self, source, target, snapshot=None):
     source_meta = self.manager.read_meta(source_root) or {}
     target_meta = dict(source_meta)
 
+    # LDM-#2314: the UUID is the SOURCE project's identity. It labels the
+    # project's volumes and scopes `prune`, so a copy let pruning one project
+    # remove the other's volumes. Dropped here, `write_meta` mints a new one.
+    target_meta.pop("uuid", None)
+
+    _drop_source_search_env(target_meta, source)
+
     # Mutate target metadata fields
     sanitized_target = sanitize_id(target)
     target_meta.update(
         {
             "project_name": target,
+            "root": str(target_root.resolve()),
             "container_name": sanitized_target,
+            # LDM-#2314: every `ldm run` writes this beside `container_name`
+            # (`pipelines/run.py`), and restore resolves its container from it
+            # first. Copied, the fork's restore step acted on the SOURCE's
+            # container and search indices.
+            "liferay_container_name": sanitized_target,
             "db_container_name": f"{sanitized_target}-db",
             "tunnel_container_name": f"{sanitized_target}-tunnel",
             "host_name": f"{sanitized_target}.local",
