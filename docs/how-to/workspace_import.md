@@ -158,6 +158,14 @@ environment, and everything beginning
 properties. Everything else a publisher sets is left exactly as they wrote it,
 comments and ordering included.
 
+Until LDM-#2315 the environment half of that removal never ran. A snapshot's
+`meta` stores `custom_env` as a JSON string, and the removal only handled a
+parsed one, so every restore brought the snapshot's search settings back. That
+includes `LIFERAY_ELASTICSEARCH_PERIOD_INDEX_PERIOD_NAME_PERIOD_PREFIX`. Restore
+a snapshot taken by **another** project and that prefix points at the other
+project's indices. When the two projects share a company ID, the restored
+project's reindex then empties the other project's index.
+
 **For publishers:** you no longer need to sanitise search settings out of a
 package — but if you set one deliberately, the announcement is where you will
 see it discarded. Nothing else about `custom_env` changed.
@@ -264,4 +272,4 @@ This scaffolds a `.github/workflows/ldm-package-release.yml` file which:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-21* | *Last Reviewed: 2026-10-21*
+*Last Updated: 2026-11-09* | *Last Reviewed: 2026-11-09*

@@ -2,7 +2,7 @@ import json
 import time
 
 from ldm_core.ui import UI
-from ldm_core.utils import search_index_prefix
+from ldm_core.utils import search_index_pattern
 
 
 class SearchSnapshotService:
@@ -67,9 +67,7 @@ class SearchSnapshotService:
                         "-H",
                         "Content-Type: application/json",
                         "-d",
-                        json.dumps(
-                            {"indices": f"{search_index_prefix(container_name)}*"}
-                        ),
+                        json.dumps({"indices": search_index_pattern(container_name)}),
                     ],
                     check=False,
                 )
@@ -171,7 +169,7 @@ class SearchSnapshotService:
                 "-d",
                 json.dumps(
                     {
-                        "indices": f"{search_index_prefix(container_name)}*",
+                        "indices": search_index_pattern(container_name),
                         "include_global_state": False,
                     }
                 ),
@@ -228,7 +226,7 @@ class SearchSnapshotService:
                     # carried. Liferay's indices are `ldm-<name>-*`, so
                     # `<container_name>-*` matched nothing and this loop could
                     # only ever time out into "Search restore timed out".
-                    f"localhost:9200/{search_index_prefix(container_name)}*/_recovery",
+                    f"localhost:9200/{search_index_pattern(container_name)}/_recovery",
                 ],
                 check=False,
             )
@@ -254,9 +252,14 @@ class SearchSnapshotService:
         do not exist. Both faults were independently sufficient to make the
         delete a no-op, which is why it had never removed an index on either
         branch.
+
+        LDM-#2313: the pattern is now `search_index_pattern`, which excludes
+        every registered project whose prefix extends this one. `ldm-a-*`
+        alone matched `ldm-a-b-*` too, so this deleted another project's
+        indices.
         """
         docker_prefix = docker_prefix or self._resolve_docker_prefix()
-        pattern = f"{search_index_prefix(container_name)}*"
+        pattern = search_index_pattern(container_name)
         res = self.manager.run_command(
             [
                 *docker_prefix,
