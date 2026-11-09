@@ -20,7 +20,7 @@ mkdocs-material==9.7.7
 # Pinned exactly, like the two above: it declares mkdocs<2, so an
 # unpinned bump is one more way a 2.0 release could reach the build.
 mkdocs-git-revision-date-localized-plugin==1.6.0
-mypy==2.4.0
+mypy==2.4.1
 types-requests
 types-PyYAML
 pystray>=0.19.0
