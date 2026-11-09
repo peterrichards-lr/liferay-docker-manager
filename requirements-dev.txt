@@ -1,10 +1,10 @@
-ruff==0.17.1
+ruff==0.17.3
 pre-commit
 bandit
 pip-audit
-pytest==9.1.1
+pytest==9.2.0
 pytest-cov==7.1.0
-playwright==1.64.0
+playwright==1.64.1
 pytest-playwright==0.10.0
 shiv==1.0.8
 pyinstaller==6.22.3
@@ -20,7 +20,7 @@ mkdocs-material==9.7.7
 # Pinned exactly, like the two above: it declares mkdocs<2, so an
 # unpinned bump is one more way a 2.0 release could reach the build.
 mkdocs-git-revision-date-localized-plugin==1.6.0
-mypy==2.4.0
+mypy==2.4.1
 types-requests
 types-PyYAML
 pystray>=0.19.0
