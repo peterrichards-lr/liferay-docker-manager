@@ -22,7 +22,6 @@ Measured on a 32 GB host:
 -Xms4096m -Xmx16384m
 -XX:MaxMetaspaceSize=1024m -XX:MetaspaceSize=1024m
 -XX:NewSize=5406m -XX:MaxNewSize=5406m
--XX:TieredStopAtLevel=1
 ```
 
 And under `--lean`, which is also applied automatically when
@@ -61,13 +60,14 @@ java                          ->  240 MB  (ergonomic)
 java -XX:TieredStopAtLevel=1  ->   48 MB  (default)
 ```
 
-LDM adds `-XX:TieredStopAtLevel=1` on **darwin and windows**, and `--lean` sets
-it unconditionally. So on LDM's primary developer platforms the code cache is
-**48 MB** — precisely the figure Liferay's guidance singles out as harmful.
+Before LDM-#1464, LDM added `-XX:TieredStopAtLevel=1` on **darwin and
+windows**, and `--lean` sets it unconditionally. So on LDM's primary developer
+platforms the code cache was **48 MB** — precisely the figure Liferay's
+guidance singles out as harmful.
 
 | Platform | `TieredStopAtLevel=1` | Effective code cache |
 |---|---|---|
-| macOS / Windows | yes, by default | **48 MB** |
+| macOS / Windows, before LDM-#1464 (in practice, LDM-#2308) | yes, by default | **48 MB** |
 | Linux | no | 240 MB |
 | `--lean`, any platform | yes | **48 MB** |
 
@@ -91,6 +91,16 @@ removed in LDM-#1464, so the JVM's 240 MB ergonomic value now applies.
 `--lean` still sets the flag — that profile trades throughput for footprint on
 purpose — and anyone who wants it back gets it with
 `jvm_tiered_stop_at_level=true`.
+
+**Until LDM-#2308 that removal did not take effect on macOS or Windows.**
+LDM-#1464 removed the default from the tuning cascade, but the compose step
+added the flag again on darwin and windows, after the cascade had resolved
+it. `jvm_tiered_stop_at_level=false` therefore did nothing there, and the
+code cache stayed at 48 MB. The cost was measured on 2026-11-02 with DXP
+2026.q3.5 on Colima. Under C1-only code, an authenticated headless request
+took 1.86–1.93 s. Without the flag it took 0.22 s. Basic auth re-derives the
+PBKDF2 password hash on every request, and C1-only code runs that about
+eight times slower.
 
 ## Database connection pool
 
@@ -359,4 +369,4 @@ Two cautions that example illustrates:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-14* | *Last Reviewed: 2026-10-14*
+*Last Updated: 2026-11-09* | *Last Reviewed: 2026-11-09*

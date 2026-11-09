@@ -925,10 +925,12 @@ class ComposerService:
             # 2. Increase CodeCache (Prevent NoSuchMethodException/VirtualMachineError)
             if "-XX:ReservedCodeCacheSize" not in jvm_opts:
                 jvm_opts += " -XX:ReservedCodeCacheSize=512m"
-        elif "-Xms" in jvm_opts and "-XX:TieredStopAtLevel=1" not in jvm_opts:
-            # ONLY apply these to Darwin/Windows VMs where bundle resolution is slow
-            if platform.system().lower() in ["darwin", "windows"]:
-                jvm_opts += " -XX:TieredStopAtLevel=1"
+        # LDM-#2308: no `else` adding -XX:TieredStopAtLevel=1 on darwin/windows.
+        # One sat here, after the tuning cascade had resolved, and LDM-#1464
+        # removed the default only from `_adaptive_tuning`. Because the
+        # cascade's output always carries -Xms, it re-added the flag on every
+        # macOS and Windows build and `jvm_tiered_stop_at_level=false` did
+        # nothing. The flag now comes only from `_render_jvm_args`.
 
         # LDM-369: JVM argument deduplication
         # We use a dictionary-style merge where the last flag wins for any duplicated key
