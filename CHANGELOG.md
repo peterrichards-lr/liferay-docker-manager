@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.8] - 2026-11-10
+
+Verified on v2.26.8-pre.3 across six environments: Fedora 44 (native Docker), macOS 27 with Colima, macOS 27 with OrbStack, Windows 11 with WSL2, and Windows 11 Docker Desktop under both PowerShell 5.1 and PowerShell 7. The tag's CI, Release E2E and multi-OS workflows all passed. Stable is byte-identical to pre.3 except for the version stamp and this release's announcements. The details of each change are in the pre-release entries below.
+
+### Fixed
+
+- **Restoring a snapshot no longer brings back another project's search settings** (LDM-#2315). The restore step meant to drop them never ran, so a restored project could share, and then empty, another project's search index.
+- **A project's search operations no longer reach a project whose name starts with its own** (LDM-#2313). Restoring `devcon2026` no longer deletes `devcon2026-approach2`'s indices, and snapshotting it no longer captures them.
+- **`ldm fork` works, and the fork is a project of its own** (LDM-#2314). It failed on every call, and it copied the source's UUID, index prefix, container name and project root.
+- **`jvm_tiered_stop_at_level=false` works on macOS and Windows** (LDM-#2308). The flag was always on there, which cost about 1.7 s per authenticated headless request on DXP 2026.q3.5. Run `ldm stop` and then `ldm run` to apply it to a running project.
+- From pre.1: a boot is refused when the shared search disk is past Elasticsearch's watermarks (LDM-#2247); the Windows self-upgrade runs in its own window, reports its progress and kills nothing (LDM-#2212); old builds no longer pile up in `~/.shiv` (LDM-#2296).
+
+### Changed
+
+- The node-power workflows read their configuration from an Actions secret (LDM-#2292). Nothing here changes `ldm` for users.
+
+### Known issues
+
+- `ldm restart` does not re-render the compose file, so a changed JVM or environment setting needs `ldm stop` and `ldm run` (LDM-#2317).
+- Liferay's first DXP-tree write on a custom-host project can carry `:8080` before being corrected (LDM-#2289, under investigation).
+- None of this release's fixes has an end-to-end assertion yet (LDM-#2302).
+
 ## [v2.26.8-pre.3] - 2026-11-09
 
 ### Fixed
