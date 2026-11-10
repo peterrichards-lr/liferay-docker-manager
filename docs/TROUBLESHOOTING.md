@@ -382,6 +382,14 @@ reported the original hang (LDM-#2064).
 
 ## 📂 Permission & Mount Issues
 
+### **macOS: "FATAL: VOLUME MOUNT IS READ-ONLY" or "VOLUME MOUNTING IS BROKEN"**
+
+Before starting a project, LDM checks that the Docker engine can see and write the project directory. When it cannot, the fix depends on which engine you use, and LDM now works that out from the socket Docker talks to (`DOCKER_HOST`, or the current context) before advising (LDM-#2242):
+
+- **Colima**: LDM prints the `colima stop` / `colima start --mount ...:w` commands to re-share the path with write access.
+- **Docker Desktop**: share the path under **Settings > Resources > File Sharing**.
+- **OrbStack, or an engine LDM cannot identify**: LDM names the path and says it must be shared with write access, without naming any engine's commands. Until LDM-#2242 every Mac was given the Colima commands, which on OrbStack would have started a second runtime.
+
 ### **macOS / ExFAT: "Unable to create lock manager" or "access_denied_exception"**
 
 If Liferay fails to start with one of the following errors:
@@ -927,4 +935,4 @@ Projects are discovered from the current folder, its parent, `~/ldm`, the LDM in
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-23* | *Last Reviewed: 2026-10-23*
+*Last Updated: 2026-11-10* | *Last Reviewed: 2026-11-10*
