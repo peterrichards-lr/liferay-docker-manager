@@ -563,6 +563,15 @@ ldm logs demo liferay     # Only Liferay logs for 'demo'
 ldm logs demo liferay my-ext # Multi-service tailing (all replicas)
 ```
 
+While following, `ldm logs -f` recognises a few known failure lines and prints
+`LDM TROUBLESHOOTING ADVICE` above them. The JVM ones are specific: heap,
+metaspace and a full code cache each name their own `ldm run` flag (after
+`ldm stop`), since those flags do not exist on `ldm restart` (LDM-#2307).
+Tomcat's echo of LDM's own JVM options (`Command line argument: ...`) is never
+treated as an error. PostgreSQL's `database "lportal" does not exist` is
+reported as expected on a project's first boot, while the image is still
+creating the database.
+
 ### Targeting a Specific Scaled Replica (`--instance N` / `-i N`)
 
 When a service is scaled to multiple replicas (e.g. `ldm scale demo liferay=3`), `ldm logs` streams from **all instances simultaneously** by default. Use `--instance N` to isolate a single replica:

@@ -4756,16 +4756,40 @@ def check_troubleshooting_signatures(line):
         r"Connection to .* refused|Connection refused|psycopg2\.OperationalError": (
             "Database connection refused. The database container might still be starting up or unhealthy. Verify its status via 'ldm status'."
         ),
+        # LDM-#2307: this used to say "Run 'ldm hydrate'", and fired on every
+        # first PostgreSQL boot -- nothing was wrong. The healthcheck no longer
+        # produces the line, but compose files rendered before that fix still
+        # do, so the advice must be true on a first boot too.
         r"database .* does not exist|FATAL:\s+database .* does not exist": (
-            "Target database does not exist. Your LDM stack is running in PostgreSQL mode but the schema has not been initialized. Run 'ldm hydrate' to import a snapshot."
+            "PostgreSQL was asked for a database that does not exist yet. On a project's first boot this is expected: the image creates it moments later (look for 'CREATE DATABASE'). Only if it keeps appearing once the database is up is something wrong; check 'ldm status'."
         ),
-        r"ReservedCodeCacheSize|CodeCache|OutOfMemory": (
-            "JVM CodeCache or heap space exhausted. Set 'ReservedCodeCacheSize=512m' in portal properties or upgrade LDM JVM self-tuning configurations."
+        # LDM-#2307: one signature used to cover heap, metaspace and code cache,
+        # matched the bare word "CodeCache" (LDM's own JVM flag), and named
+        # fixes that cannot work: portal properties do not set JVM flags, and
+        # the --jvm-* flags exist only on `ldm run`. Each failure needs its own
+        # fix. Most specific first: the dict is matched in order.
+        r"OutOfMemoryError: Java heap space": (
+            "Liferay ran out of heap. Raise it with 'ldm stop <project>' and then 'ldm run <project> --jvm-heap-max 8g'. 'ldm info' shows the JVM arguments in effect."
+        ),
+        r"OutOfMemoryError: Metaspace": (
+            "Liferay ran out of metaspace. Raise it with 'ldm stop <project>' and then 'ldm run <project> --jvm-metaspace 1024m'. 'ldm info' shows the JVM arguments in effect."
+        ),
+        r"CodeCache is full|CodeHeap '[^']*' is full": (
+            "The JVM code cache is full, so the compiler has stopped and Liferay will slow down. The usual cause is -XX:TieredStopAtLevel=1, which cuts the cache to 48 MB. Turn it off with 'ldm stop <project>' and then 'ldm run <project> --jvm-tiered-stop-at-level false'. 'ldm info' shows the JVM arguments in effect."
+        ),
+        r"java\.lang\.OutOfMemoryError": (
+            "Liferay's JVM ran out of memory. 'ldm info' shows the JVM arguments in effect; heap and metaspace are set with --jvm-heap-max and --jvm-metaspace on 'ldm run' (after 'ldm stop')."
         ),
         r"ClusterBlockException|index\.blocks\.read_only": (
             "Elasticsearch write block detected due to low disk space threshold. LDM will attempt to auto-thaw or you can clear disk space."
         ),
     }
+
+    # LDM-#2307: Tomcat echoes every JVM option at startup as `Command line
+    # argument: -XX:...`, LDM's own flags included. Those are settings, never
+    # errors.
+    if "Command line argument:" in line:
+        return None
 
     for pattern, advice in SIGNATURES.items():
         if re.search(pattern, line, re.IGNORECASE):

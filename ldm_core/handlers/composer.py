@@ -2077,7 +2077,13 @@ class ComposerService:
                     "POSTGRES_DB": "lportal",
                 },
                 "healthcheck": {
-                    "test": ["CMD-SHELL", "pg_isready -U lportal"],
+                    # LDM-#2307: `-d postgres`. With no -d, pg_isready asks for a
+                    # database named after the user -- `lportal`, which does
+                    # not exist until the image's init script creates it -- so
+                    # every first boot logged `FATAL: database "lportal" does
+                    # not exist`, and `ldm logs` told users to run `ldm
+                    # hydrate`. The answer does not depend on the database.
+                    "test": ["CMD-SHELL", "pg_isready -U lportal -d postgres"],
                     "interval": "10s",
                     "timeout": "5s",
                     "retries": 10,

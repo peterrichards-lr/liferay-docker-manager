@@ -1328,6 +1328,9 @@ tls:
                     "pg_isready",
                     "-U",
                     "lportal",
+                    # LDM-#2307: see the project healthcheck in composer.py.
+                    "-d",
+                    "postgres",
                 ]
 
             # LDM-#1545: this loop had no failure path. It broke on success,

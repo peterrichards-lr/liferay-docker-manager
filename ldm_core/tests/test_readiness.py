@@ -1354,16 +1354,19 @@ services:
             ),
         )
 
-        # Database missing
+        # Database missing -- expected on a first boot (LDM-#2307)
         self.assertIn(
-            "Target database does not exist",
+            "first boot",
             check_troubleshooting_signatures('database "lportal" does not exist'),
         )
 
-        # JVM cache
+        # JVM heap (LDM-#2307 split the old catch-all; see
+        # test_troubleshooting_advice.py)
         self.assertIn(
-            "JVM CodeCache",
-            check_troubleshooting_signatures("ReservedCodeCacheSize=512m exceeded"),
+            "--jvm-heap-max",
+            check_troubleshooting_signatures(
+                "java.lang.OutOfMemoryError: Java heap space"
+            ),
         )
 
         # Elasticsearch blocks
