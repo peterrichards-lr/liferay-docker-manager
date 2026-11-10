@@ -90,6 +90,15 @@ and those documents survived the restore invisibly.
 If the shared search service is not running, LDM says so and leaves the
 indices alone rather than reporting a clean restore it did not perform.
 
+After restoring a search snapshot, LDM asks each restored index for a
+`_count` before reporting success (LDM-#2316). An index can come back listed
+as `STARTED` while every search against it answers 503, and Liferay's reindex
+then writes nothing to it. If any index fails, LDM names it instead of printing
+"Search restore completed." The fix that worked when this was seen is
+`docker restart liferay-search-global`, then restarting the project so Liferay
+reindexes. Restarting shared search briefly interrupts search for every project
+using it. Why the shard comes back unusable is not yet known.
+
 ## What `ldm rm --delete` keeps
 
 `ldm rm --delete` removes the containers, the volumes, the registry entry and
@@ -296,4 +305,4 @@ ldm re-seed demo              # Total project reset to Day Zero (Seeded)
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-09* | *Last Reviewed: 2026-11-09*
+*Last Updated: 2026-11-10* | *Last Reviewed: 2026-11-10*
