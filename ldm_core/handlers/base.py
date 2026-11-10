@@ -2080,7 +2080,20 @@ class BaseHandler:
                             f"{UI.BYELLOW}Reason:{UI.COLOR_OFF} Docker cannot see the files in: {root}"
                         )
 
-                    if system_type == "darwin":
+                    engine = (
+                        self.macos_docker_engine() if system_type == "darwin" else None
+                    )
+                    if system_type == "darwin" and engine != "colima":
+                        # LDM-#2242: true for every engine, and naming none.
+                        UI.info(
+                            f"\nThe Docker engine cannot use {root}. Make sure "
+                            "that path is shared with it, with write access."
+                        )
+                        if engine == "docker-desktop":
+                            UI.info(
+                                "Docker Desktop: Settings > Resources > File Sharing."
+                            )
+                    if engine == "colima":
                         actual_home = Path.home()
 
                         with contextlib.suppress(Exception):
@@ -2415,6 +2428,52 @@ class BaseHandler:
         from ldm_core.utils import safe_rmtree
 
         safe_rmtree(path)
+
+    def macos_docker_engine(self):
+        """Which engine serves Docker on this Mac: colima, orbstack, docker-desktop or None.
+
+        LDM-#2242: the mount-failure remediation printed `colima stop` /
+        `colima start` to every macOS user -- including OrbStack users, who do
+        not have Colima, and for whom following it would start a second runtime
+        under the one they use. Read from the socket Docker actually talks to:
+        `DOCKER_HOST` when set, else the current context's endpoint. Symlinks
+        are resolved first, because `/var/run/docker.sock` is a link any of the
+        three may own. None means unknown, and the caller must then name no
+        engine at all.
+        """
+        endpoint = os.environ.get("DOCKER_HOST", "")
+        if not endpoint:
+            with contextlib.suppress(Exception):
+                context = (
+                    self.run_command(["docker", "context", "show"], check=False) or ""
+                ).strip()
+                if context:
+                    endpoint = (
+                        self.run_command(
+                            [
+                                "docker",
+                                "context",
+                                "inspect",
+                                context,
+                                "--format",
+                                "{{.Endpoints.docker.Host}}",
+                            ],
+                            check=False,
+                        )
+                        or ""
+                    ).strip()
+        if endpoint.startswith("unix://"):
+            endpoint = endpoint[len("unix://") :]
+            with contextlib.suppress(OSError):
+                endpoint = os.path.realpath(endpoint)
+        endpoint = endpoint.lower()
+        if "/.colima/" in endpoint:
+            return "colima"
+        if "/.orbstack/" in endpoint:
+            return "orbstack"
+        if "/.docker/run/" in endpoint:
+            return "docker-desktop"
+        return None
 
     def get_colima_mount_flags(self, paths):
         """Generates the necessary --mount flags for Colima based on project paths."""
