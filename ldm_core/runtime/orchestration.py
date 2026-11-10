@@ -680,7 +680,14 @@ class OrchestrationService(BaseHandler):
                 failures.append(root.name)
             else:
                 self._verify_pinned_mac_after_lifecycle(root, meta, target_name)
+                # LDM-#2317: as LDM-#1937 for start -- the only other line was
+                # UI.detail, so a successful restart printed nothing at all.
+                UI.success(f"Project '{root.name}' restarted.")
         self._report_batch_failures(failures, "restart")
+        UI.hint(
+            "'ldm restart' reuses the existing docker-compose.yml. To apply "
+            "changes made to the project's meta, run 'ldm stop' and then 'ldm run'."
+        )
 
     def _verify_pinned_mac_after_lifecycle(self, root, meta, target_name):
         """Confirm the pin survived a start or restart (LDM-#1798).
