@@ -179,7 +179,19 @@ class SearchSnapshotService:
         if self._wait_for_search_restore(
             search_snapshot_name, container_name, docker_prefix=docker_prefix
         ):
-            UI.success("Search restore completed.")
+            dead = self._indices_that_cannot_search(container_name, docker_prefix)
+            if dead:
+                UI.warning(
+                    f"Search restore finished, but {len(dead)} index(es) cannot "
+                    f"answer a search: {', '.join(dead)}.\n"
+                    "Liferay's reindex will write nothing to them, so anything "
+                    "backed by search will be empty (LDM-#2316).\n"
+                    "Fix: run 'docker restart liferay-search-global' (this briefly "
+                    "interrupts search for every project using it), then restart "
+                    "this project so Liferay reindexes."
+                )
+            else:
+                UI.success("Search restore completed.")
         else:
             UI.warning(
                 "Search restore timed out or might be still in progress. Verify index status later."
@@ -235,6 +247,43 @@ class SearchSnapshotService:
                 return True
             time.sleep(5)
         return False
+
+    def _indices_that_cannot_search(self, container_name, docker_prefix):
+        """Restored indices that are STARTED but answer every search with 503.
+
+        LDM-#2316. Twice on 2026-11-02 a restored company index came back with
+        a shard Elasticsearch listed as STARTED while every `_count`, search and
+        `_delete_by_query` answered 503 (`AlreadyClosedException: this
+        ReferenceManager is closed`). `_recovery` reports DONE for such a shard,
+        so the wait above declared success, and Liferay's reindex -- which opens
+        each indexer with a delete-by-query -- then wrote nothing.
+
+        `_count` is the cheapest request that needs a working searcher. Only an
+        actual non-200 answer counts: a probe that could not run at all says
+        nothing about the index, and reporting it dead would send the user to
+        restart shared search for no reason.
+        """
+        dead = []
+        for name in self._project_index_names(container_name, docker_prefix):
+            code = self.manager.run_command(
+                [
+                    *docker_prefix,
+                    "exec",
+                    "liferay-search-global",
+                    "curl",
+                    "-s",
+                    "-o",
+                    "/dev/null",
+                    "-w",
+                    "%{http_code}",
+                    f"localhost:9200/{name}/_count",
+                ],
+                check=False,
+            )
+            code = str(code or "").strip()
+            if code and code != "200":
+                dead.append(name)
+        return dead
 
     def _project_index_names(self, container_name, docker_prefix=None):
         """The concrete indices this project owns on the shared search node.
