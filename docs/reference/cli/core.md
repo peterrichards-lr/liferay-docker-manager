@@ -618,6 +618,15 @@ ldm rm [project]                  # Alias for 'down'
 
 That hint previously named `ldm run`. `ldm run` remains the correct command when containers were *removed* rather than stopped (the `Not Created` state described above), but having just stopped them, `ldm stop` knows that is not the state the project is in.
 
+`restart` restarts the containers from the project's **existing** `docker-compose.yml`, and so does `restart --force-recreate`. Neither re-renders it from the project's `meta`, so a change to `meta` -- a `custom_env` key, a JVM flag -- is not applied by `restart`. Use `ldm stop` and then `ldm run`. `restart` now says so, along with what it did (LDM-#2317):
+
+```text
+✅  Project 'my-project' restarted.
+💡  Next step: 'ldm restart' reuses the existing docker-compose.yml. To apply changes made to the project's meta, run 'ldm stop' and then 'ldm run'.
+```
+
+`ldm run` on a project that is already running refuses in the same terms, with exit code `5` when run non-interactively. It used to recommend `ldm restart` "to apply updates".
+
 ### Options
 
 - **`--share`** (Only for `start` and `run`): Starts a secure tunnel once the containers are up. On `start` this is the point of the flag: `run` reconfigures the project before booting it, which is exactly what someone sharing an already-configured project does not want. Cannot be combined with `--all` -- a tunnel leases one subdomain and forwards to one target -- and the refusal arrives before any project is started. ![Added in v2.26.0](https://img.shields.io/badge/Added%20in-v2.26.0-blue)

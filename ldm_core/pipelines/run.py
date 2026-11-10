@@ -630,8 +630,13 @@ class RuntimeValidationStage(PipelineStage):
                     # generic 1 -- automation calling `ldm run`/`up`
                     # non-interactively needs to tell "nothing to do, it's
                     # already up" apart from an actual validation failure.
+                    # LDM-#2317: this used to say "Use 'ldm restart' to apply
+                    # updates". Restart reuses the existing compose file and
+                    # never re-renders it from meta, so it applies nothing.
                     UI.die(
-                        f"Project '{project_id}' is already running. Use 'ldm restart' to apply updates, or 'ldm stop' it first.",
+                        f"Project '{project_id}' is already running. To apply "
+                        "configuration changes, run 'ldm stop' and then 'ldm run' "
+                        "('ldm restart' reuses the existing compose file).",
                         exit_code=5,
                     )
                 elif not UI.confirm(
