@@ -384,8 +384,10 @@ class TestLogs(unittest.TestCase):
 
             # Verify the output contains the troubleshooting advice
             printed_calls = [c[0][0] for c in mock_print.call_args_list]
+            # LDM-#2307: the wording changed -- this line is expected on a
+            # first boot -- but it must still reach the stream.
             advice_calls = [
-                c for c in printed_calls if "Target database does not exist" in c
+                c for c in printed_calls if "database that does not exist yet" in c
             ]
             self.assertTrue(len(advice_calls) > 0)
 
