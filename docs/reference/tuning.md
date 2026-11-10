@@ -290,6 +290,7 @@ Startup phases:
   Tomcat Server Ready           +3m 47s  (at 5m 31s)
   Site Initializer Running      +    6s  (at 5m 37s)
   after the last milestone      +4m 15s
+Docker allocation: 12 CPUs, 7.6 GB (heap sized from 7.6 GB)
 ```
 
 That is a real 9m57s boot of `2026.q3.7` on a Windows 11 host with 7.6 GB
@@ -302,9 +303,13 @@ The timings are written to `<project>/.liferay-docker/startup-status.json`
 under `milestone_seconds` on **every** boot, whether or not `--benchmark` was
 passed, so a slow start can be decomposed afterwards without reproducing it.
 
-**Check the allocation before concluding anything about LDM.** `ldm doctor
---detailed` reports `Docker CPUs` and `Docker Memory`; a boot time is not
-comparable between machines without them. The example above is not evidence
+**Check the allocation before concluding anything about LDM.** A boot time is
+not comparable between machines without it, so LDM now records it with the
+timings (LDM-#2172): the last line of the breakdown above, and
+`docker_allocation` in `startup-status.json`, with `cpus`, `memory_gb`,
+`host_memory_gb` and `sizing_memory_gb`. The last of these is the figure the
+heap was actually sized from, the smaller of the host's memory and Docker's.
+`ldm doctor --detailed` reports `Docker CPUs` and `Docker Memory` too. The example above is not evidence
 about a Liferay version or a search mode -- it is one host with one allocation.
 
 ## Measuring boot time
@@ -369,4 +374,4 @@ Two cautions that example illustrates:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-09* | *Last Reviewed: 2026-11-09*
+*Last Updated: 2026-11-10* | *Last Reviewed: 2026-11-10*

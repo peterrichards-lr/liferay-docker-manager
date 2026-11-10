@@ -386,39 +386,61 @@ class ComposerService:
             parts.append("-XX:TieredStopAtLevel=1")
         return " ".join(parts)
 
+    def docker_allocation(self, target_name=None):
+        """What the heap is sized from: Docker's CPUs and memory, and the host's.
+
+        LDM-#2172: extracted from `_adaptive_tuning` so the boot record
+        (`startup-status.json`, `--benchmark`) can report the very figures the
+        sizing used. A 9m57s boot on a 7.6 GB Windows host was attributed to
+        search mode because the timing was recorded without the allocation
+        (LDM-#2164); a second reading taken elsewhere could disagree with the
+        one that sized the heap.
+
+        `sizing_memory_bytes` is min(host, Docker), or the host's when Docker
+        reports nothing.
+        """
+        docker_mem = 0
+        cpus = None
+        try:
+            # LDM-#1133: sizing must reflect the RAM of whichever daemon
+            # will actually run the container -- a remote target's host
+            # can have wildly different available memory than the
+            # orchestrating machine's local Docker Desktop/Colima VM.
+            target_name = getattr(self.manager, "target", None) or target_name
+            from ldm_core.docker_service import DockerService
+
+            docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
+            # We use self.manager.run_command from the base mixin
+            docker_info_raw = self.manager.run_command(
+                [*docker_prefix, "info", "--format", "{{json .}}"], check=False
+            )
+            if docker_info_raw:
+                info = json.loads(docker_info_raw)
+                docker_mem = info.get("MemTotal", 0)
+                cpus = info.get("NCPU")
+        except Exception:
+            pass
+
+        # Get host physical memory
+        host_mem = self.get_physical_host_memory_bytes()
+
+        # Effective memory is the minimum of both (or host_mem if docker_mem is zero/invalid)
+        if docker_mem > 0:
+            mem_bytes = min(host_mem, docker_mem)
+        else:
+            mem_bytes = host_mem
+        return {
+            "docker_cpus": cpus,
+            "docker_memory_bytes": docker_mem or None,
+            "host_memory_bytes": host_mem,
+            "sizing_memory_bytes": mem_bytes,
+        }
+
     def _adaptive_tuning(self, target_name=None):
         """The unchanged adaptive calculation, as a settings mapping."""
         try:
-            # Get Docker memory limit if available
-            docker_mem = 0
-            try:
-                # LDM-#1133: sizing must reflect the RAM of whichever daemon
-                # will actually run the container -- a remote target's host
-                # can have wildly different available memory than the
-                # orchestrating machine's local Docker Desktop/Colima VM.
-                target_name = getattr(self.manager, "target", None) or target_name
-                from ldm_core.docker_service import DockerService
-
-                docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
-
-                # We use self.manager.run_command from the base mixin
-                docker_info_raw = self.manager.run_command(
-                    [*docker_prefix, "info", "--format", "{{json .}}"], check=False
-                )
-                if docker_info_raw:
-                    info = json.loads(docker_info_raw)
-                    docker_mem = info.get("MemTotal", 0)
-            except Exception:
-                pass
-
-            # Get host physical memory
-            host_mem = self.get_physical_host_memory_bytes()
-
-            # Effective memory is the minimum of both (or host_mem if docker_mem is zero/invalid)
-            if docker_mem > 0:
-                mem_bytes = min(host_mem, docker_mem)
-            else:
-                mem_bytes = host_mem
+            mem_bytes = self.docker_allocation(target_name)["sizing_memory_bytes"]
 
             mem_gb = mem_bytes / (1024**3)
 
