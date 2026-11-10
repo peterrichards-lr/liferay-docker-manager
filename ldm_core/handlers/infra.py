@@ -477,6 +477,67 @@ class InfraService:
                 "not start (LDM-#2247)."
             )
 
+    def ensure_global_search_started(self, target_name=None, fatal=True):
+        """Bring a stopped shared search container back for `ldm start` (LDM-#2319).
+
+        `ldm start` runs `docker compose start` on the existing compose file,
+        which names `liferay-search-global` only in Liferay's environment, not
+        as a dependency, so Compose never starts it. After a Docker VM restart
+        every container is stopped, and Liferay then booted with no search: its
+        startup reindex failed and lists came up empty.
+
+        Deliberately NOT `setup_global_search`. When the container is missing,
+        that provisions one, and its readiness failure path deletes the shared
+        search data of every project on the machine. Here a missing container
+        is refused instead: recreating shared infrastructure is `ldm run`'s job.
+
+        Returns True when search is usable. With `fatal=False` (batch starts),
+        a refusal is a warning and False, so the other projects still start.
+        """
+        from ldm_core.docker_service import DockerService
+
+        search_name = "liferay-search-global"
+
+        def refuse(message, tip):
+            if fatal:
+                UI.die(message, tip=tip, exit_code=3)
+            UI.warning(f"{message} {tip}")
+            return False
+
+        if not DockerService.exists(search_name, target_name=target_name):
+            return refuse(
+                f"This project uses shared search, but the '{search_name}' "
+                "container does not exist.",
+                "Run 'ldm run' to provision it.",
+            )
+        if DockerService.is_running(search_name, target_name=target_name):
+            return True
+
+        UI.info("Starting Global Search (ES8)...")
+        DockerService.start(search_name, target_name=target_name)
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+        for _ in range(36):  # 3 minutes (36 * 5s)
+            if self.manager.get_container_status(
+                search_name, target_name=target_name
+            ) in ("exited", "dead"):
+                break
+            res = self.manager.run_command(
+                [*docker_prefix, "exec", search_name, "curl", "-s", "localhost:9200"],
+                check=False,
+                capture_output=True,
+                timeout=_INFRA_PROBE_TIMEOUT,
+            )
+            if res and '"cluster_name"' in res:
+                # Answering is not usable: a red cluster answers too (LDM-#2247).
+                self._assert_search_cluster_is_usable(docker_prefix, search_name)
+                return True
+            time.sleep(5)
+
+        return refuse(
+            f"Global Search container '{search_name}' did not come up.",
+            f"Inspect it with 'docker logs {search_name}'.",
+        )
+
     def _preinstall_search_plugins(self, docker_prefix, plugins_dir):
         """Install any missing analysis plugin before Elasticsearch opens data.
 

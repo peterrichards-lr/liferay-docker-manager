@@ -420,6 +420,21 @@ class OrchestrationService(BaseHandler):
                         continue
                     UI.die(message)
 
+            # LDM-#2319: Compose cannot start shared search for us -- the
+            # compose file names it only in Liferay's environment, never as a
+            # dependency. Read from that file rather than re-derived from meta,
+            # since it is exactly what `compose start` is about to run.
+            compose_file = root / "docker-compose.yml"
+            if (
+                compose_file.exists()
+                and "liferay-search-global" in compose_file.read_text(errors="replace")
+                and not self.manager.infra.ensure_global_search_started(
+                    target_name=target_name, fatal=not all_projects
+                )
+            ):
+                failures.append(root.name)
+                continue
+
             with ProjectLock(root):
                 if clean_state:
                     UI.detail(
