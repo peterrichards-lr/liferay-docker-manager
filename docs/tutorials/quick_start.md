@@ -8,6 +8,7 @@ See the specific installation guides for your OS.
   - [Native Docker Engine](https://docs.docker.com/engine/install/) (Linux)
 - **Docker Compose**: **v2 (Plugin)** is mandatory. Legacy v1 standalone is not supported. _(Note: Docker Desktop includes Docker Compose automatically)._
 - **Resources**: Recommended **4 CPUs and 8GB RAM** allocated to Docker.
+  - _Note_: that is enough for one project. Running two Liferay projects side by side needs about **16GB** (LDM-#2320).
   - _Note_: `ldm doctor` expects these minimums. If you allocate exactly 8GB, Docker may report ~7.7GB due to system overhead; the tool accounts for this by allowing a 7.5GB threshold.
 - **Python**: 3.10+ (required for source installations and for macOS/Linux standalone binaries, as they are packaged as ZipApps. Not required for Windows standalone binaries).
 
@@ -181,7 +182,7 @@ on the **WSL2 backend** and the sliders will do nothing.
 | Docker Desktop, **WSL2** (the Windows default) | `%UserProfile%\.wslconfig` |
 | Docker Desktop, Hyper-V | Settings → Resources sliders |
 | Docker Desktop, macOS | Settings → Resources sliders |
-| Colima | `colima stop && colima start --cpu 4 --memory 8` |
+| Colima | `colima stop && colima start --cpu 4 --memory 8` (Colima keeps this size for later starts) |
 
 ### Windows with the WSL2 backend
 
@@ -499,31 +500,69 @@ function shutdown() {
 trap shutdown SIGTERM
 trap shutdown SIGINT
 
-# 3. Detect Architecture and Set Optimized Parameters
+# 3. VM size. Used only the FIRST time, when no Colima VM exists yet. After
+#    that Colima keeps the size of your last deliberate
+#    `colima start --cpu N --memory N` in colima.yaml, and this script leaves
+#    it alone -- passing a size here on every login would silently undo any
+#    resize (LDM-#2320). Two Liferay projects side by side need about 16 GB.
+COLIMA_CPU=4
+COLIMA_MEMORY=8
+COLIMA_HOME="${COLIMA_HOME:-$HOME/.colima}"
+SIZE_ARGS=""
+if [ ! -f "$COLIMA_HOME/default/colima.yaml" ]; then
+    SIZE_ARGS="--cpu $COLIMA_CPU --memory $COLIMA_MEMORY"
+fi
+
+# 4. Detect Architecture and Set Optimized Parameters
 ARCH=$(uname -m)
 if [[ "$ARCH" == "arm64" ]]; then
     # Apple Silicon (M1/M2/M3)
     # Optimized for vz/virtiofs
-    START_CMD="colima start --cpu 4 --memory 8 --vm-type=vz --mount-type=virtiofs --mount $HOME:w --mount /Volumes:w"
+    START_CMD="colima start $SIZE_ARGS --vm-type=vz --mount-type=virtiofs --mount $HOME:w --mount /Volumes:w"
 else
     # Intel Mac
     # Optimized for sshfs (virtiofs requires macOS 14+ on Intel)
-    START_CMD="colima start --cpu 2 --memory 6 --mount-type sshfs --mount $HOME:w"
+    START_CMD="colima start $SIZE_ARGS --mount-type sshfs --mount $HOME:w"
 fi
 
-# 4. The Start/Monitor Loop
+# 5. Stale PID files. After a crash and a reboot, Lima's ha.pid and vz.pid can
+#    name a PID macOS has since given to an unrelated process. Lima then takes
+#    the VM for alive and every start fails. Remove a pid file only when its PID
+#    is NOT a limactl process -- never kill anything (LDM-#2320).
+clear_stale_pid_files() {
+    local dir="$COLIMA_HOME/_lima/colima" f pid
+    for f in ha.pid vz.pid; do
+        [ -f "$dir/$f" ] || continue
+        pid=$(cat "$dir/$f")
+        if ! ps -p "$pid" -o command= 2>/dev/null | grep -q limactl; then
+            echo "Removing stale $f (PID $pid is not a Lima process)"
+            rm -f "$dir/$f"
+            [ "$f" = "ha.pid" ] && rm -f "$dir/ha.sock"
+        fi
+    done
+}
+
+# 6. The Start/Monitor Loop
+ATTEMPTS=0
 while true; do
   colima status &>/dev/null
   if [[ $? -eq 0 ]]; then
     break;
   fi
 
-  # Execute the detected start command
+  clear_stale_pid_files
   $START_CMD
-  sleep 5
+  ATTEMPTS=$((ATTEMPTS + 1))
+  if [[ $ATTEMPTS -ge 5 ]]; then
+    # Keep trying, but slowly, and say why.
+    echo "Colima has failed to start $ATTEMPTS times. Run 'colima start' in a terminal to see the error."
+    sleep 60
+  else
+    sleep 5
+  fi
 done
 
-# 5. Keep alive for launchd
+# 7. Keep alive for launchd
 tail -f /dev/null &
 wait $!
 ```
@@ -693,4 +732,4 @@ LDM binaries use **"Magic Byte" detection** to accurately report their checksum 
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-14* | *Last Reviewed: 2026-10-14*
+*Last Updated: 2026-11-10* | *Last Reviewed: 2026-11-10*
