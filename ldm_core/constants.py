@@ -2,8 +2,8 @@ import os
 from pathlib import Path
 
 # --- Constants & Configuration ---
-# LDM_MAGIC_VERSION: 2.26.7
-VERSION = "2.26.7"
+# LDM_MAGIC_VERSION: 2.26.8
+VERSION = "2.26.8"
 
 # Release commit v2.11.30
 
@@ -102,6 +102,34 @@ PIP_INSTALL_TIMEOUT = 600  # 10 min -- plugin/completion dependency installs
 RELEASE_ANNOUNCEMENTS = {
     # LDM-#1663: a patch needs its OWN key, or the banner falls back to the
     # minor series and re-prints highlights the user has already seen.
+    "2.26.8": [
+        (
+            "Restoring a snapshot no longer touches another project's search",
+            "A restore brought back the search settings of the project that "
+            "took the snapshot, and a project's search operations also "
+            "matched any project whose name started with its own. Either "
+            "could empty another project's search index. Both are fixed, "
+            "for snapshots, restores and 'ldm reset global-search'.",
+        ),
+        (
+            "ldm fork works",
+            "Every fork failed, and the copy kept the source's identity. A "
+            "fork now gets its own UUID, container, index prefix and root, "
+            "and says which search settings it dropped.",
+        ),
+        (
+            "jvm_tiered_stop_at_level=false works on macOS and Windows",
+            "The flag was always on there, slowing authenticated headless "
+            "requests by about 1.7 seconds each. Run 'ldm stop' and then "
+            "'ldm run' to apply it to a running project.",
+        ),
+        (
+            "Windows upgrades run in their own window",
+            "The updater no longer shares the PowerShell console, reports "
+            "what it is doing, and no longer kills other ldm.exe processes. "
+            "On macOS and Linux, old builds in ~/.shiv are cleaned up.",
+        ),
+    ],
     "2.26.7": [
         (
             "Settings LDM prepares for Liferay now reach it",
