@@ -592,6 +592,8 @@ Manage the lifecycle of a project or a specific service.
 
 > [!NOTE]
 > The `start` command simply boots existing containers without running configuration or network scaffolding -- it never creates a container. If a project does not exist, `start` will immediately fail and recommend `ldm run`. The same applies if the project exists (its `meta` and volumes are intact) but its containers were removed directly, e.g. via `docker rm` (LDM-#1870, reported as `Not Created` by `ldm list`): rather than letting the underlying `docker compose start` fail with its own internal wording about a service it never named, `ldm start` refuses up front and names `ldm run`, which recreates the containers from the existing volumes without losing data.
+>
+> For a project that uses **shared search**, `ldm start` also starts the `liferay-search-global` container when it is stopped, and waits for its cluster to be at least yellow before starting Liferay (LDM-#2319). Compose cannot do this itself: the project's compose file refers to shared search only in Liferay's settings, not as a dependency. This matters after a Docker VM restart, which stops every container. If the shared search container does not exist at all, `ldm start` refuses and names `ldm run`, which provisions it. It never recreates shared search itself, because that path can delete every project's search data.
 
 ```bash
 ldm start [project] [service]     # Start existing containers
@@ -809,4 +811,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-23* | *Last Reviewed: 2026-10-23*
+*Last Updated: 2026-11-10* | *Last Reviewed: 2026-11-10*
