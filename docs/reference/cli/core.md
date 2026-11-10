@@ -236,7 +236,10 @@ Initialize project scaffolding (creating `.liferay-docker.meta`, `portal-ext.pro
 
 ```bash
 ldm init my-project --tag 2024.q4.0 --db mysql
+ldm init my-project --tag-prefix 2026.q3   # newest 2026.q3 tag (LDM-#2168)
 ```
+
+`--tag`, `--tag-latest` and `--tag-prefix` resolve exactly as they do for `run`. `--tag-prefix` was missing from `init` until LDM-#2168.
 
 ### External Database Integration
 

@@ -1015,6 +1015,8 @@ def get_parser():  # noqa: PLR0915
         action="store_true",
         help="Automatically use the latest Liferay tag",
     )
+    # LDM-#2168: every other project-creating command had this.
+    init.add_argument("--tag-prefix", help="Prefix for Liferay tag discovery")
     init.add_argument("--host-name", help="Virtual Hostname")
     init.add_argument(
         "--db",
