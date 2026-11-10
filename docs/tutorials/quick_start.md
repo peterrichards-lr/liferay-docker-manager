@@ -239,6 +239,16 @@ overhead — `memory=10GB` showed as 9.7 GB and `memory=11GB` as 10.7 GB. Since
 the tier is derived from the reported figure, the difference can be a whole
 gigabyte of heap.
 
+`ldm doctor` shows this directly. Its `Docker Memory` line names the heap the
+allocation buys and, below a tier boundary, what the next tier would give
+(LDM-#2190). Both figures come from the same calculation that sizes the JVM:
+
+```text
+Docker Memory    ✅  7.6 GB (Liferay heap 3 GB; above 8 GB gives 4 GB)
+```
+
+The tick still means only that the minimum is met.
+
 **Measured**, same Windows 11 machine, same Liferay tag, same cached seed:
 
 | `.wslconfig` | Docker reports | `-Xmx` | Time to `Liferay ready` |
