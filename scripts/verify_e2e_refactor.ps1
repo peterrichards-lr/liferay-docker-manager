@@ -167,6 +167,7 @@ $SSHFAIL_TEST_PROJ = "sshfail-proj-${TEST_PORT}"
 $PORTCONFLICT_PROJ = "portconflict-${TEST_PORT}"
 $PORT_HOLDER = "ldm-e2e-port-holder-${TEST_PORT}"
 $LDMP_REFUSAL_PROJECT = "ldmp-refusal-${TEST_PORT}"
+$PORTLESS_PROJECT = "portless-redirect-${TEST_PORT}"
 # LDM-#2131: the round trip's project, named here so the finalizer can
 # remove it if the run is killed part-way. Its PACKAGE directory is named
 # further down, immediately after $LDM_WORKSPACE exists -- see LDM-#2197.
@@ -694,6 +695,12 @@ function Remove-Ldm1383Artifacts {
     # that cleanup. Nothing is created when the control is working.
     Invoke-Cleanup $LDM_CMD "-y rm $LDMP_REFUSAL_PROJECT --delete"
     foreach ($stale in @((Join-Path $LDM_WORKSPACE $LDMP_REFUSAL_PROJECT), (Join-Path $LDM_WORKSPACE ".ldm_temp"))) {
+        if (Test-Path $stale) { Remove-Item -Recurse -Force $stale -ErrorAction SilentlyContinue }
+    }
+    # LDM-#2175: Test-PortlessRedirectRewrite removes its own project; this is
+    # for a run killed part-way through it.
+    Invoke-Cleanup $LDM_CMD "-y rm $PORTLESS_PROJECT --delete"
+    foreach ($stale in @((Join-Path $LDM_WORKSPACE $PORTLESS_PROJECT), (Join-Path $LDM_WORKSPACE "$PORTLESS_PROJECT-cx-src"))) {
         if (Test-Path $stale) { Remove-Item -Recurse -Force $stale -ErrorAction SilentlyContinue }
     }
     # LDM-#2131: parity with cleanup_1383_artifacts in the bash half. A run
@@ -2828,6 +2835,126 @@ with tarfile.open(out, 'w:gz') as tar:
     return @{ Ok = $true; Message = "[SUCCESS] Unparseable .ldmp manifest refused (${Shape}; exit 1, before any project was created)." }
 }
 
+# LDM-#2175 / #2264: a portless localhost OAuth redirect is rewritten.
+#
+# The rewriter's guard accepted any URI containing 'localhost' while its
+# substitution required 'localhost:<digits>', so 'http://localhost/...' was
+# admitted and returned unchanged -- silently, and without the buildTimestamp
+# bump that forces Liferay to re-read the block. The fix makes the port
+# optional.
+#
+# Asserts only that the redirect now carries A port. Which port is a separate
+# question, and not the one #2175 answered.
+#
+# Its own throwaway project, written from a meta file and never booted, so it
+# cannot change the extension set the main project's assertions count.
+# Measured at ~6s per 'run --no-up', with no image pull.
+#
+# Parity with verify_portless_redirect_rewrite in verify_e2e_refactor.sh.
+function Test-PortlessRedirectRewrite {
+    param(
+        [string]$LdmCmd,
+        [string]$VenvPython,
+        [string]$WorkDir,
+        [string]$ProjectName
+    )
+
+    $projDir = Join-Path $WorkDir $ProjectName
+    $srcRoot = Join-Path $WorkDir "$ProjectName-cx-src"
+    $cxName = "e2e-portless-oauth"
+    $cxSrc = Join-Path $srcRoot $cxName
+    $deployed = Join-Path $projDir "osgi/client-extensions/$cxName.zip"
+    $fail = ""
+
+    foreach ($stale in @($projDir, $srcRoot)) {
+        if (Test-Path $stale) { Remove-Item -Recurse -Force $stale -ErrorAction SilentlyContinue }
+    }
+    New-Item -ItemType Directory -Force -Path $projDir, $cxSrc | Out-Null
+
+    $env:LDM_E2E_PROJ_DIR = $projDir
+    $env:LDM_E2E_PROJ_NAME = $ProjectName
+    $env:LDM_E2E_CX_SRC = $cxSrc
+    $env:LDM_E2E_CX_NAME = $cxName
+    # Written by Python rather than Set-Content: Windows PowerShell 5.1 writes
+    # a BOM with -Encoding UTF8, and the fixture must be byte-identical to the
+    # bash half's.
+    & $VenvPython -c @"
+import json, os, shutil
+proj, cx_src, cx = os.environ['LDM_E2E_PROJ_DIR'], os.environ['LDM_E2E_CX_SRC'], os.environ['LDM_E2E_CX_NAME']
+with open(os.path.join(proj, 'meta'), 'w', encoding='utf-8', newline='\n') as fh:
+    fh.write(json.dumps({'tag': '2026.q1.7-lts', 'container_name': os.environ['LDM_E2E_PROJ_NAME'],
+                         'port': 8095, 'db_type': 'hypersonic'}) + '\n')
+with open(os.path.join(cx_src, 'client-extension.yaml'), 'w', encoding='utf-8', newline='\n') as fh:
+    fh.write(cx + ':\n'
+             '    homePageURL: http://localhost\n'
+             '    name: E2E Portless OAuth\n'
+             '    redirectURIs:\n'
+             '        - http://localhost/o/oauth2/redirect\n'
+             '    type: oAuthApplicationUserAgent\n')
+with open(os.path.join(cx_src, 'LCP.json'), 'w', encoding='utf-8', newline='\n') as fh:
+    fh.write('{\n    "id": "e2eportlessoauth",\n    "kind": "Deployment"\n}\n')
+shutil.make_archive(os.path.join(proj, cx), 'zip', cx_src)
+"@
+    $buildCode = $LASTEXITCODE
+    foreach ($name in @("LDM_E2E_PROJ_DIR", "LDM_E2E_PROJ_NAME", "LDM_E2E_CX_SRC", "LDM_E2E_CX_NAME")) {
+        Remove-Item "Env:$name" -ErrorAction SilentlyContinue
+    }
+
+    if ($buildCode -ne 0) {
+        $fail = "could not build the fixture"
+    } else {
+        & $VenvPython (Join-Path $PSScriptRoot "check_cx_fixture_realism.py") $cxName $cxSrc *> $null
+        if ($LASTEXITCODE -ne 0) { $fail = "the fixture is not shaped like a real client extension (LDM-#1975)" }
+    }
+
+    $prev = Get-Location
+    Set-Location $projDir
+    try {
+        if (-not $fail) {
+            & $LdmCmd -y run . --no-up --no-seed *> $null
+            if ($LASTEXITCODE -ne 0) { $fail = "'ldm run --no-up' failed on the throwaway project" }
+        }
+        if (-not $fail) {
+            & $LdmCmd -y deploy . "$cxName.zip" *> $null
+            if ($LASTEXITCODE -ne 0) { $fail = "'ldm deploy' refused the fixture" }
+        }
+        if (-not $fail) {
+            & $LdmCmd -y run . --no-up --no-seed *> $null
+            if ($LASTEXITCODE -ne 0) { $fail = "'ldm run --no-up' failed after the deploy" }
+        }
+    } finally {
+        Set-Location $prev
+    }
+
+    $redirects = @()
+    if (-not $fail) {
+        $env:LDM_E2E_DEPLOYED = $deployed
+        $redirects = @(& $VenvPython -c @"
+import os, zipfile
+text = zipfile.ZipFile(os.environ['LDM_E2E_DEPLOYED']).read('client-extension.yaml').decode()
+print('\n'.join(l.strip().lstrip('-').strip() for l in text.splitlines() if '/o/oauth2/redirect' in l))
+"@ 2>&1 | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
+        if ($LASTEXITCODE -ne 0) { $fail = "could not read ${deployed}: $($redirects -join ' ')" }
+        Remove-Item Env:LDM_E2E_DEPLOYED -ErrorAction SilentlyContinue
+    }
+
+    Set-Location $WorkDir
+    try { & $LdmCmd -y rm $ProjectName --delete *> $null } finally { Set-Location $prev }
+    foreach ($stale in @($projDir, $srcRoot)) {
+        if (Test-Path $stale) { Remove-Item -Recurse -Force $stale -ErrorAction SilentlyContinue }
+    }
+
+    if ($fail) {
+        return @{ Ok = $false; Message = "[ERROR] ERROR: portless redirect check could not run: $fail (LDM-#2175)." }
+    }
+    $rewritten = @($redirects | Where-Object { $_ -cmatch '^http://localhost:[0-9]+/o/oauth2/redirect$' })
+    if ($rewritten.Count -eq 0) {
+        $shown = if ($redirects.Count) { $redirects -join ', ' } else { "<none>" }
+        return @{ Ok = $false; Message = "[ERROR] ERROR: the portless OAuth redirect was not rewritten -- deployed value(s): $shown (LDM-#2175)." }
+    }
+    return @{ Ok = $true; Message = "[SUCCESS] Portless OAuth redirect rewritten on deploy: http://localhost/o/oauth2/redirect -> $($rewritten -join ', ') (LDM-#2175)." }
+}
+
 function Log-AndRun {
     param($msg, $cmd, $args_list)
     Write-Host ">> $msg"
@@ -3185,6 +3312,15 @@ try {
         Write-Verdict $ldmpHtmlRefusal.Message
     } else {
         Write-TrapNote $ldmpHtmlRefusal.Message -Color Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying a portless localhost OAuth redirect is rewritten (LDM-#2175)..."
+    $portless = Test-PortlessRedirectRewrite -LdmCmd $LDM_CMD -VenvPython $VENV_PYTHON -WorkDir $LDM_WORKSPACE -ProjectName $PORTLESS_PROJECT
+    if ($portless.Ok) {
+        Write-Verdict $portless.Message
+    } else {
+        Write-TrapNote $portless.Message -Color Red
         exit 1
     }
 
@@ -7079,6 +7215,41 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
         Write-FailureDebugLogs -Containers @(
             $ROUNDTRIP_PROJECT, "$ROUNDTRIP_PROJECT-db",
             "$ROUNDTRIP_PROJECT-derivedsvc", "$ROUNDTRIP_PROJECT-syntheticsvc")
+    }
+
+    # LDM-#2118 / #2131: 'ldm reset <project> all' removes the database volume.
+    #
+    # Before #2118 it reported success and left '<project>-db-db-data' behind,
+    # so the next start booted the old data. The round-trip project is the one
+    # place this is cheap: it is disposable, and it has just booted its own
+    # PostgreSQL, so the volume is real rather than staged. Placed AFTER the
+    # state capture above, because the reset tears the stack down.
+    #
+    # Only when the round trip passed. No volume means there is nothing to
+    # assert, which is reported as SKIPPED, never as a pass.
+    #
+    # Parity with the LDM-#2118 block in verify_e2e_refactor.sh.
+    if ($roundTripOk) {
+        $resetVolume = "$ROUNDTRIP_PROJECT-db-db-data"
+        $volBefore = (docker volume ls -q -f "name=^$resetVolume$" 2>$null | Out-String).Trim()
+        if (-not $volBefore) {
+            Write-Verdict "[SKIPPED] (not run) $resetVolume does not exist, so 'ldm reset all' was NOT evaluated. This is not a pass (LDM-#2118)."
+        } else {
+            $rtResetRaw = & $LDM_CMD -y reset $ROUNDTRIP_PROJECT all 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Verdict "[ERROR] 'ldm reset $ROUNDTRIP_PROJECT all' failed (LDM-#2118)."
+                Write-RoundTripOutput -Label "ldm reset" -Raw $rtResetRaw
+                $roundTripOk = $false
+            } else {
+                $volAfter = (docker volume ls -q -f "name=^$resetVolume$" 2>$null | Out-String).Trim()
+                if ($volAfter) {
+                    Write-Verdict "[ERROR] 'ldm reset $ROUNDTRIP_PROJECT all' reported success and left the database volume $resetVolume (LDM-#2118)."
+                    $roundTripOk = $false
+                } else {
+                    Write-Verdict "[SUCCESS] 'ldm reset all' removed the database volume $resetVolume (LDM-#2118)."
+                }
+            }
+        }
     }
 
     # Removed whether or not it passed: ~1 GB per run, across six environments.
