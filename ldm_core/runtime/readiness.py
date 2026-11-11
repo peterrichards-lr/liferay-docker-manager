@@ -140,6 +140,23 @@ def select_new_errors(error_lines: list[str], seen_errors: set[str]) -> list[str
     return selected
 
 
+def allocation_summary(allocation: dict | None) -> dict | None:
+    """`docker_allocation()` in GB, for the status file and `--benchmark` (LDM-#2172)."""
+    if not allocation:
+        return None
+
+    def gb(key):
+        value = allocation.get(key)
+        return round(value / (1024**3), 1) if value else None
+
+    return {
+        "cpus": allocation.get("docker_cpus"),
+        "memory_gb": gb("docker_memory_bytes"),
+        "host_memory_gb": gb("host_memory_bytes"),
+        "sizing_memory_gb": gb("sizing_memory_bytes"),
+    }
+
+
 def write_startup_status(
     status_file,
     status: str,
@@ -147,6 +164,7 @@ def write_startup_status(
     elapsed: float,
     latest_milestone: str | None = None,
     pre_readiness: float | None = None,
+    allocation: dict | None = None,
 ) -> None:
     """Record what the boot is doing, or what it ended as (LDM-#2187).
 
@@ -185,6 +203,10 @@ def write_startup_status(
             "pre_readiness_seconds": (
                 round(pre_readiness, 1) if pre_readiness is not None else None
             ),
+            # LDM-#2172: a timing cannot be compared across machines without
+            # the allocation beside it. These are the figures the heap was
+            # sized from (`ComposerService.docker_allocation`).
+            "docker_allocation": allocation_summary(allocation),
             # So a reader can tell a file written a minute ago from one written
             # last week. `elapsed_seconds` alone cannot answer that.
             "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -238,6 +260,7 @@ def format_startup_phases(
     milestone_seconds: dict[str, float],
     total: float,
     pre_readiness: float | None = None,
+    allocation: dict | None = None,
 ) -> list[str]:
     """The boot as a timeline of phases, longest-pole visible.
 
@@ -283,6 +306,15 @@ def format_startup_phases(
         )
         lines.append(
             f"  {title.ljust(title_width)}  +{gap.rjust(gap_width)}{reached_at}"
+        )
+    summary = allocation_summary(allocation)
+    if summary:
+        # LDM-#2172: the heap is sized from `sizing_memory_gb`, so a slow boot
+        # can be placed against the 8 GB tier boundary without guessing.
+        lines.append(
+            f"Docker allocation: {summary['cpus'] or '?'} CPUs, "
+            f"{summary['memory_gb'] or '?'} GB "
+            f"(heap sized from {summary['sizing_memory_gb'] or '?'} GB)"
         )
     return lines
 
@@ -747,6 +779,10 @@ class ReadinessService(BaseHandler):
         status_file = (
             root_path / ".liferay-docker" / "startup-status.json" if root_path else None
         )
+        # LDM-#2172: read once, from the function the heap sizing reads.
+        allocation = None
+        with contextlib.suppress(Exception):
+            allocation = self.manager.composer.docker_allocation(target_name)
 
         # LDM-#2169: the elapsed time at which each milestone was FIRST seen.
         # This used to be a set, and the status file carried a single
@@ -928,6 +964,7 @@ class ReadinessService(BaseHandler):
                                 reached_milestones,
                                 elapsed,
                                 latest_milestone,
+                                allocation=allocation,
                             )
                 except Exception as e:
                     UI.detail(f"Warning checking log milestones: {e}")
@@ -1155,6 +1192,7 @@ class ReadinessService(BaseHandler):
                             reached_milestones,
                             duration_total,
                             pre_readiness=pre_readiness,
+                            allocation=allocation,
                         ):
                             # UI.raw, NOT UI.detail. `detail` prints only under
                             # `--info`/`--verbose` (LDM-#1036), so the first
@@ -1310,6 +1348,7 @@ class ReadinessService(BaseHandler):
                         reached_milestones,
                         duration_total,
                         pre_readiness=pre_readiness,
+                        allocation=allocation,
                     )
                     return True
 
@@ -1319,7 +1358,11 @@ class ReadinessService(BaseHandler):
                 )
                 if container_state == "exited":
                     write_startup_status(
-                        status_file, "failed", reached_milestones, elapsed
+                        status_file,
+                        "failed",
+                        reached_milestones,
+                        elapsed,
+                        allocation=allocation,
                     )
                     if self._report_oom_kill(container_name, target_name):
                         return False
@@ -1331,9 +1374,17 @@ class ReadinessService(BaseHandler):
                 time.sleep(5)  # Shorter sleep for more responsive status checks
 
         if self._report_oom_kill(container_name, target_name):
-            write_startup_status(status_file, "failed", reached_milestones, elapsed)
+            write_startup_status(
+                status_file,
+                "failed",
+                reached_milestones,
+                elapsed,
+                allocation=allocation,
+            )
             return False
 
-        write_startup_status(status_file, "timeout", reached_milestones, elapsed)
+        write_startup_status(
+            status_file, "timeout", reached_milestones, elapsed, allocation=allocation
+        )
         UI.error("\nTimed out waiting for Liferay to become healthy.")
         return False
