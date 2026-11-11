@@ -29,6 +29,7 @@ SSHFAIL_TEST_PROJ="sshfail-proj-${TEST_PORT}"
 PORTCONFLICT_PROJ="portconflict-${TEST_PORT}"
 PORT_HOLDER="ldm-e2e-port-holder-${TEST_PORT}"
 LDMP_REFUSAL_PROJECT="ldmp-refusal-${TEST_PORT}"
+PORTLESS_PROJECT="portless-redirect-${TEST_PORT}"
 CLOUD_IMPORT_PROJECT="cloud-import-${TEST_PORT}"
 CLOUD_NOID_PROJECT="cloud-noid-${TEST_PORT}"
 PRODUCT_PIN_PROJECT="product-pin-${TEST_PORT}"
@@ -533,6 +534,10 @@ cleanup_1383_artifacts() {
     # and that cleanup. Nothing is created when the control is working.
     "$LDM_CMD" -y rm "$LDMP_REFUSAL_PROJECT" --delete >/dev/null 2>&1 || true
     rm -rf "${LDM_WORKSPACE:?}/${LDMP_REFUSAL_PROJECT}" "${LDM_WORKSPACE:?}/.ldm_temp"
+    # LDM-#2175: verify_portless_redirect_rewrite removes its own project; this
+    # is for a run killed part-way through it.
+    "$LDM_CMD" -y rm "$PORTLESS_PROJECT" --delete >/dev/null 2>&1 || true
+    rm -rf "${LDM_WORKSPACE:?}/${PORTLESS_PROJECT}" "${LDM_WORKSPACE:?}/${PORTLESS_PROJECT}-cx-src"
     # LDM-#2131: the round trip's own artefacts. The package is ~1 GB, so a
     # run killed between packing and the teardown below would leave a
     # gigabyte behind on a machine that may already be short of space.
@@ -1734,6 +1739,83 @@ verify_workspace_product_pin() {
 
     echo "✅ Workspace product pin verified: a mismatch warns and proceeds, an explicit -t and an agreeing pin stay silent (LDM-#1658)."
     return 0
+}
+
+# LDM-#2175 / #2264: a portless localhost OAuth redirect is rewritten.
+#
+# The rewriter's guard accepted any URI containing `localhost` while its
+# substitution required `localhost:<digits>`, so `http://localhost/...` was
+# admitted and returned unchanged -- silently, and without the buildTimestamp
+# bump that forces Liferay to re-read the block. The fix makes the port
+# optional.
+#
+# Asserts only that the redirect now carries A port. Which port is a separate
+# question, and not the one #2175 answered.
+#
+# Its own throwaway project, written from a meta file and never booted, so it
+# cannot change the extension set the main project's assertions count.
+# Measured at ~6s per `run --no-up`, with no image pull.
+verify_portless_redirect_rewrite() {
+    local ldm_cmd="$1"
+    local work_dir="$2"
+    local project_name="$3"
+
+    local proj_dir="${work_dir}/${project_name}"
+    local cx_name="e2e-portless-oauth"
+    local cx_src="${work_dir}/${project_name}-cx-src/${cx_name}"
+    local deployed="${proj_dir}/osgi/client-extensions/${cx_name}.zip"
+    local fail=""
+
+    rm -rf "$proj_dir" "${work_dir:?}/${project_name}-cx-src"
+    mkdir -p "$proj_dir" "$cx_src"
+    printf '{"tag": "2026.q1.7-lts", "container_name": "%s", "port": 8095, "db_type": "hypersonic"}\n' \
+        "$project_name" > "${proj_dir}/meta"
+
+    printf '%s\n' "${cx_name}:" \
+        '    homePageURL: http://localhost' \
+        '    name: E2E Portless OAuth' \
+        '    redirectURIs:' \
+        '        - http://localhost/o/oauth2/redirect' \
+        '    type: oAuthApplicationUserAgent' > "${cx_src}/client-extension.yaml"
+    printf '{\n    "id": "e2eportlessoauth",\n    "kind": "Deployment"\n}\n' > "${cx_src}/LCP.json"
+
+    if ! assert_cx_fixture_realistic "$cx_name" "$cx_src" >/dev/null; then
+        fail="the fixture is not shaped like a real client extension (LDM-#1975)"
+    elif ! "$VENV_PYTHON" -c "
+import shutil, sys
+shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])
+" "${proj_dir}/${cx_name}" "$cx_src"; then
+        fail="could not zip the fixture"
+    elif ! (cd "$proj_dir" && "$ldm_cmd" -y run . --no-up --no-seed >/dev/null 2>&1); then
+        fail="'ldm run --no-up' failed on the throwaway project"
+    elif ! (cd "$proj_dir" && "$ldm_cmd" -y deploy . "${cx_name}.zip" >/dev/null 2>&1); then
+        fail="'ldm deploy' refused the fixture"
+    elif ! (cd "$proj_dir" && "$ldm_cmd" -y run . --no-up --no-seed >/dev/null 2>&1); then
+        fail="'ldm run --no-up' failed after the deploy"
+    fi
+
+    local redirects=""
+    if [ -z "$fail" ]; then
+        redirects=$("$VENV_PYTHON" -c "
+import sys, zipfile
+text = zipfile.ZipFile(sys.argv[1]).read('client-extension.yaml').decode()
+print('\n'.join(l.strip().lstrip('-').strip() for l in text.splitlines()
+                 if '/o/oauth2/redirect' in l))
+" "$deployed" 2>&1) || fail="could not read ${deployed}: ${redirects}"
+    fi
+
+    (cd "$work_dir" && "$ldm_cmd" -y rm "$project_name" --delete >/dev/null 2>&1) || true
+    rm -rf "${proj_dir:?}" "${work_dir:?}/${project_name}-cx-src"
+
+    if [ -n "$fail" ]; then
+        echo "❌ ERROR: portless redirect check could not run: ${fail} (LDM-#2175)."
+        return 1
+    fi
+    if ! printf '%s\n' "$redirects" | grep -qE '^http://localhost:[0-9]+/o/oauth2/redirect$'; then
+        echo "❌ ERROR: the portless OAuth redirect was not rewritten -- deployed value(s): ${redirects:-<none>} (LDM-#2175)."
+        return 1
+    fi
+    echo "✅ Portless OAuth redirect rewritten on deploy: http://localhost/o/oauth2/redirect -> ${redirects} (LDM-#2175)."
 }
 
 verify_ldmp_manifest_refusal() {
@@ -3234,6 +3316,14 @@ if LDMP_HTML_REFUSAL_OUT=$(verify_ldmp_manifest_refusal "$LDM_CMD" "$LDM_WORKSPA
     report_ok "$LDMP_HTML_REFUSAL_OUT"
 else
     echo "$LDMP_HTML_REFUSAL_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying a portless localhost OAuth redirect is rewritten (LDM-#2175)..."
+if PORTLESS_OUT=$(verify_portless_redirect_rewrite "$LDM_CMD" "$LDM_WORKSPACE" "$PORTLESS_PROJECT"); then
+    report_ok "$PORTLESS_OUT"
+else
+    echo "$PORTLESS_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
 
@@ -7072,6 +7162,32 @@ if [ "$ROUNDTRIP_OK" != true ]; then
     capture_container_diagnostics \
         "${ROUNDTRIP_PROJECT}" "${ROUNDTRIP_PROJECT}-db" \
         "${ROUNDTRIP_PROJECT}-derivedsvc" "${ROUNDTRIP_PROJECT}-syntheticsvc"
+fi
+
+# LDM-#2118 / #2131: `ldm reset <project> all` removes the database volume.
+#
+# Before #2118 it reported success and left `<project>-db-db-data` behind, so
+# the next start booted the old data. The round-trip project is the one place
+# this is cheap: it is disposable, and it has just booted its own PostgreSQL,
+# so the volume is real rather than staged. Placed AFTER the state capture
+# above, because the reset tears the stack down.
+#
+# Only when the round trip passed. No volume means there is nothing to
+# assert, which is reported as SKIPPED, never as a pass.
+if [ "$ROUNDTRIP_OK" = true ]; then
+    RESET_VOLUME="${ROUNDTRIP_PROJECT}-db-db-data"
+    if [ -z "$(docker volume ls -q -f "name=^${RESET_VOLUME}$")" ]; then
+        echo "⚠️  SKIPPED (not run): ${RESET_VOLUME} does not exist, so 'ldm reset all' was NOT evaluated. This is not a pass (LDM-#2118)." | tee -a "$RESULTS_FILE_TMP"
+    elif ! RESET_OUT=$("$LDM_CMD" -y reset "$ROUNDTRIP_PROJECT" all 2>&1); then
+        echo "❌ ERROR: 'ldm reset ${ROUNDTRIP_PROJECT} all' failed (LDM-#2118)." | tee -a "$RESULTS_FILE_TMP"
+        printf '%s\n' "--- what 'ldm reset' said ---" "$RESET_OUT" "--- end ---" | tee -a "$RESULTS_FILE_TMP"
+        ROUNDTRIP_OK=false
+    elif [ -n "$(docker volume ls -q -f "name=^${RESET_VOLUME}$")" ]; then
+        echo "❌ ERROR: 'ldm reset ${ROUNDTRIP_PROJECT} all' reported success and left the database volume ${RESET_VOLUME} (LDM-#2118)." | tee -a "$RESULTS_FILE_TMP"
+        ROUNDTRIP_OK=false
+    else
+        report_ok "✅ 'ldm reset all' removed the database volume ${RESET_VOLUME} (LDM-#2118)."
+    fi
 fi
 
 # Removed whether or not it passed: ~1 GB per run, across six environments.
