@@ -3220,6 +3220,18 @@ def _memory_buys(mem_gb):
     return text + ")"
 
 
+def _is_wsl2_backend(info):
+    """Docker's VM is WSL2's, so `.wslconfig` sets its allocation (LDM-#2176).
+
+    Read from `docker info` rather than from the platform: LDM running in
+    Windows PowerShell reports `Windows`, and `is_wsl` is only set when LDM runs
+    INSIDE a WSL distro. The engine's kernel names WSL2 either way -- measured
+    on Docker Desktop from PowerShell: `6.18.58.1-microsoft-standard-WSL2`.
+    """
+    kernel = str(info.get("KernelVersion", "")).lower()
+    return "microsoft" in kernel and "wsl2" in kernel
+
+
 def _check_docker_resources(self, docker_info_raw):
     """Checks Docker host CPU and Memory resources."""
     try:
@@ -3249,7 +3261,16 @@ def _check_docker_resources(self, docker_info_raw):
         elif mem_gb < 7.5:
             mem_ok = "warn"
         results.append(("Docker Memory", _memory_buys(mem_gb), mem_ok))
-        if mem_ok is not True:
+        if mem_ok is not True and _is_wsl2_backend(info):
+            # The Docker Desktop slider is greyed out on this backend.
+            UI.raw(
+                f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Hint: Docker runs on WSL2, so its memory is set in "
+                f"%UserProfile%\\.wslconfig: add 'memory=' under [wsl2], then run 'wsl --shutdown'."
+            )
+            UI.raw(
+                f"    Doc: {UI.CYAN}https://github.com/peterrichards-lr/liferay-docker-manager/blob/master/docs/tutorials/quick_start.md#windows-with-the-wsl2-backend{UI.COLOR_OFF}"
+            )
+        elif mem_ok is not True:
             UI.raw(
                 f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Hint: Allocate more RAM in your Docker provider settings."
             )
