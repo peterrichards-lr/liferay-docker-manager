@@ -614,6 +614,12 @@ ldm system prune -y --images     # unused images and build cache
 
 On macOS with OrbStack or Colima, Docker's disk lives inside a VM: what Elasticsearch sees is the VM's disk limit, or the Mac's free space for a dynamically sized disk.
 
+### **"Global Search keeps an auto-create entry for N project(s) no longer registered"**
+
+Liferay, not LDM, writes a persistent `action.auto_create_index` cluster setting on the shared search node. It holds one `-ldm-<project>-*` entry per project, which stops a stray write from auto-creating an index with the wrong mappings. That entry is correct while the project exists.
+
+`ldm rm --delete` removes the deleted project's entry. Entries left by projects deleted before that, or deleted by hand, stay behind. They are harmless today: they only block automatic index creation for a prefix nothing uses any more. `ldm doctor` names them and prints the exact `docker exec … curl -X PUT` command that removes them and keeps every registered project's entry (LDM-#2318).
+
 ### **Elasticsearch: Failed to obtain node locks**
 
 If Elasticsearch fails to boot with `AccessDeniedException: /usr/share/elasticsearch/data/node.lock`:
@@ -935,4 +941,4 @@ Projects are discovered from the current folder, its parent, `~/ldm`, the LDM in
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-10* | *Last Reviewed: 2026-11-10*
+*Last Updated: 2026-11-11* | *Last Reviewed: 2026-11-11*

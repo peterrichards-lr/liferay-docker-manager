@@ -359,6 +359,49 @@ class InfraService:
         except (TypeError, ValueError):
             return None
 
+    def auto_create_index_setting(self, docker_prefix):
+        """The shared node's persistent `action.auto_create_index`, or None."""
+        settings = self._search_json(
+            docker_prefix,
+            "liferay-search-global",
+            "/_cluster/settings?flat_settings=true",
+        )
+        if not isinstance(settings, dict):
+            return None
+        return (settings.get("persistent") or {}).get("action.auto_create_index")
+
+    def remove_auto_create_entries(self, prefixes, docker_prefix):
+        """Drops Liferay's `action.auto_create_index` entries for `prefixes`
+        from the shared node. LDM-#2318. True only when it removed some."""
+        from ldm_core.utils import auto_create_index_without
+
+        current = self.auto_create_index_setting(docker_prefix)
+        if not current:
+            return False
+        updated = auto_create_index_without(current, set(prefixes))
+        if updated == current:
+            return False
+        res = self.manager.run_command(
+            [
+                *docker_prefix,
+                "exec",
+                "liferay-search-global",
+                "curl",
+                "-s",
+                "-X",
+                "PUT",
+                "localhost:9200/_cluster/settings",
+                "-H",
+                "Content-Type: application/json",
+                "-d",
+                json.dumps({"persistent": {"action.auto_create_index": updated}}),
+            ],
+            check=False,
+            capture_output=True,
+            timeout=_INFRA_PROBE_TIMEOUT,
+        )
+        return bool(res) and '"acknowledged":true' in res
+
     @staticmethod
     def _watermarks(settings):
         """(low, high, flood) disk watermarks as percentages.

@@ -1199,6 +1199,44 @@ class OrchestrationService(BaseHandler):
                                         f"Failed to drop shared database {db_name} (container might be offline): {e}"
                                     )
 
+                    # LDM-#2318: Liferay leaves a persistent
+                    # `action.auto_create_index` entry for this project's index
+                    # prefix on the shared node, and nothing else removes it.
+                    # Kept when another registered project resolves to the
+                    # same prefix, since that entry is still in use.
+                    from ldm_core.utils import (
+                        registered_project_names,
+                        search_index_prefix,
+                    )
+
+                    project_name = meta.get("project_name", root.name)
+                    index_prefix = search_index_prefix(project_name)
+                    shared_prefix = any(
+                        search_index_prefix(other) == index_prefix
+                        for other in registered_project_names()
+                        if other not in {project_name, root.name}
+                    )
+                    if shared_prefix:
+                        pass
+                    elif is_dry_run:
+                        UI.detail(
+                            f"  {UI.BYELLOW}- [Dry Run] Would remove {index_prefix}* from the shared search node's auto-create setting{UI.COLOR_OFF}"
+                        )
+                    else:
+                        # Best effort: a stale entry is harmless, and must
+                        # never stop the delete. `ldm doctor` reports it.
+                        try:
+                            if self.manager.infra.remove_auto_create_entries(
+                                [index_prefix], docker_prefix
+                            ):
+                                UI.detail(
+                                    f"Removed {index_prefix}* from the shared search node's auto-create setting."
+                                )
+                        except Exception as e:
+                            UI.warning(
+                                f"Could not remove {index_prefix}* from the shared search node's auto-create setting: {e}"
+                            )
+
                 if is_dry_run:
                     from ldm_core.utils import archive_project_config
 
