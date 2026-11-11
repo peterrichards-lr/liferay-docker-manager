@@ -209,6 +209,12 @@ ldm doctor --detailed
 `Docker Memory` should move. If it does not, the backend is not WSL2 and the
 Docker Desktop sliders are the right control after all.
 
+`ldm doctor` tells the two apart for you. It reads the backend from the kernel
+version Docker reports, which names WSL2 (`...-microsoft-standard-WSL2`)
+whether `ldm` runs in PowerShell or inside a WSL distro. When memory is below
+the floor on that backend, its hint names `.wslconfig` rather than the Docker
+Desktop settings.
+
 **Do not set `processors` lower than the host has.** WSL2 already gives the VM
 every logical processor by default, so adding `processors=8` on a 12-core
 machine _removes_ four cores. Leave the line out unless you specifically want
@@ -742,4 +748,4 @@ LDM binaries use **"Magic Byte" detection** to accurately report their checksum 
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-10* | *Last Reviewed: 2026-11-10*
+*Last Updated: 2026-11-11* | *Last Reviewed: 2026-11-11*
