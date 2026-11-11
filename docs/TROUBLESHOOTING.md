@@ -735,6 +735,28 @@ This occurs when the shared IP address hits the GitHub unauthenticated REST API 
 
 **The Solution:** LDM automatically falls back to an HTML redirect check on `https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest` (which is not rate-limited). If the fallback also fails, verify your network connectivity or try again later.
 
+### **"GitHub rejected the credential from GITHUB_PAT (HTTP 401)"**
+
+```text
+⚠️  GitHub rejected the credential from GITHUB_PAT (HTTP 401), so LDM is continuing without it.
+⚠️  Public releases still work. Renew or unset GITHUB_PAT; private repositories need a valid one.
+```
+
+LDM sends a GitHub credential, when it finds one, to avoid the anonymous rate
+limit. It looks in this order: `GITHUB_PAT`, then `GITHUB_TOKEN`, then
+`gh auth token`. An expired or revoked one is rejected outright, even for a
+public repository that would answer an anonymous request.
+
+Since LDM-#2347, LDM retries that request without the credential, so
+`ldm quickstart`, seed downloads and the update check still work against
+public releases. Before that, the 401 ended the command: quickstart reported
+no package even though the release was public.
+
+**The Solution:** renew the token named in the warning, or remove it. If it is
+exported from a shell profile such as `~/.zprofile`, delete that line and open
+a new terminal. LDM then falls back to `GITHUB_TOKEN` or your `gh` login. A
+private repository still needs a valid credential.
+
 ---
 
 ## 🌍 Sharing & Tunnels

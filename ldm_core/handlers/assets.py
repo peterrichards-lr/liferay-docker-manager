@@ -248,12 +248,18 @@ class AssetService:
             head_res = requests.head(download_url, allow_redirects=True, timeout=10)
 
             if head_res.status_code != 200:
+                # LDM-#2347: github_get supplies the credential and retries
+                # without it on a 401, which used to hide whether a seed
+                # existed behind "Failed to fetch release info: HTTP 401".
+                from ldm_core.utils import github_get
+
+                public = {k: v for k, v in headers.items() if k != "Authorization"}
                 api_url = f"{GITHUB_API_URL}/releases/tags/{tag_name}"
-                api_res = requests.get(api_url, headers=headers, timeout=10)
+                api_res, _ = github_get(api_url, headers=public, timeout=10)
 
                 if api_res.status_code != 200:
                     api_url = f"{GITHUB_API_URL}/releases"
-                    api_res = requests.get(api_url, headers=headers, timeout=10)
+                    api_res, _ = github_get(api_url, headers=public, timeout=10)
 
                 if api_res.status_code == 200:
                     data = api_res.json()
