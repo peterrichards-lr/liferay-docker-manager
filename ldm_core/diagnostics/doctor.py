@@ -3154,6 +3154,28 @@ def _check_docker_creds(self):
         return None, None
 
 
+def _memory_buys(mem_gb):
+    """`7.6 GB (Liferay heap 3 GB; above 8 GB gives 4 GB)` (LDM-#2190).
+
+    A tick only says the floor is met. On the commonest Windows setup -- WSL2's
+    default, 7.6 GB -- the floor is met and the heap is a flat 3 GB that does
+    not scale, and the line said nothing about it. Both figures come from
+    `heap_tier`, the function that actually sizes the JVM, so they cannot drift
+    from it. The pass/fail contract is unchanged.
+    """
+    from ldm_core.handlers.composer import HEAP_TIER_BOUNDARIES_GB, heap_tier
+
+    def gb(value):
+        return f"{value:g} GB"
+
+    text = f"{mem_gb:.1f} GB (Liferay heap {gb(heap_tier(mem_gb)[0])}"
+    above = next((b for b in HEAP_TIER_BOUNDARIES_GB if mem_gb <= b), None)
+    if above is not None:
+        # Just past the boundary: the smallest allocation the next tier serves.
+        text += f"; above {above} GB gives {gb(heap_tier(above + 0.01)[0])}"
+    return text + ")"
+
+
 def _check_docker_resources(self, docker_info_raw):
     """Checks Docker host CPU and Memory resources."""
     try:
@@ -3182,7 +3204,7 @@ def _check_docker_resources(self, docker_info_raw):
             mem_ok = False
         elif mem_gb < 7.5:
             mem_ok = "warn"
-        results.append(("Docker Memory", f"{mem_gb:.1f} GB", mem_ok))
+        results.append(("Docker Memory", _memory_buys(mem_gb), mem_ok))
         if mem_ok is not True:
             UI.raw(
                 f"  {UI.CYAN}ℹ{UI.COLOR_OFF} Hint: Allocate more RAM in your Docker provider settings."

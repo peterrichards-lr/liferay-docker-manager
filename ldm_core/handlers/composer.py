@@ -130,6 +130,32 @@ def _named_volume_definition(safe_vol_key, project_name, project_uuid=None):
     }
 
 
+#: The memory sizes at which `heap_tier` changes tier (LDM-#2190).
+HEAP_TIER_BOUNDARIES_GB = (4, 8)
+
+
+def heap_tier(mem_gb):
+    """Liferay's (max heap GB, min heap GB, metaspace) for this much memory.
+
+    The single source of the adaptive tiers. `_adaptive_tuning` sizes the JVM
+    with it, and `ldm doctor` reports what an allocation buys with it
+    (LDM-#2190) -- the doctor's thresholds and these tiers were chosen
+    independently, and two tables that must agree is how a 7.6 GB allocation
+    passed with no hint that it bought a flat 3 GB heap.
+    """
+    # Adaptive Tiers for Low-Memory environments
+    if mem_gb <= 4:
+        return 2.0, 1.0, "384m"
+    if mem_gb <= 8:
+        return 3.0, 2.0, "512m"
+    # 80/20 DESIGN: Leave room for Sidecar and OS
+    max_heap_gb = max(4.0, float(math.floor(mem_gb * 0.50)))
+    min_heap_gb = max(2.0, float(math.floor(mem_gb * 0.25)))
+    max_heap_gb = min(max_heap_gb, 12.0 if mem_gb < 24 else 32.0)
+    min_heap_gb = min(min_heap_gb, 4.0)
+    return max_heap_gb, min_heap_gb, "768m" if mem_gb <= 16 else "1024m"
+
+
 class ComposerService:
     """Service for Stack Composition and Metadata translation."""
 
@@ -444,22 +470,7 @@ class ComposerService:
 
             mem_gb = mem_bytes / (1024**3)
 
-            # Adaptive Tiers for Low-Memory environments
-            if mem_gb <= 4:
-                max_heap_gb = 2.0
-                min_heap_gb = 1.0
-                metaspace = "384m"
-            elif mem_gb <= 8:
-                max_heap_gb = 3.0
-                min_heap_gb = 2.0
-                metaspace = "512m"
-            else:
-                # 80/20 DESIGN: Leave room for Sidecar and OS
-                max_heap_gb = max(4.0, float(math.floor(mem_gb * 0.50)))
-                min_heap_gb = max(2.0, float(math.floor(mem_gb * 0.25)))
-                max_heap_gb = min(max_heap_gb, 12.0 if mem_gb < 24 else 32.0)
-                min_heap_gb = min(min_heap_gb, 4.0)
-                metaspace = "768m" if mem_gb <= 16 else "1024m"
+            max_heap_gb, min_heap_gb, metaspace = heap_tier(mem_gb)
 
             new_size_mb = max(512, math.floor((max_heap_gb * 1024) * 0.33))
 
