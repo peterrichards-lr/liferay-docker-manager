@@ -275,7 +275,8 @@ fi
 printf '\n\033[0;32mReady.\033[0m  %s\n\n' "$TARGET_DIR"
 if [ -n "$BINARY_ASSET" ]; then
     printf '  Install the matching binary (needs sudo, so run it yourself):\n'
-    printf '    sudo mv %s/ldm /usr/local/bin/ldm\n\n' "$TARGET_DIR"
+    # install, not mv: root-owned and 0755 whatever was there (GHSA-cq82-rxm7-vw5c).
+    printf '    sudo install -o 0 -g 0 -m 755 %s/ldm /usr/local/bin/ldm\n\n' "$TARGET_DIR"
 fi
 [ "$KEY_OK" -eq 0 ] && printf '  Then copy your activation key into %s/common/\n\n' "$TARGET_DIR"
 printf '  Run the suite:\n'
