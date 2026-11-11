@@ -1220,9 +1220,29 @@ class OrchestrationService(BaseHandler):
                         pass
                     elif is_dry_run:
                         UI.detail(
+                            f"  {UI.BYELLOW}- [Dry Run] Would delete {index_prefix}* indices from the shared search node{UI.COLOR_OFF}"
+                        )
+                        UI.detail(
                             f"  {UI.BYELLOW}- [Dry Run] Would remove {index_prefix}* from the shared search node's auto-create setting{UI.COLOR_OFF}"
                         )
                     else:
+                        # LDM-#2337: the shared database schema is dropped
+                        # above; the project's indices on the shared search
+                        # node were left there for good. Same deleter as
+                        # `ldm reset ... global-search`, which matches by name
+                        # and excludes projects whose prefix extends this one.
+                        try:
+                            from ldm_core.snapshot.search import (
+                                SearchSnapshotService,
+                            )
+
+                            SearchSnapshotService(self)._delete_project_indices(
+                                project_name, docker_prefix
+                            )
+                        except Exception as e:
+                            UI.warning(
+                                f"Could not delete {index_prefix}* indices from the shared search node: {e}"
+                            )
                         # Best effort: a stale entry is harmless, and must
                         # never stop the delete. `ldm doctor` reports it.
                         try:
