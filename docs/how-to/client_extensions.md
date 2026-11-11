@@ -174,6 +174,33 @@ Deploying site initializer(s) held back from the first boot: my-site-initializer
 | `ldm dev` file monitor | **Not** deferred — same reason |
 | Every other CX type | **Not** deferred — they are fine where they are |
 
+### OAuth applications that use objects an initializer creates
+
+Holding the initializer back changes the order things appear in. The
+project's other client extensions, including its
+`oAuthApplicationHeadlessServer` and `oAuthApplicationUserAgent` ones, deploy
+on the first boot. The object definitions the initializer creates only appear
+once it has been deployed, after the portal is healthy.
+
+The AI Commerce Accelerator ran into this ordering problem
+([LDM-#2297](https://github.com/peterrichards-lr/liferay-docker-manager/issues/2297)).
+Its OAuth application was registered twice, about eight minutes apart, with
+two different client ids. The first registration lacked the object scope
+`c_aicaconfiguration.everything`. The microservice got 401 and 403 responses
+for about ten minutes, until its SDK recovered from `invalid_client` and
+switched to the second registration. It is not yet known what triggers the
+second registration.
+
+If an OAuth client extension needs scopes for objects an initializer creates:
+
+- **Do not cache the first client id or token for the life of the process.**
+  On `invalid_client`, or a 401 or 403 shortly after boot, read the
+  configuration under `/etc/liferay/lxc/` again and fetch a new token.
+- **Expect a window after a fresh boot** in which those scopes are missing.
+  This only happens on a fresh project, such as one created by `ldm import`.
+  A project restored from a database snapshot already has the object
+  definitions.
+
 If you boot with `--no-wait`, readiness is never reached and the artifact stays
 staged until a later `ldm run` or `ldm wait` completes. Nothing is lost; the
 zip is still in `.ldm/deferred-client-extensions/` and travels with a `.ldmp`
@@ -234,4 +261,4 @@ optimistic.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-19* | *Last Reviewed: 2026-10-19*
+*Last Updated: 2026-11-11* | *Last Reviewed: 2026-11-11*
