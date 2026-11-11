@@ -11,6 +11,7 @@ from pathlib import Path
 
 from ldm_core.pipelines.base import Pipeline, PipelineContext, PipelineStage
 from ldm_core.pipelines.validation import ValidationStage as SharedValidationStage
+from ldm_core.runtime.portal_workarounds import sync_workarounds
 from ldm_core.ui import UI
 from ldm_core.utils import (
     get_actual_home,
@@ -2424,6 +2425,9 @@ class ComposerStage(PipelineStage):
 
         config_handler = manager.config
         config_handler.sync_common_assets(paths, version=tag, project_meta=project_meta)
+        # LDM-#2289: bundles working around Liferay defects, for the lines
+        # they apply to. Internal; see portal_workarounds.
+        sync_workarounds(manager, paths, tag)
         config_handler.sync_logging(paths)
         config_handler.remove_portal_ext(paths, ["include-and-override"])
 

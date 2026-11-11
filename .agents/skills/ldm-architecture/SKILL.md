@@ -683,6 +683,22 @@ an empty directory, and nothing ever appears in it. This was mistaken for
 "bind mounts are not live" while writing LDM-#1928; the first probe simply used
 an unshared path.
 
+### The DXP domain must carry no port (LDM-#2289)
+
+Behind Traefik, `default/dxp` must publish the bare host. Liferay's routes
+writer (`com.liferay.portal.k8s.agent.impl`, active in every DXP, not only on
+Kubernetes) gets this wrong by itself. Its initial write asks for the
+**secure** local port, which is `-1` behind a TLS-terminating proxy, and
+writes the bare host. Its address listener, though, uses the **event's**
+secure flag, so the first plain request appends Tomcat's `:8080`. Upstream as
+LDM-#2344.
+
+No property, forwarded header or Tomcat setting stops this. LDM corrects it
+from inside the JVM with the `dxp-routes-domain` bundle (see *Portal
+Workarounds*). Do not "fix" `:8080` from the host side: a post-readiness
+rewrite leaves a window and misses any restart LDM is not watching. It was
+written once and discarded for exactly that.
+
 ### The rules
 
 - **Never mount over `/opt/liferay/routes` in an extension container.** That
@@ -713,6 +729,30 @@ an unshared path.
   shared space, but everything LDM adds is additive: a volume, variable,
   `extra_hosts` or `depends_on` the user declared always wins.
 
+## Portal Workarounds (internal OSGi bundles)
+
+Some Liferay defects can only be corrected inside the portal JVM. LDM ships the
+bundle for each one in `ldm_core/resources/portal_workarounds/`, and
+`sync_workarounds` (`ldm_core/runtime/portal_workarounds.py`, called from
+`ComposerStage`) places it in the project's `osgi/modules` on every
+`ldm run`. Nothing outside LDM needs to know they exist.
+
+- **The source lives in `liferay-custom-osgi-modules`.** LDM vendors a
+  released jar, renamed without version or line, so only the content changes
+  when it is refreshed.
+- **Each workaround declares a tag window** equal to its `Import-Package`
+  range. Outside the window LDM removes the bundle rather than leaving one
+  that cannot resolve. The window must be verified live at both ends; the
+  bundle loading proves nothing about the defect it targets.
+- **Retiring one is a one-line change.** Once Liferay ships the fix, move the
+  entry from `WORKAROUNDS` to `RETIRED_PREFIXES`. Every project drops the
+  bundle on its next run, including copies carried in by snapshots and `.ldmp`
+  packages, which archive the whole `osgi` tree.
+
+| Bundle | LDM issue | Upstream | Tags |
+|---|---|---|---|
+| `dxp-routes-domain` | LDM-#2289 | LDM-#2344 | `2026.q1.14` up to `2026.q4` |
+
 ## Liferay Client Extension (CX) Standards
 
 When LDM generates, deploys, or reasons about Client Extensions:
@@ -729,4 +769,4 @@ When LDM generates, deploys, or reasons about Client Extensions:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-20* | *Last Reviewed: 2026-10-20*
+*Last Updated: 2026-11-11* | *Last Reviewed: 2026-11-11*
