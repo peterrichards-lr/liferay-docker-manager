@@ -620,6 +620,9 @@ class TestReadiness(unittest.TestCase):
             patch.object(self.handler.share, "cmd_start") as mock_share_start,
         ):
             mock_run_cmd.side_effect = [
+                # LDM-#2172: the wait reads `docker info` once, for the
+                # allocation it records beside the timings.
+                "",
                 "org.apache.catalina.startup.Catalina.start Server startup in 12000 ms",
                 "healthy",
             ]

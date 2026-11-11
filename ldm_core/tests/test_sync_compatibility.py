@@ -1,6 +1,7 @@
 import os
 import re
 import shutil
+import subprocess
 import sys
 import typing
 from pathlib import Path
@@ -1407,14 +1408,38 @@ class TestProvenanceKeepsTwoEnvironmentsApart:
 class TestNoCommittedReportIsRenamed:
     """The migration lock. Every committed report already sits at its canonical
     name, so if a change to slug derivation renames one, this fails loudly
-    rather than the sync quietly archiving a real result."""
+    rather than the sync quietly archiving a real result.
+
+    It asks git what is committed rather than globbing the directory: a raw
+    report waiting to be synced is not canonical by construction, and must not
+    fail every commit made while it sits there (LDM-#2133)."""
+
+    @staticmethod
+    def _committed_reports(repo_root, results):
+        try:
+            listed = subprocess.run(
+                ["git", "ls-files", "--", str(results)],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+        except (OSError, subprocess.CalledProcessError):
+            return []
+        return sorted(
+            repo_root / line
+            for line in listed.splitlines()
+            if Path(line).parent == results.relative_to(repo_root)
+            and re.fullmatch(r"verify-.*\.txt", Path(line).name)
+        )
 
     def test_every_committed_report_is_already_canonical(self):
         offenders = []
         repo_root = Path(__file__).resolve().parent.parent.parent
         results = repo_root / sync_compatibility.DEFAULT_RESULTS_DIR
-        committed = sorted(results.glob("verify-*.txt"))
-        assert committed, f"no committed reports found under {results}"
+        committed = self._committed_reports(repo_root, results)
+        if not committed:
+            pytest.skip("not a git checkout: there are no committed reports to lock")
         for report in committed:
             meta = sync_compatibility.get_report_metadata(report)
             canonical = f"verify-{meta['internal_slug']}-{meta['status_slug']}.txt"
