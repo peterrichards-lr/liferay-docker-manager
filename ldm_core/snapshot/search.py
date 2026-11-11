@@ -364,8 +364,8 @@ class SearchSnapshotService:
         if not self._snapshot_accepted(res):
             UI.warning(
                 f"Could not clear {len(names)} search index(es) for "
-                f"{container_name}; documents from the previous build may "
-                f"survive this restore. Response: {res}"
+                f"{container_name}; they are still on the shared search node. "
+                f"Response: {res}"
             )
             return []
 

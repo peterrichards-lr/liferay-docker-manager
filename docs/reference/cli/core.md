@@ -651,7 +651,7 @@ That hint previously named `ldm run`. `ldm run` remains the correct command when
 - **`-V`, `--volumes`** (Only for `down`/`rm`): Also removes the project's Docker Compose volumes. Implied automatically by `--delete`.
 - **`--infra`** (Only for `down`/`rm`): Also tears down the shared global infrastructure (Proxy, Search, etc.), independently of whatever project is targeted -- can be combined with a project target or passed alone.
 - **`--clean-hosts`** (Only for `down`/`rm`): Removes the project's entries from your `/etc/hosts` file.
-- **`-d`, `--delete`** (Only for `down`/`rm`): Escalates teardown beyond just stopping/removing containers -- drops the project's schema from the shared database (if it uses shared-mode DB), removes the `action.auto_create_index` entry Liferay left for the project's index prefix on the shared search node (LDM-#2318), unregisters the project, and **permanently deletes its directory from disk**. This cannot be undone. `ldm rm`/`ldm down` *without* `--delete` only tears down containers and keeps the project registered, so it can be `ldm run` again later; `--delete` is the one-way, destructive option.
+- **`-d`, `--delete`** (Only for `down`/`rm`): Escalates teardown beyond just stopping/removing containers -- drops the project's schema from the shared database (if it uses shared-mode DB), deletes the project's indices from the shared search node (LDM-#2337) and the `action.auto_create_index` entry Liferay left for its index prefix there (LDM-#2318), unregisters the project, and **permanently deletes its directory from disk**. This cannot be undone. `ldm rm`/`ldm down` *without* `--delete` only tears down containers and keeps the project registered, so it can be `ldm run` again later; `--delete` is the one-way, destructive option.
 
 - **`--keep-credentials`** (Only for `down`/`rm`, with `--delete`): Keeps database and admin passwords in the `~/.ldm/removed` archive that `--delete` writes. They are **removed by default**, with a marker left in place of each value; opting in means the archive holds them in plaintext and securing it becomes yours to do. Set it permanently with `ldm config set tombstone_keep_credentials true`. See [Data Management](../../how-to/data_management.md) (LDM-#1703).
 
@@ -674,7 +674,7 @@ ldm restart               # Full stack restart (graceful stop + run)
 ldm down --volumes        # Tear down stack and clear all database/data state
 ldm down --infra          # Also tear down the global infrastructure (Proxy, Search)
 ldm down --clean-hosts    # Remove project entries from your /etc/hosts file upon deletion
-ldm rm --delete           # Permanently delete the project's directory, DB schema, and registry entry
+ldm rm --delete           # Permanently delete the project's directory, DB schema, search indices, and registry entry
 ```
 
 ## `status`
