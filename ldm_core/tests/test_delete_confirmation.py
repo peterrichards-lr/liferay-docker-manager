@@ -33,6 +33,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from ldm_core.handlers.base import BaseHandler
+from ldm_core.handlers.infra import InfraService
 from ldm_core.runtime.orchestration import OrchestrationService
 
 
@@ -64,6 +65,9 @@ class _Manager(BaseHandler):
         self.commands: list = []
         self.manager = cast(Any, self)
         self.orchestration = OrchestrationService(self)
+        # LDM-#2318: the delete path edits the shared search node's settings
+        # through this, so it runs against the stubbed `run_command` below.
+        self.infra = InfraService(self)
 
     def run_command(self, cmd, **kw):  # type: ignore[override]
         self.commands.append(list(cmd))

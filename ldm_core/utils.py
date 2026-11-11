@@ -435,6 +435,41 @@ def search_index_pattern(identifier, project_names=None):
     return ",".join([f"{prefix}*", *(f"-{other}*" for other in extending)])
 
 
+def _auto_create_entry_prefix(entry):
+    """The index prefix an `action.auto_create_index` entry names, or None
+    when the entry is not one Liferay writes for an LDM project."""
+    match = re.fullmatch(r"[+-](ldm-[a-z0-9._-]*-)\*", entry)
+    return match.group(1) if match else None
+
+
+def auto_create_index_without(value, prefixes):
+    """`action.auto_create_index` with the entries for `prefixes` removed.
+
+    LDM-#2318. Liferay's Elasticsearch connector, not LDM, writes this
+    persistent setting: `ElasticsearchSearchEngine.setAutoCreateIndex` adds or
+    swaps a `-<prefix>*` / `+<prefix>*` entry for its own index prefix, so a
+    stray write cannot auto-create an index with the wrong mappings. The entry
+    is right while the project exists and is never removed after it, so every
+    deleted project leaves one behind on the shared node.
+
+    Returns None when nothing but the catch-all `*` would remain, meaning the
+    setting should be reset to Elasticsearch's default.
+    """
+    entries = [e.strip() for e in str(value or "").split(",") if e.strip()]
+    kept = [e for e in entries if _auto_create_entry_prefix(e) not in prefixes]
+    if not kept or kept == ["*"]:
+        return None
+    return ",".join(kept)
+
+
+def orphaned_auto_create_prefixes(value, project_names):
+    """LDM index prefixes in `action.auto_create_index` that no registered
+    project uses. LDM-#2318."""
+    live = {search_index_prefix(name) for name in project_names}
+    found = (_auto_create_entry_prefix(e.strip()) for e in str(value or "").split(","))
+    return sorted({p for p in found if p and p not in live})
+
+
 def liferay_container_of(meta):
     """The container name compose actually creates for this project's Liferay.
 

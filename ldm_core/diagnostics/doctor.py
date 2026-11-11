@@ -1469,6 +1469,11 @@ class DoctorRunner:
                                 if watermark_status:
                                     status = watermark_status
                                     ok = False
+                                _check_orphaned_auto_create_entries(
+                                    self.handler.manager.infra,
+                                    self.add_hint,
+                                    infra_docker_prefix,
+                                )
                         except Exception:
                             pass
 
@@ -3065,6 +3070,45 @@ def _check_lfr_tunnel(self):
         return describe_tunnel_client(version, mtime)
     except Exception:
         return None, None
+
+
+def _check_orphaned_auto_create_entries(infra, add_hint, docker_prefix):
+    """Hints at `action.auto_create_index` entries left by deleted projects.
+
+    LDM-#2318. Liferay writes one per index prefix and never removes it.
+    `ldm rm --delete` now removes the deleted project's entry, so what remains
+    comes from projects deleted before that, or by hand. Harmless today, so a
+    hint rather than a failed check.
+    """
+    import json
+
+    from ldm_core.utils import (
+        auto_create_index_without,
+        orphaned_auto_create_prefixes,
+        registered_project_names,
+    )
+
+    current = infra.auto_create_index_setting(docker_prefix)
+    orphans = orphaned_auto_create_prefixes(current, registered_project_names())
+    if not orphans:
+        return
+    body = json.dumps(
+        {
+            "persistent": {
+                "action.auto_create_index": auto_create_index_without(
+                    current, set(orphans)
+                )
+            }
+        },
+        separators=(",", ":"),
+    )
+    add_hint(
+        f"Global Search keeps an auto-create entry for {len(orphans)} project(s) "
+        f"no longer registered ({', '.join(orphans)}). Remove them with:\n"
+        f"      {UI.WHITE}docker exec liferay-search-global curl -s -X PUT "
+        "localhost:9200/_cluster/settings -H 'Content-Type: application/json' "
+        f"-d '{body}'{UI.COLOR_OFF}"
+    )
 
 
 def _check_elasticsearch_watermarks(self, add_hint, docker_prefix=None):
