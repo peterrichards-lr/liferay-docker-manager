@@ -2157,6 +2157,57 @@ def get_github_token() -> str | None:
     return None
 
 
+#: Sources whose credential GitHub has already rejected in this process, so the
+#: warning is given once rather than on every lookup (LDM-#2347).
+_rejected_credential_sources: set[str] = set()
+
+
+def github_get(url, headers=None, timeout=20, **kwargs):
+    """GET a GitHub API URL with the user's credential, falling back to none.
+
+    LDM-#2347. Every caller used to send `get_github_token()` unconditionally,
+    so an expired `GITHUB_PAT` turned a public release that answers 200
+    anonymously into a 401, and quickstart exited 1. LDM-#2098 made that 401
+    visible but still stopped there, advising the user to unset the variable.
+
+    On a 401 this warns once, naming the source, and retries anonymously: a
+    public repository then works, and the user is still told to fix the
+    credential, which a private one needs.
+
+    Returns ``(response, token)``. ``token`` is the credential the response was
+    obtained with, or None when it was anonymous, so a follow-up download can
+    reuse whichever one worked.
+    """
+    import requests
+
+    base = dict(headers or {})
+    token = get_github_token()
+
+    if token:
+        response = requests.get(
+            url,
+            headers={**base, "Authorization": f"token {token}"},
+            timeout=timeout,
+            **kwargs,
+        )
+        if response.status_code != 401:
+            return response, token
+
+        source = github_token_source() or "your environment"
+        if source not in _rejected_credential_sources:
+            _rejected_credential_sources.add(source)
+            UI.warning(
+                f"GitHub rejected the credential from {source} (HTTP 401), so "
+                "LDM is continuing without it."
+            )
+            UI.warning(
+                f"  Public releases still work. Renew or unset {source}; "
+                "private repositories need a valid one."
+            )
+
+    return requests.get(url, headers=base, timeout=timeout, **kwargs), None
+
+
 def get_actual_home():
     """Returns the home directory of the real user, even when running with sudo.
 
@@ -3591,11 +3642,6 @@ def check_for_updates(current_version, force=False, pre_release=False, tag=None)
         if force or tag:
             headers["Cache-Control"] = "no-cache"
 
-        # Try to use GitHub token to avoid API rate limiting
-        token = get_github_token()
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-
         if tag:
             # Specific release tag lookup
             if not tag.startswith("v"):
@@ -3611,7 +3657,9 @@ def check_for_updates(current_version, force=False, pre_release=False, tag=None)
         if not url.startswith("https://"):
             raise ValueError(f"Invalid URL scheme: {url}")
 
-        response = requests.get(url, headers=headers, timeout=5)
+        # The credential avoids API rate limiting; a rejected one falls back
+        # to anonymous (LDM-#2347).
+        response, _ = github_get(url, headers=headers, timeout=5)
         if response.status_code == 200:
             res_data = response.json()
 

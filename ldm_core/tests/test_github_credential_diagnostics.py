@@ -35,6 +35,7 @@ def _call(status, token, source="GITHUB_PAT"):
 
     ui = MagicMock()
     with (
+        patch("ldm_core.utils._rejected_credential_sources", set()),
         patch("ldm_core.utils.UI", ui),
         patch("ldm_core.utils.get_github_token", return_value=token),
         patch("ldm_core.utils.github_token_source", return_value=source),

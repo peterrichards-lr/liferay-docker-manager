@@ -129,21 +129,19 @@ def _download_remote_archive(
 
 
 def _check_github_release_for_package(self, owner, repo, source_path):
-    import requests
+    from ldm_core.utils import UI, github_get, github_token_source
 
-    from ldm_core.utils import UI, get_github_token, github_token_source
-
-    github_token = get_github_token()
+    github_token = None
     has_ldmp = False
     ldmp_asset = None
     sha_asset = None
 
-    headers = {}
-    if github_token:
-        headers["Authorization"] = f"token {github_token}"
     api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
     try:
-        api_resp = requests.get(api_url, headers=headers, timeout=20)
+        # LDM-#2347: retries anonymously on a 401, and reports which
+        # credential (if any) the lookup succeeded with, so the download
+        # below does not resend a rejected one.
+        api_resp, github_token = github_get(api_url, timeout=20)
         if api_resp.status_code == 200:
             release_data = api_resp.json()
             assets = release_data.get("assets", [])
@@ -166,16 +164,11 @@ def _check_github_release_for_package(self, owner, repo, source_path):
             # LDM-#2098: this fell to UI.debug, so at default verbosity the
             # user saw nothing here and then "No compiled LDM Package found"
             # from the caller -- the one conclusion the evidence does not
-            # support. Reported with an expired GITHUB_PAT against a release
-            # that answered 200 anonymously and 401 authenticated.
-            src = github_token_source() or "your environment"
+            # support. Since LDM-#2347 `github_get` has already retried
+            # anonymously, so reaching here means GitHub refused even that.
             UI.warning(
-                f"GitHub rejected the credential from {src} (HTTP 401). "
-                "This is a credential problem, not a missing package."
-            )
-            UI.warning(
-                f"  The release may well be readable without it: unset {src} "
-                "and retry, or supply a valid credential."
+                "GitHub refused the release lookup (HTTP 401). This is a "
+                "credential problem, not a missing package."
             )
         elif api_resp.status_code == 403:
             if github_token:
