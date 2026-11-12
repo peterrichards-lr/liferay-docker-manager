@@ -49,7 +49,8 @@ WORKAROUNDS: tuple[Workaround, ...] = (
     # Liferay's routes writer publishes Tomcat's :8080 in the DXP domain
     # behind a TLS-terminating proxy (LDM-#2344). The bundle imports
     # com.liferay.portal.kernel.util [96.7,101.0): 96.7.0 is 2026.q1.14-lts,
-    # 100.0.0 is 2026.q3. Verified live at both ends.
+    # 100.0.0 is 2026.q3. Verified live at both ends. Vendored from
+    # liferay-custom-osgi-modules v3.6.1 (v3.6.0's copy was q3-only).
     Workaround(
         issue="LDM-#2289",
         prefix="com.liferay.custom.dxp.routes.domain",

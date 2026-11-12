@@ -171,6 +171,36 @@ class TheShippedWorkaroundsAreConsistent(unittest.TestCase):
                 )
 
 
+def _manifest(jar):
+    import zipfile
+
+    with zipfile.ZipFile(jar) as archive:
+        text = archive.read("META-INF/MANIFEST.MF").decode()
+    return text.replace("\r", "").replace("\n ", "")
+
+
+class TheVendoredJarIsTheRelease(unittest.TestCase):
+    """The jar must be a released build whose range covers the whole window.
+
+    v3.6.0 of the modules repository shipped this bundle importing
+    com.liferay.portal.kernel.util [100.0,101.0): it would load on 2026.q3 and
+    silently not on 2026.q1.14-lts, the window's first line.
+    """
+
+    def setUp(self):
+        workaround = portal_workarounds.WORKAROUNDS[0]
+        self.manifest = _manifest(portal_workarounds._bundled(workaround.variants[0]))
+
+    def test_it_is_a_release_not_a_snapshot(self):
+        self.assertIn("Bundle-Version: 3.6.1", self.manifest)
+        self.assertNotIn("SNAPSHOT", self.manifest)
+
+    def test_its_range_reaches_the_first_line_of_the_window(self):
+        self.assertIn(
+            'com.liferay.portal.kernel.util;version="[96.7,101.0)"', self.manifest
+        )
+
+
 class TheRunCallsIt(unittest.TestCase):
     """The call site: the ComposerStage syncs the bundles for this run's tag."""
 
