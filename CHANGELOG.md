@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.9-pre.1] - 2026-11-12
+
+### Security
+
+- **The self-upgrade no longer leaves the `ldm` binary writable by every local user** (GHSA-cq82-rxm7-vw5c, LDM-#2351). On macOS and Linux, every `ldm system upgrade` from v2.7.6 to v2.26.8 installed the binary with mode 777. That reused the permission step meant for files LDM drops into `deploy/`, and as root it also gave the binary to uid 1000. As a result, any account on the machine could replace `ldm`. The upgrade now installs it with mode 755, and installs through `sudo` are owned by root. The upgrade into this release is still performed by the old release, so every command now checks its own binary. If you own it, or run as root, it removes the extra write access and says so on stderr. Anything else is reported with the command to run. See `docs/reference/cli/system.md`.
+
+### Fixed
+
+- **The DXP domain no longer carries Tomcat's `:8080` behind Traefik** (LDM-#2289). Liferay's routes writer publishes the connector port on the first plain request when `web.server.protocol=https` (LDM-#2344, reported upstream). On 2026.q1.14-lts up to 2026.q4, `ldm run` now places an internal bundle in `osgi/modules` that removes the port again. It is removed once Liferay fixes the writer. A workaround can now carry a separate jar for each range of Liferay lines.
+- **An expired or revoked `GITHUB_PAT` no longer breaks public quickstarts, seeds or the update check** (LDM-#2347). When GitHub rejects the credential, LDM warns once and retries anonymously.
+- **`ldm delete` removes the project's indices from the shared search node** (LDM-#2337), and the node's auto-create entry for that project (LDM-#2318). `ldm system doctor` names any that are already orphaned.
+- **`ldm start` brings a stopped shared search container back**, and waits for it, before booting Liferay (LDM-#2319).
+- **A search restore is not reported complete while a restored index cannot answer a search** (LDM-#2316).
+- **`ldm restart` says what it did**, and no longer claims to apply updates (LDM-#2317).
+- **Log troubleshooting advice no longer fires on a first Postgres boot**, and each JVM memory failure gets its own fix (LDM-#2307).
+- **`ldm init` accepts `--tag-prefix`** (LDM-#2168).
+- **The macOS mount-failure remediation is given for the engine actually in use** (LDM-#2242). Before, everyone was given the Colima fix.
+- **Doctor explains what the Docker memory allocation buys**: the Liferay heap, and the next tier's (LDM-#2190). It names `.wslconfig` when Docker runs on WSL2 (LDM-#2176).
+- **Boot timings record the Docker allocation the heap was sized from** (LDM-#2172).
+
+### Documentation
+
+- The quick start shows how to stop Colima's LaunchAgent resetting the VM size at every login (LDM-#2320).
+- OAuth client extensions deploy before a held-back site initializer creates their objects (LDM-#2297).
+
 ## [v2.26.8] - 2026-11-10
 
 Verified on v2.26.8-pre.3 across six environments: Fedora 44 (native Docker), macOS 27 with Colima, macOS 27 with OrbStack, Windows 11 with WSL2, and Windows 11 Docker Desktop under both PowerShell 5.1 and PowerShell 7. The tag's CI, Release E2E and multi-OS workflows all passed. Stable is byte-identical to pre.3 except for the version stamp and this release's announcements. The details of each change are in the pre-release entries below.
