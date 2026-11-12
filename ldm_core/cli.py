@@ -3057,6 +3057,15 @@ def check_and_display_upgrade_banner():
 
     if "PYTEST_CURRENT_TEST" in os.environ or "pytest" in sys.argv[0]:
         return
+
+    # GHSA-cq82-rxm7-vw5c: an upgrade from an affected release is carried out
+    # by that release's code, which leaves this binary world-writable. Before
+    # the TTY check, so scripted and CI hosts are covered too; it warns on
+    # stderr and never raises.
+    from ldm_core.diagnostics.upgrade import repair_binary_mode
+
+    repair_binary_mode()
+
     if not sys.stdout.isatty():
         return
 

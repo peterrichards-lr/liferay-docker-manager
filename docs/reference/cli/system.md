@@ -158,6 +158,12 @@ ldm system upgrade --check           # Check for updates without installing
 ldm upgrade --beta
 ```
 
+**The upgraded binary is writable only by its owner.** On macOS and Linux the new binary is installed with mode 755. An upgrade through `sudo` installs it owned by root, with the same mode. Releases v2.7.6 to v2.26.8 left it writable by every local user (mode 777), so anyone with an account on the machine could replace it ([GHSA-cq82-rxm7-vw5c](https://github.com/peterrichards-lr/liferay-docker-manager/security/advisories/GHSA-cq82-rxm7-vw5c)).
+
+An upgrade *from* one of those releases is still carried out by the old release's code, so the new binary starts out world-writable too. From the fixed release on, every `ldm` command checks its own binary, scripted and CI runs included, and reports on stderr. If you own the binary, or run as root, it removes other accounts' write access and says so once. Run as root, it also gives a binary in a root-owned folder such as `/usr/local/bin` back to root. Anything it can't fix, it reports on every run, with the command to run.
+
+To check an install yourself, run `ls -lL "$(command -v ldm)"`. The capital L makes `ls` follow a symlink to the binary itself. A `w` in the group or other position of the mode means other accounts can change it; as the binary's owner, run `chmod 755 "$(command -v ldm)"`. If the binary is in a root-owned folder but not owned by root, also run `sudo chown root "$(command -v ldm)"`.
+
 > [!NOTE]
 > **Old builds are cleaned up**: on macOS and Linux each LDM version unpacks itself into its own `~/.shiv/ldm_<build id>/` directory (about 80 MB). On that same first run after an upgrade, LDM now removes the previous versions' directories, leaving the running one and anything that is not LDM's untouched (LDM-#2296). Before this, nothing removed them. To reclaim the space on an older install, delete every `~/.shiv/ldm_*` directory except the newest while no `ldm` command is running.
 
@@ -763,4 +769,4 @@ ldm target migrate win-wsl node-a
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-23* | *Last Reviewed: 2026-10-23*
+*Last Updated: 2026-11-11* | *Last Reviewed: 2026-11-11*

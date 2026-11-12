@@ -1,7 +1,12 @@
+import contextlib
 import os
 import platform
+import shlex
+import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from ldm_core.constants import GITHUB_REPO_URL, VERSION
@@ -9,9 +14,206 @@ from ldm_core.diagnostics.completions import is_completion_enabled
 from ldm_core.ui import UI
 from ldm_core.utils import (
     check_for_updates,
-    safe_move,
     version_to_tuple,
 )
+
+# rwxr-xr-x: everyone may run the binary, only its owner may change it.
+_BINARY_MODE = 0o755
+
+
+def _replace_binary(new_binary, exe_path):
+    """Put `new_binary` in place of the running binary at `exe_path`, mode 0755.
+
+    GHSA-cq82-rxm7-vw5c: this used `utils.safe_move`, whose copy step runs
+    `_fixup_unix_permissions` -- written so Liferay's auto-deploy scanner can
+    write files LDM drops into `deploy/`. It ORs 0o666 into the mode, and as
+    root chowns the file to 1000, so every self-upgrade since v2.7.6 left the
+    binary on the user's PATH world-writable: any local user could replace it
+    and run code as whoever ran `ldm` next.
+
+    The new binary is copied into a hidden file in `exe_path`'s own directory
+    (created exclusively, so nothing else can be waiting at that name), given
+    exactly 0755, and renamed over the old one. The rename is atomic because
+    both are on one filesystem, which is also why the copy is needed: the
+    download sits in the system temp directory, often a different device.
+
+    Raises OSError (PermissionError included) if the directory isn't writable,
+    leaving the old binary untouched; the caller then falls back to sudo.
+    """
+    exe_path = Path(exe_path)
+    fd, staged_str = tempfile.mkstemp(
+        dir=exe_path.parent, prefix=f".{exe_path.name}.upgrade-"
+    )
+    staged = Path(staged_str)
+    try:
+        with os.fdopen(fd, "wb") as out, open(new_binary, "rb") as src:
+            shutil.copyfileobj(src, out)
+        os.chmod(staged, _BINARY_MODE)  # nosec B103 -- executable, owner-writable only
+        os.replace(staged, exe_path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            staged.unlink()
+        raise
+    with contextlib.suppress(OSError):
+        os.unlink(new_binary)
+
+
+def _sudo_install_argv(sudo_prefix, new_binary, exe_path, owner="0", group="0"):
+    """The privileged replacement, for a binary in a directory the user can't write.
+
+    `cp` onto an existing file keeps its owner and mode, so a binary an affected
+    release left 0777 -- or, after a root upgrade, owned by uid 1000 -- stayed
+    that way (GHSA-cq82-rxm7-vw5c). `install` with explicit owner, group and
+    mode sets all three. They have to be explicit: GNU and BSD `install`
+    replace the file, but busybox writes into it and keeps its owner unless
+    told. `owner`/`group` are parameters only so a test can run the real
+    command without root.
+    """
+    return [
+        *sudo_prefix,
+        "install",
+        "-o",
+        str(owner),
+        "-g",
+        str(group),
+        "-m",
+        f"{_BINARY_MODE:o}",
+        str(new_binary),
+        str(exe_path),
+    ]
+
+
+def _warn(msg):
+    """A warning on stderr, at every verbosity. The binary check runs before
+    every command, including ones whose stdout a script parses (`--json`)."""
+    UI._print(msg, UI.YELLOW, "⚠️", file=sys.stderr)
+
+
+def repair_binary_mode(exe_path=None):
+    """Stop accounts other than the owner (or root) changing this binary.
+
+    GHSA-cq82-rxm7-vw5c. The upgrade INTO a fixed release is carried out by the
+    affected release's code, so the fixed binary arrives world-writable too,
+    and only the next upgrade would correct it. This closes that gap. It runs
+    on every command, not only the first run of a version, because a host
+    driven by scripts or CI may never have an interactive first run; when
+    nothing is wrong it costs two `stat` calls.
+
+    What the current user is allowed to fix is fixed, and said once: the owner
+    or root removes the write access; root also returns a binary in a
+    root-owned directory to root. Anything left -- someone else's binary --
+    is reported every run with the command to run, since only the user can
+    judge whether it was tampered with.
+
+    Returns True when the binary is (now) safe, False otherwise. Never raises.
+    """
+    if platform.system().lower() == "windows":
+        return True
+    try:
+        exposed = _exposed_binary(exe_path)
+        if exposed is None:
+            return True
+        exe, st, loose, misowned = exposed
+        mode = stat.S_IMODE(st.st_mode)
+        owner = st.st_uid
+        euid = os.geteuid()
+        # --dry-run promises no changes, so it only reports.
+        may_fix = os.environ.get("LDM_DRY_RUN", "").lower() != "true"
+        # Each fix is attempted on its own; one that fails (a read-only or
+        # root-squashed filesystem) falls through to the warning below.
+        if loose and may_fix and euid in (0, st.st_uid):
+            with contextlib.suppress(OSError):
+                os.chmod(exe, mode & ~loose)
+                mode &= ~loose
+                loose = 0
+                _warn(
+                    f"{exe} was writable by accounts other than its owner, so "
+                    "one of them could have replaced it. That access is now "
+                    "removed (GHSA-cq82-rxm7-vw5c)."
+                )
+        if misowned and may_fix and euid == 0:
+            with contextlib.suppress(OSError):
+                os.chown(exe, 0, 0)
+                misowned = False
+                owner = 0
+                _warn(
+                    f"{exe} is in a folder only root may change, but belonged "
+                    f"to uid {st.st_uid}, who could replace it. It now belongs "
+                    "to root (GHSA-cq82-rxm7-vw5c)."
+                )
+        if not loose and not misowned:
+            return True
+        quoted = shlex.quote(str(exe))
+        who = "root" if misowned else "its owner"
+        fix = (
+            f"sudo chown root {quoted} && sudo chmod {_BINARY_MODE:o} {quoted}"
+            if misowned
+            else f"sudo chmod {_BINARY_MODE:o} {quoted}"
+            if owner == 0
+            else f"chmod {_BINARY_MODE:o} {quoted}  (as uid {owner})"
+        )
+        _warn(
+            f"{exe} (mode {mode:o}, owner uid {owner}) can be changed by an "
+            f"account other than {who}, so it could have been replaced "
+            "(GHSA-cq82-rxm7-vw5c)."
+        )
+        _warn(
+            "If you can't rule that out, reinstall LDM from the release assets. "
+            f"Then run: {fix}"
+        )
+    except Exception:
+        pass
+    return False
+
+
+def _exposed_binary(exe_path):
+    """`(path, stat, loose_write_bits, misowned)` if an account that shouldn't
+    can change the binary, else None.
+
+    `misowned`: in a root-owned directory such as /usr/local/bin, owned by
+    someone other than root -- an affected release run as root chowned the
+    binary to uid 1000.
+    """
+    if exe_path is None:
+        # A frozen (PyInstaller) binary started from PATH has a bare `ldm` in
+        # argv[0], which would resolve against the current directory.
+        exe_path = sys.executable if getattr(sys, "frozen", False) else sys.argv[0]
+    exe = Path(exe_path).resolve()
+    if exe.suffix.lower() == ".py" or not exe.is_file():
+        return None
+    st = exe.stat()
+    loose = _loose_write_bits(st)
+    misowned = exe.parent.stat().st_uid == 0 and st.st_uid != 0
+    if loose or misowned:
+        return exe, st, loose, misowned
+    return None
+
+
+def _loose_write_bits(st):
+    """The write bits that let an account other than the owner change the file.
+
+    Group write counts only when the group is not the owner's private group.
+    Under umask 002 (Ubuntu and Fedora give every user a group of their own) a
+    pip or uv console script is 0775 with a group holding only its owner.
+    """
+    import grp
+    import pwd
+
+    bits = stat.S_IMODE(st.st_mode) & 0o022
+    if bits & 0o020:
+        try:
+            owner = pwd.getpwuid(st.st_uid)
+            group = grp.getgrgid(st.st_gid)
+            private = (
+                st.st_gid == owner.pw_gid
+                and group.gr_name == owner.pw_name
+                and all(member == owner.pw_name for member in group.gr_mem)
+            )
+        except KeyError:
+            private = False
+        if private:
+            bits &= ~0o020
+    return bits
 
 
 def run_update_check(handler, force=True):
@@ -40,7 +242,14 @@ def _get_manual_upgrade_cmd(handler, url, exe_path):
     except Exception:
         parent_writable = False
     prefix = "sudo " if not parent_writable else ""
-    return f'{prefix}curl -L "{url}" -o "{exe_path}" && {prefix}chmod +x "{exe_path}"'
+    # Download to a fresh temp file, then `install` it: writing over the binary
+    # with `curl -o` keeps the old file's mode and owner, so one an affected
+    # release left 0777 would stay 0777 (GHSA-cq82-rxm7-vw5c).
+    exe = shlex.quote(str(exe_path))
+    return (
+        f't="$(mktemp)" && curl -fL {shlex.quote(url)} -o "$t" && '
+        f'{prefix}install -m {_BINARY_MODE:o} "$t" {exe} && rm -f "$t"'
+    )
 
 
 def _announce_post_upgrade_actions(upgraded_from, upgraded_to):
@@ -319,8 +528,6 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
             "Self-upgrade is only supported for standalone binaries. Please use 'git pull' for source installations."
         )
 
-    import tempfile
-
     # Download to a system temporary directory that is always writable
     tmp_fd, tmp_path_str = tempfile.mkstemp(prefix="ldm-upgrade-")
     temp_new = Path(tmp_path_str)
@@ -467,17 +674,8 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
 
             sys.exit(0)
         else:
-            # Unix atomic rename
-            # Bandit: B103 (chmod 0o755) is necessary to make the newly downloaded binary executable.
             try:
-                os.chmod(temp_new, 0o755)  # nosec B103
-            except Exception:
-                pass
-
-            try:
-                # Use safe_move instead of os.replace because it handles
-                # 'Invalid cross-device link' (Errno 18) by falling back to copy+unlink.
-                safe_move(str(temp_new), str(exe_path))
+                _replace_binary(temp_new, exe_path)
                 UI.success(f"Successfully upgraded to v{latest}!")
                 _announce_post_upgrade_actions(VERSION, latest)
             except (PermissionError, OSError):
@@ -492,24 +690,32 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
                     if platform.system() != "Windows" and not getattr(
                         handler.manager.args, "non_interactive", False
                     ):
-                        cmd = (
-                            f'sudo cp "{temp_new}" "{exe_path}" && sudo rm "{temp_new}"'
+                        cmd = shlex.join(
+                            _sudo_install_argv(["sudo"], temp_new, exe_path)
                         )
                         ret = os.system(cmd)  # nosec B605
                         if ret != 0:
                             raise subprocess.CalledProcessError(ret, cmd)
+                        rm_argv = ["sudo", "rm", "-f", str(temp_new)]
                     else:
                         sudo_prefix = (
                             ["sudo", "-n"]
                             if getattr(handler.manager.args, "non_interactive", False)
                             else ["sudo"]
                         )
+                        # Non-interactive (`sudo -n`), so nothing waits on a
+                        # password; bounded so a wedged sudo can't hang a script.
                         subprocess.run(
-                            [*sudo_prefix, "cp", str(temp_new), str(exe_path)],
+                            _sudo_install_argv(sudo_prefix, temp_new, exe_path),
                             check=True,
+                            timeout=300,
                         )
-                        subprocess.run([*sudo_prefix, "rm", str(temp_new)], check=True)
+                        rm_argv = [*sudo_prefix, "rm", "-f", str(temp_new)]
 
+                    # The binary is replaced: failing to tidy the download must
+                    # not be reported as a failed upgrade.
+                    with contextlib.suppress(Exception):
+                        subprocess.run(rm_argv, check=False)
                     UI.success(f"Successfully upgraded to v{latest}!")
                     _announce_post_upgrade_actions(VERSION, latest)
                 except Exception as e:
@@ -523,7 +729,7 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
                     )
                     UI.debug(f"Details: {e}")
                     UI.detail(
-                        f'Please run manually: {UI.CYAN}sudo cp "{temp_new}" "{exe_path}" && sudo rm "{temp_new}"{UI.COLOR_OFF}'
+                        f"Please run manually: {UI.CYAN}{shlex.join(_sudo_install_argv(['sudo'], temp_new, exe_path))} && sudo rm -f {shlex.quote(str(temp_new))}{UI.COLOR_OFF}"
                     )
                     return
 

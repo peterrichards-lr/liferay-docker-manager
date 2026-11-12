@@ -52,7 +52,10 @@ echo "✅ Binary built: ./$OUTNAME"
 
 if [[ "$1" == "--install" ]]; then
     echo "🚀 Installing to $INSTALL_PATH (requires sudo)..."
-    sudo mv "$OUTNAME" "$INSTALL_PATH"
+    # install, not mv: mv keeps the builder as owner, so another account could
+    # change a binary root runs, and onto an old file it keeps a 0777 mode
+    # left by an affected upgrade (GHSA-cq82-rxm7-vw5c).
+    sudo install -o 0 -g 0 -m 755 "$OUTNAME" "$INSTALL_PATH" && rm -f "$OUTNAME"
     echo "✅ LDM successfully installed to $INSTALL_PATH"
     # Verify the installation
     $INSTALL_PATH --version
