@@ -4497,3 +4497,37 @@ class ThePowerShellHarnessRefusesUnknownArguments(unittest.TestCase):
         res = _run_powershell_arg_guard()
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertIn("FELL-THROUGH", res.stdout)
+
+
+class TestPowerShellInlinePythonHasNoDoubleQuotes(unittest.TestCase):
+    """Windows PowerShell 5.1 strips the double quotes inside an argument it
+    passes to a native program; pwsh 7.3+ keeps them.
+
+    An inline `python -c @"..."@` block containing `"` therefore runs as
+    different code under 5.1. The portless-redirect fixture (LDM-#2175) wrote
+    LCP.json as '{\\n    "id": ...}': 5.1 delivered '{\\n    id: ...}', still
+    valid Python, so the build "succeeded" and wrote invalid JSON, and the
+    check failed as "not shaped like a real client extension" on the
+    v2.26.9-pre.1 Windows PowerShell 5.1 run. The script names the same trap
+    for LDM-#1610 and LDM-#2026; this makes it a rule rather than a comment.
+    """
+
+    def test_no_inline_python_block_contains_a_double_quote(self):
+        lines = PS1_SCRIPT.read_text(encoding="utf-8").splitlines()
+        offenders = []
+        start = None
+        for number, line in enumerate(lines, 1):
+            if start is None:
+                if line.rstrip().endswith('-c @"'):
+                    start = number
+            elif line.startswith('"@'):
+                start = None
+            elif '"' in line:
+                offenders.append(f"{PS1_SCRIPT.name}:{number}: {line.strip()}")
+        self.assertIsNone(start, f"unterminated here-string from line {start}")
+        self.assertEqual(
+            [],
+            offenders,
+            "Build the string without literal double quotes (json.dumps, or "
+            "chr(34)), or pass it through an environment variable.",
+        )
