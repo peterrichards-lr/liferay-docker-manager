@@ -319,12 +319,38 @@ class TestRepairOnFirstRun(unittest.TestCase):
             with patch("grp.getgrgid", return_value=shared):
                 self.assertEqual(0o020, upgrade._loose_write_bits(st))
 
+    def _group(self, private):
+        """The binary's group as either the owner's own private group (Linux
+        user-private groups, as on CI runners) or a shared one (macOS
+        `staff`). The real answer differs by machine, so each test pins it."""
+        gid = self.exe.stat().st_gid
+        owner = type("P", (), {"pw_name": "alice", "pw_gid": gid})()
+        if private:
+            group = type("G", (), {"gr_name": "alice", "gr_mem": []})()
+        else:
+            group = type("G", (), {"gr_name": "staff", "gr_mem": ["alice", "bob"]})()
+        return patch("pwd.getpwuid", return_value=owner), patch(
+            "grp.getgrgid", return_value=group
+        )
+
     def test_an_owned_world_writable_binary_is_tightened(self):
         # lint: executable-stub -- the 0777 binary under repair; text content, private tempdir, never executed
         os.chmod(self.exe, 0o777)
-        self.assertTrue(repair_binary_mode(self.exe))
+        pw, gr = self._group(private=False)
+        with pw, gr:
+            self.assertTrue(repair_binary_mode(self.exe))
         self.assertEqual(0o755, _mode(self.exe))
         self.assertIn("GHSA-cq82-rxm7-vw5c", self._warned())
+
+    def test_with_a_private_group_only_other_write_is_removed(self):
+        """Group write to a group holding only the owner exposes nothing, so
+        it is left; other write is still removed."""
+        # lint: executable-stub -- the 0777 binary under repair; text content, private tempdir, never executed
+        os.chmod(self.exe, 0o777)
+        pw, gr = self._group(private=True)
+        with pw, gr:
+            self.assertTrue(repair_binary_mode(self.exe))
+        self.assertEqual(0o775, _mode(self.exe))
 
     def test_a_safe_binary_is_left_alone_silently(self):
         # lint: executable-stub -- an already-correct binary; text content, private tempdir, never executed
