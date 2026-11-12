@@ -102,6 +102,28 @@ PIP_INSTALL_TIMEOUT = 600  # 10 min -- plugin/completion dependency installs
 RELEASE_ANNOUNCEMENTS = {
     # LDM-#1663: a patch needs its OWN key, or the banner falls back to the
     # minor series and re-prints highlights the user has already seen.
+    "2.26.9": [
+        (
+            "Security: the ldm binary is writable only by its owner",
+            "Upgrades from v2.7.6 to v2.26.8 left ldm writable by every local "
+            "account on macOS and Linux, so anyone on the machine could "
+            "replace it (GHSA-cq82-rxm7-vw5c). This release removes that "
+            "access on its first run, and upgrades now install it with mode "
+            "755.",
+        ),
+        (
+            "No more :8080 in the DXP domain behind Traefik",
+            "Liferay published Tomcat's port in the domain client extensions "
+            "read. On 2026.q1.14-lts to 2026.q3, ldm run now installs a "
+            "bundle that removes it.",
+        ),
+        (
+            "An expired GITHUB_PAT no longer blocks public downloads",
+            "When GitHub rejects the token, LDM warns once and retries "
+            "anonymously, so quickstarts, seeds and the update check still "
+            "work.",
+        ),
+    ],
     "2.26.8": [
         (
             "Restoring a snapshot no longer touches another project's search",
