@@ -2877,7 +2877,10 @@ function Test-PortlessRedirectRewrite {
     $env:LDM_E2E_CX_NAME = $cxName
     # Written by Python rather than Set-Content: Windows PowerShell 5.1 writes
     # a BOM with -Encoding UTF8, and the fixture must be byte-identical to the
-    # bash half's.
+    # bash half's. No literal double quote may appear in the code: 5.1 strips
+    # them from a native command's argument, so the LCP.json line once ran as
+    # '{\n    id: ...}' and wrote invalid JSON. json.dumps produces the bash
+    # half's exact bytes without one.
     & $VenvPython -c @"
 import json, os, shutil
 proj, cx_src, cx = os.environ['LDM_E2E_PROJ_DIR'], os.environ['LDM_E2E_CX_SRC'], os.environ['LDM_E2E_CX_NAME']
@@ -2892,7 +2895,7 @@ with open(os.path.join(cx_src, 'client-extension.yaml'), 'w', encoding='utf-8', 
              '        - http://localhost/o/oauth2/redirect\n'
              '    type: oAuthApplicationUserAgent\n')
 with open(os.path.join(cx_src, 'LCP.json'), 'w', encoding='utf-8', newline='\n') as fh:
-    fh.write('{\n    "id": "e2eportlessoauth",\n    "kind": "Deployment"\n}\n')
+    fh.write(json.dumps({'id': 'e2eportlessoauth', 'kind': 'Deployment'}, indent=4) + '\n')
 shutil.make_archive(os.path.join(proj, cx), 'zip', cx_src)
 "@
     $buildCode = $LASTEXITCODE
