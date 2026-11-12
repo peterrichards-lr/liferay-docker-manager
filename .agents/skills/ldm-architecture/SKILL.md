@@ -740,18 +740,26 @@ bundle for each one in `ldm_core/resources/portal_workarounds/`, and
 - **The source lives in `liferay-custom-osgi-modules`.** LDM vendors a
   released jar, renamed without version or line, so only the content changes
   when it is refreshed.
-- **Each workaround declares a tag window** equal to its `Import-Package`
-  range. Outside the window LDM removes the bundle rather than leaving one
-  that cannot resolve. The window must be verified live at both ends; the
-  bundle loading proves nothing about the defect it targets.
-- **Retiring one is a one-line change.** Once Liferay ships the fix, move the
-  entry from `WORKAROUNDS` to `RETIRED_PREFIXES`. Every project drops the
-  bundle on its next run, including copies carried in by snapshots and `.ldmp`
-  packages, which archive the whole `osgi` tree.
+- **Each workaround holds one or more variants, each a jar with a tag
+  window** equal to its `Import-Package` range. The project gets the variant
+  whose window holds its tag; every other copy sharing the workaround's
+  prefix is removed, so changing line swaps the jar rather than adding one,
+  and outside every window there is none. Each window must be verified live
+  at both ends; the bundle loading proves nothing about the defect it targets.
+- **A new line that the current jar cannot resolve on gets its own variant.**
+  Liferay can bump a package between quarters without fixing the defect. Add a
+  build from `liferay-custom-osgi-modules` for that line as a second variant
+  with its own jar name; windows must not overlap, which a test enforces.
+- **Retire per line, then everywhere.** When Liferay ships the fix, end the
+  last variant's window at that release: newer lines drop the bundle, older
+  ones keep it. Once no supported line needs it, move the prefix from
+  `WORKAROUNDS` to `RETIRED_PREFIXES` and every project drops it on its next
+  run, including copies carried in by snapshots and `.ldmp` packages, which
+  archive the whole `osgi` tree.
 
-| Bundle | LDM issue | Upstream | Tags |
-|---|---|---|---|
-| `dxp-routes-domain` | LDM-#2289 | LDM-#2344 | `2026.q1.14` up to `2026.q4` |
+| Bundle | LDM issue | Upstream | Variant | Tags |
+|---|---|---|---|---|
+| `dxp-routes-domain` | LDM-#2289 | LDM-#2344 | `com.liferay.custom.dxp.routes.domain.jar` | `2026.q1.14` up to `2026.q4` |
 
 ## Liferay Client Extension (CX) Standards
 
@@ -769,4 +777,4 @@ When LDM generates, deploys, or reasons about Client Extensions:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-11* | *Last Reviewed: 2026-11-11*
+*Last Updated: 2026-11-12* | *Last Reviewed: 2026-11-12*

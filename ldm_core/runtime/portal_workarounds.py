@@ -7,9 +7,16 @@ know it is there. Once Liferay fixes the defect, move the entry from
 ``WORKAROUNDS`` to ``RETIRED_PREFIXES``; each project then loses the bundle on
 its next run, and nothing else changes.
 
-The tag window is the bundle's ``Import-Package`` range expressed as tags. A
-bundle placed on a line outside it would not resolve, and Liferay would report
-that at every start.
+A workaround has one or more variants, each a jar with its own tag window: the
+jar's ``Import-Package`` range expressed as tags. A bundle placed on a line
+outside it would not resolve, and Liferay would report that at every start.
+Liferay can change a package's version between quarters without fixing the
+defect, so a later line may need a jar of its own; add a variant for it. The
+windows of one workaround must not overlap, so a tag selects at most one.
+
+A workaround can also be retired per line: end its last variant's window at
+the release carrying Liferay's fix, and projects on that release and later lose
+the bundle while older lines keep it.
 """
 
 from __future__ import annotations
@@ -20,16 +27,22 @@ from ldm_core.ui import UI
 
 
 @dataclass(frozen=True)
-class Workaround:
-    issue: str
+class Variant:
     #: The jar's file name under ``ldm_core/resources/portal_workarounds``.
     jar: str
-    #: The file name prefix every version of the bundle shares, so a copy left
-    #: by an older LDM is replaced rather than installed alongside.
-    prefix: str
     #: ``(year, quarter, patch)``; the window is ``[first_tag, end_tag)``.
     first_tag: tuple[int, int, int]
     end_tag: tuple[int, int, int]
+
+
+@dataclass(frozen=True)
+class Workaround:
+    issue: str
+    #: The file name prefix every jar of the bundle shares, so a copy left by an
+    #: older LDM, or the variant for another line, is replaced rather than
+    #: installed alongside.
+    prefix: str
+    variants: tuple[Variant, ...]
 
 
 WORKAROUNDS: tuple[Workaround, ...] = (
@@ -39,10 +52,14 @@ WORKAROUNDS: tuple[Workaround, ...] = (
     # 100.0.0 is 2026.q3. Verified live at both ends.
     Workaround(
         issue="LDM-#2289",
-        jar="com.liferay.custom.dxp.routes.domain.jar",
         prefix="com.liferay.custom.dxp.routes.domain",
-        first_tag=(2026, 1, 14),
-        end_tag=(2026, 4, 0),
+        variants=(
+            Variant(
+                jar="com.liferay.custom.dxp.routes.domain.jar",
+                first_tag=(2026, 1, 14),
+                end_tag=(2026, 4, 0),
+            ),
+        ),
     ),
 )
 
@@ -50,22 +67,30 @@ WORKAROUNDS: tuple[Workaround, ...] = (
 RETIRED_PREFIXES: tuple[str, ...] = ()
 
 
-def applies(workaround, tag, parse_version):
-    """Whether ``tag`` falls in the workaround's window.
+def applies(variant, tag, parse_version):
+    """Whether ``tag`` falls in the variant's window.
 
     Only quarterly tags can: ``7.4.13-u100`` parses as ``(7, 4, 13, ...)`` and
     an unparseable tag as ``(0, 0, 0)``, both below any 2026 window.
     """
     version = tuple(parse_version(tag))[:3]
-    return len(version) == 3 and (workaround.first_tag <= version < workaround.end_tag)
+    return len(version) == 3 and (variant.first_tag <= version < variant.end_tag)
 
 
-def _bundled(workaround):
+def select(workaround, tag, parse_version):
+    """The variant whose window holds ``tag``, or ``None`` if none does."""
+    for variant in workaround.variants:
+        if applies(variant, tag, parse_version):
+            return variant
+    return None
+
+
+def _bundled(variant):
     import importlib.resources as pkg_resources
 
     from ldm_core import resources
 
-    return pkg_resources.files(resources) / "portal_workarounds" / workaround.jar
+    return pkg_resources.files(resources) / "portal_workarounds" / variant.jar
 
 
 def _copies(modules_dir, prefix):
@@ -88,17 +113,17 @@ def sync_workarounds(manager, paths, tag):
                 stale.unlink()
 
         for workaround in WORKAROUNDS:
-            wanted = applies(workaround, tag, manager.parse_version)
-            target = modules_dir / workaround.jar
+            variant = select(workaround, tag, manager.parse_version)
+            target = modules_dir / variant.jar if variant else None
 
             for copy in _copies(modules_dir, workaround.prefix):
-                if not wanted or copy != target:
+                if copy != target:
                     copy.unlink()
 
-            if not wanted:
+            if variant is None or target is None:
                 continue
 
-            bundled = _bundled(workaround)
+            bundled = _bundled(variant)
             if target.is_file() and target.read_bytes() == bundled.read_bytes():
                 continue
 
@@ -109,6 +134,6 @@ def sync_workarounds(manager, paths, tag):
             modules_dir.mkdir(parents=True, exist_ok=True)
             with pkg_resources.as_file(bundled) as source:
                 atomic_copy(source, target)
-            UI.detail(f"Installed {workaround.jar} ({workaround.issue})")
+            UI.detail(f"Installed {variant.jar} ({workaround.issue})")
     except Exception as exc:
         UI.debug(f"Portal workaround sync skipped: {exc}")
