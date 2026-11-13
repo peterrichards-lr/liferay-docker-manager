@@ -70,6 +70,23 @@ def _no_real_docker():
     return patch("ldm_core.docker_service.run_command", return_value=None)
 
 
+def _wipes_under(rmtree, home):
+    """The calls on a patched ``shutil.rmtree`` that targeted ``home``.
+
+    The patch is process-wide, so a ``TemporaryDirectory`` leaked by an earlier
+    test and garbage-collected inside the window is recorded too: CI on 3.11
+    saw two ``/tmp/tmp*`` cleanups fail ``assert_not_called`` while the wipe
+    itself never ran. Only the search data under ``home`` is the guard's
+    concern.
+    """
+    root = Path(home).resolve()
+    return [
+        c
+        for c in rmtree.call_args_list
+        if c.args and Path(c.args[0]).resolve().is_relative_to(root)
+    ]
+
+
 class TestRestartProxyReportsWhatHappened(unittest.TestCase):
     """`ldm infra restart-proxy` reported success unconditionally (LDM-#1548).
 
@@ -167,7 +184,7 @@ class TestSearchAutoRepairDoesNotWipeBlindly(unittest.TestCase):
                 rm_result=None, exists_after_rm=True, home=Path(tmp)
             )
         self.assertEqual(code, 3)
-        mock_rmtree.assert_not_called()
+        self.assertEqual(_wipes_under(mock_rmtree, tmp), [])
 
     def test_a_removal_that_worked_still_wipes_and_retries(self):
         """The contrast case: only the `rm -f` result differs."""
@@ -179,7 +196,7 @@ class TestSearchAutoRepairDoesNotWipeBlindly(unittest.TestCase):
             )
         # Exhausts the two retries and dies with the pre-existing depth guard.
         self.assertEqual(code, 3)
-        self.assertTrue(mock_rmtree.called)
+        self.assertTrue(_wipes_under(mock_rmtree, tmp))
 
 
 class TestExistingSearchContainerIsProbed(unittest.TestCase):
@@ -356,7 +373,7 @@ class TestTheSearchWipeIsGuardedLikeTheSSLRecreate(unittest.TestCase):
             rmtree, die, _ = self._run(
                 running=[("devcon2026", "local")], home=Path(tmp)
             )
-        rmtree.assert_not_called()
+        self.assertEqual(_wipes_under(rmtree, tmp), [])
         self.assertEqual(die[0]["code"], 3)
 
     def test_the_refusal_names_the_project_and_how_to_stop_it(self):
@@ -380,14 +397,14 @@ class TestTheSearchWipeIsGuardedLikeTheSSLRecreate(unittest.TestCase):
             rmtree, _, _ = self._run(
                 running=[("devcon2026", "local")], cli_force=True, home=Path(tmp)
             )
-        self.assertTrue(rmtree.called)
+        self.assertTrue(_wipes_under(rmtree, tmp))
 
     def test_an_unanswerable_probe_refuses_rather_than_assuming_idle(self):
         """LDM-#1548's lesson applied to the destructive path: a daemon that
         cannot answer must never read as 'nothing is running'."""
         with self._tmp() as tmp:
             rmtree, die, _ = self._run(running=[], probe_raises=True, home=Path(tmp))
-        rmtree.assert_not_called()
+        self.assertEqual(_wipes_under(rmtree, tmp), [])
         self.assertEqual(die[0]["code"], 3)
 
     def test_an_unanswerable_probe_with_force_still_proceeds(self):
@@ -395,13 +412,13 @@ class TestTheSearchWipeIsGuardedLikeTheSSLRecreate(unittest.TestCase):
             rmtree, _, _ = self._run(
                 running=[], probe_raises=True, cli_force=True, home=Path(tmp)
             )
-        self.assertTrue(rmtree.called)
+        self.assertTrue(_wipes_under(rmtree, tmp))
 
     def test_an_idle_machine_still_repairs(self):
         """The contrast case. The guard must not break the repair itself."""
         with self._tmp() as tmp:
             rmtree, _, _ = self._run(running=[], home=Path(tmp))
-        self.assertTrue(rmtree.called)
+        self.assertTrue(_wipes_under(rmtree, tmp))
 
     def test_the_failing_containers_logs_are_captured_before_it_is_removed(self):
         """The repair ended with `docker rm -f`, taking the only record of
