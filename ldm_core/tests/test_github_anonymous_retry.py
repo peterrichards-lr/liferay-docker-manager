@@ -101,10 +101,11 @@ class QuickstartFindsThePublicPackage(unittest.TestCase):
             patch("ldm_core.utils.github_token_source", return_value="GITHUB_PAT"),
             patch("requests.get", side_effect=get),
         ):
-            has_ldmp, ldmp, sha, token = _check_github_release_for_package(
+            has_ldmp, ldmp, sha, token, unanswered = _check_github_release_for_package(
                 MagicMock(), "peterrichards-lr", "aica", "peterrichards-lr/aica"
             )
         self.assertTrue(has_ldmp)
+        self.assertIsNone(unanswered)
         self.assertEqual(ldmp["name"], "aica.ldmp")
         self.assertEqual(sha["name"], "aica.ldmp.sha256")
         # The download reuses this, so it must not resend the rejected one.

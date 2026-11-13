@@ -3,7 +3,7 @@ import shutil
 import tarfile
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 if TYPE_CHECKING:
     pass
@@ -128,13 +128,125 @@ def _download_remote_archive(
             shutil.rmtree(temp_dir)
 
 
+class UnansweredReleaseLookup(NamedTuple):
+    """Why the GitHub release lookup produced no answer (LDM-#2364).
+
+    Distinct from "answered, no package": the caller must not report a missing
+    package on the strength of a request GitHub never answered.
+    """
+
+    reason: str
+    tip: str | None
+    exit_code: int
+
+
+def _rate_limit_reset(response):
+    """`X-RateLimit-Reset` (epoch seconds) as local HH:MM, or None."""
+    headers = getattr(response, "headers", None) or {}
+    try:
+        reset = int(str(headers.get("X-RateLimit-Reset")))
+        return datetime.fromtimestamp(reset).strftime("%H:%M")
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
+def _credential_precedence_note(source):
+    """`get_github_token()` reads GITHUB_PAT, then GITHUB_TOKEN, then the gh
+    CLI, so setting a lower one does nothing while a higher one is set."""
+    if source == "GITHUB_PAT":
+        return (
+            " LDM uses GITHUB_PAT ahead of GITHUB_TOKEN and the gh CLI, so "
+            "setting either of those has no effect while GITHUB_PAT is set."
+        )
+    if source == "GITHUB_TOKEN":
+        return (
+            " LDM uses GITHUB_TOKEN ahead of the gh CLI, so 'gh auth login' "
+            "has no effect while GITHUB_TOKEN is set."
+        )
+    return ""
+
+
+def _unanswered_lookup(api_resp, github_token):
+    """Classify a non-200, non-404 release lookup (LDM-#2364).
+
+    Exit codes follow the architecture skill's contract: a refused credential
+    is an authentication error (2); a rate limit or any other unanswered
+    request is an external API failure (3), as for Docker Hub tag discovery.
+    """
+    from ldm_core.utils import github_token_source
+
+    status = api_resp.status_code
+    headers = getattr(api_resp, "headers", None) or {}
+    # `github_get` drops the credential only after GitHub rejects it with a
+    # 401, so no token back while a source is configured means it was rejected
+    # and this response was obtained anonymously.
+    rejected = None if github_token else github_token_source()
+
+    if status == 401:
+        tip = (
+            f"GitHub rejected the credential from {rejected}. Renew or unset "
+            f"{rejected}.{_credential_precedence_note(rejected)}"
+            if rejected
+            else "Check the repository URL and your GitHub credentials."
+        )
+        return UnansweredReleaseLookup("GitHub refused the request (HTTP 401)", tip, 2)
+
+    is_rate_limited = status == 429 or (
+        status == 403
+        and (not github_token or str(headers.get("X-RateLimit-Remaining")) == "0")
+    )
+    if is_rate_limited:
+        reset = _rate_limit_reset(api_resp)
+        reason = "GitHub API rate limit exceeded" + (
+            f" (resets at {reset})" if reset else ""
+        )
+        if rejected:
+            tip = (
+                f"GitHub rejected the credential from {rejected}, so the lookup "
+                "ran anonymously, under the lower anonymous limit. Replace or "
+                f"unset {rejected}.{_credential_precedence_note(rejected)}"
+            )
+        elif github_token:
+            tip = "Wait for the limit to reset, then run the command again."
+        else:
+            tip = (
+                "Wait for the limit to reset, or set GITHUB_PAT or GITHUB_TOKEN "
+                "(or run 'gh auth login') to raise it."
+            )
+        return UnansweredReleaseLookup(reason, tip, 3)
+
+    if status == 403:
+        # A 403 WITH an Authorization header is usually SSO enforcement or an
+        # insufficient scope. Asserting "rate limit" sends the user away to
+        # wait out something that will never clear (LDM-#2098).
+        src = github_token_source() or "your environment"
+        return UnansweredReleaseLookup(
+            f"GitHub refused the credential from {src} (HTTP 403)",
+            "With a credential present this is usually SSO enforcement or a "
+            f"missing scope rather than a rate limit. Authorize {src} for the "
+            f"organization's SSO, or replace it.{_credential_precedence_note(src)}",
+            2,
+        )
+
+    return UnansweredReleaseLookup(f"GitHub answered HTTP {status}", None, 3)
+
+
 def _check_github_release_for_package(self, owner, repo, source_path):
-    from ldm_core.utils import UI, github_get, github_token_source
+    """Look up the latest release's .ldmp.
+
+    Returns ``(has_ldmp, ldmp_asset, sha_asset, github_token, unanswered)``.
+    ``unanswered`` is None when GitHub answered -- with or without a package,
+    a 404 meaning no release -- and an `UnansweredReleaseLookup` when it did
+    not (LDM-#2364), so the caller never reports a missing package it could
+    not see.
+    """
+    from ldm_core.utils import UI, github_get
 
     github_token = None
     has_ldmp = False
     ldmp_asset = None
     sha_asset = None
+    unanswered = None
 
     api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
     try:
@@ -160,44 +272,18 @@ def _check_github_release_for_package(self, owner, repo, source_path):
                         f"Remote LDM package '{ldmp_asset.get('name')}' is too small ({asset_size} bytes) "
                         f"and appears to be empty/vanilla. To clone the workspace code directly, please use: 'ldm clone {source_path}'"
                     )
-        elif api_resp.status_code == 401:
-            # LDM-#2098: this fell to UI.debug, so at default verbosity the
-            # user saw nothing here and then "No compiled LDM Package found"
-            # from the caller -- the one conclusion the evidence does not
-            # support. Since LDM-#2347 `github_get` has already retried
-            # anonymously, so reaching here means GitHub refused even that.
-            UI.warning(
-                "GitHub refused the release lookup (HTTP 401). This is a "
-                "credential problem, not a missing package."
-            )
-        elif api_resp.status_code == 403:
-            if github_token:
-                # A 403 WITH an Authorization header is usually SSO
-                # enforcement or an insufficient scope. Asserting "rate
-                # limit" sends the user away to wait out something that will
-                # never clear, and the old advice -- "Set GITHUB_TOKEN" --
-                # named the variable get_github_token() deprioritises, so
-                # following it leaves a broken GITHUB_PAT in charge.
-                src = github_token_source() or "your environment"
-                UI.warning(
-                    f"GitHub refused the request (HTTP 403) using the "
-                    f"credential from {src}. Falling back to standard git clone."
-                )
-                UI.warning(
-                    "  With a credential present this is usually SSO "
-                    "enforcement or a missing scope rather than a rate limit."
-                )
-            else:
-                UI.warning(
-                    "GitHub API rate limit exceeded. Falling back to standard "
-                    "git clone. (Set GITHUB_PAT or GITHUB_TOKEN to raise it)"
-                )
+        elif api_resp.status_code == 404:
+            # Answered: the repository has no release.
+            UI.debug("GitHub API returned 404: no release")
         else:
-            UI.debug(f"GitHub API returned {api_resp.status_code}")
+            # LDM-#2098 / LDM-#2364: 401, 403, 429 and the rest were all
+            # reported as "no package" by the caller.
+            unanswered = _unanswered_lookup(api_resp, github_token)
     except Exception as e:
         UI.debug(f"GitHub Release API query failed: {e}")
+        unanswered = UnansweredReleaseLookup(f"the request failed ({e})", None, 3)
 
-    return has_ldmp, ldmp_asset, sha_asset, github_token
+    return has_ldmp, ldmp_asset, sha_asset, github_token, unanswered
 
 
 def _download_ldm_package_assets(
@@ -897,11 +983,25 @@ def cmd_import(
         sha_asset = None
         owner, repo = None, None
         github_token = None
+        unanswered = None
 
         if parsed and not should_clone_only:
             owner, repo = parsed
-            has_ldmp, ldmp_asset, sha_asset, github_token = (
+            has_ldmp, ldmp_asset, sha_asset, github_token, unanswered = (
                 _check_github_release_for_package(self, owner, repo, source_path)
+            )
+
+        if unanswered:
+            # LDM-#2364: the lookup runs only on the package path, which never
+            # falls back to a clone, so this stops -- before anything is
+            # replaced -- and says the question went unanswered, rather than
+            # that the package is absent.
+            UI.die(
+                f"Could not query GitHub Releases for {owner}/{repo}: "
+                f"{unanswered.reason}. Whether it has an LDM Package (.ldmp) "
+                "is unknown.",
+                tip=unanswered.tip,
+                exit_code=unanswered.exit_code,
             )
 
         if has_ldmp:

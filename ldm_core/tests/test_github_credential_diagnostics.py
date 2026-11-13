@@ -41,8 +41,15 @@ def _call(status, token, source="GITHUB_PAT"):
         patch("ldm_core.utils.github_token_source", return_value=source),
         patch("requests.get", return_value=_Response(status)),
     ):
-        _check_github_release_for_package(MagicMock(), "acme", "widget", "acme/widget")
-    return " ".join(str(c.args[0]) for c in ui.warning.call_args_list)
+        *_, unanswered = _check_github_release_for_package(
+            MagicMock(), "acme", "widget", "acme/widget"
+        )
+    # LDM-#2364: an unanswered lookup is no longer a warning here; its reason
+    # and tip travel back to cmd_import, which stops with them.
+    said = [str(c.args[0]) for c in ui.warning.call_args_list]
+    if unanswered:
+        said += [unanswered.reason, unanswered.tip or ""]
+    return " ".join(said)
 
 
 class TheRejectedCredentialIsNamed(unittest.TestCase):
