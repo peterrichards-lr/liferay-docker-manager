@@ -7215,8 +7215,25 @@ fi
 # Run whenever the copy BOOTED, even if it then failed to serve, because the
 # compose file it reads is the one `ldm run` rendered. Before the state
 # capture and reset below, which tear the stack down.
+#
+# The copy's directory is asked of LDM, not assumed. `ldm import` places a
+# project where `detect_project_path` resolves it -- beside the working
+# directory, not under LDM_WORKSPACE -- and a guessed path made this check
+# exit 4 on every platform at v2.26.10-pre.2 (LDM-#2372).
 if [ "$ROUNDTRIP_BOOTED" = true ]; then
-    roundtrip_env_check "The imported copy '${ROUNDTRIP_PROJECT}'" "${LDM_WORKSPACE}/${ROUNDTRIP_PROJECT}"
+    ROUNDTRIP_COPY_DIR=$("$LDM_CMD" list --json 2>/dev/null | "$VENV_PYTHON" -c 'import json,sys
+want = sys.argv[1]
+try:
+    rows = json.load(sys.stdin)
+except Exception:
+    rows = []
+print(next((r.get("path") or "" for r in rows if r.get("project") == want), ""))' "$ROUNDTRIP_PROJECT" 2>/dev/null || true)
+    if [ -z "$ROUNDTRIP_COPY_DIR" ]; then
+        echo "❌ ERROR: 'ldm list --json' did not report a path for '${ROUNDTRIP_PROJECT}', so its env-leak check could not run. LDM-#2370 was NOT evaluated and this is not a skip." | tee -a "$RESULTS_FILE_TMP"
+        ROUNDTRIP_ENV_OK=false
+    else
+        roundtrip_env_check "The imported copy '${ROUNDTRIP_PROJECT}'" "$ROUNDTRIP_COPY_DIR"
+    fi
 fi
 
 # LDM-#2221: captured BEFORE the removal below, which is the whole point.
