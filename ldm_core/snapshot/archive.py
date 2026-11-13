@@ -580,7 +580,67 @@ class ArchiveSnapshotService:
             # this restore path -- see ldm-architecture/SKILL.md.
             self.facade.volumes.hydrate_named_volumes_with_sync_wait(paths)
 
-    def _generate_snapshot_metadata(  # noqa: C901, PLR0912, PLR0915
+    @staticmethod
+    def _declared_custom_env(project_meta):
+        """The `LIFERAY_*` environment the publisher DECLARED. LDM-#2370.
+
+        This used to be read from the project's rendered `docker-compose.yml`,
+        which holds everything LDM generated for the publisher's machine as
+        well -- the virtual host above all. `composer._build_liferay_service`
+        appends `custom_env` after LDM's own entries, so on the consumer the
+        carried host won, and AICA v3.3.59 pointed every consumer's default
+        company at its CI build's `aica-e2e.demo`.
+
+        `meta["custom_env"]` is the only place a user's Liferay environment
+        enters the rendered service: `ldm config env`, `--env`, and the cloud
+        env sync all write it, and the composer reads nothing else into that
+        list. Parsed the way the composer parses it (dict, JSON string, or
+        legacy `K=V,K=V`). Kept to `LIFERAY_*` and clear of the three keys the
+        compose-based capture also excluded, so the package's shape does not
+        change; then passed through the same strip restore applies, because a
+        project restored before LDM-#2370 holds a polluted copy in its meta.
+
+        `dl_store_impl` is carried as before: the composer rendered it from
+        meta, so the old capture shipped it, and it describes the packaged
+        document-library layout rather than the machine -- `.ldmp` restore
+        does not re-detect it (only the cloud-volume path does).
+        """
+        from ldm_core.handlers.snapshot import strip_ldm_rendered_env
+
+        declared = {}
+        dl_store = project_meta.get("dl_store_impl")
+        if dl_store:
+            declared["LIFERAY_DL_PERIOD_STORE_PERIOD_IMPL"] = dl_store
+
+        raw = project_meta.get("custom_env")
+        if isinstance(raw, dict):
+            parsed = raw
+        else:
+            try:
+                parsed = json.loads(raw or "{}")
+            except ValueError:
+                parsed = {}
+                for pair in str(raw).split(","):
+                    if "=" in pair:
+                        k, v = pair.split("=", 1)
+                        parsed[k.strip()] = v.strip()
+        if not isinstance(parsed, dict):
+            parsed = {}
+
+        standard_vars = (
+            "LIFERAY_JVM_OPTS",
+            "LIFERAY_HOME",
+            "LIFERAY_HSQL_PERIOD_ENABLED",
+        )
+        for key, val in parsed.items():
+            key = str(key)
+            if key.startswith("LIFERAY_") and key not in standard_vars:
+                declared[key] = str(val)
+
+        kept, _ = strip_ldm_rendered_env(declared)
+        return kept
+
+    def _generate_snapshot_metadata(  # noqa: C901, PLR0912
         self,
         name,
         timestamp,
@@ -591,32 +651,7 @@ class ArchiveSnapshotService:
         db_snapshot_file,
         search_snapshot_name,
     ):
-        custom_env_dict = {}
-        compose_path = paths["root"] / "docker-compose.yml"
-        if compose_path.exists():
-            try:
-                from ldm_core.utils import yaml_to_dict
-
-                compose_data = yaml_to_dict(compose_path.read_text())
-                liferay_service = (compose_data.get("services") or {}).get(
-                    "liferay", {}
-                )
-                env_vars = liferay_service.get("environment", [])
-                if isinstance(env_vars, list):
-                    standard_vars = [
-                        "LIFERAY_JVM_OPTS",
-                        "LIFERAY_HOME",
-                        "LIFERAY_HSQL_PERIOD_ENABLED",
-                    ]
-                    for var in env_vars:
-                        if "=" in var:
-                            key, val = var.split("=", 1)
-                            if key.startswith("LIFERAY_") and key not in standard_vars:
-                                custom_env_dict[key] = val
-            except Exception as e:
-                UI.warning(
-                    f"Could not parse docker-compose.yml for environment variables: {e}"
-                )
+        custom_env_dict = self._declared_custom_env(project_meta)
 
         db_included = db_snapshot_file is not None and db_snapshot_file.exists()
 
