@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.10-pre.2] - 2026-11-13
+
+### Fixed
+
+- **A package no longer overrides the consumer's environment with the publisher's** (LDM-#2370). `ldm snapshot` captured every `LIFERAY_*` setting from the rendered compose file, including the values LDM generates for the publisher's own machine: the default company's virtual host, the display-node flag, redirect IPs, the log4j file, and the reindex, cluster, routes and search keys. On import those replaced the consumer's values. A package built by AICA's CI pointed every consumer's default company at the CI host `aica-e2e.demo`. Snapshots now capture only the environment the publisher declared (`ldm config env`, `--env`), and importing a package strips any LDM-generated key it carries, naming what was dropped, so packages already published are corrected on import. A project imported **before** this release keeps those keys in its own `meta` until it is re-imported.
+- **`ldm -y rm --infra`, `ldm -y infra down` and `ldm -y infra restart` refuse while other projects are running** (LDM-#2371). Under `-y` they tore down the shared proxy and search node regardless of what was using them. They now exit 3, name the projects with the `ldm stop` command for each, and fail closed when Docker cannot answer. `--force` proceeds. The project being removed by the same `ldm rm` call does not count.
+
+### Internal
+
+- The verification scripts reset the shared infrastructure only after their running-projects check. Before, a run started next to another project removed its proxy and search node before refusing to continue (LDM-#2371).
+- The verification round trip checks that the package it builds, and the copy it imports, carry no LDM-generated environment (LDM-#2372).
+
 ## [v2.26.10-pre.1] - 2026-11-13
 
 ### Fixed
