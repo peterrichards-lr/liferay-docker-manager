@@ -451,25 +451,41 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
             UI.success(f"LDM is already up to date v{VERSION}{tier}.")
             return
 
+        # LDM-#2358: the outcome lines below are the whole answer to the
+        # command, so they use UI.info, not UI.detail. UI.detail is hidden at
+        # default verbosity, which made `--check` print only its heading
+        # whenever an update existed, and `-y` on a pre-release return without
+        # a word.
         if check_only:
             if target_version_str:
-                UI.detail(f"Target version v{latest} is available.")
+                UI.info(f"Target version v{latest} is available.")
             else:
-                UI.detail(
+                UI.info(
                     f"A new version of LDM is available: {UI.GREEN}v{latest}{UI.COLOR_OFF}"
                 )
-            UI.detail(f"Run {UI.CYAN}ldm upgrade{UI.COLOR_OFF} to install it.")
+            UI.info(f"Run {UI.CYAN}ldm upgrade{UI.COLOR_OFF} to install it.")
             return
 
         if is_beta and not pre_release and not target_version_str:
             # User is on beta but wants stable (Switching Tiers)
-            UI.detail(
+            UI.info(
                 f"You are currently on a beta build ({UI.BYELLOW}v{VERSION}{UI.COLOR_OFF})."
             )
-            UI.detail(
-                f"The latest stable version is {UI.GREEN}v{latest}{UI.COLOR_OFF}."
-            )
+            UI.info(f"The latest stable version is {UI.GREEN}v{latest}{UI.COLOR_OFF}.")
             if not UI.confirm("Switch back to the stable release tier?", "N"):
+                if handler.manager.non_interactive:
+                    # The prompt defaults to N, so `-y` declines it without
+                    # asking. Say so, and how to take the stable release.
+                    UI.warning(
+                        f"Not upgraded: staying on v{VERSION}. '-y' does not "
+                        "switch from a pre-release to the stable tier."
+                    )
+                    UI.info(
+                        f"To upgrade, re-run with '--beta' or '-v v{latest}', "
+                        "or without '-y' and answer the prompt."
+                    )
+                else:
+                    UI.info(f"Upgrade cancelled: staying on v{VERSION}.")
                 return
 
     is_downgrade = version_to_tuple(latest) < version_to_tuple(VERSION)

@@ -158,6 +158,10 @@ ldm system upgrade --check           # Check for updates without installing
 ldm upgrade --beta
 ```
 
+`--check` always states its result: either that LDM is already up to date, or which newer version is available.
+
+**Upgrading from a pre-release.** On a pre-release build, a plain `ldm system upgrade` offers to switch back to the stable tier and defaults to *No*. With `-y` that prompt is not asked, so the default applies: LDM stays on the pre-release and says so. To take the stable release unattended, pass `--beta` (which considers stable and pre-release versions alike) or name it with `-v vX.Y.Z`.
+
 **The upgraded binary is writable only by its owner.** On macOS and Linux the new binary is installed with mode 755. An upgrade through `sudo` installs it owned by root, with the same mode. Releases v2.7.6 to v2.26.8 left it writable by every local user (mode 777), so anyone with an account on the machine could replace it ([GHSA-cq82-rxm7-vw5c](https://github.com/peterrichards-lr/liferay-docker-manager/security/advisories/GHSA-cq82-rxm7-vw5c)).
 
 An upgrade *from* one of those releases is still carried out by the old release's code, so the new binary starts out world-writable too. From the fixed release on, every `ldm` command checks its own binary, scripted and CI runs included, and reports on stderr. If you own the binary, or run as root, it removes other accounts' write access and says so once. Run as root, it also gives a binary in a root-owned folder such as `/usr/local/bin` back to root. Anything it can't fix, it reports on every run, with the command to run.
@@ -769,4 +773,4 @@ ldm target migrate win-wsl node-a
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-11* | *Last Reviewed: 2026-11-11*
+*Last Updated: 2026-11-13* | *Last Reviewed: 2026-11-13*
