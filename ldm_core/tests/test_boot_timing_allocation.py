@@ -110,6 +110,8 @@ class TheBootRecordCarriesIt(unittest.TestCase):
                     BaseHandler,
                     "run_command",
                     side_effect=[
+                        # LDM-#2346: StartedAt, read before the first log poll.
+                        "2026-11-11T10:20:30.123456789Z",
                         "org.apache.catalina.startup.Catalina.start Server startup in 1 ms",
                         "healthy",
                     ],

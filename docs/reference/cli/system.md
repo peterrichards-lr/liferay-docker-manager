@@ -69,7 +69,7 @@ ldm system seeds
 
 Blocks execution until a Liferay instance is genuinely ready for work. This is highly recommended for CI/CD pipelines and complex deployment scripts. Unlike basic Docker healthchecks, `ldm wait` performs a **3-Phase Verification**:
 
-1. **Log Readiness**: Scans Docker logs for the Tomcat `"Server startup"` marker.
+1. **Log Readiness**: Scans Docker logs for the Tomcat `"Server startup"` marker. Only the current boot is read: the first scan starts at the container's own start time, so a restarted container is not reported ready on the marker left in its log by the previous run.
 2. **HTTP Availability**: Polls the instance until it responds with an `HTTP 200` or `302` on its primary port.
 3. **CPU Idle State**: Actively monitors the container's CPU usage, blocking until it drops below the threshold (default: 15.0%) for consecutive checks (default: 3). This is configurable via `--cpu-idle-threshold` and `--cpu-idle-checks` options.
 
