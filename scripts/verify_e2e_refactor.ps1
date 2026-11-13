@@ -7264,8 +7264,26 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     # cannot drift (LDM-#1982). Run whenever the copy BOOTED, even if it then
     # failed to serve, because the compose file it reads is the one 'ldm run'
     # rendered; before the state capture and reset below.
+    #
+    # The copy's directory is asked of LDM, not assumed: 'ldm import' places a
+    # project beside the working directory, not under LDM_WORKSPACE, and a
+    # guessed path made this check exit 4 at v2.26.10-pre.2 (LDM-#2372).
     if ($roundTripBooted) {
-        Invoke-RoundTripEnvCheck -What "The imported copy '$ROUNDTRIP_PROJECT'" -CheckerArgs @((Join-Path $LDM_WORKSPACE $ROUNDTRIP_PROJECT))
+        $roundTripCopyDir = ""
+        try {
+            $copyRaw = ConvertTo-LdmText (& $LDM_CMD list --json 2>$null)
+            $copyRows = ConvertFrom-LdmJson -Raw $copyRaw -Label "list --json"
+            $copyRow = @($copyRows) | Where-Object { $_.project -ceq $ROUNDTRIP_PROJECT } | Select-Object -First 1
+            if ($copyRow -and $copyRow.path) { $roundTripCopyDir = [string]$copyRow.path }
+        } catch {
+            $roundTripCopyDir = ""
+        }
+        if (-not $roundTripCopyDir) {
+            Write-Verdict "[ERROR] 'ldm list --json' did not report a path for '$ROUNDTRIP_PROJECT', so its env-leak check could not run. LDM-#2370 was NOT evaluated and this is not a skip."
+            $script:roundTripEnvOk = $false
+        } else {
+            Invoke-RoundTripEnvCheck -What "The imported copy '$ROUNDTRIP_PROJECT'" -CheckerArgs @($roundTripCopyDir)
+        }
     }
 
     # LDM-#2221: captured BEFORE the removal below, which is the whole point.

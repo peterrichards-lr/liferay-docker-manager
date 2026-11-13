@@ -172,7 +172,9 @@ class ThePackageIsReadWithoutExtracting(unittest.TestCase):
 HALVES = {
     "verify_e2e_refactor.sh": {
         "package_call": 'roundtrip_env_check "The package ${PROJECT_NAME}.ldmp" --package "$ROUNDTRIP_PKG"',
-        "copy_call": '"${LDM_WORKSPACE}/${ROUNDTRIP_PROJECT}"',
+        "copy_call": '"The imported copy \'${ROUNDTRIP_PROJECT}\'" "$ROUNDTRIP_COPY_DIR"',
+        "copy_resolve": '"$LDM_CMD" list --json',
+        "copy_guessed": "${LDM_WORKSPACE}/${ROUNDTRIP_PROJECT}",
         "import": 'import "$ROUNDTRIP_PKG"',
         "boot": 'run "$ROUNDTRIP_PROJECT"',
         "booted_gate": 'if [ "$ROUNDTRIP_BOOTED" = true ]; then',
@@ -183,7 +185,9 @@ HALVES = {
     },
     "verify_e2e_refactor.ps1": {
         "package_call": '-CheckerArgs @("--package", $roundTripPkg)',
-        "copy_call": "-CheckerArgs @((Join-Path $LDM_WORKSPACE $ROUNDTRIP_PROJECT))",
+        "copy_call": "-CheckerArgs @($roundTripCopyDir)",
+        "copy_resolve": "& $LDM_CMD list --json",
+        "copy_guessed": "Join-Path $LDM_WORKSPACE $ROUNDTRIP_PROJECT",
         "import": "import $roundTripPkg",
         "boot": "run $ROUNDTRIP_PROJECT",
         "booted_gate": "if ($roundTripBooted) {",
@@ -208,9 +212,27 @@ class BothHalvesRunItInTheRoundTrip(unittest.TestCase):
         for name, marks in HALVES.items():
             with self.subTest(script=name):
                 section = self._section(name)
-                for key in ("package_call", "copy_call", "booted_gate", "final_gate"):
+                for key in (
+                    "package_call",
+                    "copy_call",
+                    "copy_resolve",
+                    "booted_gate",
+                    "final_gate",
+                ):
                     self.assertTrue(marks[key] in section, f"{name}: no {key}")
+                # LDM-#2372: the copy's directory comes from `ldm list --json`.
+                # `ldm import` places it beside the working directory, so the
+                # guessed LDM_WORKSPACE path made the check exit 4 on every
+                # platform at v2.26.10-pre.2 -- and this test pinned the guess.
                 at = section.index
+                copy_block = section[
+                    section.rindex(
+                        marks["booted_gate"], 0, at(marks["copy_call"])
+                    ) : at(marks["copy_call"]) + len(marks["copy_call"])
+                ]
+                self.assertNotIn(marks["copy_guessed"], copy_block, name)
+                self.assertLess(at(marks["booted_gate"]), at(marks["copy_resolve"]))
+                self.assertLess(at(marks["copy_resolve"]), at(marks["copy_call"]))
                 # The package is checked before import can strip anything.
                 self.assertLess(at(marks["package_call"]), at(marks["import"]))
                 # The copy is checked after the boot that renders its compose,
