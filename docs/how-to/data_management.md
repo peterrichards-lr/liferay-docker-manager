@@ -288,6 +288,11 @@ An unrecognised target is **refused with exit 1**, naming the valid ones.
 Before LDM-#2127 any string was accepted and reported success having done
 nothing.
 
+Liferay writes `logs/` and `data/` as uid 1000. On native Linux, where your
+host uid is often something else, `reset` cannot delete those files directly;
+it reclaims their ownership through a short-lived `alpine` helper container
+and retries. Before LDM-#2356 it failed with `PermissionError` instead.
+
 **Examples:**
 
 ```bash
@@ -305,4 +310,4 @@ ldm re-seed demo              # Total project reset to Day Zero (Seeded)
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-10* | *Last Reviewed: 2026-11-10*
+*Last Updated: 2026-11-13* | *Last Reviewed: 2026-11-13*
