@@ -456,8 +456,6 @@ class OrchestrationService(BaseHandler):
                     if is_persist:
                         state_dir = root / "osgi" / "state"
                         if state_dir.exists():
-                            import shutil
-
                             shutil.rmtree(state_dir, ignore_errors=True)
                             state_dir.mkdir(parents=True, exist_ok=True)
                     else:
@@ -1731,7 +1729,10 @@ class OrchestrationService(BaseHandler):
 
             if path and path.exists():
                 UI.detail(f"  - Cleaning {t} (host)...")
-                shutil.rmtree(path)
+                # LDM-#2356: Liferay writes logs/ and data/ as uid 1000, which
+                # a host user with any other uid on native Linux cannot remove.
+                # safe_rmtree reclaims ownership and retries on PermissionError.
+                self.manager.safe_rmtree(path)
                 path.mkdir(parents=True, exist_ok=True)
 
         UI.success(f"Project {root.name} reset successful.")
