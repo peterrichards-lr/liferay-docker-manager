@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.10-pre.3] - 2026-11-13
+
+No change to `ldm` itself. This pre-release republishes the verification bundle, because pre.2's cannot pass.
+
+### Internal
+
+- The verification round trip finds the imported copy's directory from `ldm list --json`. pre.2's scripts guessed a path under the work directory, where the copy is not created, so the copy's environment check exited 4 on every platform (LDM-#2372).
+
 ## [v2.26.10-pre.2] - 2026-11-13
 
 ### Fixed
