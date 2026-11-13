@@ -1934,6 +1934,79 @@ class TheSuiteRefusesToRunBesideLiveProjects(unittest.TestCase):
                 self.assertIn("LDM-#2083", block, "the index risk is not named")
 
 
+_LDM_INFRA_TEARDOWN = re.compile(r"\brm\b[^\n#]*\s--infra\b|\binfra\s+(down|restart)\b")
+
+
+def _ldm_infra_teardowns(text):
+    """Offsets of every statement that asks LDM to tear the shared infra down.
+
+    Comment lines are skipped -- in both languages a full-line comment starts
+    with `#` -- so the LDM-#2371 notes that describe the old call cannot match.
+    """
+    hits = []
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        if not line.lstrip().startswith("#") and _LDM_INFRA_TEARDOWN.search(line):
+            hits.append((offset, line.strip()))
+        offset += len(line)
+    return hits
+
+
+class TheSuiteLeavesSharedInfraAloneUntilThePreFlightPasses(unittest.TestCase):
+    """LDM-#2371: the pre-run cleanup ran `ldm -y rm ... --delete --infra`
+    about 220 lines BEFORE the LDM-#2085 pre-flight. On 2026-11-13 it took the
+    proxy and search node away from a running project; the pre-flight then
+    correctly refused a run that had already done the damage.
+    """
+
+    def test_no_infra_teardown_precedes_the_pre_flight(self):
+        for path in (BASH_SCRIPT, PS1_SCRIPT):
+            text = path.read_text(encoding="utf-8")
+            guard = _preflight_offset(text)
+            with self.subTest(script=path.name):
+                early = [
+                    stmt for off, stmt in _ldm_infra_teardowns(text) if off < guard
+                ]
+                self.assertEqual(
+                    early,
+                    [],
+                    f"{path.name} tears shared infra down before asking whether "
+                    "other projects are using it",
+                )
+
+    def test_the_pre_run_infra_reset_survives_after_the_pre_flight(self):
+        """The intent of the old `--infra` is kept, not dropped.
+
+        A killed run can leave the proxy on 8443, which `infra setup` would
+        adopt (LDM-#1568); the reset is what clears it.
+        """
+        for path in (BASH_SCRIPT, PS1_SCRIPT):
+            text = path.read_text(encoding="utf-8")
+            guard = _preflight_offset(text)
+            setup = text.index("Initializing Infrastructure")
+            with self.subTest(script=path.name):
+                resets = [
+                    off
+                    for off, stmt in _ldm_infra_teardowns(text)
+                    if guard < off < setup and "infra down" in stmt
+                ]
+                self.assertEqual(
+                    len(resets),
+                    1,
+                    f"{path.name} has no pre-run infra reset between the "
+                    "pre-flight and 'infra setup'",
+                )
+
+    def test_the_detector_sees_the_original_call(self):
+        """Guard against a pattern that cannot fire."""
+        for line in (
+            '"$LDM_CMD" -y rm "${PROJECT_NAME}" --delete --infra >/dev/null 2>&1 || true\n',
+            '    Invoke-Cleanup $LDM_CMD "-y rm ldm-smoke-test --delete --infra"\n',
+        ):
+            with self.subTest(line=line.strip()):
+                self.assertEqual(len(_ldm_infra_teardowns(line)), 1)
+
+
 class TheSuiteRestoresTheSharedStateItChanges(unittest.TestCase):
     """LDM-#2100 / LDM-#2103: the suite mutated shared state and left it.
 

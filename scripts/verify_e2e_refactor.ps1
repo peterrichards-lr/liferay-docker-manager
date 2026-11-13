@@ -2971,7 +2971,10 @@ function Log-AndRun {
 
 try {
     # 1. Cleanup
-    Invoke-Cleanup $LDM_CMD "-y rm ldm-smoke-test --delete --infra"
+    # LDM-#2371: the project only. The SHARED infra is cleared further down,
+    # once the running-projects pre-flight has passed -- see
+    # PRE_RUN_INFRA_RESET.
+    Invoke-Cleanup $LDM_CMD "-y rm ldm-smoke-test --delete"
 
     # LDM-#1406: refuse to start without room to finish.
     #
@@ -3086,6 +3089,11 @@ try {
         Write-TrapNote "   They will reindex on their next boot if their index was already lost."
         exit 1
     }
+
+    # PRE_RUN_INFRA_RESET (LDM-#2371): parity with the shell half; see it for
+    # the full reasoning. Clears a previous run's shared infra, and only once
+    # the pre-flight above has established nothing else is using it.
+    Invoke-Cleanup $LDM_CMD "-y infra down"
 
     Write-Host "[INFO]  Pre-pulling required Docker images..."
     & docker pull liferay/dxp:2026.q1.7-lts --quiet
