@@ -623,6 +623,8 @@ class TestReadiness(unittest.TestCase):
                 # LDM-#2172: the wait reads `docker info` once, for the
                 # allocation it records beside the timings.
                 "",
+                # LDM-#2346: the first log read is bounded by StartedAt.
+                "2026-11-11T10:20:30.123456789Z",
                 "org.apache.catalina.startup.Catalina.start Server startup in 12000 ms",
                 "healthy",
             ]

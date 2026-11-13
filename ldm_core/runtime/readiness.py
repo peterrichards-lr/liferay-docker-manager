@@ -216,7 +216,29 @@ def write_startup_status(
         UI.detail(f"Warning writing startup status: {e}")
 
 
-def log_window_args(last_poll_at: float | None, now: float) -> list[str]:
+# `.State.StartedAt` as the daemon reports it: RFC 3339 with up to nine
+# fractional digits, e.g. `2026-11-11T10:20:30.123456789Z`. Anything else --
+# an error message, or an unexpected template result -- is not passed on.
+_DOCKER_TIMESTAMP = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$"
+)
+
+
+def parse_started_at(raw: str | None) -> str | None:
+    """The container's start time, or None when it cannot be used (LDM-#2346).
+
+    Docker reports a never-started container as `0001-01-01T00:00:00Z`; that
+    bounds nothing, so it is treated the same as a failed inspect.
+    """
+    value = (raw or "").strip()
+    if not _DOCKER_TIMESTAMP.match(value) or value.startswith("0001-"):
+        return None
+    return value
+
+
+def log_window_args(
+    last_poll_at: float | None, now: float, started_at: str | None = None
+) -> list[str]:
     """The `docker logs` window to read on this poll (LDM-#2169).
 
     `--tail 1000` was a sliding window, and `BundleSiteInitializer` emits
@@ -234,8 +256,19 @@ def log_window_args(last_poll_at: float | None, now: float) -> list[str]:
     The +5s overlap re-reads a few lines on purpose. Both consumers are
     idempotent -- a milestone map keyed by title and a sticky flag -- so
     re-reading costs nothing and a gap is not recoverable.
+
+    The first window is bounded below by `started_at`, the container's own
+    `.State.StartedAt` (LDM-#2346). `docker logs` on a RESTARTED container
+    includes the previous run's output, and the sticky startup flag latched
+    on that run's `Server startup in` line -- so a restart was reported
+    ready within seconds while it was still booting. An absolute timestamp
+    taken from the daemon is compared with log timestamps the same daemon
+    wrote, so no host clock enters into it. Without one (inspect failed),
+    the first window is the old unbounded backlog: never worse than before.
     """
     if last_poll_at is None:
+        if started_at:
+            return ["--since", started_at, "--tail", "2000"]
         return ["--tail", "2000"]
     return ["--since", f"{max(int(now - last_poll_at) + 5, 5)}s"]
 
@@ -909,7 +942,24 @@ class ReadinessService(BaseHandler):
                 # We look for the Tomcat 'Server startup' log marker as it's often
                 # faster/more reliable than the Docker healthcheck in CI.
                 now_poll = time.time()
-                log_window = log_window_args(last_log_poll_at, now_poll)
+                started_at = None
+                if last_log_poll_at is None:
+                    # LDM-#2346: bound the first read to THIS boot. A failed
+                    # or unparseable inspect leaves the window unbounded.
+                    with contextlib.suppress(Exception):
+                        started_at = parse_started_at(
+                            self.manager.run_command(
+                                [
+                                    *docker_prefix,
+                                    "inspect",
+                                    "-f",
+                                    "{{.State.StartedAt}}",
+                                    container_name,
+                                ],
+                                check=False,
+                            )
+                        )
+                log_window = log_window_args(last_log_poll_at, now_poll, started_at)
                 try:
                     # LDM-#2188: stderr merged. Tomcat writes its startup
                     # lines through juli to STDERR, and `run_command` returns
