@@ -515,7 +515,7 @@ class TestOnlyOneInputReachesThisCode(unittest.TestCase):
             patch(
                 "ldm_core.workspace.importer._check_github_release_for_package",
                 side_effect=record(
-                    "_check_github_release_for_package", (False, None, None, None)
+                    "_check_github_release_for_package", (False, None, None, None, None)
                 ),
             ),
             patch(
