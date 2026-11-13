@@ -5,6 +5,7 @@ import tarfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from ldm_core.runtime.portal_workarounds import is_ldm_bundle
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, safe_extract
 
@@ -161,6 +162,23 @@ OSGI_MODULE_SOURCES = (
     ("deploy", "*.jar"),
     ("deploy", "*.war"),
 )
+
+
+def _omit_ldm_bundles(tarinfo):
+    """Tar filter dropping LDM's own workaround jars from osgi/modules.
+
+    LDM-#2359: `ldm run` places them there, so archiving the `osgi` tree as one
+    entry carried them into every snapshot and, through `ldm package`, every
+    `.ldmp`. The next `ldm run` installs the right variant for its own tag.
+    """
+    rel = PurePosixPath(tarinfo.name)
+    if (
+        tarinfo.isfile()
+        and rel.parent == PurePosixPath("osgi/modules")
+        and is_ldm_bundle(rel.name)
+    ):
+        return None
+    return tarinfo
 
 
 def scan_member_names(names, sources):
@@ -370,7 +388,11 @@ class ArchiveSnapshotService:
         """
         try:
             UI.detail(f"Adding {name} to archive...")
-            tar.add(f_path, arcname=name)
+            if name == "osgi":
+                # LDM-#2359: the one tree LDM writes its own bundle into.
+                tar.add(f_path, arcname=name, filter=_omit_ldm_bundles)
+            else:
+                tar.add(f_path, arcname=name)
             return True
         except PermissionError as e:
             # The original case, and the only one that message was right about.
@@ -627,7 +649,10 @@ class ArchiveSnapshotService:
             dir_path = paths.get(d)
             if dir_path and dir_path.exists() and dir_path.is_dir():
                 try:
-                    if any(dir_path.glob("*.jar")) or any(dir_path.glob("*.war")):
+                    # LDM-#2359: LDM's own bundle is not the project's.
+                    if any(
+                        not is_ldm_bundle(f.name) for f in dir_path.glob("*.jar")
+                    ) or any(dir_path.glob("*.war")):
                         has_modules = True
                         break
                 except Exception:
@@ -643,13 +668,17 @@ class ArchiveSnapshotService:
                     except Exception:
                         pass
 
-        modules_list = []
+        modules_list: list[str] = []
         for d in ["modules", "deploy", "themes"]:
             dir_path = paths.get(d)
             if dir_path and dir_path.exists() and dir_path.is_dir():
                 try:
                     for ext in ["*.jar", "*.war"]:
-                        modules_list.extend([f.name for f in dir_path.glob(ext)])
+                        modules_list.extend(
+                            f.name
+                            for f in dir_path.glob(ext)
+                            if not is_ldm_bundle(f.name)
+                        )
                 except Exception:
                     pass
         modules_list = sorted(set(modules_list))

@@ -68,6 +68,19 @@ WORKAROUNDS: tuple[Workaround, ...] = (
 RETIRED_PREFIXES: tuple[str, ...] = ()
 
 
+def is_ldm_bundle(name):
+    """Whether ``name`` is a jar of an LDM workaround, current or retired.
+
+    Snapshots leave these out (LDM-#2359): the bundle is internal to LDM and
+    pinned to the line it was installed for, so a copy carried in a ``.ldmp``
+    is at best redundant -- ``ldm run`` installs the right variant for the
+    importing project's tag -- and at worst a jar the package's own release
+    checks refuse as shipped but not built.
+    """
+    prefixes = [w.prefix for w in WORKAROUNDS] + list(RETIRED_PREFIXES)
+    return name.endswith(".jar") and any(name.startswith(p) for p in prefixes)
+
+
 def applies(variant, tag, parse_version):
     """Whether ``tag`` falls in the variant's window.
 
