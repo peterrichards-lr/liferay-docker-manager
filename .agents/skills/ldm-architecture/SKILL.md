@@ -754,8 +754,16 @@ bundle for each one in `ldm_core/resources/portal_workarounds/`, and
   last variant's window at that release: newer lines drop the bundle, older
   ones keep it. Once no supported line needs it, move the prefix from
   `WORKAROUNDS` to `RETIRED_PREFIXES` and every project drops it on its next
-  run, including copies carried in by snapshots and `.ldmp` packages, which
-  archive the whole `osgi` tree.
+  run, including copies carried in by snapshots and `.ldmp` packages made
+  before LDM-#2359.
+- **Snapshots and packages never carry the bundle (LDM-#2359).** The archive
+  adds the `osgi` tree with a tar filter that drops every `osgi/modules` jar
+  `is_ldm_bundle` matches (any `WORKAROUNDS` or `RETIRED_PREFIXES` prefix), and
+  the manifest's `osgi_modules` / `includes_osgi_modules` ignore it too.
+  `ldm package` tars the snapshot directory, so the exclusion at capture
+  covers it; the importing `ldm run` installs the variant for its own tag. A
+  package built with `--snapshot`/`--use-latest` from an older snapshot can still
+  hold a copy, which that run then replaces or removes.
 
 | Bundle | LDM issue | Upstream | Variant | Tags |
 |---|---|---|---|---|
@@ -777,4 +785,4 @@ When LDM generates, deploys, or reasons about Client Extensions:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-12* | *Last Reviewed: 2026-11-12*
+*Last Updated: 2026-11-13* | *Last Reviewed: 2026-11-13*
