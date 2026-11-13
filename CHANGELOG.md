@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.10-pre.1] - 2026-11-13
+
+### Fixed
+
+- **`ldm reset <project> all` no longer fails on native Linux when the host user is not uid 1000** (LDM-#2356). Liferay writes its logs and data as uid 1000, and reset removed them with a plain delete. It now reclaims ownership and retries. This was v2.26.9's known issue, and the reason its Ubuntu platform job and Release E2E run failed.
+- **`ldm system upgrade --check` always states its result** (LDM-#2358). When an update was available it printed only its heading unless `--info` was given. `-y` run from a pre-release no longer exits without a word: it says it stayed on the pre-release, and that `--beta` or `-v vX.Y.Z` takes the stable release.
+- **A restarted container is no longer reported ready on the previous boot's log line** (LDM-#2346). The first readiness read now starts at the container's own start time, so `ldm run` after `ldm stop` waits for this boot's `Server startup` line instead of finishing in about two seconds.
+- **Snapshots and `.ldmp` packages leave out LDM's own portal-workaround bundle** (LDM-#2359). `ldm run` installs the right variant for the importing project's Liferay line. A package built from a snapshot taken before this release still contains it.
+- **Quickstart no longer reports "No compiled LDM Package (.ldmp) found" when GitHub never answered the release lookup** (LDM-#2364). After a rejected credential (401), a refused one (403) or a rate limit, it says it could not query GitHub Releases, gives the rate limit's reset time, and names the credential to replace or unset. It exits 2 for a refused credential and 3 for a rate limit or another unanswered request.
+
+### Internal
+
+- CI downloads a pinned actionlint release and verifies its sha256, failing at the download rather than in `tar` (LDM-#2225).
+- The search-wipe guard tests no longer fail when another test's temporary directory is garbage-collected during them.
+
 ## [v2.26.9] - 2026-11-12
 
 A security release. It was verified on v2.26.9-pre.1 across five environments:
