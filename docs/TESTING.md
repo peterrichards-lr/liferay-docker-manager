@@ -1073,4 +1073,4 @@ table above as the CI budget** — the workflow prints its own timings from
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-15* | *Last Reviewed: 2026-10-15*
+*Last Updated: 2026-10-15* | *Last Reviewed: 2026-11-13*

@@ -168,7 +168,45 @@ project's reindex then empties the other project's index.
 
 **For publishers:** you no longer need to sanitise search settings out of a
 package — but if you set one deliberately, the announcement is where you will
-see it discarded. Nothing else about `custom_env` changed.
+see it discarded.
+
+#### The rest of LDM's own environment (LDM-#2370)
+
+Search was not the only thing travelling. `ldm snapshot` built a package's
+`custom_env` from the project's **rendered** `docker-compose.yml`, so every
+`LIFERAY_*` value LDM generated for the publisher's machine was shipped as if
+the publisher had declared it. AICA v3.3.59 carried its CI machine's default
+virtual host:
+
+```text
+LIFERAY_COMPANY_PERIOD_DEFAULT_PERIOD_VIRTUAL_PERIOD_HOST_PERIOD_NAME=aica-e2e.demo
+LIFERAY_COMPANY_PERIOD_DEFAULT_PERIOD_VIRTUAL_PERIOD_HOST_PERIOD_SYNC_PERIOD_ON_PERIOD_STARTUP=true
+```
+
+`custom_env` takes precedence over the virtual host LDM sets for your machine,
+so the consumer's default company became `aica-e2e.demo`, and a client
+extension following it reached its own loopback.
+
+Both ends are now fixed:
+
+* **Snapshot** captures what the project *declares* — its `custom_env`, which
+  `ldm config env`, `--env` and the cloud environment sync write — not what LDM
+  rendered. `LIFERAY_DL_PERIOD_STORE_PERIOD_IMPL` still travels when the project
+  records a document-library store, because it describes the packaged data.
+* **Import** removes every key LDM renders itself from a package's `custom_env`
+  and lists them, for packages published before this fix:
+
+  ```text
+  ⚠️  Discarded 3 machine-specific setting(s) from the package's captured
+      environment; LDM generates these for this machine.
+  ```
+
+  Those keys are the virtual-host pair, the display node name, redirect IPs,
+  the database-upgrade auto-run, the log4j file, the index-on-startup pair,
+  the cluster-link and Lucene replication pair, `LIFERAY_ROUTES_*`, and the
+  search keys above. One list in `ldm_core/handlers/snapshot.py`
+  (`LDM_RENDERED_ENV_KEYS`) serves both ends, and a test renders LDM's real
+  output and fails if a generated key is missing from it.
 
 ---
 
@@ -272,4 +310,4 @@ This scaffolds a `.github/workflows/ldm-package-release.yml` file which:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-09* | *Last Reviewed: 2026-11-09*
+*Last Updated: 2026-11-13* | *Last Reviewed: 2026-11-13*

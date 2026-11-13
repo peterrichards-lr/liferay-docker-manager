@@ -63,6 +63,7 @@ def _fake_repo(
         # without it fails a from-assets run on a missing file.
         (root / "scripts" / "check_published_dxp_domain.py").write_text("# domain\n")
         (root / "scripts" / "check_startup_phases.py").write_text("# phases\n")
+        (root / "scripts" / "check_roundtrip_env_leak.py").write_text("# env leak\n")
     if with_harness:
         (root / "scripts" / "fragment_override_harness.py").write_text("# harness\n")
     if with_common:

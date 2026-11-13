@@ -30,6 +30,95 @@ LDM_SEARCH_PROPERTY_PREFIX = (
     "module.framework.properties.com.liferay.portal.search.elasticsearch"
 )
 
+# LDM-#2370. Every Liferay-service environment key LDM renders itself, beyond
+# search. Until LDM-#2370 a snapshot's `custom_env` was captured from the
+# RENDERED compose, so packages published before then carry these as if the
+# publisher had declared them -- AICA v3.3.59 shipped its CI machine's
+# `aica-e2e.demo` virtual host this way. They are machine properties: LDM
+# re-emits the right value for the consumer, and `custom_env` is appended
+# after LDM's entries, so a carried copy is either redundant or wins wrongly.
+#
+# Snapshots now capture the project's declared `meta["custom_env"]` instead,
+# so no NEW emission can leak through capture; this set therefore only has to
+# cover what has ever been rendered, and is applied on both sides (capture,
+# for a project whose meta was polluted by a pre-fix restore; restore, for
+# packages already published). Sources, from `git log -S` over ldm_core:
+#
+#   pipelines/run.py (base_env)       -> virtual host pair, display node name,
+#                                        redirect IPs, upgrade auto-run
+#   composer._build_liferay_service   -> log4j file, index-on-startup pair
+#   composer (scale > 1)              -> cluster link, lucene replicate
+#   composer._inject_liferay_extensions_routes -> LIFERAY_ROUTES_*
+#   search (all generations)          -> the search prefixes below
+#
+# Deliberately NOT here: `LIFERAY_DL_PERIOD_STORE_PERIOD_IMPL` describes the
+# packaged document-library layout, not the machine (see archive.py), and
+# `LIFERAY_JDBC_PERIOD_*`, which is also a supported user declaration
+# (`composer`'s `has_jdbc_env`).
+LDM_RENDERED_ENV_KEYS = frozenset(
+    {
+        "LIFERAY_COMPANY_PERIOD_DEFAULT_PERIOD_VIRTUAL_PERIOD_HOST_PERIOD_NAME",
+        "LIFERAY_COMPANY_PERIOD_DEFAULT_PERIOD_VIRTUAL_PERIOD_HOST_PERIOD_SYNC_PERIOD_ON_PERIOD_STARTUP",
+        "LIFERAY_WEB_PERIOD_SERVER_PERIOD_DISPLAY_PERIOD_NODE_PERIOD_NAME",
+        "LIFERAY_REDIRECT_PERIOD_URL_PERIOD_IPS_PERIOD_ALLOWED",
+        "LIFERAY_UPGRADE_PERIOD_DATABASE_PERIOD_AUTO_PERIOD_RUN",
+        "LIFERAY_LOG4J2_CONFIGURATION_FILE",
+        "LIFERAY_INDEX_PERIOD_ON_PERIOD_STARTUP",
+        "LIFERAY_INDEX_PERIOD_ON_PERIOD_STARTUP_PERIOD_DELAY",
+        "LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_ENABLED",
+        "LIFERAY_LUCENE_PERIOD_REPLICATE_PERIOD_WRITE",
+    }
+)
+LDM_RENDERED_ENV_PREFIXES = (
+    LDM_SEARCH_ENV_PREFIX,
+    "LIFERAY_SEARCH_PERIOD_ELASTICSEARCH",
+    "LIFERAY_MODULE_PERIOD_FRAMEWORK_PERIOD_PROPERTIES_PERIOD_COM_PERIOD_LIFERAY_PORTAL_PERIOD_SEARCH_PERIOD_ELASTICSEARCH",
+    "LIFERAY_ROUTES_",
+)
+
+
+def is_ldm_rendered_env_key(key):
+    """True when LDM renders `key` itself (LDM-#2370)."""
+    upper = str(key).upper()
+    return upper in LDM_RENDERED_ENV_KEYS or upper.startswith(LDM_RENDERED_ENV_PREFIXES)
+
+
+def _split_custom_env(custom_env, is_removed):
+    """Shared body of the `custom_env` strips: returns `(kept, removed)`,
+    with `kept` in the form `custom_env` arrived in (LDM-#2315)."""
+    as_string = False
+    if isinstance(custom_env, str):
+        try:
+            parsed = json.loads(custom_env)
+        except ValueError:
+            return custom_env, {}
+        if not isinstance(parsed, dict):
+            return custom_env, {}
+        custom_env, as_string = parsed, True
+    elif not isinstance(custom_env, dict):
+        return custom_env, {}
+
+    kept, removed = {}, {}
+    for key, value in custom_env.items():
+        if is_removed(key):
+            removed[key] = value
+        else:
+            kept[key] = value
+    if as_string:
+        return json.dumps(kept), removed
+    return kept, removed
+
+
+def strip_ldm_rendered_env(custom_env):
+    """Removes every key LDM renders itself from a `custom_env`. LDM-#2370.
+
+    The generalisation of `strip_ldm_search_env` below, with the same
+    contract: returns `(kept, removed)`, `kept` in the form `custom_env`
+    arrived in -- a JSON object string stays a string (LDM-#2315), anything
+    else that is not a dict is returned unchanged.
+    """
+    return _split_custom_env(custom_env, is_ldm_rendered_env_key)
+
 
 def strip_ldm_search_env(custom_env):
     """Removes LDM's own search environment from a restored `custom_env`.
@@ -37,8 +126,9 @@ def strip_ldm_search_env(custom_env):
     Returns `(kept, removed)`. `removed` is a dict; `kept` takes the form
     `custom_env` arrived in (see LDM-#2315 below).
 
-    A snapshot's `custom_env` is captured from the **rendered compose file** of
-    the publisher's machine (`snapshot/archive.py`), so these entries are not a
+    Until LDM-#2370 a snapshot's `custom_env` was captured from the **rendered
+    compose file** of the publisher's machine (`snapshot/archive.py`), so in
+    packages published before then these entries are not a
     publisher's declaration at all -- they are LDM's own output from a
     different machine, travelling back in. `composer._build_liferay_service`
     appends `custom_env` *after* the shared-search block, and Compose resolves
@@ -66,28 +156,14 @@ def strip_ldm_search_env(custom_env):
     JSON object string is parsed, stripped, and returned as a string again, so
     `meta` keeps the form it was read in. Anything else that is not a dict is
     returned unchanged.
-    """
-    as_string = False
-    if isinstance(custom_env, str):
-        try:
-            parsed = json.loads(custom_env)
-        except ValueError:
-            return custom_env, {}
-        if not isinstance(parsed, dict):
-            return custom_env, {}
-        custom_env, as_string = parsed, True
-    elif not isinstance(custom_env, dict):
-        return custom_env, {}
 
-    kept, removed = {}, {}
-    for key, value in custom_env.items():
-        if str(key).upper().startswith(LDM_SEARCH_ENV_PREFIX):
-            removed[key] = value
-        else:
-            kept[key] = value
-    if as_string:
-        return json.dumps(kept), removed
-    return kept, removed
+    Restore uses `strip_ldm_rendered_env`, which covers this prefix and every
+    other key LDM renders (LDM-#2370); this narrower strip remains for `fork`,
+    whose concern is only the source project's indices (LDM-#2314).
+    """
+    return _split_custom_env(
+        custom_env, lambda key: str(key).upper().startswith(LDM_SEARCH_ENV_PREFIX)
+    )
 
 
 def strip_ldm_search_properties(text):
@@ -145,6 +221,28 @@ def announce_stripped_search_keys(removed, source, search_mode):
         "package -- the same as the JDBC URL and virtual host, which are also "
         "regenerated on import. Left in place, these start an embedded "
         "Elasticsearch alongside the shared one (LDM-#1773)."
+    )
+
+
+def announce_stripped_machine_keys(removed, source):
+    """Says which non-search LDM-rendered keys were discarded. LDM-#2370.
+
+    Same reasoning as `announce_stripped_search_keys`: a silent strip leaves
+    a publisher who set one of these on purpose with no signal at all.
+    """
+    if not removed:
+        return
+
+    UI.warning(
+        f"Discarded {len(removed)} machine-specific setting(s) from the "
+        f"package's {source}; LDM generates these for this machine."
+    )
+    for key in sorted(removed):
+        UI.detail(f"  - {key}={removed[key]}")
+    UI.detail(
+        "They were rendered by LDM on the publisher's machine -- its virtual "
+        "host among them -- and would override this machine's values "
+        "(LDM-#2370)."
     )
 
 
@@ -238,19 +336,28 @@ class SnapshotService(BaseHandler):
         )
 
     def _clean_restored_custom_env(self, custom_env, project_meta):
-        """Removes LDM's own search environment from a restored `custom_env`
-        and returns what is left. LDM-#1773.
+        """Removes every LDM-rendered key from a restored `custom_env` and
+        returns what is left. LDM-#1773 (search), LDM-#2370 (the rest).
 
-        `composer._build_liferay_service` appends `custom_env` *after* the
-        shared-search block, and Compose resolves a duplicated key to the later
-        entry -- so the publisher's machine wins over the decision
-        `resolve_infrastructure_mode` just made on this one.
+        `composer._build_liferay_service` appends `custom_env` *after* LDM's
+        own entries, and the run pipeline's `base_env` (the virtual host) is
+        merged only for keys not already present -- so a carried copy from
+        the publisher's machine wins over what LDM decides on this one.
         """
-        custom_env, removed = strip_ldm_search_env(custom_env)
+        custom_env, removed = strip_ldm_rendered_env(custom_env)
+        search = {
+            k: v
+            for k, v in removed.items()
+            if str(k).upper().startswith(LDM_SEARCH_ENV_PREFIX)
+        }
         announce_stripped_search_keys(
-            removed,
+            search,
             "captured environment",
             self._resolved_search_mode(project_meta),
+        )
+        announce_stripped_machine_keys(
+            {k: v for k, v in removed.items() if k not in search},
+            "captured environment",
         )
         return custom_env
 

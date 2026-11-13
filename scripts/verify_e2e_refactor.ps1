@@ -2971,7 +2971,10 @@ function Log-AndRun {
 
 try {
     # 1. Cleanup
-    Invoke-Cleanup $LDM_CMD "-y rm ldm-smoke-test --delete --infra"
+    # LDM-#2371: the project only. The SHARED infra is cleared further down,
+    # once the running-projects pre-flight has passed -- see
+    # PRE_RUN_INFRA_RESET.
+    Invoke-Cleanup $LDM_CMD "-y rm ldm-smoke-test --delete"
 
     # LDM-#1406: refuse to start without room to finish.
     #
@@ -3086,6 +3089,11 @@ try {
         Write-TrapNote "   They will reindex on their next boot if their index was already lost."
         exit 1
     }
+
+    # PRE_RUN_INFRA_RESET (LDM-#2371): parity with the shell half; see it for
+    # the full reasoning. Clears a previous run's shared infra, and only once
+    # the pre-flight above has established nothing else is using it.
+    Invoke-Cleanup $LDM_CMD "-y infra down"
 
     Write-Host "[INFO]  Pre-pulling required Docker images..."
     & docker pull liferay/dxp:2026.q1.7-lts --quiet
@@ -7086,6 +7094,37 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     # faithfully wrote into the compose file for docker to reject (LDM-#2213).
     $roundTripPort = [int]$TEST_PORT + 6
     $roundTripOk = $true
+    # LDM-#2372: the env-leak verdict is kept APART from $roundTripOk. A leak
+    # must fail the run, but must not skip the 'ldm reset all' check below
+    # (LDM-#2118), which $roundTripOk gates. Parity with the bash half.
+    $script:roundTripEnvOk = $true
+    $roundTripBooted = $false
+
+    # LDM-#2372: run the shared env-leak checker and record its verdict in
+    # $script:roundTripEnvOk, never in $roundTripOk. $LASTEXITCODE is the
+    # verdict and is read from the native call itself, before any pipeline.
+    function Invoke-RoundTripEnvCheck {
+        param([string]$What, [string[]]$CheckerArgs)
+        $envRaw = & $VENV_PYTHON (Join-Path $PSScriptRoot "check_roundtrip_env_leak.py") @CheckerArgs 2>&1
+        $envRc = $LASTEXITCODE
+        $envText = $envRaw | ConvertTo-LdmText
+        foreach ($envLine in ($envText -split "`n")) {
+            if ($envLine.Trim()) { Write-Verdict $envLine.TrimEnd() }
+        }
+        if ($envRc -eq 0) {
+            Write-Verdict "[SUCCESS] $What carries none of the publisher's rendered environment (LDM-#2370)."
+        }
+        elseif ($envRc -eq 1) {
+            Write-Verdict "[ERROR] $What carries LDM's own rendered environment -- the keys are named above (LDM-#2370)."
+            $script:roundTripEnvOk = $false
+        }
+        else {
+            # Not a product verdict: the check itself did not run. It is only
+            # called when its artefact exists, so there is no skip here.
+            Write-Verdict "[ERROR] The env-leak check of $What could not run (exit $envRc). LDM-#2370 was NOT evaluated and this is not a skip."
+            $script:roundTripEnvOk = $false
+        }
+    }
     if (Test-Path $ROUNDTRIP_PKG_DIR) { Remove-Item -Recurse -Force $ROUNDTRIP_PKG_DIR -ErrorAction SilentlyContinue }
     New-Item -ItemType Directory -Path $ROUNDTRIP_PKG_DIR -Force | Out-Null
 
@@ -7113,6 +7152,14 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     if ($roundTripOk -and -not (Test-Path $roundTripPkg)) {
         Write-Verdict "[ERROR] 'ldm package' reported success but produced no $PROJECT_NAME.ldmp."
         $roundTripOk = $false
+    }
+    # LDM-#2372: the CAPTURE side of LDM-#2370, checked on the package itself
+    # -- the copy checks below read the project AFTER restore, where the #2370
+    # restore strip hides a dirty package. The checker streams the .ldmp to
+    # its top-level 'meta' and extracts nothing. Here $roundTripOk still means
+    # exactly "the package was produced". Parity with the bash half.
+    if ($roundTripOk) {
+        Invoke-RoundTripEnvCheck -What "The package $PROJECT_NAME.ldmp" -CheckerArgs @("--package", $roundTripPkg)
     }
     # The sidecar checksum is the artefact LDM-#2159 was about: it exists, it
     # is correct, and the importer could not read it.
@@ -7177,6 +7224,9 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
             Write-RoundTripOutput -Label "ldm run" -Raw $rtBootRaw
             $roundTripOk = $false
         }
+        else {
+            $roundTripBooted = $true
+        }
     }
 
     # Serving is the assertion. `ldm run` returning 0 means LDM believes it is
@@ -7206,6 +7256,16 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
             }
             $roundTripOk = $false
         }
+    }
+
+    # LDM-#2372: the RESTORE side -- the copy must not carry the PUBLISHER'S
+    # rendered environment (LDM-#2370). Parity with the bash half, where the
+    # rationale is recorded; the check is the same shared module, so the two
+    # cannot drift (LDM-#1982). Run whenever the copy BOOTED, even if it then
+    # failed to serve, because the compose file it reads is the one 'ldm run'
+    # rendered; before the state capture and reset below.
+    if ($roundTripBooted) {
+        Invoke-RoundTripEnvCheck -What "The imported copy '$ROUNDTRIP_PROJECT'" -CheckerArgs @((Join-Path $LDM_WORKSPACE $ROUNDTRIP_PROJECT))
     }
 
     # LDM-#2221: captured BEFORE the removal below, which is the whole point.
@@ -7263,6 +7323,11 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
 
     if (-not $roundTripOk) {
         throw "The .ldmp round trip failed (LDM-#2131). The failing step is recorded above."
+    }
+    # LDM-#2372: an env leak fails the run too, but only here, after the reset
+    # check has had its turn.
+    if (-not $script:roundTripEnvOk) {
+        throw "The .ldmp round-trip env-leak check failed or could not run (LDM-#2370/#2372). The reason is recorded above."
     }
 
     } # LDM-#1975 end section: extras

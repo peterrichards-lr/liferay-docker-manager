@@ -869,7 +869,13 @@ class OrchestrationService(BaseHandler):
                     f"{UI.BYELLOW}[Dry Run] Would tear down global Traefik infrastructure.{UI.COLOR_OFF}"
                 )
             else:
-                self.manager.infra.cmd_infra_down()
+                # LDM-#2371: infra goes down BEFORE the project, so the
+                # project this call removes is still running when the infra
+                # guard scans. It is not "another project" using the infra.
+                infra_svc = self.manager.infra
+                infra_svc.cmd_infra_down(
+                    removing=infra_svc.names_removed_with(project_id, all_projects)
+                )
 
         targets = []
         if all_projects:

@@ -34,6 +34,19 @@ SEARCH_ANALYZERS = (
 )
 
 
+def _project_container_name(meta, path):
+    """The container name an LDM project runs under.
+
+    Shared by `scan_running_projects` and `names_removed_with` (LDM-#2371),
+    so the names the guard excludes are the names the scan reports.
+    """
+    return (
+        meta.get("liferay_container_name")
+        or meta.get("container_name")
+        or path.name.replace(".", "-")
+    )
+
+
 class InfraService:
     """Service for global infrastructure management (Traefik, Global Search)."""
 
@@ -159,11 +172,7 @@ class InfraService:
         for r in self.manager.find_dxp_roots():
             path = r["path"]
             meta = self.manager.read_meta(path)
-            name = (
-                meta.get("liferay_container_name")
-                or meta.get("container_name")
-                or path.name.replace(".", "-")
-            )
+            name = _project_container_name(meta, path)
             target_node = meta.get("target", "local")
             docker_prefix = DockerService.get_docker_cmd_prefix(target_node)
 
@@ -1042,13 +1051,114 @@ tls:
 
         return True
 
-    def cmd_infra_down(self):
-        """Tears down the global infrastructure (Traefik, Proxy)."""
+    def names_removed_with(self, project_id=None, all_projects=False):
+        """Container names of the projects an `ldm rm ... --infra` also removes.
+
+        LDM-#2371: `cmd_down` tears the infrastructure down BEFORE the
+        project, so the project being removed is still running when the
+        guard in `cmd_infra_down` scans -- and would block its own teardown.
+        These names are excluded from that scan.
+
+        Resolved by matching `find_dxp_roots()` rather than calling
+        `detect_project_path`, which can prompt, pause, take the project lock
+        and die -- all of which `cmd_down` already does once, after this.
+        Every failure here returns fewer names, never more, so a name that
+        cannot be matched leaves the project counted as running: the guard
+        errs towards refusing, and `--force` is the way past it.
+        """
+        from pathlib import Path
+
+        from ldm_core.utils import safe_cwd
+
+        names = set()
+        try:
+            cwd = None if project_id or all_projects else safe_cwd()
+            wanted = None
+            if project_id:
+                try:
+                    wanted = Path(project_id).expanduser().resolve()
+                except (OSError, RuntimeError):
+                    wanted = None
+            for r in self.manager.find_dxp_roots():
+                path = Path(r["path"])
+                meta = self.manager.read_meta(path) or {}
+                name = _project_container_name(meta, path)
+                if all_projects:
+                    matched = True
+                elif project_id:
+                    matched = project_id in (
+                        path.name,
+                        meta.get("project_name"),
+                        name,
+                    ) or (wanted is not None and wanted == path.resolve())
+                else:
+                    resolved = path.resolve()
+                    matched = cwd is not None and (
+                        cwd == resolved or resolved in cwd.parents
+                    )
+                if matched:
+                    names.add(name)
+        except Exception:  # fewer exclusions is the safe direction
+            return set()
+        return names
+
+    def cmd_infra_down(self, removing=None):
+        """Tears down the global infrastructure (Traefik, Proxy).
+
+        `removing`: container names of projects this same call is removing
+        (`ldm rm <project> --infra`), which do not count as other projects
+        using the infrastructure. See `names_removed_with`.
+        """
         from ldm_core.utils import has_shared_projects
 
-        if not getattr(self.manager, "non_interactive", False) and has_shared_projects(
-            self.manager
-        ):
+        # LDM-#2371: the confirmation below guards only the interactive path,
+        # so `-y` -- automation, where nobody is watching -- ran `compose down
+        # -v` on the shared proxy and search node whatever was using them.
+        # Observed: the verify script's pre-run `ldm -y rm ... --infra` took
+        # both away from a running project, which kept reporting healthy.
+        # Same shape, and same remedy, as the search-wipe guard (LDM-#2093)
+        # and the SSL recreate guard: refuse with exit 3, name the projects,
+        # and let --force through.
+        non_interactive = getattr(self.manager, "non_interactive", False)
+        cli_force = getattr(getattr(self.manager, "args", None), "force", False)
+        if non_interactive and not cli_force:
+            try:
+                live = self.scan_running_projects()
+            except Exception as exc:
+                # LDM-#1548: an unanswerable probe is not "nothing is running".
+                UI.die(
+                    "Could not verify which projects are running, so the "
+                    "shared infrastructure was left untouched.",
+                    details=str(exc),
+                    tip=(
+                        "Check the Docker daemon and re-run. To tear the shared "
+                        "proxy and search node down anyway, re-run with --force."
+                    ),
+                    exit_code=3,
+                )
+            excluded = set(removing or ())
+            others = [(n, node) for n, node in live if n not in excluded]
+            if others:
+                names = "\n".join(
+                    f"  - {name} (on node: {node})" for name, node in others
+                )
+                UI.die(
+                    "Refusing to tear down the shared infrastructure while other "
+                    f"LDM projects are running ({len(others)}).",
+                    details=(
+                        f"{names}\n\nThe proxy and search node are SHARED. These "
+                        "projects would lose routing and search while still "
+                        "reporting healthy."
+                    ),
+                    tip=(
+                        "Stop them first, then re-run:\n"
+                        + "\n".join(f"      ldm stop {name}" for name, _ in others)
+                        + "\n\nOr re-run with --force to tear it down anyway."
+                    ),
+                    exit_code=3,
+                )
+
+        if not non_interactive and has_shared_projects(self.manager):
             if not UI.confirm(
                 "Are you sure you want to tear down global infrastructure? This will disrupt all active shared workspaces.",
                 default="N",

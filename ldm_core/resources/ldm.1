@@ -127,7 +127,7 @@ Commands are grouped into namespaces. Legacy flat equivalents are shown in paren
 Start global infrastructure services (Traefik proxy, bridge network). (legacy: \fBldm infra-setup\fR)
 .TP
 \fBldm infra down\fR
-Stop and remove global infrastructure containers. (legacy: \fBldm infra-down\fR)
+Stop and remove global infrastructure containers. With \fB-y\fR, refuses (exit 3) while any LDM project is running, or when that cannot be determined; \fB--force\fR proceeds anyway. (legacy: \fBldm infra-down\fR)
 .TP
 \fBldm infra restart\fR [\fB--search\fR]
 Reset all global services in one go. (legacy: \fBldm infra-restart\fR)

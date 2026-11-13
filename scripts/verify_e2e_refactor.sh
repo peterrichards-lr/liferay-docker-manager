@@ -1142,7 +1142,9 @@ if [ ! -f "$VENV_PYTEST" ]; then
 fi
 
 # 1. Cleanup & Setup
-"$LDM_CMD" -y rm "${PROJECT_NAME}" --delete --infra >/dev/null 2>&1 || true
+# LDM-#2371: the project only. The SHARED infra is cleared further down, once
+# the running-projects pre-flight has passed -- see PRE_RUN_INFRA_RESET.
+"$LDM_CMD" -y rm "${PROJECT_NAME}" --delete >/dev/null 2>&1 || true
 export LDM_WORKSPACE
 
 # LDM-#1419: clear leftovers from a PREVIOUS run before starting.
@@ -1385,6 +1387,15 @@ if [ -n "${RUNNING_PROJECTS// /}" ]; then
     echo "   They will reindex on their next boot if their index was already lost." | tee -a "$RESULTS_FILE_TMP" >&2
     exit 1
 fi
+
+# PRE_RUN_INFRA_RESET (LDM-#2371): clear a previous run's shared infra --
+# e.g. a proxy a killed run left on 8443, which `infra setup` below would
+# otherwise adopt (LDM-#1568). This was `--infra` on the project cleanup at
+# step 1, which ran ~220 lines BEFORE the pre-flight above: on 2026-11-13 it
+# took the proxy and search node away from a running project, and the
+# pre-flight then correctly refused a run that had already done the damage.
+# Here it can only run once nothing else is using them.
+"$LDM_CMD" -y infra down >/dev/null 2>&1 || true
 
 # Pre-pull large images to avoid containerd lease timeouts during the timed E2E run
 echo "ℹ  Pre-pulling required Docker images..."
@@ -7043,6 +7054,33 @@ fi
 echo ">> Verifying a .ldmp round trip: pack, import, boot, serve (LDM-#2131)..."
 ROUNDTRIP_PORT=$((TEST_PORT + 6))
 ROUNDTRIP_OK=true
+# LDM-#2372: the env-leak verdict is kept APART from ROUNDTRIP_OK. A leak must
+# fail the run, but must not skip the `ldm reset all` check below (LDM-#2118),
+# which ROUNDTRIP_OK gates and which is a separate assertion about the product.
+ROUNDTRIP_ENV_OK=true
+ROUNDTRIP_BOOTED=false
+
+# LDM-#2372: run the shared env-leak checker and record its verdict in
+# ROUNDTRIP_ENV_OK, never in ROUNDTRIP_OK. $1 names what was checked; the rest
+# are the checker's arguments.
+roundtrip_env_check() {
+    local what="$1"
+    shift
+    local rc=0 out
+    out=$("$VENV_PYTHON" "${E2E_SCRIPT_DIR}/check_roundtrip_env_leak.py" "$@" 2>&1) || rc=$?
+    printf '%s\n' "$out" | tee -a "$RESULTS_FILE_TMP"
+    if [ "$rc" -eq 0 ]; then
+        report_ok "✅ ${what} carries none of the publisher's rendered environment (LDM-#2370)."
+    elif [ "$rc" -eq 1 ]; then
+        echo "❌ ERROR: ${what} carries LDM's own rendered environment -- the keys are named above (LDM-#2370)." | tee -a "$RESULTS_FILE_TMP"
+        ROUNDTRIP_ENV_OK=false
+    else
+        # Not a product verdict: the check itself did not run. It is only
+        # called when its artefact exists, so there is no skip here.
+        echo "❌ ERROR: the env-leak check of ${what} could not run (exit ${rc}). LDM-#2370 was NOT evaluated and this is not a skip." | tee -a "$RESULTS_FILE_TMP"
+        ROUNDTRIP_ENV_OK=false
+    fi
+}
 rm -rf "$ROUNDTRIP_PKG_DIR"
 mkdir -p "$ROUNDTRIP_PKG_DIR"
 
@@ -7068,6 +7106,15 @@ ROUNDTRIP_PKG="${ROUNDTRIP_PKG_DIR}/${PROJECT_NAME}.ldmp"
 if [ "$ROUNDTRIP_OK" = true ] && [ ! -f "$ROUNDTRIP_PKG" ]; then
     echo "❌ ERROR: 'ldm package' reported success but produced no ${PROJECT_NAME}.ldmp." | tee -a "$RESULTS_FILE_TMP"
     ROUNDTRIP_OK=false
+fi
+# LDM-#2372: the CAPTURE side of LDM-#2370, checked on the package itself.
+# The copy checks further down read the project AFTER restore, and the #2370
+# fix strips LDM's keys on restore as well, so on the copy a clean package and
+# a dirty one cleaned on import look the same. The checker streams the .ldmp
+# to its top-level `meta` and extracts nothing. Here ROUNDTRIP_OK still means
+# exactly "the package was produced", which is the artefact this needs.
+if [ "$ROUNDTRIP_OK" = true ]; then
+    roundtrip_env_check "The package ${PROJECT_NAME}.ldmp" --package "$ROUNDTRIP_PKG"
 fi
 # The sidecar checksum is the artefact LDM-#2159 was about: it exists, it is
 # correct, and the importer could not read it.
@@ -7130,6 +7177,8 @@ if [ "$ROUNDTRIP_OK" = true ]; then
         echo "❌ ERROR: the imported project did not boot (LDM-#2131)." | tee -a "$RESULTS_FILE_TMP"
         printf '%s\n' "--- what 'ldm run' said ---" "$ROUNDTRIP_BOOT_OUT" "--- end ---" | tee -a "$RESULTS_FILE_TMP"
         ROUNDTRIP_OK=false
+    else
+        ROUNDTRIP_BOOTED=true
     fi
 fi
 
@@ -7147,6 +7196,27 @@ if [ "$ROUNDTRIP_OK" = true ]; then
             ROUNDTRIP_OK=false
             ;;
     esac
+fi
+
+# LDM-#2372: the RESTORE side -- the copy must not carry the PUBLISHER'S
+# rendered environment.
+#
+# LDM-#2370: `ldm package` captured every LIFERAY_* key of the source's
+# rendered compose -- the virtual host, the log4j file, the upgrade flag --
+# into the package's custom_env, and import replayed them as if the publisher
+# had declared them. Source and copy both run on localhost here, so a leaked
+# virtual host has the value the copy would render anyway and the serve check
+# above passes regardless. The shared checker asserts the two things that are
+# visible whatever the host: no key duplicated in the copy's liferay
+# environment, and no LDM-rendered key in the copy's custom_env.
+# The suite declares only TEST_SECRET via `ldm config env`, which LDM never
+# renders, so a duplicate here is never the source's own doing.
+#
+# Run whenever the copy BOOTED, even if it then failed to serve, because the
+# compose file it reads is the one `ldm run` rendered. Before the state
+# capture and reset below, which tear the stack down.
+if [ "$ROUNDTRIP_BOOTED" = true ]; then
+    roundtrip_env_check "The imported copy '${ROUNDTRIP_PROJECT}'" "${LDM_WORKSPACE}/${ROUNDTRIP_PROJECT}"
 fi
 
 # LDM-#2221: captured BEFORE the removal below, which is the whole point.
@@ -7194,7 +7264,9 @@ fi
 "$LDM_CMD" -y rm "$ROUNDTRIP_PROJECT" --delete >/dev/null 2>&1 || true
 rm -rf "${LDM_WORKSPACE:?}/${ROUNDTRIP_PROJECT}" "$ROUNDTRIP_PKG_DIR"
 
-if [ "$ROUNDTRIP_OK" != true ]; then
+# LDM-#2372: an env leak fails the run too, but only here, after the reset
+# check has had its turn.
+if [ "$ROUNDTRIP_OK" != true ] || [ "$ROUNDTRIP_ENV_OK" != true ]; then
     exit 1
 fi
 
