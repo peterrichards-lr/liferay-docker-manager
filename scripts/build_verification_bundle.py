@@ -77,6 +77,9 @@ REQUIRED_FILES = (
     # missing file.
     "scripts/check_published_dxp_domain.py",
     "scripts/check_startup_phases.py",
+    # LDM-#2372: the .ldmp round trip's environment-leak check, shared by both
+    # halves the same way.
+    "scripts/check_roundtrip_env_leak.py",
 )
 REQUIRED_DIRS = ("common",)
 OPTIONAL_FILES = ("scripts/fragment_override_harness.py",)
