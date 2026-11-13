@@ -1142,7 +1142,9 @@ if [ ! -f "$VENV_PYTEST" ]; then
 fi
 
 # 1. Cleanup & Setup
-"$LDM_CMD" -y rm "${PROJECT_NAME}" --delete --infra >/dev/null 2>&1 || true
+# LDM-#2371: the project only. The SHARED infra is cleared further down, once
+# the running-projects pre-flight has passed -- see PRE_RUN_INFRA_RESET.
+"$LDM_CMD" -y rm "${PROJECT_NAME}" --delete >/dev/null 2>&1 || true
 export LDM_WORKSPACE
 
 # LDM-#1419: clear leftovers from a PREVIOUS run before starting.
@@ -1385,6 +1387,15 @@ if [ -n "${RUNNING_PROJECTS// /}" ]; then
     echo "   They will reindex on their next boot if their index was already lost." | tee -a "$RESULTS_FILE_TMP" >&2
     exit 1
 fi
+
+# PRE_RUN_INFRA_RESET (LDM-#2371): clear a previous run's shared infra --
+# e.g. a proxy a killed run left on 8443, which `infra setup` below would
+# otherwise adopt (LDM-#1568). This was `--infra` on the project cleanup at
+# step 1, which ran ~220 lines BEFORE the pre-flight above: on 2026-11-13 it
+# took the proxy and search node away from a running project, and the
+# pre-flight then correctly refused a run that had already done the damage.
+# Here it can only run once nothing else is using them.
+"$LDM_CMD" -y infra down >/dev/null 2>&1 || true
 
 # Pre-pull large images to avoid containerd lease timeouts during the timed E2E run
 echo "ℹ  Pre-pulling required Docker images..."

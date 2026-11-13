@@ -257,6 +257,8 @@ ldm infra-down
 ldm infra-restart
 ```
 
+`infra down` and `infra restart` take the proxy and search node away from every project using them. Interactively they ask first; with `-y` they refuse (exit 3) while any LDM project is running -- naming each one with an `ldm stop` command -- and also when Docker cannot say what is running. Pass `--force` to proceed anyway (LDM-#2371).
+
 > [!TIP]
 > **Sidecar Fallback**: If the Global Search (ES8) container is not running, `ldm` will automatically default to Liferay's internal **Sidecar** search. It also cleans up global ES configurations in your project to ensure the Sidecar initializes correctly.
 
