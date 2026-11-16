@@ -1,3 +1,4 @@
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -292,3 +293,50 @@ class TestDevService(unittest.TestCase):
         with patch("builtins.print") as mock_print:
             self.handler.cmd_version(print_only=True)
             mock_print.assert_called_with("2.4.26-beta.4")
+
+    @patch("ldm_core.handlers.dev.Path.cwd")
+    def test_version_print_ignores_a_foreign_checkout_in_cwd(self, mock_cwd):
+        """LDM-#2381: an installed binary run inside a checkout reported it.
+
+        The cwd holds an `ldm_core/constants.py` at a DIFFERENT version that
+        this process did not import -- an installed v2.26.10-pre.2 standing in
+        a pre.3 checkout. A bare `ldm version` must print the running
+        program's own version, not the checkout's.
+        """
+        mock_cwd.return_value = self.base
+        constants = self.base / "ldm_core" / "constants.py"
+        constants.parent.mkdir(parents=True, exist_ok=True)
+        constants.write_text('VERSION = "9.9.9-pre.3"\n')
+
+        with patch("builtins.print") as mock_print:
+            self.handler.cmd_version()
+            mock_print.assert_called_once_with("2.4.26-beta.4")
+        with patch("builtins.print") as mock_print:
+            self.handler.cmd_version(print_only=True)
+            mock_print.assert_called_once_with("2.4.26-beta.4")
+
+    def test_version_print_reads_disk_when_cwd_is_the_imported_checkout(self):
+        """LDM-#1290 contract kept: `scripts/release.py` tags from this read.
+
+        release.py runs `liferay_docker.py system version --print` with the
+        checkout root as cwd, so the `constants.py` on disk IS the module this
+        process imported. There the disk value must still win over a stale
+        import. Uses the real imported module, so the identity check is
+        exercised against the real `__file__`, not a model of it.
+        """
+        import ldm_core.constants as real_constants
+
+        checkout_root = Path(real_constants.__file__).resolve().parent.parent
+        match = re.search(
+            r'^VERSION = "([^"]+)"',
+            (checkout_root / "ldm_core" / "constants.py").read_text(encoding="utf-8"),
+            re.MULTILINE,
+        )
+        assert match is not None
+        on_disk = match.group(1)
+        self.assertNotEqual(on_disk, "2.4.26-beta.4")  # the import is "stale"
+
+        with patch("ldm_core.handlers.dev.Path.cwd", return_value=checkout_root):
+            with patch("builtins.print") as mock_print:
+                self.handler.cmd_version(print_only=True)
+                mock_print.assert_called_once_with(on_disk)
