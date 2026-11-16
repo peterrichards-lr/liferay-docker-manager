@@ -2117,6 +2117,31 @@ class ConfigService:
     def cmd_env(self, project_id=None):  # noqa: C901, PLR0912, PLR0915
         pid = project_id
         vars_to_apply = getattr(self.manager.args, "vars", [])
+
+        # LDM-#2384: `-s/--service` was parsed and then ignored -- custom_env is
+        # applied to the Liferay container only (composer), so `-s my-ext K=V`
+        # silently set K on Liferay. Refuse before anything is written and name
+        # the route that does reach a service. `-s liferay` names the container
+        # custom_env already targets, so it stays accepted as a no-op.
+        service = getattr(self.manager.args, "service", None)
+        if service and service.lower() != "liferay":
+            from ldm_core.workspace.metadata import service_env_prefix
+
+            prefix = service_env_prefix(service)
+            # A bare leading word is a project id (resolved below), not a key.
+            pairs = [p for p in vars_to_apply if "=" in p] or ["<KEY>=<value>"]
+            examples = " ".join(f"{prefix}{p}" for p in pairs)
+            UI.die(
+                f"'ldm config env' cannot target service '{service}': it only "
+                "sets variables on the Liferay container. Nothing was changed.",
+                tip=(
+                    f"Set it on the host when starting the project instead: "
+                    f"{examples} ldm run ...\n"
+                    "See 'Service-Specific Targeting': https://github.com/"
+                    "peterrichards-lr/liferay-docker-manager/blob/master/docs/"
+                    "reference/configuration.md#4-service-specific-targeting"
+                ),
+            )
         if vars_to_apply and "=" not in vars_to_apply[0] and not pid:
             test_path = self.manager.detect_project_path(vars_to_apply[0])
             if test_path:

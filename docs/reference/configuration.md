@@ -279,6 +279,11 @@ You can target a specific service (including Client Extensions) by prefixing the
 - **Host Variable**: `export MY_CUSTOM_EXTENSION_DEBUG=true`
 - **Container** (`my-custom-extension` only): `DEBUG=true`
 
+`ldm config env -s <service>` is **not** a way to do this. `config env`
+writes to the Liferay container only, so for any service other than `liferay`
+it refuses, writes nothing, and points here (LDM-#2384). Until then the flag
+was silently ignored and the variable landed on Liferay.
+
 > [!IMPORTANT]
 > **For a client-extension container this is the only route in.** Sections 1-3
 > reach the Liferay container; a client extension receives what its own
@@ -313,4 +318,4 @@ LDM mounts.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-06* | *Last Reviewed: 2026-10-06*
+*Last Updated: 2026-11-16* | *Last Reviewed: 2026-11-16*

@@ -2431,7 +2431,15 @@ def get_parser():  # noqa: PLR0915
     )
     env.add_argument("vars", nargs="*")
     env.add_argument("-p", "--project", dest="project_flag")
-    env.add_argument("-s", "--service")
+    env.add_argument(
+        "-s",
+        "--service",
+        help=(
+            "Only 'liferay' is accepted: these variables always go to the "
+            "Liferay container. To reach another service, set "
+            "<SERVICE_ID>_<KEY>=<value> in the environment of 'ldm run'"
+        ),
+    )
     env.add_argument("--remove", action="store_true")
     env.add_argument("--import", action="store_true", dest="import_env")
 

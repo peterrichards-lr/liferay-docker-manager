@@ -694,6 +694,16 @@ def get_host_passthrough_env(self, paths=None, target_id=None):
     return [f"{k}={v}" for k, v in {**global_pool, **targeted}.items()]
 
 
+def service_env_prefix(target_id):
+    """The host-variable prefix that targets one service (LDM-#1903).
+
+    ``my-ext`` -> ``MY_EXT_``. Shared with ``ldm config env -s``'s refusal
+    (LDM-#2384), which names this route by example and must spell the prefix
+    exactly as the resolver below will match it.
+    """
+    return target_id.upper().replace("-", "_") + "_"
+
+
 def get_service_targeted_env(self, target_id, paths=None, blacklist=None):
     """Host variables explicitly addressed to one service (LDM-#1903).
 
@@ -728,7 +738,7 @@ def get_service_targeted_env(self, target_id, paths=None, blacklist=None):
     """
     if blacklist is None:
         blacklist = _get_effective_blacklist(self, paths)
-    prefix = target_id.upper().replace("-", "_") + "_"
+    prefix = service_env_prefix(target_id)
     keeps_full_name = target_id.lower() == "liferay"
 
     delivered = {}

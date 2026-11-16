@@ -766,12 +766,24 @@ Manage persistent environment variables in project metadata.
 ```bash
 ldm config env [project] KEY=VALUE
 ldm config env [project] --remove KEY
-ldm config env [project] -s liferay KEY=VALUE  # Target a specific service instead of global
 ldm config env [project] --import              # Import variables from a local .env file
 ldm config env                                 # Interactive manager (view and edit all)
 
 # Legacy flat form (still works):
 ldm env [project] KEY=VALUE
+```
+
+These variables are applied to the **Liferay container only**. `-s/--service`
+accepts just `liferay`, which changes nothing. Any other service is refused
+with exit `1` and nothing is written (LDM-#2384) -- before that, the flag was
+silently ignored and the variable landed on Liferay instead.
+
+To set a variable on another service, such as a client extension, prefix it
+with the service id and export it in the environment of `ldm run`. See
+[Service-Specific Targeting](../configuration.md#4-service-specific-targeting):
+
+```bash
+MY_CUSTOM_EXTENSION_DEBUG=true ldm run [project]   # DEBUG=true in my-custom-extension
 ```
 
 ## `config feature` (legacy: `feature`)
@@ -832,4 +844,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-13* | *Last Reviewed: 2026-11-13*
+*Last Updated: 2026-11-16* | *Last Reviewed: 2026-11-16*
