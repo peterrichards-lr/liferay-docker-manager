@@ -141,16 +141,20 @@ sidecar JVM defaults to `-Xmx2g`, so a stack sized for a 3 GB ceiling really
 asked for 5 GB — enough to be OOM-killed on an 8 GB machine, which is how this
 was found.
 
-On import, LDM now removes its own search settings from both and says what it
-removed:
+On import, LDM now removes its own search settings from both and names each
+key it removed:
 
 ```text
 ⚠️  Discarded 2 search setting(s) from the package's portal-ext.properties;
     this machine resolved search_mode 'shared'.
-      - module.framework.properties.com.liferay.portal.search.elasticsearch7
-        .configuration.ElasticsearchConfiguration.operationMode=EMBEDDED
-      - ...sidecarHttpPort=9201
+ℹ  - module.framework.properties.com.liferay.portal.search.elasticsearch7
+     .configuration.ElasticsearchConfiguration.operationMode
+ℹ  - ...sidecarHttpPort
 ```
+
+Run with `--info` to see each discarded value as well (`...operationMode=EMBEDDED`).
+Until LDM-#2376 the key list was itself hidden behind `--info`, so a default
+run printed only the count.
 
 The keys it owns are everything beginning `LIFERAY_ELASTICSEARCH` in the
 environment, and everything beginning
@@ -199,7 +203,12 @@ Both ends are now fixed:
   ```text
   ⚠️  Discarded 3 machine-specific setting(s) from the package's captured
       environment; LDM generates these for this machine.
+  ℹ  - LIFERAY_LOG4J2_CONFIGURATION_FILE
+  ℹ  - LIFERAY_REDIRECT_PERIOD_URL_PERIOD_IPS_PERIOD_ALLOWED
+  ℹ  - LIFERAY_WEB_PERIOD_SERVER_PERIOD_DISPLAY_PERIOD_NODE_PERIOD_NAME
   ```
+
+  The names print at default verbosity; `--info` adds each value (LDM-#2376).
 
   Those keys are the virtual-host pair, the display node name, redirect IPs,
   the database-upgrade auto-run, the log4j file, the index-on-startup pair,
@@ -310,4 +319,4 @@ This scaffolds a `.github/workflows/ldm-package-release.yml` file which:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-13* | *Last Reviewed: 2026-11-13*
+*Last Updated: 2026-11-16* | *Last Reviewed: 2026-11-16*

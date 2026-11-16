@@ -1173,11 +1173,20 @@ class FragmentsService(BaseHandler):
             # configuration in memory, so the patched rows stay invisible until
             # the portal reloads them. Say so plainly rather than claiming a
             # flush that never happened.
+            # LDM-#2376: the command is part of the warning itself. It was a
+            # separate `UI.detail` line, hidden at default verbosity, so the
+            # warning ended in a colon with nothing after it; a separate
+            # `UI.info` line would still vanish under --quiet, which the
+            # warning does not.
+            project_id = project_meta.get("project_name") or project_meta.get(
+                "container_name"
+            )
             UI.warning(
                 f"Patched {patched_db_count} fragment setting(s) directly in the database "
                 "because the Headless REST API rejected the update (see upstream #883). "
                 "Liferay caches fragment configuration in memory, so this change is not "
-                "visible until the portal reloads it -- restart the project to apply it:"
+                "visible until the portal reloads it -- restart the project to apply it: "
+                f"ldm restart {project_id or '<project>'}"
             )
             # LDM-#1602: said here rather than in the docs alone, because this
             # is the moment the user is being told to restart -- which is the
@@ -1189,10 +1198,6 @@ class FragmentsService(BaseHandler):
                 "module and setting feature.flag.LPD-99955=true "
                 "(see docs/how-to/runtime_overrides.md)."
             )
-            project_id = project_meta.get("project_name") or project_meta.get(
-                "container_name"
-            )
-            UI.detail(f"    ldm restart {project_id or '<project>'}")
 
         return patched_db_count
 

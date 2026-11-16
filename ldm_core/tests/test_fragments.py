@@ -1241,7 +1241,7 @@ class TestPatchDatabaseFragmentEntryLink(unittest.TestCase):
         with (
             patch.object(BaseHandler, "run_command", return_value="UPDATE 1\n") as m,
             patch("ldm_core.ui.UI.warning") as mock_warning,
-            patch("ldm_core.ui.UI.detail") as mock_detail,
+            patch("ldm_core.ui.UI.info"),
         ):
             project_meta = {
                 "db_type": "postgresql",
@@ -1266,8 +1266,62 @@ class TestPatchDatabaseFragmentEntryLink(unittest.TestCase):
             # The user must be told a restart is required for it to take effect.
             warned = " ".join(str(c[0][0]) for c in mock_warning.call_args_list)
             self.assertIn("restart", warned.lower())
-            hinted = " ".join(str(c[0][0]) for c in mock_detail.call_args_list)
-            self.assertIn("ldm restart", hinted)
+            # LDM-#2376: the command is part of the warning itself.
+            self.assertIn("ldm restart", warned)
+
+    def test_the_restart_command_survives_quiet(self):
+        """--quiet hides `UI.info` but not `UI.warning`, so a command printed
+        on its own line would vanish and leave the colon dangling again."""
+        import contextlib
+        import io
+
+        out = io.StringIO()
+        with (
+            patch.object(BaseHandler, "run_command", return_value="UPDATE 1\n"),
+            patch("ldm_core.ui.UI.VERBOSE", False),
+            patch("ldm_core.ui.UI.INFO_MODE", False),
+            patch("ldm_core.ui.UI.QUIET_MODE", True),
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(out),
+        ):
+            self.handler.handler.fragments._patch_database_fragmententrylink(
+                {"db_type": "postgresql", "project_name": "aica"}, self.overrides
+            )
+        self.assertIn("ldm restart aica", out.getvalue())
+
+    def test_the_restart_command_shows_at_default_verbosity(self):
+        """LDM-#2376: the warning ends "restart the project to apply it:" and
+        the command it introduces was printed with `UI.detail`, hidden at
+        default verbosity since fb9aacd6 -- so the colon had nothing after it.
+
+        Runs the real `UI` with only the verbosity flags set, and reads what
+        reached the terminal, rather than recording calls to a patched method.
+        """
+        import contextlib
+        import io
+
+        out = io.StringIO()
+        with (
+            patch.object(BaseHandler, "run_command", return_value="UPDATE 1\n"),
+            patch("ldm_core.ui.UI.VERBOSE", False),
+            patch("ldm_core.ui.UI.INFO_MODE", False),
+            patch("ldm_core.ui.UI.QUIET_MODE", False),
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(out),
+        ):
+            count = self.handler.handler.fragments._patch_database_fragmententrylink(
+                {"db_type": "postgresql", "project_name": "aica"}, self.overrides
+            )
+
+        self.assertEqual(count, 1)
+        said = out.getvalue()
+        self.assertIn("restart the project to apply it:", said)
+        self.assertIn("ldm restart aica", said)
+        self.assertLess(
+            said.index("apply it:"),
+            said.index("ldm restart aica"),
+            "the command must follow the colon that introduces it",
+        )
 
 
 class TestFragmentPatchTimeout(unittest.TestCase):
