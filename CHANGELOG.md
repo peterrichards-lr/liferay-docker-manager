@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.10] - 2026-11-16
+
+It was verified on v2.26.10-pre.4 across six environments:
+
+- macOS 27 with Colima;
+- macOS 27 with OrbStack;
+- Fedora 45 (native Docker);
+- Windows 11 with PowerShell 5.1 and Docker Desktop;
+- Windows 11 with PowerShell 7 and Docker Desktop;
+- Windows 11 with WSL2.
+
+CI added the five Linux distributions and macOS with Colima. Stable is identical to pre.4 except for the version stamp. The details are in the pre-release entries below.
+
+### Fixed
+
+- **A package no longer overrides the consumer's environment with the publisher's** (LDM-#2370). Snapshots capture only the environment the publisher declared. Importing strips any LDM-generated key a package carries, so packages already published are corrected on import.
+- **`ldm -y rm --infra`, `ldm -y infra down` and `ldm -y infra restart` refuse while other projects are running** (LDM-#2371), naming each project and its `ldm stop` command. `--force` proceeds.
+- **Public GitHub lookups no longer send your credential** (LDM-#2382). The update check, upgrade, seeds and public `.ldmp` releases ask anonymously, and read `GITHUB_PAT`, `GITHUB_TOKEN` or the `gh` login only on a rate limit or a 404. A rejected credential warns on stderr, with advice that fits its source.
+- **`ldm reset <project> all` works on native Linux when the host user is not uid 1000** (LDM-#2356). This was v2.26.9's known issue.
+- **Smaller fixes:**
+  - `ldm system upgrade --check` always states its result (LDM-#2358);
+  - a restarted container is not reported ready on the previous boot's log line (LDM-#2346);
+  - snapshots and packages leave out LDM's own portal-workaround bundle (LDM-#2359);
+  - quickstart says it could not query GitHub Releases, rather than "no package", when GitHub never answered (LDM-#2364).
+
+### Documentation
+
+- **`ldm system prune` lists every step it offers**, including the separate question about orphaned project DATA volumes that `--all` never answers for you (LDM-#2383).
+
+### Known issues
+
+- **On Windows, the PowerShell window may not close after a verification run.** It stays open after `exit`, on PowerShell 5.1 and 7. The suspected cause is the verification script's tray check leaving a second `ldm.exe` process attached to the console. This is unconfirmed, and it affects the verification script only, not `ldm`.
+- **`ldm config env -s <service>` ignores `--service`** and sets the variable on the Liferay container (LDM-#2384). To target a client extension, set `<SERVICE_ID>_<KEY>=<value>` in the environment of `ldm run`.
+- **`ldm version` reports the version of an LDM checkout in the current directory**, not the running binary's (LDM-#2381).
+- **The E2E deferrals for this cycle are recorded in LDM-#2368.**
+
 ## [v2.26.10-pre.4] - 2026-11-16
 
 ### Fixed
