@@ -5,6 +5,93 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.10] - 2026-11-16
+
+It was verified on v2.26.10-pre.4 across six environments:
+
+- macOS 27 with Colima;
+- macOS 27 with OrbStack;
+- Fedora 45 (native Docker);
+- Windows 11 with PowerShell 5.1 and Docker Desktop;
+- Windows 11 with PowerShell 7 and Docker Desktop;
+- Windows 11 with WSL2.
+
+CI added the five Linux distributions and macOS with Colima. Stable is identical to pre.4 except for the version stamp. The details are in the pre-release entries below.
+
+### Fixed
+
+- **A package no longer overrides the consumer's environment with the publisher's** (LDM-#2370). Snapshots capture only the environment the publisher declared. Importing strips any LDM-generated key a package carries, so packages already published are corrected on import.
+- **`ldm -y rm --infra`, `ldm -y infra down` and `ldm -y infra restart` refuse while other projects are running** (LDM-#2371), naming each project and its `ldm stop` command. `--force` proceeds.
+- **Public GitHub lookups no longer send your credential** (LDM-#2382). The update check, upgrade, seeds and public `.ldmp` releases ask anonymously, and read `GITHUB_PAT`, `GITHUB_TOKEN` or the `gh` login only on a rate limit or a 404. A rejected credential warns on stderr, with advice that fits its source.
+- **`ldm reset <project> all` works on native Linux when the host user is not uid 1000** (LDM-#2356). This was v2.26.9's known issue.
+- **Smaller fixes:**
+  - `ldm system upgrade --check` always states its result (LDM-#2358);
+  - a restarted container is not reported ready on the previous boot's log line (LDM-#2346);
+  - snapshots and packages leave out LDM's own portal-workaround bundle (LDM-#2359);
+  - quickstart says it could not query GitHub Releases, rather than "no package", when GitHub never answered (LDM-#2364).
+
+### Documentation
+
+- **`ldm system prune` lists every step it offers**, including the separate question about orphaned project DATA volumes that `--all` never answers for you (LDM-#2383).
+
+### Known issues
+
+- **On Windows, the PowerShell window may not close after a verification run.** It stays open after `exit`, on PowerShell 5.1 and 7. The suspected cause is the verification script's tray check leaving a second `ldm.exe` process attached to the console. This is unconfirmed, and it affects the verification script only, not `ldm`.
+- **`ldm config env -s <service>` ignores `--service`** and sets the variable on the Liferay container (LDM-#2384). To target a client extension, set `<SERVICE_ID>_<KEY>=<value>` in the environment of `ldm run`.
+- **`ldm version` reports the version of an LDM checkout in the current directory**, not the running binary's (LDM-#2381).
+- **The E2E deferrals for this cycle are recorded in LDM-#2368.**
+
+## [v2.26.10-pre.4] - 2026-11-16
+
+### Fixed
+
+- **Public GitHub lookups no longer send your credential** (LDM-#2382). The update check, `ldm system upgrade`, seed downloads and public `.ldmp` releases sent `GITHUB_PAT`, `GITHUB_TOKEN` or your `gh` login on every request, only to lift the anonymous rate limit. They now ask anonymously, and read a credential only when GitHub rate-limits the request or answers 404, which is also how it hides a private repository. Seed downloads send none.
+- **A rejected GitHub credential warns on stderr** (LDM-#2382). The warning went to stdout, so on the first command of the day it could land in `--json` output, or in the name of a verification report. When the credential came from the `gh` CLI, the advice is now `gh auth login` or `gh auth logout`, not "unset".
+
+### Documentation
+
+- **`ldm system prune` lists every step it offers** (LDM-#2383). Without flags it asks before removing volumes, images and cached seeds, including a separate question about orphaned project DATA volumes that `--all` never answers for you. The docs described three steps.
+
+### Internal
+
+- The verification scripts' low-disk tip now says what each command removes, including that `docker system prune -a` removes stopped containers (LDM-#2383).
+- Development dependencies: playwright 1.65.1, ruff 0.17.5, mkdocs-git-revision-date-localized-plugin 1.7.0.
+
+## [v2.26.10-pre.3] - 2026-11-13
+
+No change to `ldm` itself. This pre-release republishes the verification bundle, because pre.2's cannot pass.
+
+### Internal
+
+- The verification round trip finds the imported copy's directory from `ldm list --json`. pre.2's scripts guessed a path under the work directory, where the copy is not created, so the copy's environment check exited 4 on every platform (LDM-#2372).
+
+## [v2.26.10-pre.2] - 2026-11-13
+
+### Fixed
+
+- **A package no longer overrides the consumer's environment with the publisher's** (LDM-#2370). `ldm snapshot` captured every `LIFERAY_*` setting from the rendered compose file, including the values LDM generates for the publisher's own machine: the default company's virtual host, the display-node flag, redirect IPs, the log4j file, and the reindex, cluster, routes and search keys. On import those replaced the consumer's values. A package built by AICA's CI pointed every consumer's default company at the CI host `aica-e2e.demo`. Snapshots now capture only the environment the publisher declared (`ldm config env`, `--env`), and importing a package strips any LDM-generated key it carries, naming what was dropped, so packages already published are corrected on import. A project imported **before** this release keeps those keys in its own `meta` until it is re-imported.
+- **`ldm -y rm --infra`, `ldm -y infra down` and `ldm -y infra restart` refuse while other projects are running** (LDM-#2371). Under `-y` they tore down the shared proxy and search node regardless of what was using them. They now exit 3, name the projects with the `ldm stop` command for each, and fail closed when Docker cannot answer. `--force` proceeds. The project being removed by the same `ldm rm` call does not count.
+
+### Internal
+
+- The verification scripts reset the shared infrastructure only after their running-projects check. Before, a run started next to another project removed its proxy and search node before refusing to continue (LDM-#2371).
+- The verification round trip checks that the package it builds, and the copy it imports, carry no LDM-generated environment (LDM-#2372).
+
+## [v2.26.10-pre.1] - 2026-11-13
+
+### Fixed
+
+- **`ldm reset <project> all` no longer fails on native Linux when the host user is not uid 1000** (LDM-#2356). Liferay writes its logs and data as uid 1000, and reset removed them with a plain delete. It now reclaims ownership and retries. This was v2.26.9's known issue, and the reason its Ubuntu platform job and Release E2E run failed.
+- **`ldm system upgrade --check` always states its result** (LDM-#2358). When an update was available it printed only its heading unless `--info` was given. `-y` run from a pre-release no longer exits without a word: it says it stayed on the pre-release, and that `--beta` or `-v vX.Y.Z` takes the stable release.
+- **A restarted container is no longer reported ready on the previous boot's log line** (LDM-#2346). The first readiness read now starts at the container's own start time, so `ldm run` after `ldm stop` waits for this boot's `Server startup` line instead of finishing in about two seconds.
+- **Snapshots and `.ldmp` packages leave out LDM's own portal-workaround bundle** (LDM-#2359). `ldm run` installs the right variant for the importing project's Liferay line. A package built from a snapshot taken before this release still contains it.
+- **Quickstart no longer reports "No compiled LDM Package (.ldmp) found" when GitHub never answered the release lookup** (LDM-#2364). After a rejected credential (401), a refused one (403) or a rate limit, it says it could not query GitHub Releases, gives the rate limit's reset time, and names the credential to replace or unset. It exits 2 for a refused credential and 3 for a rate limit or another unanswered request.
+
+### Internal
+
+- CI downloads a pinned actionlint release and verifies its sha256, failing at the download rather than in `tar` (LDM-#2225).
+- The search-wipe guard tests no longer fail when another test's temporary directory is garbage-collected during them.
+
 ## [v2.26.9] - 2026-11-12
 
 A security release. It was verified on v2.26.9-pre.1 across five environments:
