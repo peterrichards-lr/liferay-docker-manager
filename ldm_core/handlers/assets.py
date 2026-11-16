@@ -69,10 +69,10 @@ class AssetService:
             f"Checking for pre-warmed seed: {UI.CYAN}{seed_filename}{UI.COLOR_OFF}"
         )
 
-        headers = {}
-        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GITHUB_PAT")
-        if token:
-            headers["Authorization"] = f"token {token}"
+        # LDM-#2382: seeds are public release assets, so the download carries
+        # no credential. The API lookup in _resolve_seed_url adds one only if
+        # GitHub rate-limits it.
+        headers: dict[str, str] = {}
 
         actual_home = get_actual_home()
         cache_dir = actual_home / ".ldm" / "seeds"
