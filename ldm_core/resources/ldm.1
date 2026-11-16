@@ -181,7 +181,7 @@ Remove a generic project config value.
 View or manage the Cascading Configuration Defaults.
 .TP
 \fBldm config env\fR [\fIPROJECT\fR]
-Manage persistent environment variables in project metadata.
+Manage persistent environment variables in project metadata. They apply to the Liferay container only; to reach another service, set \fISERVICE_ID\fR_\fIKEY\fR=\fIvalue\fR in the environment of \fBldm run\fR.
 .TP
 \fBldm config feature\fR [\fIPROJECT\fR] [\fB--enable\fR|\fB--disable\fR]
 Toggle Liferay feature flags.
@@ -367,4 +367,4 @@ Peter Richards <peter.richards@liferay.com>
 
 .SH SEE ALSO
 .B docker(1), docker-compose(1)
-.\" Last Updated: 2026-10-14 | Last Reviewed: 2026-10-14
+.\" Last Updated: 2026-11-16 | Last Reviewed: 2026-11-16
