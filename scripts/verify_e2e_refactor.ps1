@@ -3343,7 +3343,11 @@ try {
     Start-Sleep -Seconds 5
     if (-not $trayProcess.HasExited) {
         Write-Verdict "[SUCCESS] System Tray application started successfully and remained alive."
-        Stop-Process -Id $trayProcess.Id -Force -ErrorAction SilentlyContinue
+        # LDM-#2389: ldm.exe is a PyInstaller one-file build, so the PID
+        # Start-Process returns is its bootloader and the tray runs in a child
+        # ldm.exe. Stopping only the bootloader left that child attached to this
+        # console, and 'exit' hung after every run. /T stops the whole tree.
+        & taskkill.exe /T /F /PID $trayProcess.Id 2>$null | Out-Null
     } else {
         Write-Host "[ERROR] ERROR: System Tray application crashed or failed to start!" -ForegroundColor Red
         Write-Host "--- STDOUT ---"
