@@ -590,8 +590,8 @@ class UI:
             UI._print(f"Next step: {msg}", UI.CYAN, "💡")
 
     @staticmethod
-    def warning(msg):
-        UI._print(msg, UI.YELLOW, "⚠️")
+    def warning(msg, file=None):
+        UI._print(msg, UI.YELLOW, "⚠️", file=file)
 
     @staticmethod
     def error(msg, details=None, tip=None):

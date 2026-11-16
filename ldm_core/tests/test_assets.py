@@ -177,6 +177,38 @@ class TestAssetService(unittest.TestCase):
         self.assertEqual(tag, "7.4.13-dxp-4")
 
 
+class TheSeedDownloadCarriesNoCredential(unittest.TestCase):
+    """LDM-#2382: seeds are public release assets, so a token in the
+    environment is not sent with the download."""
+
+    @patch("ldm_core.handlers.assets.get_actual_home")
+    @patch("ldm_core.handlers.assets.UI")
+    @patch("requests.head")
+    def test_the_download_sends_no_authorization(self, mock_head, _ui, mock_home):
+        import os
+        import tempfile
+
+        sent: list = []
+
+        def get(url, headers=None, **_kwargs):
+            sent.append(dict(headers or {}))
+            raise OSError("stop after the request is made")
+
+        with (
+            tempfile.TemporaryDirectory() as tmp_dir,
+            patch.dict(os.environ, {"GITHUB_PAT": "p", "GITHUB_TOKEN": "t"}),
+            patch("requests.get", side_effect=get),
+        ):
+            mock_home.return_value = Path(tmp_dir)
+            mock_head.return_value = MagicMock(status_code=200)
+            AssetService(MockAssetManager())._fetch_seed(
+                "2026.q1.7-lts", "postgresql", "shared", {}, assume_yes=True
+            )
+
+        self.assertTrue(sent, "the seed download was never attempted")
+        self.assertTrue(all("Authorization" not in h for h in sent), sent)
+
+
 if __name__ == "__main__":
     unittest.main()
 

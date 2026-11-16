@@ -742,20 +742,29 @@ This occurs when the shared IP address hits the GitHub unauthenticated REST API 
 ⚠️  Public releases still work. Renew or unset GITHUB_PAT; private repositories need a valid one.
 ```
 
-LDM sends a GitHub credential, when it finds one, to avoid the anonymous rate
-limit. It looks in this order: `GITHUB_PAT`, then `GITHUB_TOKEN`, then
-`gh auth token`. An expired or revoked one is rejected outright, even for a
-public repository that would answer an anonymous request.
+Every lookup LDM makes by default -- the update check, `ldm system upgrade`,
+seed downloads and public `.ldmp` releases -- is against a public repository,
+so since LDM-#2382 it asks anonymously first. It reads a credential, and sends
+it, only when GitHub answers that anonymous request with a rate limit, or with
+a 404, which is also how GitHub hides a private repository. It looks in this
+order: `GITHUB_PAT`, then `GITHUB_TOKEN`, then your `gh` login
+(`gh auth token`).
 
-Since LDM-#2347, LDM retries that request without the credential, so
-`ldm quickstart`, seed downloads and the update check still work against
-public releases. Before that, the 401 ended the command: quickstart reported
-no package even though the release was public.
+So you see this warning only when a credential was actually needed and was
+expired or revoked. The warning is printed to stderr, so it never mixes into
+`--json` output. After a rate limit LDM carries on with the anonymous answer.
+After a 404 it reports the 401 instead, because it cannot tell a missing
+release from a private one it is not allowed to see.
 
-**The Solution:** renew the token named in the warning, or remove it. If it is
-exported from a shell profile such as `~/.zprofile`, delete that line and open
-a new terminal. LDM then falls back to `GITHUB_TOKEN` or your `gh` login. A
-private repository still needs a valid credential.
+**The Solution:** renew the credential named in the warning, or remove it.
+
+- **`GITHUB_PAT` or `GITHUB_TOKEN`:** if it is exported from a shell profile
+  such as `~/.zprofile`, delete that line and open a new terminal. LDM then
+  falls back to the next source.
+- **The gh CLI:** run `gh auth login` to renew it, or `gh auth logout` so LDM
+  stops using it.
+
+A private repository still needs a valid credential.
 
 ---
 
@@ -963,4 +972,4 @@ Projects are discovered from the current folder, its parent, `~/ldm`, the LDM in
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-11* | *Last Reviewed: 2026-11-11*
+*Last Updated: 2026-11-16* | *Last Reviewed: 2026-11-16*

@@ -29,8 +29,21 @@ class _Response:
         return self._payload
 
 
-def _call(status, token, source="GITHUB_PAT"):
-    """Drive the real function and return every UI.warning string it emitted."""
+def _call(status, token, source="GITHUB_PAT", anonymous=None):
+    """Drive the real function and return every UI.warning string it emitted.
+
+    ``status`` is GitHub's answer to the credential. Lookups go anonymous
+    first (LDM-#2382), so the credential is only sent after an anonymous 404
+    -- a private repository -- which is the default here when one is
+    configured. Without a credential, ``status`` is the anonymous answer.
+    """
+    if anonymous is None:
+        anonymous = 404 if token else status
+
+    def get(url, headers=None, **_kwargs):
+        sent = (headers or {}).get("Authorization")
+        return _Response(status if sent else anonymous)
+
     from ldm_core.workspace.importer import _check_github_release_for_package
 
     ui = MagicMock()
@@ -39,7 +52,7 @@ def _call(status, token, source="GITHUB_PAT"):
         patch("ldm_core.utils.UI", ui),
         patch("ldm_core.utils.get_github_token", return_value=token),
         patch("ldm_core.utils.github_token_source", return_value=source),
-        patch("requests.get", return_value=_Response(status)),
+        patch("requests.get", side_effect=get),
     ):
         *_, unanswered = _check_github_release_for_package(
             MagicMock(), "acme", "widget", "acme/widget"

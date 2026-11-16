@@ -173,19 +173,25 @@ def _unanswered_lookup(api_resp, github_token):
     is an authentication error (2); a rate limit or any other unanswered
     request is an external API failure (3), as for Docker Hub tag discovery.
     """
-    from ldm_core.utils import github_token_source
+    from ldm_core.utils import (
+        _rejected_credential_sources,
+        github_credential_advice,
+        github_token_source,
+    )
 
     status = api_resp.status_code
     headers = getattr(api_resp, "headers", None) or {}
-    # `github_get` drops the credential only after GitHub rejects it with a
-    # 401, so no token back while a source is configured means it was rejected
-    # and this response was obtained anonymously.
-    rejected = None if github_token else github_token_source()
+    # `github_get` goes anonymous first (LDM-#2382), so no token back no longer
+    # implies a rejection: the credential may simply never have been needed.
+    # Only a source `github_get` recorded as rejected counts.
+    source = None if github_token else github_token_source()
+    rejected = source if source in _rejected_credential_sources else None
 
     if status == 401:
         tip = (
-            f"GitHub rejected the credential from {rejected}. Renew or unset "
-            f"{rejected}.{_credential_precedence_note(rejected)}"
+            f"GitHub rejected the credential from {rejected}. "
+            f"{github_credential_advice(rejected)}."
+            f"{_credential_precedence_note(rejected)}"
             if rejected
             else "Check the repository URL and your GitHub credentials."
         )
@@ -203,8 +209,9 @@ def _unanswered_lookup(api_resp, github_token):
         if rejected:
             tip = (
                 f"GitHub rejected the credential from {rejected}, so the lookup "
-                "ran anonymously, under the lower anonymous limit. Replace or "
-                f"unset {rejected}.{_credential_precedence_note(rejected)}"
+                "ran anonymously, under the lower anonymous limit. "
+                f"{github_credential_advice(rejected)}."
+                f"{_credential_precedence_note(rejected)}"
             )
         elif github_token:
             tip = "Wait for the limit to reset, then run the command again."
@@ -250,9 +257,9 @@ def _check_github_release_for_package(self, owner, repo, source_path):
 
     api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
     try:
-        # LDM-#2347: retries anonymously on a 401, and reports which
-        # credential (if any) the lookup succeeded with, so the download
-        # below does not resend a rejected one.
+        # LDM-#2382: anonymous first, with the credential added for a 404
+        # (a private repository) or a rate limit. Reports which credential, if
+        # any, the lookup succeeded with, so the download below reuses it.
         api_resp, github_token = github_get(api_url, timeout=20)
         if api_resp.status_code == 200:
             release_data = api_resp.json()

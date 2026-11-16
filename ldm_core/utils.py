@@ -2162,17 +2162,46 @@ def get_github_token() -> str | None:
 _rejected_credential_sources: set[str] = set()
 
 
+def github_credential_advice(source) -> str:
+    """How to fix a rejected credential from ``source`` (LDM-#2382).
+
+    "Renew or unset" fits a variable, not the gh CLI's stored login.
+    """
+    if source == "the gh CLI":
+        return (
+            "Renew it with 'gh auth login', or run 'gh auth logout' so LDM "
+            "stops using it"
+        )
+    return f"Renew or unset {source}"
+
+
+def is_github_rate_limited(response) -> bool:
+    """429, or a 403 whose rate-limit budget is spent."""
+    if response.status_code == 429:
+        return True
+    headers = getattr(response, "headers", None) or {}
+    return (
+        response.status_code == 403 and str(headers.get("X-RateLimit-Remaining")) == "0"
+    )
+
+
 def github_get(url, headers=None, timeout=20, **kwargs):
-    """GET a GitHub API URL with the user's credential, falling back to none.
+    """GET a GitHub API URL anonymously, adding the user's credential only
+    when the anonymous answer cannot be the real one.
 
-    LDM-#2347. Every caller used to send `get_github_token()` unconditionally,
-    so an expired `GITHUB_PAT` turned a public release that answers 200
-    anonymously into a 401, and quickstart exited 1. LDM-#2098 made that 401
-    visible but still stopped there, advising the user to unset the variable.
+    LDM-#2382. Every lookup LDM makes by default -- the update check, upgrade,
+    seeds, public `.ldmp` releases -- is against a public repository. The
+    credential was attached first (LDM-#726) only to lift the 60-an-hour
+    anonymous rate limit, so a user's `gh` login went out on every daily
+    update check, and an expired one made every lookup cost a 401 and a
+    warning. Now the credential is read, and sent, only when the anonymous
+    request is rate-limited or answers 404, which is how GitHub hides a
+    private repository (LDM-#380).
 
-    On a 401 this warns once, naming the source, and retries anonymously: a
-    public repository then works, and the user is still told to fix the
-    credential, which a private one needs.
+    A rejected credential (401) warns once per source, on stderr so it cannot
+    corrupt `--json` or `--slug` output (LDM-#2347). A rate-limited anonymous
+    answer then stands; an anonymous 404 does not, because a private
+    repository answers 404 too, so the 401 is returned instead.
 
     Returns ``(response, token)``. ``token`` is the credential the response was
     obtained with, or None when it was anonymous, so a follow-up download can
@@ -2181,31 +2210,39 @@ def github_get(url, headers=None, timeout=20, **kwargs):
     import requests
 
     base = dict(headers or {})
+    anonymous = requests.get(url, headers=base, timeout=timeout, **kwargs)
+    if anonymous.status_code != 404 and not is_github_rate_limited(anonymous):
+        return anonymous, None
+
     token = get_github_token()
+    if not token:
+        return anonymous, None
 
-    if token:
-        response = requests.get(
-            url,
-            headers={**base, "Authorization": f"token {token}"},
-            timeout=timeout,
-            **kwargs,
+    response = requests.get(
+        url,
+        headers={**base, "Authorization": f"token {token}"},
+        timeout=timeout,
+        **kwargs,
+    )
+    if response.status_code != 401:
+        return response, token
+
+    source = github_token_source() or "your environment"
+    if source not in _rejected_credential_sources:
+        _rejected_credential_sources.add(source)
+        UI.warning(
+            f"GitHub rejected the credential from {source} (HTTP 401), so "
+            "LDM is continuing without it.",
+            file=sys.stderr,
         )
-        if response.status_code != 401:
-            return response, token
-
-        source = github_token_source() or "your environment"
-        if source not in _rejected_credential_sources:
-            _rejected_credential_sources.add(source)
-            UI.warning(
-                f"GitHub rejected the credential from {source} (HTTP 401), so "
-                "LDM is continuing without it."
-            )
-            UI.warning(
-                f"  Public releases still work. Renew or unset {source}; "
-                "private repositories need a valid one."
-            )
-
-    return requests.get(url, headers=base, timeout=timeout, **kwargs), None
+        UI.warning(
+            f"  Public releases still work. {github_credential_advice(source)}; "
+            "private repositories need a valid one.",
+            file=sys.stderr,
+        )
+    # After an anonymous 404 the repository may be private, so whether the
+    # thing exists is unknown: report the 401, not "not found" (LDM-#2364).
+    return (response if anonymous.status_code == 404 else anonymous), None
 
 
 def get_actual_home():
@@ -3657,8 +3694,8 @@ def check_for_updates(current_version, force=False, pre_release=False, tag=None)
         if not url.startswith("https://"):
             raise ValueError(f"Invalid URL scheme: {url}")
 
-        # The credential avoids API rate limiting; a rejected one falls back
-        # to anonymous (LDM-#2347).
+        # Anonymous first; the credential is added only if this is
+        # rate-limited (LDM-#2382).
         response, _ = github_get(url, headers=headers, timeout=5)
         if response.status_code == 200:
             res_data = response.json()

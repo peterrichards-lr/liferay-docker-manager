@@ -159,8 +159,10 @@ class QuickstartSaysTheLookupWentUnanswered(_QuickstartHarness):
         self.assertIn("ahead of GITHUB_TOKEN", said)
 
     def test_a_401_is_an_authentication_failure(self):
+        """A private repository answers 404 anonymously, then 401 to an expired
+        credential: whether it has a package is unknown (LDM-#2382)."""
         code, said = self._quickstart(
-            _github(_response(401), _response(401)), {"GITHUB_PAT": "expired"}
+            _github(_response(401), _response(404)), {"GITHUB_PAT": "expired"}
         )
         self._assert_unanswered(said)
         self.assertEqual(code, 2)
@@ -169,7 +171,7 @@ class QuickstartSaysTheLookupWentUnanswered(_QuickstartHarness):
 
     def test_a_403_with_a_credential_is_not_called_a_rate_limit(self):
         code, said = self._quickstart(
-            _github(_response(403), _response(200)), {"GITHUB_TOKEN": "sso-blocked"}
+            _github(_response(403), _response(404)), {"GITHUB_TOKEN": "sso-blocked"}
         )
         self._assert_unanswered(said)
         self.assertEqual(code, 2)
@@ -179,16 +181,14 @@ class QuickstartSaysTheLookupWentUnanswered(_QuickstartHarness):
         self.assertNotIn("rate limit exceeded", said)
 
     def test_an_authenticated_rate_limit_is_still_a_rate_limit(self):
-        get = _github(
-            _response(
-                403,
-                headers={
-                    "X-RateLimit-Remaining": "0",
-                    "X-RateLimit-Reset": str(RESET_EPOCH),
-                },
-            ),
-            _response(200),
+        limited = _response(
+            403,
+            headers={
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset": str(RESET_EPOCH),
+            },
         )
+        get = _github(limited, limited)
         code, said = self._quickstart(get, {"GITHUB_TOKEN": "busy"})
         self._assert_unanswered(said)
         self.assertEqual(code, 3)
@@ -201,6 +201,17 @@ class QuickstartSaysTheLookupWentUnanswered(_QuickstartHarness):
         self.assertIn("rate limit exceeded", said)
         self.assertIn("set GITHUB_PAT or GITHUB_TOKEN", said)
         self.assertNotIn("resets at", said)
+
+    def test_an_untried_credential_is_not_called_rejected(self):
+        """Lookups go anonymous first (LDM-#2382). A plain anonymous 403 is
+        not retried, so GITHUB_PAT was never sent and cannot have been
+        rejected; no token back used to be read as a rejection."""
+        code, said = self._quickstart(
+            _github(_response(200), _response(403)), {"GITHUB_PAT": "fine"}
+        )
+        self._assert_unanswered(said)
+        self.assertEqual(code, 3)
+        self.assertNotIn("rejected", said)
 
     def test_a_network_failure_is_unanswered(self):
         code, said = self._quickstart(
