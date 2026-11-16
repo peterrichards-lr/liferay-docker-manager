@@ -296,15 +296,35 @@ ldm system prune --clean-hosts       # Remove all LDM-tagged entries from /etc/h
 ldm prune --seeds --samples
 ```
 
-**What it cleans:**
+**What it cleans.** Run without flags, `ldm system prune` removes stray LDM
+helper containers -- one-shot `chown` or probe containers that hold nothing --
+and **asks before every other step**. Each question defaults to No, apart from
+temporary files. The flags answer some of the questions in advance:
 
-- **Orphaned Containers**: Any container with the `com.liferay.ldm.managed` label whose project folder was manually deleted.
-- **Orphaned Search Snapshots**: Leftover Elasticsearch 8.x snapshots in the global vault from deleted projects.
-- **Pre-warmed Seeds**: (Optional) Large Database + Search + OSGi state archives used for instant project initialization.
-- **Sample Extensions**: (Optional) Cached sample client extensions.
-- **Docker Images & Build Cache**: (Optional, `--images`) Unused/dangling Docker images and unused build cache -- usually the single biggest reclaimable consumer on a long-lived dev machine, via `docker image prune -af` and `docker builder prune -af`.
-- **Temporary Files**: Residual `.*.tmp` files left behind by interrupted sync or build operations.
-- **Legacy LDM Volumes**: (Optional, `--legacy-volumes`) Named volumes created before LDM labelled volumes with their owning project. Docker only labels a volume at creation, so these never acquire labels and are matched by name pattern instead. Because a name is weaker evidence of ownership than a label, every candidate is listed and grouped by project, volumes belonging to a registered project are excluded, and confirmation is always interactive -- `--all` does not cover it.
+| Step | Without flags | Answered in advance by |
+| :--- | :--- | :--- |
+| **Orphaned containers**: `com.liferay.ldm.managed` containers whose project folder was deleted | asks | `--all` |
+| **Orphaned search snapshots** in the global vault, from deleted projects | asks | `--all` |
+| **Temporary files**: residual `.*.tmp` files from interrupted sync or build operations | asks (default Yes) | `--all` |
+| **Orphaned SSL certificates** in the global cert store | asks | `--all` |
+| **Pre-warmed seeds**: Database + Search + OSGi state archives | asks | `--seeds`, `--all` |
+| **Sample extensions**: cached sample client extensions | asks | `--samples`, `--all` |
+| **Dangling Docker volumes**: anonymous volumes only, via `docker volume prune` | asks | `--all` |
+| **Orphaned LDM volumes: OSGi state** -- regenerated on the next boot | asks | `--all` |
+| **Orphaned LDM volumes: project DATA** -- a deleted project's database | asks, separately, **every time** | nothing: `--all` still asks, and `-y` skips them |
+| **Docker images and build cache**: `docker image prune -af` and `docker builder prune -af`, usually the biggest reclaimable consumer | asks | `--images`, `--all` |
+| **LDM hosts entries** in `/etc/hosts` (needs sudo, reclaims no disk space) | not run | `--clean-hosts`, `--all` -- and it still asks |
+| **Legacy LDM volumes**: unlabelled volumes from before LDM labelled them, matched by name | not run | `--legacy-volumes` -- and it always asks |
+
+Expect a question about permanently deleting **DATA** volumes whenever a
+project's folder was removed without `ldm rm`: its database volume is left
+behind and is now orphaned. Answer No if you may still want that project. A
+DATA volume is never removed without an interactive Yes (LDM-#1267).
+
+Legacy volumes are matched by name pattern rather than by the owning-project
+label that Docker only applies at creation, which is weaker evidence of
+ownership. So every candidate is listed and grouped by project, volumes of a
+registered project are excluded, and `--all` does not cover the step.
 
 ## `clear-cache`
 
@@ -775,4 +795,4 @@ ldm target migrate win-wsl node-a
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-13* | *Last Reviewed: 2026-11-13*
+*Last Updated: 2026-11-16* | *Last Reviewed: 2026-11-16*

@@ -1218,9 +1218,9 @@ function Test-DockerDiskSpace {
     Write-Verdict "        (The host may report far more -- Docker's storage is inside its own VM.)"
     Write-Verdict ""
     Write-Verdict "        Free some space, then re-run:"
-    Write-Verdict "          ldm prune --seeds --samples     # base sweep PLUS the seed and sample caches"
-    Write-Verdict "          ldm prune --all                 # the same, without the volume/image prompts"
-    Write-Verdict "          docker system prune -a          # everything Docker considers unused"
+    Write-Verdict "          ldm prune --seeds --samples     # clears the seed and sample caches; asks before removing volumes and images"
+    Write-Verdict "          ldm prune --all                 # removes without asking, except project DATA volumes and hosts entries"
+    Write-Verdict "          docker system prune -a          # everything Docker considers unused, including STOPPED containers"
     Write-Verdict ""
     return $false
 }
