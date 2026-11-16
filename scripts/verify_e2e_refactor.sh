@@ -1293,9 +1293,9 @@ check_docker_disk() {
     echo "   (The host may report far more -- Docker's storage is inside its own VM.)" | tee -a "$RESULTS_FILE_TMP"
     echo "" | tee -a "$RESULTS_FILE_TMP"
     echo "   Free some space, then re-run:" | tee -a "$RESULTS_FILE_TMP"
-    echo "     ldm prune --seeds --samples     # base sweep PLUS the seed and sample caches" | tee -a "$RESULTS_FILE_TMP"
-    echo "     ldm prune --all                 # the same, without the volume/image prompts" | tee -a "$RESULTS_FILE_TMP"
-    echo "     docker system prune -a          # everything Docker considers unused" | tee -a "$RESULTS_FILE_TMP"
+    echo "     ldm prune --seeds --samples     # clears the seed and sample caches; asks before removing volumes and images" | tee -a "$RESULTS_FILE_TMP"
+    echo "     ldm prune --all                 # removes without asking, except project DATA volumes and hosts entries" | tee -a "$RESULTS_FILE_TMP"
+    echo "     docker system prune -a          # everything Docker considers unused, including STOPPED containers" | tee -a "$RESULTS_FILE_TMP"
     echo "" | tee -a "$RESULTS_FILE_TMP"
     if [ "$mode" = "warn" ]; then
         return 1
