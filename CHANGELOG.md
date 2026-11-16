@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.10-pre.4] - 2026-11-16
+
+### Fixed
+
+- **Public GitHub lookups no longer send your credential** (LDM-#2382). The update check, `ldm system upgrade`, seed downloads and public `.ldmp` releases sent `GITHUB_PAT`, `GITHUB_TOKEN` or your `gh` login on every request, only to lift the anonymous rate limit. They now ask anonymously, and read a credential only when GitHub rate-limits the request or answers 404, which is also how it hides a private repository. Seed downloads send none.
+- **A rejected GitHub credential warns on stderr** (LDM-#2382). The warning went to stdout, so on the first command of the day it could land in `--json` output, or in the name of a verification report. When the credential came from the `gh` CLI, the advice is now `gh auth login` or `gh auth logout`, not "unset".
+
+### Documentation
+
+- **`ldm system prune` lists every step it offers** (LDM-#2383). Without flags it asks before removing volumes, images and cached seeds, including a separate question about orphaned project DATA volumes that `--all` never answers for you. The docs described three steps.
+
+### Internal
+
+- The verification scripts' low-disk tip now says what each command removes, including that `docker system prune -a` removes stopped containers (LDM-#2383).
+- Development dependencies: playwright 1.65.1, ruff 0.17.5, mkdocs-git-revision-date-localized-plugin 1.7.0.
+
 ## [v2.26.10-pre.3] - 2026-11-13
 
 No change to `ldm` itself. This pre-release republishes the verification bundle, because pre.2's cannot pass.
