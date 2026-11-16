@@ -234,8 +234,12 @@ class TheOperatorIsTold(unittest.TestCase):
         def record(message, *_args, **_kwargs):
             said.append(str(message))
 
+        # LDM-#2376: the key list prints through `UI.info`, its values only
+        # with --info, so INFO_MODE is on here for the value assertion.
         with (
+            patch("ldm_core.ui.UI.INFO_MODE", True),
             patch("ldm_core.ui.UI.warning", side_effect=record),
+            patch("ldm_core.ui.UI.info", side_effect=record),
             patch("ldm_core.ui.UI.detail", side_effect=record),
         ):
             announce_stripped_search_keys(removed, "portal-ext.properties", "shared")
@@ -363,6 +367,98 @@ class TheCustomEnvCleanerIsDriven(unittest.TestCase):
         )
 
         self.assertEqual(json.loads(kept), {"LIFERAY_AICA_PERIOD_X": "1"})
+
+
+# The three keys the AICA v3.3.60 import discarded without naming (LDM-#2376).
+MACHINE_KEYS = {
+    "LIFERAY_LOG4J2_CONFIGURATION_FILE": "/opt/liferay/log4j2.xml",
+    "LIFERAY_REDIRECT_PERIOD_URL_PERIOD_IPS_PERIOD_ALLOWED": "10.0.0.7",
+    "LIFERAY_WEB_PERIOD_SERVER_PERIOD_DISPLAY_PERIOD_NODE_PERIOD_NAME": "true",
+}
+
+
+class TheKeyNamesShowAtDefaultVerbosity(unittest.TestCase):
+    """LDM-#2376: the names were printed with `UI.detail`, hidden at default
+    verbosity since fb9aacd6, so an AICA v3.3.60 import said "Discarded 3
+    machine-specific setting(s)" and named none of them.
+
+    Drives the methods `cmd_restore` calls through the REAL `UI` -- nothing
+    patched but the verbosity flags -- and reads what reached stdout. A test
+    that patches `UI.detail` to record it passes whether or not the line is
+    ever shown (the `--benchmark` row in testing-and-ci's table).
+    """
+
+    def output(self, call, *, info_mode=False):
+        import contextlib
+        import io
+
+        service = SnapshotService.__new__(SnapshotService)
+        service.manager = MagicMock()
+        out, err = io.StringIO(), io.StringIO()
+        with (
+            patch("ldm_core.ui.UI.VERBOSE", False),
+            patch("ldm_core.ui.UI.INFO_MODE", info_mode),
+            patch("ldm_core.ui.UI.QUIET_MODE", False),
+            patch.object(
+                SnapshotService, "_resolved_search_mode", return_value="shared"
+            ),
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+        ):
+            call(service)
+        return out.getvalue() + err.getvalue()
+
+    def restore_env(self, custom_env, **kwargs):
+        import json
+
+        return self.output(
+            lambda s: s._clean_restored_custom_env(json.dumps(custom_env), {}),
+            **kwargs,
+        )
+
+    def test_the_machine_key_names_are_shown(self):
+        said = self.restore_env({**MACHINE_KEYS, "LIFERAY_AICA_PERIOD_X": "1"})
+
+        self.assertIn("Discarded 3 machine-specific setting(s)", said)
+        for key in MACHINE_KEYS:
+            self.assertIn(key, said)
+        self.assertNotIn("LIFERAY_AICA_PERIOD_X", said, "a kept key is not listed")
+
+    def test_the_machine_key_values_wait_for_info(self):
+        """Values stay behind --info: the name is the actionable part, and a
+        captured value need not be echoed to every terminal."""
+        said = self.restore_env(MACHINE_KEYS)
+        self.assertNotIn("10.0.0.7", said)
+
+        said = self.restore_env(MACHINE_KEYS, info_mode=True)
+        self.assertIn(
+            "LIFERAY_REDIRECT_PERIOD_URL_PERIOD_IPS_PERIOD_ALLOWED=10.0.0.7", said
+        )
+
+    def test_the_search_key_names_are_shown_from_the_environment(self):
+        said = self.restore_env(
+            {"LIFERAY_ELASTICSEARCH_PERIOD_OPERATION_PERIOD_MODE": "EMBEDDED"}
+        )
+
+        self.assertIn("Discarded 1 search setting(s)", said)
+        self.assertIn("LIFERAY_ELASTICSEARCH_PERIOD_OPERATION_PERIOD_MODE", said)
+        self.assertNotIn("EMBEDDED", said)
+
+    def test_the_search_key_names_are_shown_from_portal_ext(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "files").mkdir()
+            (root / "files" / "portal-ext.properties").write_text(
+                f"aica.x=1\n{ES_PROP}.operationMode=EMBEDDED\n", encoding="utf-8"
+            )
+            said = self.output(
+                lambda s: s._install_restored_portal_ext(
+                    {"root": root, "files": root / "files"}, {}
+                )
+            )
+
+        self.assertIn("Discarded 1 search setting(s)", said)
+        self.assertIn(f"{ES_PROP}.operationMode", said)
 
 
 class ItRunsDuringRestore(unittest.TestCase):

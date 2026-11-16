@@ -200,6 +200,14 @@ def strip_ldm_search_properties(text):
     return "".join(kept_lines), removed
 
 
+def _list_stripped_keys(removed):
+    """One line per discarded key: the name always, `=value` with --info.
+    LDM-#2376."""
+    show_values = UI.INFO_MODE or UI.VERBOSE
+    for key in sorted(removed):
+        UI.info(f"  - {key}={removed[key]}" if show_values else f"  - {key}")
+
+
 def announce_stripped_search_keys(removed, source, search_mode):
     """Says what was discarded and where it came from. LDM-#1773.
 
@@ -214,8 +222,10 @@ def announce_stripped_search_keys(removed, source, search_mode):
         f"Discarded {len(removed)} search setting(s) from the package's "
         f"{source}; this machine resolved search_mode '{search_mode}'."
     )
-    for key in sorted(removed):
-        UI.detail(f"  - {key}={removed[key]}")
+    # LDM-#2376: the key names are what the operator acts on, so they print
+    # at default verbosity -- `UI.detail` hid them, leaving only the count.
+    # The values stay behind --info.
+    _list_stripped_keys(removed)
     UI.detail(
         "Search topology belongs to the machine LDM runs on, not to the "
         "package -- the same as the JDBC URL and virtual host, which are also "
@@ -237,8 +247,7 @@ def announce_stripped_machine_keys(removed, source):
         f"Discarded {len(removed)} machine-specific setting(s) from the "
         f"package's {source}; LDM generates these for this machine."
     )
-    for key in sorted(removed):
-        UI.detail(f"  - {key}={removed[key]}")
+    _list_stripped_keys(removed)  # LDM-#2376
     UI.detail(
         "They were rendered by LDM on the publisher's machine -- its virtual "
         "host among them -- and would override this machine's values "
