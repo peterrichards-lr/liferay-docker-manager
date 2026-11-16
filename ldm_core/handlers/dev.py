@@ -5,6 +5,7 @@ import shutil
 import sys
 from pathlib import Path
 
+import ldm_core.constants as constants_module
 from ldm_core.constants import VERSION
 from ldm_core.ui import UI
 
@@ -299,6 +300,30 @@ class DevService:
             pass
         return VERSION
 
+    def _running_version(self):
+        """The version of the program actually running, for the print path.
+
+        LDM-#2381: printing `_version_from_disk()` unconditionally made an
+        installed binary, run from inside an LDM checkout, report the
+        CHECKOUT's version. `sys.frozen` cannot tell the two apart -- the
+        macOS/Linux binaries are shiv zipapps, where it is False -- so the
+        test is identity: the disk read is used only when the `constants.py`
+        under the cwd is the very module this process imported. That keeps
+        `scripts/release.py` (which runs `liferay_docker.py system version
+        --print` from the checkout root) on the stale-bytecode-safe read of
+        LDM-#1290, and gives every other process its own imported `VERSION`.
+
+        The bump/set/check paths deliberately keep `_version_from_disk()`:
+        they rewrite the checkout's files, so they must read those files
+        whichever program is doing the writing.
+        """
+        disk = Path.cwd() / "ldm_core" / "constants.py"
+        try:
+            ours = Path(constants_module.__file__).resolve() == disk.resolve()
+        except (OSError, TypeError):
+            ours = False
+        return self._version_from_disk() if ours else VERSION
+
     def cmd_version(  # noqa: C901, PLR0912
         self,
         bump_type=None,
@@ -312,7 +337,7 @@ class DevService:
         if print_only or (
             not any([bump_type, set_version, build_info, promote, check])
         ):
-            print(self._version_from_disk())
+            print(self._running_version())
             return
 
         self._ensure_dev_env()
