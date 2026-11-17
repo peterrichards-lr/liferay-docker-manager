@@ -528,13 +528,23 @@ class ReadinessService(BaseHandler):
                 meta, host_name, ssl_enabled, target_name, root
             )
 
+        import warnings
+
         import requests
 
         http_ready = False
         while (time.time() - overall_start) < overall_timeout:
             try:
                 # Use a short timeout for the request itself
-                response = requests.get(url, timeout=5, verify=False)  # nosec B501
+                # LDM-#2393: verify=False is deliberate -- this probes the
+                # local proxy, whose mkcert CA Python may not trust -- so its
+                # warning is noise. Silenced here only, not process-wide, and by
+                # message: urllib3 is requests' dependency, not a declared one.
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore", message="Unverified HTTPS request"
+                    )
+                    response = requests.get(url, timeout=5, verify=False)  # nosec B501
                 if response.status_code in [200, 302]:
                     UI.success(
                         f"Project '{project_id}' is responding to HTTP ({response.status_code})."

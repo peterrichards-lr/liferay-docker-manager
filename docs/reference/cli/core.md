@@ -633,9 +633,14 @@ That hint previously named `ldm run`. `ldm run` remains the correct command when
 `restart` restarts the containers from the project's **existing** `docker-compose.yml`, and so does `restart --force-recreate`. Neither re-renders it from the project's `meta`, so a change to `meta` -- a `custom_env` key, a JVM flag -- is not applied by `restart`. Use `ldm stop` and then `ldm run`. `restart` now says so, along with what it did (LDM-#2317):
 
 ```text
-✅  Project 'my-project' restarted.
+✅  Project 'my-project' restarted. Liferay is still starting -- run 'ldm wait my-project' before relying on it.
 💡  Next step: 'ldm restart' reuses the existing docker-compose.yml. To apply changes made to the project's meta, run 'ldm stop' and then 'ldm run'.
 ```
+
+`restart` returns once the containers are back, not once Liferay serves, so a
+request sent straight afterwards can get `404`. Scripts should follow it with
+`ldm wait <project>`, which the success line names (LDM-#2391). Restarting a
+single non-Liferay service prints only `restarted.`
 
 `ldm run` on a project that is already running refuses in the same terms, with exit code `5` when run non-interactively. It used to recommend `ldm restart` "to apply updates".
 
@@ -844,4 +849,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-16* | *Last Reviewed: 2026-11-16*
+*Last Updated: 2026-11-17* | *Last Reviewed: 2026-11-17*

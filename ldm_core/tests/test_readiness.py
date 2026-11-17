@@ -377,6 +377,43 @@ class TestReadiness(unittest.TestCase):
         self.assertIn("203.0.113.20", called_url)
         self.assertNotIn("127.0.0.1", called_url)
 
+    def test_cmd_wait_probe_does_not_leak_the_insecure_request_warning(self):
+        """LDM-#2393: verify=False is deliberate (mkcert CA, local proxy), and
+        urllib3's InsecureRequestWarning reached AICA's console from it."""
+        import warnings
+
+        from urllib3.exceptions import InsecureRequestWarning
+
+        self.handler.read_meta = MagicMock(  # type: ignore[method-assign]
+            return_value={"container_name": "test-runtime", "port": 8080}
+        )
+
+        def probe(*_args, **_kwargs):
+            warnings.warn(
+                "Unverified HTTPS request is being made to host 'aica.demo'. "
+                "Adding certificate verification is strongly advised.",
+                InsecureRequestWarning,
+                stacklevel=2,
+            )
+            return MagicMock(status_code=200)
+
+        with (
+            patch.object(
+                self.handler.handler.readiness, "_wait_for_ready", return_value=True
+            ),
+            patch.object(self.handler.manager, "run_command", return_value="5%"),
+            patch("requests.get", side_effect=probe) as mock_http_get,
+            patch("time.sleep"),
+            warnings.catch_warnings(record=True) as caught,
+        ):
+            warnings.simplefilter("always")
+            self.assertTrue(self.handler.cmd_wait("test-project", timeout=5))
+
+        self.assertTrue(mock_http_get.called)
+        self.assertEqual(
+            [w for w in caught if issubclass(w.category, InsecureRequestWarning)], []
+        )
+
     @patch("ldm_core.ui.UI.raw")
     @patch("ldm_core.ui.UI.warning")
     @patch("ldm_core.ui.UI.success")
