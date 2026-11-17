@@ -72,6 +72,20 @@ class RestartSaysWhatItDid(unittest.TestCase):
     def test_a_successful_restart_says_so(self):
         self.assertIn("Project 'shop' restarted.", self._restart_stdout())
 
+    def test_it_names_ldm_wait_because_the_portal_is_still_starting(self):
+        """LDM-#2391: automation read 'restarted' as ready and got 404s."""
+        self.assertIn(
+            "Liferay is still starting -- run 'ldm wait shop'", self._restart_stdout()
+        )
+
+    def test_the_wait_advice_survives_quiet(self):
+        UI.QUIET_MODE = True
+        try:
+            output = self._restart_stdout()
+        finally:
+            UI.QUIET_MODE = False
+        self.assertIn("ldm wait shop", output)
+
     def test_it_says_meta_changes_need_stop_then_run(self):
         output = self._restart_stdout()
         self.assertIn("reuses the existing docker-compose.yml", output)

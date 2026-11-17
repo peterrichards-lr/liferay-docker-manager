@@ -695,7 +695,17 @@ class OrchestrationService(BaseHandler):
                 self._verify_pinned_mac_after_lifecycle(root, meta, target_name)
                 # LDM-#2317: as LDM-#1937 for start -- the only other line was
                 # UI.detail, so a successful restart printed nothing at all.
-                UI.success(f"Project '{root.name}' restarted.")
+                # LDM-#2391: but "restarted" is the containers, not the portal,
+                # and automation reading it as ready got 404s. Exit timing is
+                # unchanged -- scripts rely on it -- so the line says what to
+                # run, in the same UI.success that --quiet still shows.
+                if service in (None, "liferay"):
+                    UI.success(
+                        f"Project '{root.name}' restarted. Liferay is still "
+                        f"starting -- run 'ldm wait {root.name}' before relying on it."
+                    )
+                else:
+                    UI.success(f"Project '{root.name}' restarted.")
         self._report_batch_failures(failures, "restart")
         UI.hint(
             "'ldm restart' reuses the existing docker-compose.yml. To apply "
