@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.11-pre.2] - 2026-11-17
+
+### Security
+
+- **`ldm share start` no longer lets an `LCP.json` bypass the project's own port** (LDM-#2408). LDM read ports from a project's `LCP.json` before the project's own port, and passed Liferay Cloud's port objects to the tunnel client as unreadable text. The client discarded them and auto-discovered a port, which is the path where a different project, or LDM's global proxy, could be published (LDM-#2397). A project now always shares its own port. An `LCP.json` in the current directory is used only when there is no LDM project, and its port numbers are now read correctly.
+
+### Fixed
+
+- **`ldm share start --ports <port>` works for a project that is not on 8080** (LDM-#2408). Every released `lfr-tunnel` client checks port 8080 to decide whether the tunnel is healthy, whatever `--ports` says. So the check never passed, and LDM stopped a working tunnel after 10 seconds, reporting "Local target port 8080 is not responsive". Once the client reports the tunnel connected, authenticated and leased, LDM now checks the port you asked for itself. With the next `lfr-tunnel` release, which checks every port, a second port that is still starting is a warning rather than a failed share.
+- **A tunnel health failure names the port that is down,** not always 8080 (LDM-#2408).
+
 ## [v2.26.11-pre.1] - 2026-11-17
 
 ### Security
