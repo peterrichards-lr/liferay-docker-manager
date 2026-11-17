@@ -1,8 +1,8 @@
 === LDM BINARY VERIFICATION REPORT ===
 Timestamp: Thu Jul 16 14:34:48 BST 2026
-Hostname:  peters.macbook.pro.2.lan
+Hostname:  [ANONYMIZED]
 Platform:  darwin25
-Binary:    /Volumes/SanDisk/repos/liferay-docker-manager/.venv/bin/ldm
+Binary:    [ANONYMIZED]
 Version:   ldm 2.15.18-pre.12
 Docker:    29.2.1
 Compose:   5.2.0

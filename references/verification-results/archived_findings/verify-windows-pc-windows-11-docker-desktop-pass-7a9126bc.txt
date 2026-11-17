@@ -11,9 +11,9 @@ Docker:    29.4.0
 [0;33m[i]  Checking infrastructure stack (Traefik SSL Proxy)...[0m
 [0;32m[OK]  Infrastructure setup complete.[0m
 [0;33m[i]  The LDM project 'ldm-smoke-test' already exists and this command will reconfigure it.[0m
-[0;33m[i]  Created missing mount directory: C:\Users\prichards\ldm-verify\e2e-work-dir\ldm-smoke-test\scripts[0m
-[0;33m[i]  Created missing mount directory: C:\Users\prichards\ldm-verify\e2e-work-dir\ldm-smoke-test\osgi\log4j[0m
-[0;33m[i]  Created missing mount directory: C:\Users\prichards\ldm-verify\e2e-work-dir\ldm-smoke-test\osgi\portal-log4j[0m
+[0;33m[i]  Created missing mount directory: C:\Users\[USER]\ldm-verify\e2e-work-dir\ldm-smoke-test\scripts[0m
+[0;33m[i]  Created missing mount directory: C:\Users\[USER]\ldm-verify\e2e-work-dir\ldm-smoke-test\osgi\log4j[0m
+[0;33m[i]  Created missing mount directory: C:\Users\[USER]\ldm-verify\e2e-work-dir\ldm-smoke-test\osgi\portal-log4j[0m
 [0;33m[i]  + Synced license from Common: activation-key-dxpdevelopment-7.4-developeractivationkeys.xml[0m
 [0;33m[i]  [0;37m?[0m Starting [1;33mldm-smoke-test[0m stack (2026.q1.11-lts, postgresql, localhost:8082)...[0m
 [0;32m[OK]  Project 'ldm-smoke-test' started in background.[0m
@@ -37,7 +37,7 @@ Docker:    29.4.0
 [0;33m[i]  + Dehydrating volume [0;36mldm-smoke-test-data[0m to host...[0m
 [0;33m[i]  + Dehydrating volume [0;36mldm-smoke-test-state[0m to host...[0m
 [0;33m[i]  Reclaiming project permissions before snapshot...[0m
-[0;32m[OK]  Snapshot saved: C:\Users\prichards\ldm-verify\e2e-work-dir\ldm-smoke-test\snapshots\20260720_175852[0m
+[0;32m[OK]  Snapshot saved: C:\Users\[USER]\ldm-verify\e2e-work-dir\ldm-smoke-test\snapshots\20260720_175852[0m
 [1;33m=== Snapshots for ldm-smoke-test ===[0m
 [1] [0;36m20260720_175852[0m - [1mBinary-Verify[0m (1.0 GB)[2m [DB,VOL,MOD][0m
 [0;33m[!]  Resetting [1mldm-smoke-test[0m (all)...[0m

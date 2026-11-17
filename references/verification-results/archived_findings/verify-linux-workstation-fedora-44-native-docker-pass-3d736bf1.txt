@@ -1,8 +1,8 @@
 === LDM BINARY VERIFICATION REPORT ===
 Timestamp:    Fri Aug  7 17:06:18 UTC 2026
-Hostname:     runnervmvrwv9
+Hostname:  [ANONYMIZED]
 Platform:     Fedora Linux 44 (Container Image)
-Binary:       /home/runner/work/liferay-docker-manager/liferay-docker-manager/.venv/bin/ldm
+Binary:    [ANONYMIZED]
 Version:      ldm 2.15.27-pre.1
 Script Ver:   2.15.27-pre.1
 Docker:    28.0.4

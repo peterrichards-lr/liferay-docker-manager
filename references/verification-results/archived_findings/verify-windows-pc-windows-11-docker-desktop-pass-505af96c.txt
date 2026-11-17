@@ -40,7 +40,7 @@ Docker:    29.4.0
 [0;32m[OK]  Project '.' is fully initialized and idle.[0m
 [0;32m[OK]  Artifact deployment complete.[0m
 [0;32m[OK]  Database dump completed.[0m
-[0;32m[OK]  Snapshot saved: C:\Users\prichards\ldm-verify\e2e-work-dir\ldm-smoke-test\snapshots\20260821_155543[0m
+[0;32m[OK]  Snapshot saved: C:\Users\[USER]\ldm-verify\e2e-work-dir\ldm-smoke-test\snapshots\20260821_155543[0m
 [1;33m=== Snapshots for ldm-smoke-test ===[0m
 [1] [0;36m20260821_155543[0m - [1mBinary-Verify[0m (1.0 GB)[2m [DB,VOL,MOD][0m
 [0;33m[!]  Resetting [1mldm-smoke-test[0m (all)...[0m

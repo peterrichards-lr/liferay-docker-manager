@@ -1,8 +1,8 @@
 === LDM BINARY VERIFICATION REPORT ===
 Timestamp: Thu Jul 16 05:41:59 UTC 2026
-Hostname:  runnervm5mmn9
+Hostname:  [ANONYMIZED]
 Platform:  Ubuntu 24.04.4 LTS
-Binary:    /home/runner/work/liferay-docker-manager/liferay-docker-manager/.venv/bin/ldm
+Binary:    [ANONYMIZED]
 Version:   ldm 2.15.18-pre.2
 Docker:    28.0.4
 Compose:   2.38.2

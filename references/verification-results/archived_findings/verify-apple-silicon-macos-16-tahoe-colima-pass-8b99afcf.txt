@@ -41,7 +41,7 @@ MockManager module: ldm_core.manager
 ✅ Hot Deploy verified.
 >> Creating Snapshot
 [0;32m✅  Database dump completed.[0m
-[0;32m✅  Snapshot saved: /Users/peterrichards/ldm-verify/e2e-work-dir-62204/ldm-smoke-test-62204/snapshots/20260804_162208[0m
+[0;32m✅  Snapshot saved: [HOME]/ldm-verify/e2e-work-dir-62204/ldm-smoke-test-62204/snapshots/20260804_162208[0m
 >> Bypassing Integrity
 [1;33m=== Snapshots for ldm-smoke-test-62204 ===[0m
 [1] [0;36m20260804_162208[0m - [1mBinary-Verify[0m (1.0 GB)[2m [DB,VOL,MOD][0m

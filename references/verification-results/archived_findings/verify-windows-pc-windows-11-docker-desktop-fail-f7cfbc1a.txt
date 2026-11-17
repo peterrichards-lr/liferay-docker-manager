@@ -1,7 +1,7 @@
 ﻿=== LDM BINARY VERIFICATION REPORT ===
 Timestamp: 07/27/2026 09:08:47
 Platform:  
-Binary:    C:\Users\prichards\bin\ldm.exe
+Binary:    [ANONYMIZED]
 Version:   ldm 2.15.22-pre.25
 Docker:    29.4.0
 [0;32m[OK]  Infrastructure setup complete.[0m
@@ -12,7 +12,7 @@ Docker:    29.4.0
 [0;32m[OK]  Project '.' is responding to HTTP (200).[0m
 [0;32m[OK]  Project '.' is fully initialized and idle.[0m
 ldm.exe : no such service: delayed-deploy/test-bundle.jar
-At C:\Users\prichards\ldm-verify\verify_e2e_refactor.ps1:143 char:12
+At C:\Users\[USER]\ldm-verify\verify_e2e_refactor.ps1:143 char:12
 +     $res = & $cmd $args_list.Split(' ') 2>&1
 +            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     + CategoryInfo          : NotSpecified: (no such service...test-bundle.jar:String) [], RemoteException

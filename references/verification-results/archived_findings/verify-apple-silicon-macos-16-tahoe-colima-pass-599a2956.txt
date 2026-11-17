@@ -1,8 +1,8 @@
 === LDM BINARY VERIFICATION REPORT ===
 Timestamp: Mon 27 Jul 2026 07:52:31 BST
-Hostname:  marilenas.macbook.air.lan
+Hostname:  [ANONYMIZED]
 Platform:  darwin25
-Binary:    /usr/local/bin/ldm
+Binary:    [ANONYMIZED]
 Version:   ldm 2.15.22-pre.25
 Docker:    29.4.0
 Compose:   5.1.2
@@ -19,7 +19,7 @@ Compose:   5.1.2
 ✅ Hot Deploy verified.
 >> Creating Snapshot
 [0;32m✅  Database dump completed.[0m
-[0;32m✅  Snapshot saved: /Users/peterrichards/ldm-verify/e2e-work-dir-55391/ldm-smoke-test-55391/snapshots/20260727_075941[0m
+[0;32m✅  Snapshot saved: [HOME]/ldm-verify/e2e-work-dir-55391/ldm-smoke-test-55391/snapshots/20260727_075941[0m
 >> Bypassing Integrity
 [1;33m=== Snapshots for ldm-smoke-test-55391 ===[0m
 [1] [0;36m20260727_075941[0m - [1mBinary-Verify[0m (1.0 GB)[2m [DB,VOL,MOD][0m

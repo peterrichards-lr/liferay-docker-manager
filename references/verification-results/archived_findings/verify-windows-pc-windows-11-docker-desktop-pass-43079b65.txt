@@ -30,7 +30,7 @@ UnicodeDecodeError: 'charmap' codec can't decode byte 0x8f in position 492994: c
 [0;33m[i]  + Dehydrating volume [0;36mldm-smoke-test-data[0m to host...[0m
 [0;33m[i]  + Dehydrating volume [0;36mldm-smoke-test-state[0m to host...[0m
 [0;33m[i]  Reclaiming project permissions before snapshot...[0m
-[0;32m[OK]  Snapshot saved: C:\Users\prichards\ldm-verify\e2e-work-dir\ldm-smoke-test\snapshots\20260603_184344[0m
+[0;32m[OK]  Snapshot saved: C:\Users\[USER]\ldm-verify\e2e-work-dir\ldm-smoke-test\snapshots\20260603_184344[0m
 [1;33m=== Snapshots for ldm-smoke-test ===[0m
 [1] [0;36m20260603_184344[0m - [1mBinary-Verify[0m (1023.4 MB)
 [0;33m[!]  Resetting [1mldm-smoke-test[0m (all)...[0m

@@ -1,8 +1,8 @@
 === LDM BINARY VERIFICATION REPORT ===
 Timestamp: Mon 20 Jul 2026 17:41:50 BST
-Hostname:  peters.macbook.pro.2.lan
+Hostname:  [ANONYMIZED]
 Platform:  darwin25
-Binary:    /usr/local/bin/ldm
+Binary:    [ANONYMIZED]
 Version:   ldm 2.15.19-pre.8
 Docker:    29.2.1
 Compose:   5.2.0
@@ -18,16 +18,16 @@ Compose:   5.2.0
 [0;32m✅  Infrastructure setup complete.[0m
 >> Running LDM Project
 [0;33mℹ  The LDM project 'ldm-smoke-test-58164' already exists and this command will reconfigure it.[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/logs (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/deploy (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/log4j (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/portal-log4j (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/files (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/configs (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/snapshots (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/client-extensions (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/routes (Docker volume may have root-owned files)...[0m
-[0;33mℹ  Created missing mount directory: /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/scripts[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/logs (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/deploy (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/log4j (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/portal-log4j (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/files (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/configs (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/snapshots (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/client-extensions (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/routes (Docker volume may have root-owned files)...[0m
+[0;33mℹ  Created missing mount directory: [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/scripts[0m
 [0;33mℹ  + Synced license from Common: activation-key-dxpdevelopment-7.4-developeractivationkeys.xml[0m
 [0;33mℹ  [0;37m⚡[0m Starting [1;33mldm-smoke-test-58164[0m stack (2026.q1.7-lts, postgresql, localhost:58164)...[0m
 [0;32m✅  Project 'ldm-smoke-test-58164' started in background.[0m
@@ -35,38 +35,38 @@ Compose:   5.2.0
 [0;32m✅  Artifact deployment complete.[0m
 ✅ Hot Deploy verified.
 >> Creating Snapshot
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/logs (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/deploy (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/log4j (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/portal-log4j (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/files (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/configs (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/snapshots (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/client-extensions (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/routes (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/logs (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/deploy (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/log4j (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/portal-log4j (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/files (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/configs (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/snapshots (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/client-extensions (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/routes (Docker volume may have root-owned files)...[0m
 [0;33mℹ  Creating snapshot: Binary-Verify...[0m
 [0;33mℹ  Triggering orchestrated database snapshot (postgresql)...[0m
 [0;32m✅  Database dump completed.[0m
 [0;33mℹ  + Dehydrating volume [0;36mldm-smoke-test-58164-data[0m to host...[0m
 [0;33mℹ  + Dehydrating volume [0;36mldm-smoke-test-58164-state[0m to host...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/logs (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/deploy (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/log4j (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/portal-log4j (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/files (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/configs (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/snapshots (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/client-extensions (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/routes (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/logs (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/deploy (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/log4j (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/portal-log4j (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/files (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/configs (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/snapshots (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/client-extensions (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/routes (Docker volume may have root-owned files)...[0m
 [0;33mℹ  Reclaiming project permissions before snapshot...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/deploy (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/files (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/logs (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/configs (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/modules (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/data (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/state (Docker volume may have root-owned files)...[0m
-[0;32m✅  Snapshot saved: /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/snapshots/20260720_174747[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/deploy (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/files (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/logs (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/configs (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/modules (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/data (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/state (Docker volume may have root-owned files)...[0m
+[0;32m✅  Snapshot saved: [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/snapshots/20260720_174747[0m
 >> Bypassing Integrity
 [1;33m=== Snapshots for ldm-smoke-test-58164 ===[0m
 [1] [0;36m20260720_174747[0m - [1mBinary-Verify[0m (1.0 GB)[2m [DB,VOL,MOD][0m
@@ -91,15 +91,15 @@ Compose:   5.2.0
 [0;32m✅  Updated scale factors for project ldm-smoke-test-58164[0m
 >> Starting project for logs export check
 [0;33mℹ  The LDM project 'ldm-smoke-test-58164' already exists and this command will reconfigure it.[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/logs (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/deploy (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/log4j (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/portal-log4j (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/files (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/configs (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/snapshots (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/client-extensions (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/routes (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/logs (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/deploy (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/log4j (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/portal-log4j (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/files (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/configs (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/snapshots (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/client-extensions (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/routes (Docker volume may have root-owned files)...[0m
 [0;33mℹ  [0;37m⚡[0m Starting [1;33mldm-smoke-test-58164[0m stack (2026.q1.7-lts, postgresql, localhost:58164)...[0m
 [0;32m✅  Project 'ldm-smoke-test-58164' started in background.[0m
 >> Exporting project logs
@@ -107,27 +107,27 @@ Compose:   5.2.0
 >> Stopping project to release file locks
 [0;33mℹ  Stopping project: ldm-smoke-test-58164...[0m
 >> Rebuilding properties
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/logs (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/deploy (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/log4j (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/portal-log4j (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/files (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/configs (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/snapshots (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/client-extensions (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/routes (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/logs (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/deploy (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/log4j (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/portal-log4j (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/files (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/configs (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/snapshots (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/client-extensions (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/routes (Docker volume may have root-owned files)...[0m
 [1;33m=== Rebuilding Properties for project: ldm-smoke-test-58164 ===[0m
 [0;32m✅  Properties successfully rebuilt.[0m
 >> Resetting properties
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/logs (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/deploy (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/log4j (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/portal-log4j (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/files (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/configs (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/snapshots (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/client-extensions (Docker volume may have root-owned files)...[0m
-[0;33m⚠️  Reclaiming volume permissions for /Users/peterrichards/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/routes (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/logs (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/deploy (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/log4j (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/portal-log4j (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/files (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/configs (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/snapshots (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/osgi/client-extensions (Docker volume may have root-owned files)...[0m
+[0;33m⚠️  Reclaiming volume permissions for [HOME]/ldm-verify/e2e-work-dir-58164/ldm-smoke-test-58164/routes (Docker volume may have root-owned files)...[0m
 [1;33m=== Resetting Properties for project: ldm-smoke-test-58164 ===[0m
 [0;32m✅  Properties successfully reset.[0m
 >> Checking Status

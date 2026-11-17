@@ -1,8 +1,8 @@
 === LDM BINARY VERIFICATION REPORT ===
 Timestamp:    Thu 27 Aug 2026 14:30:08 BST
-Hostname:     marilenas.macbook.air.lan
+Hostname:  [ANONYMIZED]
 Platform:     darwin25
-Binary:       /usr/local/bin/ldm
+Binary:    [ANONYMIZED]
 Version:      ldm 2.18.0-pre.7
 Script Ver:   2.18.0-pre.7
 Docker:    29.4.0
@@ -84,7 +84,7 @@ Compose:   5.1.2
 [0;33mℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...[0m
 [0;32m✅  Database dump completed.[0m
 [0;33mℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...[0m
-[0;32m✅  Snapshot saved: /Users/peterrichards/ldm-verify/e2e-work-dir-61987/ldm-smoke-test-61987/snapshots/20260827_143551[0m
+[0;32m✅  Snapshot saved: [HOME]/ldm-verify/e2e-work-dir-61987/ldm-smoke-test-61987/snapshots/20260827_143551[0m
 ✅ Integrity check verified.
 >> Bypassing Integrity
 [1;33m=== Snapshots for ldm-smoke-test-61987 ===[0m
