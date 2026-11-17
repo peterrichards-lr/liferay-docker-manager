@@ -87,17 +87,30 @@ longer have one are exactly the ones it leaves behind. Before LDM-#2119 the
 clearing step was skipped whenever there was no search snapshot to put back,
 and those documents survived the restore invisibly.
 
-If the shared search service is not running, LDM says so and leaves the
-indices alone rather than reporting a clean restore it did not perform.
+If the shared search service is stopped -- after a Docker VM restart, for
+instance -- the restore starts it first, as `ldm start` does, so the indices
+can be cleared. If it cannot be started, because the container does not exist
+or does not come up, the restore stops with exit code `3` before resetting
+anything, and says to run `ldm run`. It used to warn and carry on, leaving the
+previous build's documents in place (LDM-#2392).
 
 After restoring a search snapshot, LDM asks each restored index for a
 `_count` before reporting success (LDM-#2316). An index can come back listed
 as `STARTED` while every search against it answers 503, and Liferay's reindex
-then writes nothing to it. If any index fails, LDM names it instead of printing
-"Search restore completed." The fix that worked when this was seen is
-`docker restart liferay-search-global`, then restarting the project so Liferay
-reindexes. Restarting shared search briefly interrupts search for every project
-using it. Why the shard comes back unusable is not yet known.
+then writes nothing to it. If any index fails, LDM names it, does not print
+"Restore complete.", and exits with code `3` once the reindex is scheduled, so
+a script does not go on to boot a portal with empty search-backed lists. The
+fix that worked when this was seen is `docker restart liferay-search-global`,
+then `ldm run <project>`, which reindexes. Restarting shared search briefly
+interrupts search for every project using it.
+
+The same state has also appeared with no restore at all, on an index Liferay
+had created minutes earlier. So `ldm run` and `ldm wait` make the same check
+when the portal becomes ready, and exit `3` naming the index, with
+`docker restart liferay-search-global` and then
+`ldm reindex <project> --reboot` as the fix. Only projects on shared search
+are checked. Why the shard becomes unusable is not yet known
+([LDM-#2316](https://github.com/peterrichards-lr/liferay-docker-manager/issues/2316)).
 
 ## What `ldm rm --delete` keeps
 
@@ -310,4 +323,4 @@ ldm re-seed demo              # Total project reset to Day Zero (Seeded)
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-13* | *Last Reviewed: 2026-11-13*
+*Last Updated: 2026-11-17* | *Last Reviewed: 2026-11-17*

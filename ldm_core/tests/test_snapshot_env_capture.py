@@ -179,7 +179,8 @@ class RestoreStripsWhatAPublishedPackageCarries(rendered._ComposeFixture):
             patch.object(snap.volumes, "_restore_cloud_volume"),
             patch.object(snap, "_defer_restored_site_initializers"),
             patch.object(snap.database, "_restore_database"),
-            patch.object(snap.search, "_restore_search"),
+            # Returns the indices that cannot search (LDM-#2316); none here.
+            patch.object(snap.search, "_restore_search", return_value=[]),
             patch.object(snap.custom_containers, "_restore_custom_images"),
             patch.object(snap, "flag_reindex", return_value=True),
             patch(

@@ -105,6 +105,7 @@ class SearchSnapshotService:
         return not (isinstance(payload, dict) and payload.get("error"))
 
     def _restore_search(self, choice_path, meta, container_name):
+        """Returns the restored indices that cannot answer a search (LDM-#2316)."""
         search_snapshot_name = meta.get("search_snapshot")
         search_name = "liferay-search-global"
         docker_prefix = self._resolve_docker_prefix(meta)
@@ -134,7 +135,7 @@ class SearchSnapshotService:
             UI.error(
                 "Global search service not running. Could not restore search indices."
             )
-            return
+            return []
         else:
             # Nothing to restore and nothing reachable to clear. Say so rather
             # than returning silently: the indices, wherever they are, still
@@ -144,13 +145,13 @@ class SearchSnapshotService:
                 "indices were not cleared. Documents from the previous build "
                 "may survive this restore."
             )
-            return
+            return []
 
         if not (search_snapshot_name and search_snapshot_name != "None"):
             # Indices cleared, nothing to put back. The reindex scheduled by
             # `handlers/snapshot.py` rebuilds what Liferay can index, which is
             # now the whole of it rather than a layer over stale documents.
-            return
+            return []
 
         UI.detail(f"Triggering orchestrated search restore: {search_snapshot_name}...")
 
@@ -190,12 +191,15 @@ class SearchSnapshotService:
                     "interrupts search for every project using it), then restart "
                     "this project so Liferay reindexes."
                 )
-            else:
-                UI.success("Search restore completed.")
+                # LDM-#2316: returned so cmd_restore can fail the restore
+                # rather than end on "Restore complete." over them.
+                return dead
+            UI.success("Search restore completed.")
         else:
             UI.warning(
                 "Search restore timed out or might be still in progress. Verify index status later."
             )
+        return []
 
     def _wait_for_search_snapshot(self, snapshot_name, timeout=120, docker_prefix=None):
         docker_prefix = docker_prefix or self._resolve_docker_prefix()
