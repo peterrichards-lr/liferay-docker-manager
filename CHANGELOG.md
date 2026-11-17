@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.11] - 2026-11-17
+
+### Fixed
+
+- **Signing in through an `lfr-tunnel` share no longer redirects to `https://127.0.0.1/`** (LDM-#2398). `ldm share start` now starts the client with `-preserve-host`, as the `lfr-tunnel-docker` sidecar already did.
+
+- **`ldm config env -s <service>` refuses a service other than Liferay**, rather than setting the variable on the Liferay container (LDM-#2384). The refusal names the `<SERVICE_ID>_<KEY>=<value> ldm run` form that reaches a client extension. This was v2.26.10's known issue.
+
+- **`ldm version` reports the running binary's version** when run inside an LDM checkout (LDM-#2381). This was v2.26.10's known issue.
+
+- **`ldm restart` says Liferay is still starting** and names `ldm wait <project>` (LDM-#2391). It returns when the containers are back, not when the portal serves; its timing is unchanged.
+
+- **`ldm wait` no longer prints urllib3's `InsecureRequestWarning`** from its readiness probe of the local proxy (LDM-#2393).
+
+- **Snapshot and import name the keys they strip at default verbosity** (LDM-#2376), and a fragment change that needs a restart names `ldm restart <project>` even under `--quiet`.
+
+- **Verbose and dry-run output no longer shows `-ports` as `-p[REDACTED]`** (LDM-#2399).
+
+- **A restore starts shared search before clearing this project's indices** (LDM-#2392). With shared search stopped, after a Docker VM restart for instance, `ldm restore` and `ldm quickstart --replace` warned and kept the previous build's documents. If shared search cannot be started, the restore now stops with exit code 3 before resetting anything.
+
+- **A search index that cannot answer a search fails the command with exit code 3** (LDM-#2316). After a restore, LDM schedules the reindex and then exits rather than reporting "Restore complete.". `ldm run` and `ldm wait` make the same check when the portal becomes ready, because the same dead index has appeared on a fresh boot. Both name the index and the fix. The cause is still under investigation.
+
+- **On Windows, the upgrade window stays open long enough to read** (LDM-#2327). It runs the post-upgrade `doctor` in the same window, then closes after 60 seconds or when you press a key. You will see this from the upgrade *after* the one that installs it.
+
+- **`ldm share start --ports <port>` works for a project that is not on 8080** (LDM-#2408). Every released `lfr-tunnel` client checks port 8080 to decide whether the tunnel is healthy, whatever `--ports` says. So the check never passed, and LDM stopped a working tunnel after 10 seconds, reporting "Local target port 8080 is not responsive". Once the client reports the tunnel connected, authenticated and leased, LDM now checks the port you asked for itself. With the next `lfr-tunnel` release, which checks every port, a second port that is still starting is a warning rather than a failed share.
+
+- **A tunnel health failure names the port that is down,** not always 8080 (LDM-#2408).
+
+### Security
+
+- **`ldm share start` no longer leaves the tunnel client to choose a port when it knows the project** (LDM-#2397). Without `--ports`, LDM passed no port and the client auto-discovered one. Discovery takes any Liferay or LDM container on host port 80, 443, 8080 or 3000, so a project on another port was never chosen, but a *different* project on 8080, or LDM's global proxy, could be published under the URL LDM announced. LDM now passes the project's own port, as `ldm run --share` always has, and prints which port it shares and why.
+
+- **`ldm share start` no longer lets an `LCP.json` bypass the project's own port** (LDM-#2408). LDM read ports from a project's `LCP.json` before the project's own port, and passed Liferay Cloud's port objects to the tunnel client as unreadable text. The client discarded them and auto-discovered a port, which is the path where a different project, or LDM's global proxy, could be published (LDM-#2397). A project now always shares its own port. An `LCP.json` in the current directory is used only when there is no LDM project, and its port numbers are now read correctly.
+
+### Documentation
+
+- **Client extensions: OAuth scopes on objects** (LDM-#2297). The note now explains that Liferay resolves an application's scopes only when it registers, which is before a batch extension has imported the object. LDM's deferred site initializer is what triggers the second, correct registration; it does not cause the missing scope.
+
+### Internal
+
+- **On Windows, the PowerShell window now closes after a verification run** (LDM-#2389). The tray check stopped `ldm.exe` but left its child process attached to the console; it now stops the whole process tree. This was v2.26.10's known issue.
+
+- This cycle's E2E deferrals, and the reason for each, are recorded in LDM-#2405.
+
 ## [v2.26.11-pre.2] - 2026-11-17
 
 ### Security
