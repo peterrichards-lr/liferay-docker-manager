@@ -174,24 +174,42 @@ Deploying site initializer(s) held back from the first boot: my-site-initializer
 | `ldm dev` file monitor | **Not** deferred — same reason |
 | Every other CX type | **Not** deferred — they are fine where they are |
 
-### OAuth applications that use objects an initializer creates
+### OAuth applications whose scopes name objects
 
-Holding the initializer back changes the order things appear in. The
-project's other client extensions, including its
-`oAuthApplicationHeadlessServer` and `oAuthApplicationUserAgent` ones, deploy
-on the first boot. The object definitions the initializer creates only appear
-once it has been deployed, after the portal is healthy.
+An OAuth client extension that asks for a scope on an object -- such as
+`c_aicaconfiguration.everything` -- can register without it on a fresh boot.
+This is Liferay's behaviour, not LDM's, and holding the initializer back
+neither causes it nor would avoid it.
 
-The AI Commerce Accelerator ran into this ordering problem
+The AI Commerce Accelerator ran into this
 ([LDM-#2297](https://github.com/peterrichards-lr/liferay-docker-manager/issues/2297)).
 Its OAuth application was registered twice, about eight minutes apart, with
-two different client ids. The first registration lacked the object scope
-`c_aicaconfiguration.everything`. The microservice got 401 and 403 responses
-for about ten minutes, until its SDK recovered from `invalid_client` and
-switched to the second registration. It is not yet known what triggers the
-second registration.
+two different client ids. The first registration lacked the object scope. The
+microservice got 401 and 403 responses for about ten minutes, until its SDK
+recovered from `invalid_client` and switched to the second registration.
 
-If an OAuth client extension needs scopes for objects an initializer creates:
+What happened, in order:
+
+1. **The object did not exist yet.** Its definition is in AICA's *batch*
+   client extension, which deploys on the first boot alongside the OAuth
+   ones. Batch data is imported asynchronously after the extensions register:
+   the OAuth applications registered at 16:28:07, and the first batch import
+   started at 16:28:21.
+2. **Liferay resolves an application's scopes when it is registered, and does
+   not revisit them** when the object's scope appears later. The analysis is
+   AICA's, from Liferay's source, and is being raised with Liferay
+   ([AICA#1387](https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator/issues/1387)).
+3. **The second registration is the held-back initializer deploying.** It
+   carries an OAuth application of its own, and the microservice's
+   applications re-registered with it -- this time resolving the scope, which
+   by then existed.
+
+So the deferral is what repairs the scope, not what removes it. Deploying the
+initializer earlier would not help: it fails silently when deployed before the
+portal is up ([LDM-#1779](https://github.com/peterrichards-lr/liferay-docker-manager/issues/1779)),
+and AICA's own pipeline holds it back for the same reason.
+
+If an OAuth client extension needs scopes for objects:
 
 - **Do not cache the first client id or token for the life of the process.**
   On `invalid_client`, or a 401 or 403 shortly after boot, read the
@@ -261,4 +279,4 @@ optimistic.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-11* | *Last Reviewed: 2026-11-11*
+*Last Updated: 2026-11-17* | *Last Reviewed: 2026-11-17*
