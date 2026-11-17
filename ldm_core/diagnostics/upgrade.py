@@ -334,6 +334,11 @@ setlocal enabledelayedexpansion
 set "RETRIES=0"
 set "MAX_RETRIES=10"
 title LDM upgrade
+rem LDM-#2411: this batch inherits the old ldm.exe's PyInstaller environment,
+rem which points the new ldm.exe at the old one's deleted _MEI folder.
+set "PYINSTALLER_RESET_ENVIRONMENT=1"
+set "_MEIPASS2="
+for /f "delims==" %%V in ('set _PYI_ 2^>nul') do set "%%V="
 echo Replacing "{exe_path}" ...
 
 :RETRY
@@ -366,6 +371,28 @@ pause
 """
 
 
+def _updater_environment():
+    """The environment for the updater, minus this ldm.exe's PyInstaller state.
+
+    LDM-#2411. A PyInstaller one-file build unpacks into %TEMP%\\_MEI... and
+    exports variables (`_PYI_*`, and `_MEIPASS2` on older bootloaders) telling
+    any PyInstaller program it starts to reuse that folder. The updater runs
+    the NEW ldm.exe after this one has exited and its folder is gone, so the
+    new one looked for python313.dll there and failed with PYI-10120.
+    `PYINSTALLER_RESET_ENVIRONMENT=1` is PyInstaller's documented switch for a
+    frozen program launching another; the batch sets it too (see
+    `_windows_updater_script`), because the elevated route goes through
+    Start-Process and need not pass this environment on.
+    """
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith("_PYI_") and k != "_MEIPASS2"
+    }
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    return env
+
+
 def _launch_windows_updater(bat_path, has_access):
     """Start the updater in its OWN console window (LDM-#2212).
 
@@ -378,14 +405,20 @@ def _launch_windows_updater(bat_path, has_access):
     if has_access:
         # getattr: the flag exists only on Windows, and the tests run elsewhere.
         flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0x00000010)
-        subprocess.Popen(["cmd.exe", "/c", str(bat_path)], creationflags=flags)
+        subprocess.Popen(
+            ["cmd.exe", "/c", str(bat_path)],
+            creationflags=flags,
+            env=_updater_environment(),
+        )
     else:
         UI.detail(
             "\nRequesting administrative privileges to replace the binary in system path..."
         )
         # Start-Process opens its own (elevated) window already.
         ps_cmd = f"Start-Process cmd -ArgumentList '/c \"{bat_path}\"' -Verb RunAs"
-        subprocess.Popen(["powershell.exe", "-Command", ps_cmd])
+        subprocess.Popen(
+            ["powershell.exe", "-Command", ps_cmd], env=_updater_environment()
+        )
 
 
 def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
