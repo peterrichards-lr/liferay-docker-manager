@@ -4393,7 +4393,12 @@ zf.close()
         #     explicitly -- left to the client, discovery can publish another
         #     project on 8080 -- and the client keeps the public Host header,
         #     without which Liferay redirects sign-in to https://127.0.0.1/.
-        #     -v for the composed command.
+        #     -v for the composed command. A Liferay Cloud LCP.json naming
+        #     another port sits in the project: its ports are objects and
+        #     container-side, and LDM used to pass them as "{'port': 9999, ...}"
+        #     ahead of the project's own port (LDM-#2397).
+        New-Item -ItemType Directory -Path (Join-Path $shareDryRunProj "liferay") -Force | Out-Null
+        Set-Content -Path (Join-Path $shareDryRunProj "liferay/LCP.json") -Value '{"id": "liferay", "ports": [{"port": 9999, "external": false}]}' -Encoding ASCII
         $rPort = Invoke-ShareDryRun @("-v", "--subdomain", "peters")
         if (-not ($rPort.Output -cmatch [regex]::Escape("lfr-tunnel -background -preserve-host -ports 8080 -subdomain peters"))) {
             Add-ShareDryRunFailure "a known project's tunnel did not pass -preserve-host and the project's own -ports (LDM-#2397, #2398)." $rPort.Output
