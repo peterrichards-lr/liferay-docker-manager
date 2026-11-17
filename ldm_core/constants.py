@@ -100,8 +100,9 @@ PIP_INSTALL_TIMEOUT = 600  # 10 min -- plugin/completion dependency installs
 # --- Release Announcements Mapping ---
 # Maps major.minor or exact version keys to lists of (cmd, description) tuples.
 RELEASE_ANNOUNCEMENTS = {
-    # LDM-#1663: a patch needs its OWN key, or the banner falls back to the
-    # minor series and re-prints highlights the user has already seen.
+    # LDM-#1663: a patch needs its OWN key, or the banner shows no
+    # announcements for it (LDM-#2412); `release.py --promote` refuses a
+    # stable X.Y.Z (Z > 0) without one.
     "2.26.11": [
         (
             "Security: ldm share start publishes the project you asked for",
@@ -284,11 +285,10 @@ RELEASE_ANNOUNCEMENTS = {
             "healthy immediately.",
         ),
     ],
-    # LDM-#1663: a patch needs its OWN key. The banner tries
-    # RELEASE_ANNOUNCEMENTS[VERSION] before falling back to the series, so
-    # without this a v2.26.0 -> v2.26.1 upgrade re-prints the v2.26.0
-    # highlights the user has already seen and says nothing about the release
-    # they are actually taking.
+    # LDM-#1663: a patch needs its OWN key. The banner resolves its text with
+    # cli.resolve_release_announcements, which falls back to the series key
+    # only for an X.Y.0 release (LDM-#2412), so without this a v2.26.1 user
+    # is told nothing about the release they are actually taking.
     "2.26.1": [
         (
             "A reserved Windows port no longer costs you WSL",
@@ -311,10 +311,10 @@ RELEASE_ANNOUNCEMENTS = {
             "it, so every extension was pointed at a path containing nothing. "
             "That tree is where Liferay publishes per-extension config, "
             "including the OAuth2 credentials it generates when it registers "
-            "your extension's application. NOTE: the tree is mounted, but "
-            "reading it is still blocked -- Liferay writes it 750/640 and "
-            "your extension container is not in the owning group, so the "
-            "credentials do not reach it yet (LDM-#1944)",
+            "your extension's application. LDM now starts Liferay with "
+            "UMASK=0022, so it publishes that tree 755/644 rather than the "
+            "750/640 Tomcat's default gave, and your extension can read it "
+            "whatever uid its image runs as (LDM-#1944)",
         ),
         (
             "Custom services join the shared config space",
@@ -589,15 +589,14 @@ RELEASE_ANNOUNCEMENTS = {
         ),
     ],
     # LDM-#1663: keyed on the exact patch version, not the "2.21" minor series.
-    # check_and_display_upgrade_banner tries RELEASE_ANNOUNCEMENTS[VERSION]
-    # before falling back to the series, so without this a v2.21.0 -> v2.21.1
-    # upgrade re-printed the five v2.21.0 feature highlights and said nothing
-    # about the release the user was actually taking.
+    # Before LDM-#2412 the banner fell back to the series for any version
+    # without an exact key, so a v2.21.0 -> v2.21.1 upgrade re-printed the
+    # five v2.21.0 feature highlights and said nothing about the release the
+    # user was actually taking.
     #
-    # Only ever displayed at the stable version: during the cycle VERSION is
-    # "2.21.1-pre.N", whose series prefix is "2.21", so the fallback serves and
-    # this entry is unreachable. Its coverage is therefore a unit test on the
-    # lookup, not the pre-release manual E2E.
+    # cli.resolve_release_announcements now strips a "-pre.N" suffix before
+    # looking up, so a "2.21.1-pre.N" build shows this entry too, and falls
+    # back to the series only for an X.Y.0 release.
     "2.21.1": [
         (
             "ldm run --tag-latest",

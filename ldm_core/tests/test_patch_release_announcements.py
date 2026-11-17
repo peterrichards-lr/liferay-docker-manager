@@ -1,18 +1,18 @@
 """The upgrade banner must prefer a patch-specific announcement (LDM-#1663).
 
 `check_and_display_upgrade_banner` resolves its content with
+`resolve_release_announcements` (LDM-#2412): the exact VERSION, then VERSION
+without its pre-release suffix, then the "X.Y" series key ONLY for an X.Y.0
+release. Before #2412 it was
 
     RELEASE_ANNOUNCEMENTS.get(VERSION, RELEASE_ANNOUNCEMENTS.get(v_prefix, []))
 
-so an exact-version key outranks the minor-series key. Nothing asserted that
-precedence before, and nothing asserted that a patch release has an entry of its
-own -- `test_release_announcements_contract` only requires the *series* key, which
-"2.21" satisfied while a v2.21.0 -> v2.21.1 upgrade re-printed the v2.21.0
-highlights verbatim.
+so a patch with no key of its own (v2.26.10) re-printed 2.26.0's notes as new,
+and a pre-release ("2.26.11-pre.2") could never reach its "2.26.11" key.
 
-These tests drive the real function rather than re-evaluating the expression
-above, because the defect was never in the expression -- it was in the data the
-expression reached.
+These tests drive the real function rather than re-evaluating an expression,
+because the defect in LDM-#1663 was never in the expression -- it was in the
+data the expression reached.
 """
 
 import os
@@ -89,16 +89,26 @@ class TestPatchReleaseAnnouncements(unittest.TestCase):
         self.assertIn("--database-mode", printed)
         self.assertNotIn("OLDEST", printed)
 
-    def test_a_pre_release_of_the_patch_falls_back_to_the_series(self):
-        """Documents a real limitation, so nobody 'fixes' it by accident.
+    def test_a_pre_release_of_the_patch_shows_the_patch_entry(self):
+        """LDM-#2412: "2.21.1-pre.2" reaches "2.21.1", not the 2.21.0 list.
 
-        During the cycle VERSION is e.g. "2.21.1-pre.2". Its series prefix is
-        "2.21", so the patch entry is unreachable and cannot be exercised by
-        pre-release manual E2E -- which is precisely why this file exists.
+        This replaces a test that pinned the opposite as a "real limitation":
+        pre-release testers were always shown the minor's old notes.
         """
         printed = self._render("2.21.1-pre.2")
-        self.assertIn("--database-mode", printed)
-        self.assertNotIn("OLDEST", printed)
+        self.assertIn("OLDEST", printed)
+        self.assertNotIn("--database-mode", printed)
+
+    def test_a_patch_without_its_own_entry_does_not_reprint_the_minor(self):
+        """The LDM-#2412 symptom, on the real data: v2.26.10 has no key.
+
+        It was shown 2.26.0's highlights, including the stale LDM-#1944 note.
+        It must still be told it was upgraded, just with no announcement block.
+        """
+        printed = self._render("2.26.10")
+        self.assertIn("upgraded to v2.26.10", printed)
+        self.assertNotIn("Client extensions receive their own config tree", printed)
+        self.assertNotIn("Important Changes", printed)
 
     def test_every_shipped_entry_is_a_two_tuple_of_non_empty_strings(self):
         from ldm_core.constants import RELEASE_ANNOUNCEMENTS
