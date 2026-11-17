@@ -129,13 +129,11 @@ class TheWaitReportsTheRealCause(unittest.TestCase):
         """The reported ending: the container stays up and never goes healthy,
         so the loop runs out of budget."""
 
-        def ticking():
-            # start_time, then past the 600s budget on every check after it.
-            yield 0
-            while True:
-                yield 700
-
-        return self._drive(oom, "running", ticking())
+        # LDM-#2413: steady 5 s steps, as a real poll advances, until the
+        # 600 s budget is spent. It used to jump straight from 0 to 700, which
+        # the wait now reads -- correctly -- as a suspension, not as time
+        # spent waiting. `count` always advances, so the loop cannot hang.
+        return self._drive(oom, "running", itertools.count(0, 5))
 
     def run_until_exited(self, oom):
         """The other ending: the container is gone when the loop looks at it.
