@@ -541,6 +541,10 @@ The wait sequence uses a progressively aggressive validation strategy with visua
 
 This guarantees that scripts or CI/CD pipelines leveraging `ldm wait` will not proceed until Liferay is strictly capable of serving web requests, mitigating race conditions during automated deployments or integration tests.
 
+A host sleep or a suspended Docker VM does not use up the timeout: the time it
+was suspended is detected between polls, reported once, and left out of the
+budget. This applies to `ldm run`'s built-in wait too.
+
 ## `logs`
 
 View real-time logs. Supports filtering by project, specific services, global infrastructure, or individual scaled replicas.

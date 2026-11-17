@@ -1,4 +1,5 @@
 import contextlib
+import itertools
 import json
 import os
 import re
@@ -158,11 +159,15 @@ class TestReadiness(unittest.TestCase):
         """Verify cmd_wait uses the default timeout of 900 if passed None."""
         mock_die.side_effect = Exception("UI.die called")
         with patch.object(self.handler.manager, "run_command", return_value="10%"):
-            # Use a time mock that jumps forward by 1000 seconds on the second call
-            t = [100, 100, 1100, 1100, 1100, 1100]
+            # LDM-#2413: the clock advances in steady 5 s steps, as a real
+            # poll does. It used to jump 1000 s in one read, which the wait now
+            # reads -- correctly -- as a suspension rather than time waited.
+            reads: list[float] = []
+            ticks = itertools.count(100, 5)
 
             def mock_time():
-                return t.pop(0)
+                reads.append(next(ticks))
+                return reads[-1]
 
             with patch("time.time", side_effect=mock_time), patch("time.sleep"):
                 with (
@@ -181,6 +186,10 @@ class TestReadiness(unittest.TestCase):
         mock_die.assert_called_with(
             "Project 'test' failed to become ready within 900s."
         )
+        # And that it waited the 900 s it claims: not less, and the clock was
+        # not stopped early by anything but the budget.
+        self.assertGreaterEqual(reads[-1] - 100, 900)
+        self.assertLess(reads[-1] - 100, 900 + 30)
 
     @patch("ldm_core.runtime.readiness.datetime")
     @patch("time.sleep")
@@ -189,12 +198,12 @@ class TestReadiness(unittest.TestCase):
         with patch.object(BaseHandler, "run_command", return_value="starting"):
             # Mock time.time to simulate timeout quickly
             with patch("time.time") as mock_time:
-                mock_time.side_effect = [
-                    0,
-                    700,
-                ]  # Start at 0, next call at 700 (> 600 timeout)
+                # LDM-#2413: steady 5 s polls past the 600 s budget. A single
+                # 0 -> 700 jump now reads as a suspension, not as waiting.
+                mock_time.side_effect = itertools.count(0, 5)
                 result = self.handler._wait_for_ready({}, "localhost")
                 self.assertFalse(result)
+                self.assertGreaterEqual(mock_time.call_count, 600 // 5)
 
     @patch("ldm_core.ui.UI.success")
     @patch("ldm_core.ui.UI.warning")
@@ -202,8 +211,9 @@ class TestReadiness(unittest.TestCase):
         # We need to simulate time passing so `elapsed >= 30` triggers
         def mock_time_side_effect():
             yield 1000  # start_time
-            yield 1035  # while condition check (time.time() - start_time = 35)
-            yield 1035  # elapsed calculation
+            yield 1000  # ReadinessClock starts (LDM-#2413)
+            yield 1035  # loop tick: elapsed = 35
+            yield 1035  # log poll timestamp
             yield 1035  # duration calculation after healthy
             yield 1035  # one more just in case
 
@@ -1346,9 +1356,9 @@ services:
     ):
         """Test cmd_wait falls back gracefully if Gogo Shell telnet is unavailable."""
         mock_get.return_value.status_code = 200
-        mock_time.side_effect = [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 1000.0] + [
-            1000.0
-        ] * 10
+        # LDM-#2413: steady 5 s steps until the 600 s budget runs out inside
+        # the Gogo loop. A single 100 -> 1000 jump now reads as a suspension.
+        mock_time.side_effect = itertools.count(100.0, 5)
 
         with (
             patch.object(
@@ -1559,20 +1569,9 @@ services:
             # 2. Custom threshold = 5.0. 8.0 > 5.0 (not idle) -> loops until timeout.
             with (
                 patch.object(self.handler, "run_command", return_value="8.0"),
-                patch(
-                    "time.time",
-                    side_effect=[
-                        100.0,
-                        100.0,
-                        100.0,
-                        100.0,
-                        100.0,
-                        700.0,
-                        700.0,
-                        700.0,
-                        700.0,
-                    ],
-                ),
+                # LDM-#2413: steady steps until the budget is spent; a 100 ->
+                # 700 jump would now read as a suspension, not as waiting.
+                patch("time.time", side_effect=itertools.count(100.0, 5)),
                 patch("ldm_core.ui.UI.warning") as mock_warning,
             ):
                 self.handler.handler.readiness.cmd_wait(
@@ -1612,9 +1611,24 @@ services:
 
     def test_cmd_wait_overall_timeout_budgeting(self):
         """Verify that sequential phases in cmd_wait share a single overall timeout budget."""
+        # LDM-#2413: a fake clock, advanced 1 s per read, so every poll
+        # interval is a normal one. Phase 1 (the stubbed _wait_for_ready)
+        # spends 200 s; that is not a suspension, it is the readiness work.
+        now = [100.0]
+
+        def read_clock():
+            now[0] += 1
+            return now[0]
+
+        def phase_one(*_args, **_kwargs):
+            now[0] += 200
+            return True
+
         with (
             patch.object(
-                self.handler.handler.readiness, "_wait_for_ready", return_value=True
+                self.handler.handler.readiness,
+                "_wait_for_ready",
+                side_effect=phase_one,
             ),
             patch("time.sleep"),
             patch("requests.get"),
@@ -1625,28 +1639,16 @@ services:
             # between phases, not what a real container logged.
             patch("subprocess.run"),
             patch("ldm_core.ui.UI.die") as mock_die,
-            # Mock time.time() to return progression values that exhaust the budget
-            patch(
-                "time.time",
-                side_effect=[
-                    100.0,  # overall_start (cmd_wait start)
-                    100.0,  # container log wait elapsed calc
-                    100.0,  # container log wait remaining timeout check
-                    # Phase 1 starts (inside _wait_for_ready start)
-                    100.0,  # start_time
-                    300.0,  # inside _wait_for_ready loop checks (elapsed = 200s)
-                    300.0,  # inside _wait_for_ready check healthy (returns True)
-                    # Phase 1 completes
-                    300.0,  # Phase 2 HTTP start
-                    700.0,  # HTTP loop check (elapsed = 600s, timeout = 600s!)
-                    700.0,  # HTTP loop body
-                ],
-            ),
+            patch("time.time", side_effect=read_clock),
         ):
             self.handler.handler.readiness.cmd_wait("test-project", timeout=600)
             mock_die.assert_called_with(
                 "Project 'test-project' is running but HTTP http://127.0.0.1:8080 is not responding correctly."
             )
+        # One budget: the HTTP phase got the 400 s phase 1 left, not a fresh
+        # 600 s (which would end near 100 + 200 + 600 = 900).
+        self.assertGreaterEqual(now[0], 700)
+        self.assertLess(now[0], 720)
 
 
 class TestAccessUrlAgreement(unittest.TestCase):

@@ -352,6 +352,100 @@ def format_startup_phases(
     return lines
 
 
+#: LDM-#2413: one poll interval longer than this is read as a suspension. The
+#: loops sleep 2-5 s between polls and each poll is a few short docker calls,
+#: so a normal interval cannot come near it.
+SUSPENSION_GAP_SECONDS = 60.0
+
+#: LDM-#2413: the most suspended time one wait may exclude is the larger of
+#: this and the wait's own timeout. A POLICY, not a measurement: a wedged
+#: daemon whose every call blocks past the gap threshold looks exactly like
+#: a suspension, and without a cap the wait would never time out -- a hung
+#: CI job is worse than the false failure this exists to prevent. An hour
+#: covers a laptop lid closed over lunch; scaling with the timeout keeps the
+#: cap meaningful for a caller who asked for a long wait. Beyond the cap,
+#: gaps count as waiting again, so the worst case is timeout + cap.
+SUSPENSION_CAP_MIN_SECONDS = 3600.0
+
+
+def suspension_minutes(seconds: float) -> int:
+    """Whole minutes for the suspension messages, never below one."""
+    return max(1, round(seconds / 60))
+
+
+class ReadinessClock:
+    """Elapsed readiness time that excludes host or Docker VM suspension.
+
+    LDM-#2413: the readiness loops measured their timeout as
+    `time.time() - start`. A MacBook slept mid-boot; the OrbStack VM froze,
+    Liferay stopped 32 s into its boot, the wall clock kept counting, and the
+    600 s timeout expired as "Liferay failed to become healthy".
+
+    Measured with the WALL clock on purpose, not `time.monotonic()`. On macOS
+    CPython's monotonic clock is `mach_absolute_time()` (CLOCK_UPTIME_RAW),
+    and on Linux CLOCK_MONOTONIC; neither advances while the host sleeps. That
+    would hide a host sleep correctly but silently -- no warning could be
+    printed -- and it cannot see a Docker VM paused while the host stays
+    awake. The wall clock does count both, so it can detect them: an interval
+    between two polls far longer than any poll takes is a suspension, and is
+    left out of `elapsed`, up to a cap (SUSPENSION_CAP_MIN_SECONDS). A clock
+    stepped backwards counts as no time.
+    """
+
+    def __init__(
+        self,
+        timeout: float = 0.0,
+        gap_threshold: float = SUSPENSION_GAP_SECONDS,
+    ):
+        self._gap_threshold = gap_threshold
+        self._cap = max(SUSPENSION_CAP_MIN_SECONDS, float(timeout or 0))
+        self._last = time.time()
+        self.elapsed = 0.0
+        self.suspended = 0.0
+
+    def tick(self, detect_gap: bool = True) -> float:
+        """Read the clock once and return the active elapsed seconds.
+
+        `detect_gap=False` counts the interval as active whatever its length,
+        for a caller that has just done long, legitimate work between polls
+        (a reindex wait, fragment patching) rather than slept.
+        """
+        now = time.time()
+        interval = now - self._last
+        self._last = now
+        if detect_gap and interval > self._gap_threshold:
+            if not self.suspended:
+                UI.warning(
+                    "The host or Docker VM appears to have been suspended for "
+                    f"~{suspension_minutes(interval)} min; that time does not "
+                    "count toward the readiness timeout."
+                )
+            excluded = min(interval, self._cap - self.suspended)
+            self.suspended += excluded
+            # Past the cap, a "suspension" counts as waiting: see
+            # SUSPENSION_CAP_MIN_SECONDS.
+            self.elapsed += interval - excluded
+        elif interval > 0:
+            self.elapsed += interval
+        return self.elapsed
+
+    def timeout_note(self) -> str:
+        """A sentence for a timeout message, or '' when nothing was suspended."""
+        if not self.suspended:
+            return ""
+        return (
+            " The host or Docker VM appears to have been suspended for "
+            f"~{suspension_minutes(self.suspended)} min during the wait; "
+            "that time was not counted"
+            + (
+                f" (the limit, ~{suspension_minutes(self._cap)} min; any further "
+                "gaps were counted)."
+                if self.suspended >= self._cap
+                else "."
+            )
+        )
+
+
 class ReadinessService(BaseHandler):
     """Readiness service for runtime operations."""
 
@@ -443,7 +537,9 @@ class ReadinessService(BaseHandler):
         target_name = getattr(self.manager, "target", None) or meta.get("target")
         docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
 
-        overall_start = time.time()
+        # LDM-#2413: one clock for every stage, shared with _wait_for_ready,
+        # so a suspension in any stage is excluded from the whole budget.
+        clock = ReadinessClock(timeout)
         overall_timeout = timeout
 
         container_name = liferay_container_of(meta) or root.name
@@ -485,10 +581,14 @@ class ReadinessService(BaseHandler):
             stream_status=stream_status,
             stream_logs=stream_logs,
             fragment_patch_timeout=fragment_patch_timeout,
+            clock=clock,
         ):
             _die_with_logs(
                 f"Project '{project_id}' failed to become ready within {timeout}s."
+                + clock.timeout_note()
             )
+        # The post-ready work in _wait_for_ready is not a suspension.
+        clock.tick(detect_gap=False)
 
         # Determine target expected deployables
         expected_targets = {}
@@ -533,7 +633,7 @@ class ReadinessService(BaseHandler):
         import requests
 
         http_ready = False
-        while (time.time() - overall_start) < overall_timeout:
+        while clock.tick() < overall_timeout:
             try:
                 # Use a short timeout for the request itself
                 # LDM-#2393: verify=False is deliberate -- this probes the
@@ -558,6 +658,7 @@ class ReadinessService(BaseHandler):
         if not http_ready:
             _die_with_logs(
                 f"Project '{project_id}' is running but HTTP {url} is not responding correctly."
+                + clock.timeout_note()
             )
 
         # 2b. Wait for Deployables (OSGi & Client Extensions) if any targets exist
@@ -570,7 +671,7 @@ class ReadinessService(BaseHandler):
             # Wait for deploy directory inside container to clear
             UI.detail("Checking deploy directory queue status...")
             deploy_clear = False
-            while (time.time() - overall_start) < overall_timeout:
+            while clock.tick() < overall_timeout:
                 try:
                     res = DockerService.exec(
                         container_name,
@@ -601,8 +702,8 @@ class ReadinessService(BaseHandler):
             # Wait for targets via Gogo Shell
             UI.detail("Verifying target OSGi bundle and Client Extension states...")
             gogo_ready = False
-            gogo_start = time.time()
-            while (time.time() - overall_start) < overall_timeout:
+            gogo_start = clock.elapsed
+            while clock.tick() < overall_timeout:
                 try:
                     # LDM-#1242: must go through DockerService.gogo(), which
                     # holds the telnet pipe open long enough for Gogo to write
@@ -672,7 +773,7 @@ class ReadinessService(BaseHandler):
                             self._last_stalled_print = time.time()
 
                         # Fail-Fast for completely missing bundles after 120s
-                        if missing_bundles and (time.time() - gogo_start > 120):
+                        if missing_bundles and (clock.elapsed - gogo_start > 120):
                             err_msg = "Fail-Fast: The following required bundles never appeared in the OSGi container (missing from deploy/osgi folders):\n"
                             for t in missing_bundles:
                                 err_msg += f"  - {t}\n"
@@ -698,7 +799,7 @@ class ReadinessService(BaseHandler):
             cpu_idle_threshold  # Consider < threshold CPU to be "idle" for Liferay
         )
 
-        while (time.time() - overall_start) < overall_timeout:
+        while clock.tick() < overall_timeout:
             try:
                 result = self.manager.run_command(
                     [
@@ -735,6 +836,7 @@ class ReadinessService(BaseHandler):
 
         UI.warning(
             f"Project '{project_id}' did not reach an idle state within the timeout, but is responding to HTTP."
+            + clock.timeout_note()
         )
         if log_proc:
             log_proc.terminate()
@@ -834,7 +936,7 @@ class ReadinessService(BaseHandler):
                 exit_code=3,
             )
 
-    def _wait_for_ready(  # noqa: C901, PLR0912, PLR0915
+    def _wait_for_ready(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self,
         project_meta,
         host_name,
@@ -844,8 +946,13 @@ class ReadinessService(BaseHandler):
         stream_logs=False,
         browser=None,
         fragment_patch_timeout=None,
+        clock=None,
     ):
-        """Wait for Liferay to become healthy and provide access information."""
+        """Wait for Liferay to become healthy and provide access information.
+
+        `clock` is cmd_wait's ReadinessClock when it calls this, so a
+        suspension here is excluded from its later stages too (LDM-#2413).
+        """
         # LDM-#1564: must be the name compose CREATED, not the verbatim
         # project id -- see liferay_container_of.
         container_name = liferay_container_of(project_meta)
@@ -885,7 +992,12 @@ class ReadinessService(BaseHandler):
             yield NullSpinner()
 
         spinner_ctx = null_spinner if (stream_status or stream_logs) else UI.spinner
+        # LDM-#2413: `start_time` stays a wall-clock reading because
+        # pre_readiness below subtracts a wall-clock `total_start` from it.
         start_time = time.time()
+        if clock is None:
+            clock = ReadinessClock(timeout)
+        timeout_from = clock.elapsed
         with spinner_ctx(
             f"Waiting for Liferay to become healthy ({container_name})..."
         ) as spinner:
@@ -900,8 +1012,7 @@ class ReadinessService(BaseHandler):
             # busy boot lose `Server startup in` entirely.
             last_log_poll_at: float | None = None
             seen_server_startup = False
-            while time.time() - start_time < timeout:
-                elapsed = time.time() - start_time
+            while (elapsed := clock.tick() - timeout_from) < timeout:
                 # Notify every 30 seconds (Robust timestamp check)
                 if elapsed - last_notified_time >= 30:
                     timestamp = datetime.now().strftime("%H:%M:%S")
@@ -1197,7 +1308,7 @@ class ReadinessService(BaseHandler):
                     # previously quoted figure incomparable. The parameter now
                     # earns its place by measuring the span BEFORE the wait
                     # instead of being discarded.
-                    duration_total = time.time() - start_time
+                    duration_total = clock.tick(detect_gap=False) - timeout_from
                     pre_readiness = (
                         start_time - float(total_start) if total_start else None
                     )
@@ -1487,5 +1598,7 @@ class ReadinessService(BaseHandler):
         write_startup_status(
             status_file, "timeout", reached_milestones, elapsed, allocation=allocation
         )
-        UI.error("\nTimed out waiting for Liferay to become healthy.")
+        UI.error(
+            "\nTimed out waiting for Liferay to become healthy." + clock.timeout_note()
+        )
         return False

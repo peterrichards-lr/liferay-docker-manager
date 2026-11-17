@@ -74,12 +74,14 @@ Blocks execution until a Liferay instance is genuinely ready for work. This is h
 3. **CPU Idle State**: Actively monitors the container's CPU usage, blocking until it drops below the threshold (default: 15.0%) for consecutive checks (default: 3). This is configurable via `--cpu-idle-threshold` and `--cpu-idle-checks` options.
 
 ```bash
-# Wait for the current project to be fully idle (up to 10 minutes)
+# Wait for the current project to be fully idle (up to 15 minutes by default)
 ldm wait
 
 # Wait for a specific project with a custom timeout
 ldm wait my-project --timeout 300
 ```
+
+Time the host spends asleep, or the Docker VM spends suspended, does not count toward `--timeout`. LDM detects it as a single poll interval far longer than any poll takes (over a minute), warns once that the host or Docker VM appears to have been suspended, and extends the deadline by that time -- up to the larger of one hour and the timeout, so a Docker daemon that blocks on every call still times out. If the wait still times out, the failure says a suspension happened, so it is not read as an unhealthy Liferay alone.
 
 ## `status` (alias: `ps`)
 
