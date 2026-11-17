@@ -246,7 +246,9 @@ class UI:
         text = re.sub(flag_pattern, r"\1[REDACTED]", text)
 
         # Explicitly handle MySQL -p flag (-pSecret) without matching -pre
-        p_pattern = r"(?i)(\s-p)(?!re\.)([^&\s]+)"
+        # or lfr-tunnel's -ports / -preserve-host (LDM-#2399: they rendered
+        # as `-p[REDACTED]`, hiding the port being shared)
+        p_pattern = r"(?i)(\s-p)(?!re\.)(?!orts\b|reserve-host\b)([^&\s]+)"
         return re.sub(p_pattern, r"\1[REDACTED]", text)
 
     @staticmethod

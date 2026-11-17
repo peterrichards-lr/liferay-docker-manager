@@ -1327,6 +1327,8 @@ class ShareService:
         project_id = root.name if root else None
         project_meta = self.manager.read_meta(root) if root else {}
 
+        ports_source = "--ports" if ports else None
+
         # Check for LCP.json to infer ports if not specified
         if not ports:
             lcp_candidates = [Path("lcp.json"), Path("LCP.json")]
@@ -1351,6 +1353,7 @@ class ShareService:
                             and len(lcp_data["ports"]) > 0
                         ):
                             ports = ",".join(str(p) for p in lcp_data["ports"])
+                            ports_source = lcp_cand.name
                             UI.detail(f"Detected ports {ports} from {lcp_cand.name}")
                             break
                     except Exception:
@@ -1417,7 +1420,22 @@ class ShareService:
             # produced three tunnels where LDM produced one. LDM projects
             # routinely expose client-extension ports; those are exactly what
             # a hardcoded 8080 drops.
-            cmd = [str(bin_path), "-background"]
+            #
+            # LDM-#2397: but not when we already know the project. Discovery
+            # takes any container named or imaged ldm/liferay/dxp on host port
+            # 80/443/8080/3000 -- so a project on 8095 is never eligible, while
+            # ANOTHER project on 8080 and the global proxy on 80/443 are, and
+            # get published under the URL announced for this one. The
+            # project's own port is what `ldm run --share` passes too.
+            if not ports and root:
+                ports = str(project_meta.get("port") or 8080)
+                ports_source = f"project '{project_id}'"
+            # LDM-#2398: without it the client rewrites Host to
+            # 127.0.0.1:<port>, and Liferay -- which honours the forwarded
+            # protocol and port but not the host -- redirects sign-in to
+            # https://127.0.0.1/. The lfr-tunnel-docker sidecar has set
+            # LFT_PRESERVE_HOST=true since #82.
+            cmd = [str(bin_path), "-background", "-preserve-host"]
             if ports:
                 cmd += ["-ports", str(ports)]
             if subdomain:
@@ -1453,6 +1471,16 @@ class ShareService:
             provenance = self._describe_address_sources(subdomain, share_domain)
             if provenance:
                 UI.info(f"  {provenance}")
+            # LDM-#2397: and say WHAT is being published. The reported run
+            # announced the project's URL while the client was looking for
+            # 8080; nothing printed the port, so nothing showed the mismatch.
+            if ports:
+                UI.info(f"  local port {ports} from {ports_source}")
+            else:
+                UI.info(
+                    "  local port: none named and no project found -- "
+                    "lfr-tunnel will auto-discover one; pass --ports to choose"
+                )
 
             if dry_run:
                 UI.detail(

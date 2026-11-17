@@ -4408,6 +4408,18 @@ if ! echo "$SHARE_OUT" | grep -q "domain 'lfr-demo.se' from --domain"; then
     share_dryrun_fail "the resolved domain's source was not named (LDM-#2019)." "$SHARE_OUT"
 fi
 
+# 8b. LDM-#2397/#2398: a known project shares ITS port, named explicitly --
+#     left to the client, discovery can publish another project on 8080 --
+#     and the client keeps the public Host header, without which Liferay
+#     redirects sign-in to https://127.0.0.1/. -v for the composed command.
+SHARE_OUT=$(share_dry_run -v --subdomain peters) || true
+if ! echo "$SHARE_OUT" | grep -qF -- "lfr-tunnel -background -preserve-host -ports 8080 -subdomain peters"; then
+    share_dryrun_fail "a known project's tunnel did not pass -preserve-host and the project's own -ports (LDM-#2397, #2398)." "$SHARE_OUT"
+fi
+if ! echo "$SHARE_OUT" | grep -qF "local port 8080 from project 'share-dryrun'"; then
+    share_dryrun_fail "'share start' did not say which port it shares (LDM-#2397)." "$SHARE_OUT"
+fi
+
 # 9. The reported case, end to end: a domain nobody typed on the command
 #    line, arriving from a machine-wide pin. A SEPARATE home, so the stored
 #    value cannot leak into the checks above.
