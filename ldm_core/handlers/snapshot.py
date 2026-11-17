@@ -595,6 +595,20 @@ class SnapshotService(BaseHandler):
 
         docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
 
+        # LDM-#2392: both index clears -- the reset's and _restore_search's --
+        # need shared search running, and nothing on this path started it. With
+        # it down (after a Docker VM restart, say) each clear was skipped with a
+        # warning and the restore carried on, so the previous build's documents
+        # survived it. Started here, before anything is reset, so a container
+        # that cannot be started stops the restore (exit 3) while the project
+        # is still intact. Same gate as `ldm start` (LDM-#2319): read from the
+        # compose file, which is what will boot.
+        compose_file = paths["root"] / "docker-compose.yml"
+        if compose_file.exists() and "liferay-search-global" in compose_file.read_text(
+            errors="replace"
+        ):
+            self.manager.infra.ensure_global_search_started(target_name=target_name)
+
         if (
             self.manager.run_command(
                 [*docker_prefix, "ps", "-q", "-f", f"name=^{container_name}$"],
@@ -705,16 +719,37 @@ class SnapshotService(BaseHandler):
             paths, choice_path, project_meta, container_name
         )
 
-        self.search._restore_search(choice_path, snap_meta, container_name)
+        unsearchable = (
+            self.search._restore_search(choice_path, snap_meta, container_name) or []
+        )
 
         self.custom_containers._restore_custom_images(choice_path, project_meta)
 
-        UI.success("Restore complete.")
+        if not unsearchable:
+            UI.success("Restore complete.")
 
         if self.flag_reindex(paths["root"]):
             UI.detail("  + Scheduled automatic search reindex for next boot.")
         else:
             UI.warning("  ! Could not schedule automatic reindex (metadata missing).")
+
+        # LDM-#2316: a restored index that cannot answer a search used to be a
+        # warning above "Restore complete." and exit 0, so automation booted a
+        # portal whose search-backed lists were empty. Failed here, AFTER the
+        # reindex is scheduled, so the fix below is all it then takes.
+        if unsearchable:
+            UI.die(
+                f"Restore finished, but {len(unsearchable)} search index(es) "
+                "cannot answer a search, so the project would boot with empty "
+                "search-backed lists.",
+                tip=(
+                    "Run 'docker restart liferay-search-global' (this briefly "
+                    "interrupts search for every project using it), then "
+                    f"'ldm run {paths['root'].name}' -- the reindex is already "
+                    "scheduled."
+                ),
+                exit_code=3,
+            )
 
         if no_run is None:
             no_run = getattr(self.manager.args, "no_run", False)

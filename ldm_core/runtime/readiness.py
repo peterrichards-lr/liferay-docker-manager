@@ -784,6 +784,46 @@ class ReadinessService(BaseHandler):
         )
         return True
 
+    def _assert_search_can_answer(self, project_meta, root_path):
+        """Refuse to call a boot ready over an index that cannot search (LDM-#2316).
+
+        On 2026-11-13 a company index Liferay had created three minutes
+        earlier went dead during boot: STARTED, while every search answered
+        503 (`AccessDeniedException`, then `AlreadyClosedException`). No
+        restore was involved, so the post-restore probe could not see it, and
+        the boot was reported ready with every search-backed list empty.
+
+        Shared search only: a sidecar's indices are not on the shared node.
+        Gated on the compose file, as `ldm start` gates starting search
+        (LDM-#2319), since that is what booted. `_indices_that_cannot_search`
+        counts only a real non-200 answer, so a probe that could not run does
+        not fail a healthy boot.
+        """
+        compose_file = root_path / "docker-compose.yml"
+        if not (
+            compose_file.exists()
+            and "liferay-search-global" in compose_file.read_text(errors="replace")
+        ):
+            return
+        # The identifier composer.py builds `indexNamePrefix` from.
+        identifier = project_meta.get("container_name") or root_path.name
+        docker_prefix = DockerService.get_docker_cmd_prefix(project_meta.get("target"))
+        dead = self.manager.snapshot.search._indices_that_cannot_search(
+            identifier, docker_prefix
+        )
+        if dead:
+            UI.die(
+                f"Liferay is up, but {len(dead)} search index(es) cannot answer "
+                f"a search: {', '.join(dead)}. Anything backed by search will be "
+                "empty, and a reindex writes nothing to them.",
+                tip=(
+                    "Run 'docker restart liferay-search-global' (this briefly "
+                    "interrupts search for every project using it), then "
+                    f"'ldm reindex {root_path.name} --reboot'."
+                ),
+                exit_code=3,
+            )
+
     def _wait_for_ready(  # noqa: C901, PLR0912, PLR0915
         self,
         project_meta,
@@ -1177,6 +1217,7 @@ class ReadinessService(BaseHandler):
                         deploy_pending_site_initializers(
                             self.manager, root_path, paths, project_meta
                         )
+                        self._assert_search_can_answer(project_meta, root_path)
 
                     self.manager.runtime.fragments._patch_fragment_overrides(
                         project_meta, paths, timeout=fragment_patch_timeout

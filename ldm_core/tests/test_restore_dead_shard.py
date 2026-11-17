@@ -70,10 +70,20 @@ class ARestoredIndexMustAnswerASearch(unittest.TestCase):
             patch("ldm_core.snapshot.search.UI.success") as success,
             patch("ldm_core.snapshot.search.UI.warning") as warning,
         ):
-            self.manager.snapshot.search._restore_search(
+            self.returned = self.manager.snapshot.search._restore_search(
                 self.test_dir, {"search_snapshot": "snap1"}, PROJECT
             )
         return es, success, warning
+
+    def test_the_dead_indices_are_returned_for_cmd_restore_to_fail_on(self):
+        """cmd_restore exits 3 on this list (test_search_must_answer.py); an
+        empty one there would let 'Restore complete.' stand over a dead shard."""
+        self._restore({COMPANY_INDEX: "503"})
+        self.assertEqual(self.returned, [COMPANY_INDEX])
+
+    def test_healthy_indices_return_nothing_to_fail_on(self):
+        self._restore({})
+        self.assertEqual(self.returned, [])
 
     def test_a_dead_shard_is_reported_not_called_complete(self):
         _, success, warning = self._restore({COMPANY_INDEX: "503"})
