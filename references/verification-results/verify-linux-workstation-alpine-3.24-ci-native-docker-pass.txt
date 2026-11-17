@@ -1,12 +1,12 @@
 === LDM BINARY VERIFICATION REPORT ===
-Timestamp:    Mon Nov 16 13:32:04 UTC 2026
+Timestamp:    Tue Nov 17 18:04:55 UTC 2026
 Hostname:  [ANONYMIZED]
 Platform:     Alpine Linux v3.24
 Env Label:    alpine
 Run Context:  ci
 Binary:    [ANONYMIZED]
-Version:      ldm 2.26.10
-Script Ver:   2.26.10
+Version:      ldm 2.26.11
+Script Ver:   2.26.11
 Docker:    29.4.2
 Compose:   5.6.1
 
@@ -57,31 +57,31 @@ Compose:   5.6.1
 │ local  │ localhost       │ ONLINE │ v29.4.2        │ 4 CPUs / 15.6 GB │ 4                  │
 ╰────────┴─────────────────┴────────┴────────────────┴──────────────────┴────────────────────╯
 >> Target Add (Mock Node)
-✅  Target node 'e2e-target-58705' (127.0.0.1) registered successfully.
+✅  Target node 'e2e-target-58431' (127.0.0.1) registered successfully.
 ✅ Target registration verified.
 >> Target Remove (Mock Node)
-✅  Target node 'e2e-target-58705' removed.
+✅  Target node 'e2e-target-58431' removed.
 >> Target Add (127.0.0.2 Loopback)
-✅  Target node 'loopback-node-58705' (127.0.0.2) registered successfully.
+✅  Target node 'loopback-node-58431' (127.0.0.2) registered successfully.
 ✅ Loopback target registration verified.
 >> Target Status (Loopback Node)
 === Target Compute Nodes Status & Connectivity Probe ===
 ╭─────────────────────┬─────────────────┬────────┬────────────────┬──────────────────┬────────────────────╮
 │ TARGET              │ HOST / ENDPOINT │ STATUS │ ENGINE VERSION │ CPUs / MEMORY    │ RUNNING CONTAINERS │
 ├─────────────────────┼─────────────────┼────────┼────────────────┼──────────────────┼────────────────────┤
-│ loopback-node-58705 │ 127.0.0.2       │ ONLINE │ v29.4.2        │ 4 CPUs / 15.6 GB │ 4                  │
+│ loopback-node-58431 │ 127.0.0.2       │ ONLINE │ v29.4.2        │ 4 CPUs / 15.6 GB │ 4                  │
 ╰─────────────────────┴─────────────────┴────────┴────────────────┴──────────────────┴────────────────────╯
 >> Target Remove (Loopback Node)
-✅  Target node 'loopback-node-58705' removed.
+✅  Target node 'loopback-node-58431' removed.
 >> Target Add (TEST-NET-1 Remote Node)
-✅  Target node 'announce-node-58705' (192.0.2.10) registered successfully.
-ℹ  Docker context 'announce-node-58705' dials ssh://192.0.2.10.
+✅  Target node 'announce-node-58431' (192.0.2.10) registered successfully.
+ℹ  Docker context 'announce-node-58431' dials ssh://192.0.2.10.
 === LDM Sandbox Projects ===
-ℹ  1 project targets a remote compute node (announce-proj-58705 -> announce-node-58705); this may take longer than usual, and will wait if the node is asleep.
+ℹ  1 project targets a remote compute node (announce-proj-58431 -> announce-node-58431); this may take longer than usual, and will wait if the node is asleep.
 ╭─────────────────────┬───────────────┬─────────────────────┬─────────────┬───────────────────────╮
 │ Project             │ Version       │ Target              │ Status      │ URL                   │
 ├─────────────────────┼───────────────┼─────────────────────┼─────────────┼───────────────────────┤
-│ announce-proj-58705 │ 2026.q1.7-lts │ announce-node-58705 │ Not Created │ http://localhost:8099 │
+│ announce-proj-58431 │ 2026.q1.7-lts │ announce-node-58431 │ Not Created │ http://localhost:8099 │
 ╰─────────────────────┴───────────────┴─────────────────────┴─────────────┴───────────────────────╯
 ✅ Remote compute node announced up front, naming project -> node (LDM-#1341).
 ✅ Announcement correctly suppressed under --json (LDM-#1093).
@@ -89,20 +89,20 @@ Compose:   5.6.1
    Docker's connection helper cannot attempt a connection without one,
    so the failure would not be an SSH failure and the assertion would
    be measuring the wrong thing (LDM-#1444).
-ℹ  The LDM project 'portconflict-58705' already exists and this command will reconfigure it.
+ℹ  The LDM project 'portconflict-58431' already exists and this command will reconfigure it.
 ▶  Synchronizing Assets
 ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
-❌  Port conflict detected: Port 5601 is already in use on the host and is required by service 'kibana' in your compose configuration. It is currently held by container 'ldm-e2e-port-holder-58705'.
+❌  Port conflict detected: Port 5601 is already in use on the host and is required by service 'kibana' in your compose configuration. It is currently held by container 'ldm-e2e-port-holder-58431'.
 💡 Tip:      Service 'kibana' has a fixed port, so a re-run will produce 5601 again. Free up port 5601 on the host, or disable/move that service, then re-run.
 ✅ Late port conflict exits 4 and gives honest advice for a fixed-port service (LDM-#1350/#1397).
 >> Running LDM Project
-ℹ  The LDM project 'ldm-smoke-test-58705' already exists and this command will reconfigure it.
+ℹ  The LDM project 'ldm-smoke-test-58431' already exists and this command will reconfigure it.
 ▶  Synchronizing Assets
 ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
 ▶  Starting Container Stack
-✅  Project 'ldm-smoke-test-58705' started in background.
-💡  Next step: Run 'ldm link <path-to-cx>' to attach client extensions, or 'ldm logs -f ldm-smoke-test-58705' to tail logs.
-✅ All 3 named volume(s) carry ownership labels naming 'ldm-smoke-test-58705' with the right role (LDM-#2243).
+✅  Project 'ldm-smoke-test-58431' started in background.
+💡  Next step: Run 'ldm link <path-to-cx>' to attach client extensions, or 'ldm logs -f ldm-smoke-test-58431' to tail logs.
+✅ All 3 named volume(s) carry ownership labels naming 'ldm-smoke-test-58431' with the right role (LDM-#2243).
 ✅ The portal runs with umask 0022, so the config trees it publishes are readable by a client extension (LDM-#1944).
 >> Deploying artifact
 ✅  Artifact deployment complete.
@@ -112,17 +112,28 @@ Compose:   5.6.1
 ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
 ✅  Database dump completed.
 ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
-✅  Snapshot saved: [HOME]/work/liferay-docker-manager/liferay-docker-manager/e2e-work-dir-58705/ldm-smoke-test-58705/snapshots/20261116_133927
+✅  Snapshot saved: [HOME]/work/liferay-docker-manager/liferay-docker-manager/e2e-work-dir-58431/ldm-smoke-test-58431/snapshots/20261117_181334
 ✅ Integrity check verified.
 >> Bypassing Integrity
-=== Snapshots for ldm-smoke-test-58705 ===
-[1] 20261116_133927 - Binary-Verify (1.0 GB) [DB,VOL,MOD]
-⚠️  Resetting ldm-smoke-test-58705 (all)...
-⚠️  Tearing down stack: ldm-smoke-test-58705
-✅  Project ldm-smoke-test-58705 reset successful.
+=== Snapshots for ldm-smoke-test-58431 ===
+[1] 20261117_181334 - Binary-Verify (1.0 GB) [DB,VOL,MOD]
+⚠️  Resetting ldm-smoke-test-58431 (all)...
+⚠️  Tearing down stack: ldm-smoke-test-58431
+✅  Project ldm-smoke-test-58431 reset successful.
 ⚠️  Integrity verification disabled via --no-verify.
 ▶  Restoring Workspace Data
 ⚠️  Discarded 11 search setting(s) from the package's portal-ext.properties; this machine resolved search_mode 'sidecar'.
+ℹ  - module.framework.properties.com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.operationMode
+ℹ  - module.framework.properties.com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.sidecarDebug
+ℹ  - module.framework.properties.com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.sidecarHttpPort
+ℹ  - module.framework.properties.com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.sidecarNetworkHost
+ℹ  - module.framework.properties.com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.sidecarTransportTcpPort
+ℹ  - module.framework.properties.com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.transportTcpPort
+ℹ  - module.framework.properties.com.liferay.portal.search.elasticsearch8.configuration.ElasticsearchConfiguration.operationMode
+ℹ  - module.framework.properties.com.liferay.portal.search.elasticsearch8.configuration.ElasticsearchConfiguration.sidecarHttpPort
+ℹ  - module.framework.properties.com.liferay.portal.search.elasticsearch8.configuration.ElasticsearchConfiguration.sidecarNetworkHost
+ℹ  - module.framework.properties.com.liferay.portal.search.elasticsearch8.configuration.ElasticsearchConfiguration.sidecarTransportTcpPort
+ℹ  - module.framework.properties.com.liferay.portal.search.elasticsearch8.configuration.ElasticsearchConfiguration.transportTcpPort
 ▶  Finalizing Metadata
 ▶  Synchronizing Assets
 ▶  Starting Container Stack
@@ -142,20 +153,20 @@ Compose:   5.6.1
 ✅ Set User Default verified.
 ✅ Remove User Default verified.
 >> Scaling Liferay
-✅  Updated scale factors for project ldm-smoke-test-58705
+✅  Updated scale factors for project ldm-smoke-test-58431
 ✅ logs --instance routing verified.
 ✅ Trace Log (last-command.log) verified.
 >> Scaling Liferay back to 1 for logs export check
-✅  Updated scale factors for project ldm-smoke-test-58705
+✅  Updated scale factors for project ldm-smoke-test-58431
 >> Starting project for logs export check
-ℹ  The LDM project 'ldm-smoke-test-58705' already exists and this command will reconfigure it.
+ℹ  The LDM project 'ldm-smoke-test-58431' already exists and this command will reconfigure it.
 ▶  Synchronizing Assets
 ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
 ▶  Starting Container Stack
-✅  Project 'ldm-smoke-test-58705' started in background.
-💡  Next step: Run 'ldm link <path-to-cx>' to attach client extensions, or 'ldm logs -f ldm-smoke-test-58705' to tail logs.
+✅  Project 'ldm-smoke-test-58431' started in background.
+💡  Next step: Run 'ldm link <path-to-cx>' to attach client extensions, or 'ldm logs -f ldm-smoke-test-58431' to tail logs.
 >> Exporting project logs
-✅ Logs Export verified (ldm-smoke-test-58705-ldm-smoke-test-58705_20261116_134105.log).
+✅ Logs Export verified (ldm-smoke-test-58431-ldm-smoke-test-58431_20261117_181537.log).
 ✅ ldm start fast-fail verified.
 ✅ ldm run reconfigure UX message verified.
 ✅ Safe SELECT SQL Query verified.
@@ -163,26 +174,26 @@ Compose:   5.6.1
 💡  Next step: Run 'ldm start' to start the container again, or 'ldm status' to view environment status.
 >> Rebuilding properties
 ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
-=== Rebuilding Properties for project: ldm-smoke-test-58705 ===
+=== Rebuilding Properties for project: ldm-smoke-test-58431 ===
 ✅  Properties successfully rebuilt.
 ✅ Properties Override Cascade verified (rebuild).
 >> Resetting properties
 ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
-=== Resetting Properties for project: ldm-smoke-test-58705 ===
+=== Resetting Properties for project: ldm-smoke-test-58431 ===
 ✅  Properties successfully reset.
 ✅ Properties Override Reset verified.
 ✅ ldm list --json schema verified.
 ✅ ldm status --json schema verified.
 >> Starting project for idempotency check
-ℹ  The LDM project 'ldm-smoke-test-58705' already exists and this command will reconfigure it.
+ℹ  The LDM project 'ldm-smoke-test-58431' already exists and this command will reconfigure it.
 ▶  Synchronizing Assets
 ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
 ⚠️  Global or local 'common/' folder not found. Some baseline assets may be missing.
 ▶  Starting Container Stack
 ▶  Awaiting Liferay Readiness
-✅  Liferay ready: http://localhost:58705  (52s awaiting readiness)
+✅  Liferay ready: http://localhost:58431  (57s awaiting readiness)
 ✅ Idempotent Exit Code 5 verified.
-✅ Reported access URL serves: http://localhost:58705 -> HTTP 200 (LDM-#1574).
+✅ Reported access URL serves: http://localhost:58431 -> HTTP 200 (LDM-#1574).
 >> Deploying Synthetic CX
 ✅  Artifact deployment complete.
 ✅ Client Extension deploy & staging verified.
@@ -200,7 +211,7 @@ Compose:   5.6.1
 ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
 ✅  Database dump completed.
 ℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...
-✅  Snapshot saved: [HOME]/work/liferay-docker-manager/liferay-docker-manager/e2e-work-dir-58705/ldm-smoke-test-58705/snapshots/20261116_134233
+✅  Snapshot saved: [HOME]/work/liferay-docker-manager/liferay-docker-manager/e2e-work-dir-58431/ldm-smoke-test-58431/snapshots/20261117_181716
 ✅ Snapshot manifest lists the client extension it claims (LDM-#1573).
 ✅ All 4 published config file(s) under routes/ are readable by a client extension (LDM-#1944/#1946).
    published DXP config tree:
@@ -215,8 +226,8 @@ ASSERTED: the portal published 'localhost:8080' for a project configured as 'loc
      Database Schema Initializing = 5.1s
      OSGi Framework Starting = 5.1s
      OSGi Framework Started = 5.1s
-     Portal Startup Progress = 10.2s
-     Tomcat Server Ready = 15.3s
+     Portal Startup Progress = 15.3s
+     Tomcat Server Ready = 20.4s
 ASSERTED: LDM recorded 6 startup phases including 'Tomcat Server Ready', and the boot's outcome as 'ready', so a slow boot on this platform can be decomposed and a finished one can be told from a stalled one.
 ✅ LDM recorded a decomposable startup phase breakdown (LDM-#2169).
 >> Applying portal patch
@@ -240,13 +251,13 @@ ASSERTED: LDM recorded 6 startup phases including 'Tomcat Server Ready', and the
 ✅ Every service and volume carries the project UUID ownership label (LDM-#1393/#1395).
 ✅ Shared search mode verified (flag honoured, mode persisted, OSGi config written and mounted).
 ASSERTED: the package's custom_env carries none of LDM's rendered keys (0 declared).
-✅ The package ldm-smoke-test-58705.ldmp carries none of the publisher's rendered environment (LDM-#2370).
-ℹ  Stopped 'ldm-smoke-test-58705' so the imported copy boots alone (LDM-#2245).
-✅ .ldmp round trip verified: packed, imported as 'ldm-smoke-test-58705-roundtrip', booted and serving HTTP 200 on 58711 (LDM-#2131).
+✅ The package ldm-smoke-test-58431.ldmp carries none of the publisher's rendered environment (LDM-#2370).
+ℹ  Stopped 'ldm-smoke-test-58431' so the imported copy boots alone (LDM-#2245).
+✅ .ldmp round trip verified: packed, imported as 'ldm-smoke-test-58431-roundtrip', booted and serving HTTP 200 on 58437 (LDM-#2131).
 ASSERTED: no key is duplicated in the copy's liferay environment (15 entries).
 ASSERTED: the copy's custom_env carries none of LDM's rendered keys (0 declared).
-✅ The imported copy 'ldm-smoke-test-58705-roundtrip' carries none of the publisher's rendered environment (LDM-#2370).
-✅ 'ldm reset all' removed the database volume ldm-smoke-test-58705-roundtrip-db-db-data (LDM-#2118).
+✅ The imported copy 'ldm-smoke-test-58431-roundtrip' carries none of the publisher's rendered environment (LDM-#2370).
+✅ 'ldm reset all' removed the database volume ldm-smoke-test-58431-roundtrip-db-db-data (LDM-#2118).
 >> Checking Status
 === LDM Service Status ===
 Global Infrastructure:
