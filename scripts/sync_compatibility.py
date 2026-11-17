@@ -2,7 +2,6 @@ import argparse
 import hashlib
 import os
 import re
-import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -582,6 +581,25 @@ def anonymize_content(content):
     content = re.sub(r"Hostname:[ \t]+[^\n]*", "Hostname:  [ANONYMIZED]", content)
     # Redact binary path
     return re.sub(r"Binary:[ \t]+[^\n]*", "Binary:    [ANONYMIZED]", content)
+
+
+def _archive_anonymized(source, destination):
+    """Archives a report as its anonymized content, then removes the original.
+
+    LDM-#2410. archived_findings/ is committed to a public repository, so an
+    archived report must be redacted exactly as a canonical one is. Both
+    archive paths used a bare `shutil.move`: harmless for a superseded
+    canonical report, already anonymized when it became canonical, but a raw
+    report -- version-stale under --archive-stale, or an older run of the same
+    environment superseded in the same sync -- went in still naming its
+    author's home directory. `anonymize_content` is idempotent, so passing an
+    already-canonical report through it again changes nothing.
+    """
+    source = Path(source)
+    # Read and written as get_report_metadata reads and the canonical write
+    # below writes, so an archived report round-trips exactly as those do.
+    Path(destination).write_text(anonymize_content(source.read_text()))
+    source.unlink()
 
 
 def _header_value(pattern, content, flags=0):
@@ -1172,8 +1190,8 @@ def sync_reports(results_dir=None, table_file=None):  # noqa: C901, PLR0912, PLR
             for r, archived_name, _reason in stale_reports:
                 _mutate(
                     f"archive outdated raw report {r.name} -> {archived_name}",
-                    lambda r=r, n=archived_name: shutil.move(
-                        str(r), str(archive_dir / n)
+                    lambda r=r, n=archived_name: _archive_anonymized(
+                        r, archive_dir / n
                     ),
                 )
 
@@ -1206,8 +1224,8 @@ def sync_reports(results_dir=None, table_file=None):  # noqa: C901, PLR0912, PLR
         UI.info(f"Archiving old report: {meta['report_path'].name} -> {archived_name}")
         _mutate(
             f"archive {meta['report_path'].name} -> {archived_name}",
-            lambda m=meta, n=archived_name: shutil.move(
-                str(m["report_path"]), str(archive_dir / n)
+            lambda m=meta, n=archived_name: _archive_anonymized(
+                m["report_path"], archive_dir / n
             ),
         )
 
