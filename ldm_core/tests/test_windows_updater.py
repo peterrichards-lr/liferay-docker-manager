@@ -28,7 +28,26 @@ class TheUpdaterScriptSaysWhatItDoes(unittest.TestCase):
 
     def test_success_is_reported_before_ldm_starts(self):
         ok = self.bat.index("echo [OK] LDM upgraded")
-        self.assertLess(ok, self.bat.index('start ""'))
+        self.assertLess(ok, self.bat.index("doctor --skip-project"))
+
+    def _success_block(self):
+        start = self.bat.index("echo [OK] LDM upgraded")
+        return self.bat[start : self.bat.index("goto :CLEANUP", start)]
+
+    def test_doctor_runs_in_this_window_not_a_new_one(self):
+        """LDM-#2327: `start` gave doctor a console of its own, which closed
+        when doctor exited, so its output was never seen."""
+        block = self._success_block()
+        self.assertIn('"C:\\Users\\me\\bin\\ldm.exe" doctor --skip-project', block)
+        self.assertNotIn("start ", block)
+
+    def test_the_window_waits_after_success(self):
+        """LDM-#2327: success fell straight into :CLEANUP, which deletes the
+        script and ends it, closing the window as [OK] printed."""
+        block = self._success_block()
+        self.assertLess(block.index("doctor --skip-project"), block.index("timeout /t"))
+        # Closes by itself: a `pause` would hold an unattended window forever.
+        self.assertNotIn("pause", block)
 
     def test_it_never_kills_other_ldm_processes(self):
         self.assertNotIn("taskkill", self.bat.lower())

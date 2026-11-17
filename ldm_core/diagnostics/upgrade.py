@@ -321,6 +321,13 @@ def _windows_updater_script(temp_new, exe_path):
       gone rather than narrowed to a PID: ldm exits on its own straight after
       staging (sys.exit(0)), and once it has, its PID can be reused by an
       unrelated process.
+
+    LDM-#2327: and on success the window closed the moment `[OK]` printed --
+    `:CLEANUP` deletes the script and ends it -- while `start` put `doctor` in
+    yet another console that vanished when it exited. Nobody could read either.
+    `doctor` now runs in this window, which then waits. `timeout`, not `pause`:
+    it closes by itself, so an unattended upgrade leaves no window waiting
+    for a key forever.
     """
     return f"""@echo off
 setlocal enabledelayedexpansion
@@ -335,7 +342,11 @@ timeout /t 2 /nobreak > nul
 move /y "{temp_new}" "{exe_path}" >nul 2>&1
 if !errorlevel! equ 0 (
 echo [OK] LDM upgraded. Starting it to finish setting up...
-start "" "{exe_path}" doctor --skip-project
+echo.
+"{exe_path}" doctor --skip-project
+echo.
+echo LDM upgrade complete. This window closes in 60 seconds, or press any key.
+timeout /t 60 > nul
 goto :CLEANUP
 )
 
