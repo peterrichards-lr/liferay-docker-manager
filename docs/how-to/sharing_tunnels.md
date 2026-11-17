@@ -107,11 +107,26 @@ ldm share start [project] --provider lfr-tunnel --subdomain my-subdomain --ports
   ```
 
   Name `--ports` to share anything else, such as a client extension
-  alongside Liferay (`--ports 8095,3000`). Only when no project is found does
-  the tunnel client auto-discover what to expose. Discovery considers any
+  alongside Liferay (`--ports 8095,3000`). A project's `LCP.json` is not
+  used: the ports it lists are the container's, not the host port LDM
+  published.
+
+  Only when no project is found does LDM look further: first for an
+  `LCP.json` in the current directory, taking each entry's `port`, then the
+  tunnel client auto-discovers what to expose. Discovery considers any
   running Liferay or LDM container on host port 80, 443, 8080 or 3000, so it
   can pick a *different* project, or LDM's own proxy -- which is why LDM no
   longer relies on it for a project it knows (LDM-#2397).
+
+- **The tunnel is judged healthy by the port you asked for.** LDM waits for
+  the client to report the tunnel connected, authenticated and leased. If the
+  client still calls it unhealthy only because of its destination, LDM checks
+  the first port you named:
+  - lfr-tunnel releases before the strict `-ports` change always checked 8080,
+    whatever `--ports` said. So a project on another port failed with "Local
+    target port 8080 is not responsive", and LDM stopped a working tunnel.
+  - Later releases check every port. A secondary port that is still starting,
+    such as a client extension, is now a warning naming it, not a failed share.
 
 - The client is started with `-preserve-host`, so Liferay sees the public
   host name. Without it, Liferay saw `127.0.0.1` and sent sign-in redirects

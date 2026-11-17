@@ -59,6 +59,47 @@ def share_host_from_url(value):
     return text.rstrip(".").lower() or str(value).strip()
 
 
+def lcp_json_ports(directory):
+    """`(ports, file name)` from an LCP.json in `directory`, or `(None, None)`.
+
+    Liferay Cloud lists ports as objects -- `[{"port": 8080, "external":
+    false}]` -- so each entry's `port` is taken; a bare number is accepted too.
+    Anything that is not a whole number from 1 to 65535 is skipped rather than
+    passed on: the strict client (lfr-tunnel #2484) refuses a malformed
+    `-ports`, and the old one silently fell back to auto-discovery.
+    """
+    try:
+        # Matched case-insensitively, and reported by its real name: macOS
+        # finds `LCP.json` when asked for `lcp.json`, Linux does not.
+        candidates = sorted(
+            p for p in Path(directory).iterdir() if p.name.lower() == "lcp.json"
+        )
+    except OSError:
+        return None, None
+    for candidate in candidates:
+        name = candidate.name
+        if not candidate.is_file():
+            continue
+        try:
+            entries = json.loads(candidate.read_text(encoding="utf-8")).get("ports")
+        except (OSError, ValueError, AttributeError):
+            continue
+        found = []
+        for entry in entries if isinstance(entries, list) else []:
+            value = entry.get("port") if isinstance(entry, dict) else entry
+            if isinstance(value, bool):
+                continue
+            try:
+                port = int(str(value).strip())
+            except ValueError:
+                continue
+            if 1 <= port <= 65535 and port not in found:
+                found.append(port)
+        if found:
+            return ",".join(str(p) for p in found), name
+    return None, None
+
+
 def is_min_version_failure(stderr, stdout=""):
     """Whether the client refused to connect because it is below the floor.
 
@@ -1329,35 +1370,20 @@ class ShareService:
 
         ports_source = "--ports" if ports else None
 
-        # Check for LCP.json to infer ports if not specified
-        if not ports:
-            lcp_candidates = [Path("lcp.json"), Path("LCP.json")]
-            if root:
-                lcp_candidates.extend(
-                    [
-                        root / "lcp.json",
-                        root / "LCP.json",
-                        root / "liferay" / "lcp.json",
-                        root / "liferay" / "LCP.json",
-                    ]
-                )
-            for lcp_cand in lcp_candidates:
-                if lcp_cand.exists():
-                    try:
-                        import json
-
-                        lcp_data = json.loads(lcp_cand.read_text(encoding="utf-8"))
-                        if (
-                            "ports" in lcp_data
-                            and isinstance(lcp_data["ports"], list)
-                            and len(lcp_data["ports"]) > 0
-                        ):
-                            ports = ",".join(str(p) for p in lcp_data["ports"])
-                            ports_source = lcp_cand.name
-                            UI.detail(f"Detected ports {ports} from {lcp_cand.name}")
-                            break
-                    except Exception:
-                        pass
+        # LCP.json, only when there is no LDM project. LDM-#2397 follow-up: this
+        # used to run first, for the project too, and joined the entries as
+        # Python reprs -- every real LCP.json lists ports as objects
+        # (`[{"port": 8080, "external": false}]`), so the client got
+        # `-ports "{'port': 8080, ...}"`. It silently dropped that and
+        # auto-discovered, which is the wrong-project path #2397 closed; the
+        # strict client (lfr-tunnel #2484) refuses it outright. A project's
+        # LCP.json ports are also its CONTAINER ports, not the host port LDM
+        # published, which is the project's own `port` (below, native branch).
+        if not ports and not root:
+            ports, lcp_name = lcp_json_ports(Path.cwd())
+            if ports:
+                ports_source = lcp_name
+                UI.detail(f"Detected ports {ports} from {lcp_name}")
 
         # LDM-#2015: warm the gateway's advertised domain list before
         # anything classifies against it. Explicit rather than lazy inside
@@ -1518,7 +1544,14 @@ class ShareService:
                 )
                 if res.returncode == 0:
                     success, err_msg = self._poll_tunnel_health(
-                        subdomain, domain=share_domain
+                        subdomain,
+                        domain=share_domain,
+                        ports=ports,
+                        target_host=(
+                            host_name
+                            if host_name and host_name != "localhost"
+                            else None
+                        ),
                     )
                     if success:
                         UI.success("Tunnel started in the background.")
@@ -2266,15 +2299,22 @@ class ShareService:
             "Please check your network/DNS connectivity."
         )
 
-    def _poll_tunnel_health(  # noqa: C901, PLR0912, PLR0915
+    def _poll_tunnel_health(  # noqa: C901, PLR0911, PLR0912, PLR0915
         self,
         subdomain,
         container_name=None,
         timeout=10,
         domain=None,
         target_name=None,
+        ports=None,
+        target_host=None,
     ):
-        """Polls the lfr-tunnel status to verify connection health using -status-json."""
+        """Polls the lfr-tunnel status to verify connection health using -status-json.
+
+        `ports` and `target_host` are what a native start asked for. When given,
+        a tunnel the client calls unhealthy only because of its destination is
+        judged by the port LDM named instead -- see `_destination_is_the_only_fault`.
+        """
         import time
 
         import requests
@@ -2319,6 +2359,15 @@ class ShareService:
                         data.get("running") is True
                         and data.get("status") == "healthy"
                         and data.get("connection_state") == "connected"
+                    ):
+                        return True, None
+                    if (
+                        ports
+                        and data.get("running") is True
+                        and data.get("connection_state") == "connected"
+                        and self._destination_is_the_only_fault(
+                            data.get("inspector_port") or 4040, ports, target_host
+                        )
                     ):
                         return True, None
                 # Fallback to legacy checks ONLY if legacy binary was explicitly detected
@@ -2395,7 +2444,9 @@ class ShareService:
                     if sub_res.returncode == 0:
                         try:
                             info = json.loads(sub_res.stdout)
-                            error_reason = self._diagnose_tunnel_info(info, subdomain)
+                            error_reason = self._diagnose_tunnel_info(
+                                info, subdomain, requested_ports=ports
+                            )
                             info_parsed = True
                         except Exception:
                             pass
@@ -2490,7 +2541,9 @@ class ShareService:
                     )
                     if req_res.status_code == 200:
                         info = req_res.json()
-                        error_reason = self._diagnose_tunnel_info(info, subdomain)
+                        error_reason = self._diagnose_tunnel_info(
+                            info, subdomain, requested_ports=ports
+                        )
                         info_parsed = True
                 except Exception:
                     pass
@@ -2558,7 +2611,75 @@ class ShareService:
 
         return False, error_reason
 
-    def _diagnose_tunnel_info(self, info, subdomain):
+    def _destination_is_the_only_fault(  # noqa: PLR0911
+        self, inspector_port, ports, target_host
+    ):
+        """True when the tunnel is up and only its destination check failed,
+        and the port LDM asked for is in fact answering.
+
+        Two client behaviours make "unhealthy" the wrong verdict here:
+
+        - Every released client before lfr-tunnel #2484 dials 8080 for its
+          health whatever `-ports` said (`engine.DestPort` is never set from
+          it). So `ldm share start --ports 8095` on a project with nothing on
+          8080 never became healthy, and LDM stopped a working tunnel after
+          10s, blaming "Local target port 8080" -- the reported failure.
+        - The strict client dials EVERY published port, so a client extension
+          still starting on a secondary port fails the whole share.
+
+        The gateway side must still be sound -- authenticated and leased, no
+        conflict -- which only `/api/info` reports. Then the new client's
+        per-port report decides on the primary port (first in `-ports`); for an
+        old client, which has no per-port report, LDM dials that port itself.
+        """
+        import socket
+
+        import requests
+
+        try:
+            info = requests.get(
+                f"http://127.0.0.1:{inspector_port}/api/info", timeout=2
+            ).json()
+        except Exception:
+            return False
+        auth = info.get("auth") or {}
+        lease = info.get("subdomain") or {}
+        if not auth.get("valid", False) or not lease.get("leased", False):
+            return False
+        if lease.get("conflict", False):
+            return False
+
+        try:
+            primary = int(str(ports).split(",")[0].strip())
+        except ValueError:
+            return False
+
+        dest = info.get("destination") or {}
+        per_port = dest.get("ports")
+        if isinstance(per_port, list):
+            states: dict[int, bool] = {
+                int(p["port"]): bool(p.get("responsive"))
+                for p in per_port
+                if isinstance(p, dict) and str(p.get("port", "")).isdigit()
+            }
+            if not states.get(primary, False):
+                return False
+            down = sorted(p for p, up in states.items() if not up)
+            if down:
+                UI.warning(
+                    f"Not answering yet: local port(s) {', '.join(map(str, down))}. "
+                    f"The tunnel is up and port {primary} is serving; the others "
+                    "will work once their services start."
+                )
+            return True
+
+        try:
+            with socket.create_connection((target_host or "127.0.0.1", primary), 1):
+                return True
+        except OSError:
+            return False
+
+    def _diagnose_tunnel_info(self, info, subdomain, requested_ports=None):
         """Helper to extract clean diagnostic error messages from /api/info data."""
         auth = info.get("auth", {})
         if not auth.get("valid", True):
@@ -2570,8 +2691,29 @@ class ShareService:
             return f"Subdomain Conflict: Subdomain '{subdomain}' is already taken by another active tunnel."
 
         dest = info.get("destination") or {}
-        if not dest.get("responsive", True):
-            return f"Downstream Offline: Local target port {dest.get('port', 8080)} is not responsive."
+        # The strict client reports each port (lfr-tunnel #2484); name the ones
+        # actually down, not the primary, which may be fine.
+        per_port = dest.get("ports")
+        if isinstance(per_port, list):
+            down = [
+                str(p.get("port"))
+                for p in per_port
+                if isinstance(p, dict) and not p.get("responsive", True)
+            ]
+            if down:
+                return (
+                    f"Downstream Offline: local port(s) {', '.join(down)} "
+                    "not responsive."
+                )
+        elif not dest.get("responsive", True):
+            # An old client's single `port` is always 8080 whatever `-ports`
+            # said, so name what LDM asked for when it asked for something.
+            port = (
+                str(requested_ports).split(",")[0].strip()
+                if requested_ports
+                else dest.get("port", 8080)
+            )
+            return f"Downstream Offline: Local target port {port} is not responsive."
 
         conn_state = (info.get("connection") or {}).get("state", "disconnected")
         return f"Tunnel Connection Error: Connection state is '{conn_state}'."

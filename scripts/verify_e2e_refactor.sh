@@ -4412,6 +4412,11 @@ fi
 #     left to the client, discovery can publish another project on 8080 --
 #     and the client keeps the public Host header, without which Liferay
 #     redirects sign-in to https://127.0.0.1/. -v for the composed command.
+#     A Liferay Cloud LCP.json naming another port sits in the project: its
+#     ports are objects and container-side, and LDM used to pass them as
+#     `{'port': 9999, ...}` ahead of the project's own port (LDM-#2397).
+mkdir -p "${SHARE_DRYRUN_PROJ}/liferay"
+printf '%s\n' '{"id": "liferay", "ports": [{"port": 9999, "external": false}]}' > "${SHARE_DRYRUN_PROJ}/liferay/LCP.json"
 SHARE_OUT=$(share_dry_run -v --subdomain peters) || true
 if ! echo "$SHARE_OUT" | grep -qF -- "lfr-tunnel -background -preserve-host -ports 8080 -subdomain peters"; then
     share_dryrun_fail "a known project's tunnel did not pass -preserve-host and the project's own -ports (LDM-#2397, #2398)." "$SHARE_OUT"
