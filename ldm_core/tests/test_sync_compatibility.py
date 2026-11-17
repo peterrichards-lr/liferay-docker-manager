@@ -1449,3 +1449,123 @@ class TestNoCommittedReportIsRenamed:
             "slug derivation would rename committed reports, which archives real "
             f"verification data: {offenders}"
         )
+
+
+class TestArchivedReportsAreAnonymized:
+    """LDM-#2410: archived_findings/ is committed to a public repository, but
+    both archive paths moved the raw file with `shutil.move` -- so a raw report
+    reached it still naming its author's home directory. Found when all six
+    v2.26.11-pre.1 reports carried between 2 and 12 such lines."""
+
+    _HOMES = (
+        "/Users/someone/ldm-verify/snapshot",
+        "/home/someone/ldm-verify/snapshot",
+        r"C:\Users\someone\ldm-verify\snapshot",
+    )
+
+    def teardown_method(self):
+        UI.QUIET_MODE = False
+        sync_compatibility.ARCHIVE_STALE = False
+        sync_compatibility.DRY_RUN = False
+
+    @staticmethod
+    def _sandbox(tmp_path):
+        """LDM-#1391: never the real results dir or the real table."""
+        results = tmp_path / "results"
+        results.mkdir()
+        table = tmp_path / "compatibility.md"
+        shutil.copy(sync_compatibility.DEFAULT_TABLE_FILE, table)
+        return results, table
+
+    def _with_home_paths(self, path):
+        path.write_text(
+            path.read_text(encoding="utf-8")
+            + "".join(f"Snapshot saved: {h}\n" for h in self._HOMES),
+            encoding="utf-8",
+        )
+        return path
+
+    def _assert_clean(self, archived):
+        content = archived.read_text()
+        assert "someone" not in content, content
+        assert sync_compatibility.find_unredacted_home_paths(content) == []
+
+    def test_a_stale_report_is_archived_anonymized(self, tmp_path):
+        results, table = self._sandbox(tmp_path)
+        # A version that is not this checkout's and has no git tag, so the
+        # LDM-#1058 cosmetic-diff escape cannot accept it: it is stale.
+        stale = self._with_home_paths(
+            _linux_report(
+                results,
+                "verify-linux-workstation-linux-native-docker-20260906-2201-pass.txt",
+                "Debian GNU/Linux 12 (bookworm)",
+                "9.9.9-pre.1",
+            )
+        )
+        assert "someone" in stale.read_text(), "the fixture must carry usernames"
+
+        sync_compatibility.ARCHIVE_STALE = True
+        with _no_docs_sync():
+            sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        archived = list((results / "archived_findings").glob("*.txt"))
+        assert len(archived) == 1, "the stale report should have been archived"
+        assert not stale.exists(), "and the raw original removed"
+        self._assert_clean(archived[0])
+        assert "Version:      ldm 9.9.9-pre.1" in archived[0].read_text(), (
+            "redaction must not cost the report its identity"
+        )
+
+    def test_dry_run_still_writes_nothing(self, tmp_path):
+        results, table = self._sandbox(tmp_path)
+        stale = self._with_home_paths(
+            _linux_report(
+                results,
+                "verify-linux-workstation-linux-native-docker-20260906-2201-pass.txt",
+                "Debian GNU/Linux 12 (bookworm)",
+                "9.9.9-pre.1",
+            )
+        )
+        before = stale.read_text()
+
+        sync_compatibility.ARCHIVE_STALE = True
+        sync_compatibility.DRY_RUN = True
+        with _no_docs_sync():
+            sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        assert stale.read_text() == before
+        assert not list((results / "archived_findings").glob("*.txt"))
+
+    def test_a_superseded_raw_report_is_archived_anonymized(self, tmp_path):
+        """The second path: two current-version raw runs of one environment in
+        a single sync. The older is archived without ever becoming canonical,
+        so it was never anonymized either."""
+        results, table = self._sandbox(tmp_path)
+        older = self._with_home_paths(
+            _linux_report(
+                results,
+                "verify-linux-workstation-linux-native-docker-20260906-2201-fail.txt",
+                "Debian GNU/Linux 12 (bookworm)",
+                sync_compatibility.VERSION,
+                passed=False,
+            )
+        )
+        newer = _linux_report(
+            results,
+            "verify-linux-workstation-linux-native-docker-20260906-2230-pass.txt",
+            "Debian GNU/Linux 12 (bookworm)",
+            sync_compatibility.VERSION,
+        )
+        os.utime(older, (1, 1))
+        os.utime(newer, (2, 2))
+
+        with _no_docs_sync():
+            sync_compatibility.sync_reports(results_dir=results, table_file=table)
+
+        archived = list((results / "archived_findings").glob("*.txt"))
+        assert len(archived) == 1
+        assert not older.exists()
+        self._assert_clean(archived[0])
+        assert f"Version:      ldm {sync_compatibility.VERSION}" in (
+            archived[0].read_text()
+        )
