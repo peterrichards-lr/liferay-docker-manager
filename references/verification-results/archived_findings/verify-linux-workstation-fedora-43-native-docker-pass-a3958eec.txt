@@ -30,7 +30,7 @@ Path: mkcert                        [0;32m✅  /usr/bin/mkcert[0m
 Path: openssl                       [0;32m✅  /usr/bin/openssl[0m
 Path: telnet                        [0;32m✅  /usr/bin/telnet[0m
 Path: nc/ncat                       [0;32m✅  /usr/bin/nc[0m
-Path: lcp                           [0;32m✅  /home/peterrichards/.local/bin/lcp[0m
+Path: lcp                           [0;32m✅  /home/[USER]/.local/bin/lcp[0m
 Path: docker compose                [0;32m✅  docker compose[0m
 Client: mysql                       [0;33m⚠️  [0;37mNot installed[0m[0m
 Client: psql                        [0;33m⚠️  [0;37mNot installed[0m[0m
@@ -97,7 +97,7 @@ Error response from daemon: No such container: liferay-docker-proxy
 [0;33mℹ  Creating snapshot: Binary-Verify...[0m
 [0;33mℹ  Triggering orchestrated search snapshot: ldm-smoke-test_20260501_130146...[0m
 [0;32m✅  Search snapshot completed.[0m
-[0;32m✅  Snapshot saved: /home/peterrichards/ldm-verify/e2e-work-dir/ldm-smoke-test/snapshots/20260501_130146[0m
+[0;32m✅  Snapshot saved: /home/[USER]/ldm-verify/e2e-work-dir/ldm-smoke-test/snapshots/20260501_130146[0m
 >> Restoring Snapshot
 [1;33m=== Snapshots for ldm-smoke-test ===[0m
 [1] [0;36m20260501_130146[0m - [1mBinary-Verify[0m (386.0 KB)

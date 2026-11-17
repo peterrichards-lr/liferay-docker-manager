@@ -1,8 +1,8 @@
 === LDM BINARY VERIFICATION REPORT ===
 Timestamp:    Mon 24 Aug 08:00:52 BST 2026
-Hostname:     fedora.mac.lan
+Hostname:  [ANONYMIZED]
 Platform:     Fedora Linux 44 (Workstation Edition)
-Binary:       /usr/local/bin/ldm
+Binary:    [ANONYMIZED]
 Version:      ldm 2.16.0-pre.2
 Script Ver:   2.16.0-pre.2
 Docker:    29.7.2
@@ -52,7 +52,7 @@ Compose:   5.5.0
 ✅ Hot Deploy verified.
 >> Creating Snapshot
 [0;32m✅  Database dump completed.[0m
-[0;32m✅  Snapshot saved: /home/peterrichards/ldm-verify/e2e-work-dir-55081/ldm-smoke-test-55081/snapshots/20260824_080816[0m
+[0;32m✅  Snapshot saved: /home/[USER]/ldm-verify/e2e-work-dir-55081/ldm-smoke-test-55081/snapshots/20260824_080816[0m
 >> Bypassing Integrity
 [1;33m=== Snapshots for ldm-smoke-test-55081 ===[0m
 [1] [0;36m20260824_080816[0m - [1mBinary-Verify[0m (1.0 GB)[2m [DB,VOL,MOD][0m

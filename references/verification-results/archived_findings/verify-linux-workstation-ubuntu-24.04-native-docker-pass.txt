@@ -19,7 +19,7 @@ Compose:   5.1.1
  Container liferay-proxy-global Started 
 [0;32m✅  Infrastructure setup complete.[0m
 >> Running LDM Project
-[0;33mℹ  Created missing mount directory: /home/prichards/ldm-verify/e2e-work-dir-50869/ldm-smoke-test-50869/scripts[0m
+[0;33mℹ  Created missing mount directory: /home/[USER]/ldm-verify/e2e-work-dir-50869/ldm-smoke-test-50869/scripts[0m
 [0;33mℹ  + Synced license from Common: activation-key-dxpdevelopment-7.4-developeractivationkeys.xml[0m
 [0;33mℹ  [0;37m⚡[0m Starting [1;33mldm-smoke-test-50869[0m stack (2026.q1.7-lts, postgresql, localhost:50869)...[0m
 [0;32m✅  Project 'ldm-smoke-test-50869' started in background.[0m
@@ -33,7 +33,7 @@ Compose:   5.1.1
 [0;33mℹ  + Dehydrating volume [0;36mldm-smoke-test-50869-data[0m to host...[0m
 [0;33mℹ  + Dehydrating volume [0;36mldm-smoke-test-50869-state[0m to host...[0m
 [0;33mℹ  Reclaiming project permissions before snapshot...[0m
-[0;32m✅  Snapshot saved: /home/prichards/ldm-verify/e2e-work-dir-50869/ldm-smoke-test-50869/snapshots/20260713_192604[0m
+[0;32m✅  Snapshot saved: /home/[USER]/ldm-verify/e2e-work-dir-50869/ldm-smoke-test-50869/snapshots/20260713_192604[0m
 >> Bypassing Integrity
 [1;33m=== Snapshots for ldm-smoke-test-50869 ===[0m
 [1] [0;36m20260713_192604[0m - [1mBinary-Verify[0m (1.0 GB)[2m [DB,VOL,MOD][0m

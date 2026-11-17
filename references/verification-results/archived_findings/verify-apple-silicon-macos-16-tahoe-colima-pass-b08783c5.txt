@@ -1,8 +1,8 @@
 === LDM BINARY VERIFICATION REPORT ===
 Timestamp:    Tue 11 Aug 2026 14:53:00 BST
-Hostname:     peters.macbook.pro.2.lan
+Hostname:  [ANONYMIZED]
 Platform:     darwin25
-Binary:       /usr/local/bin/ldm
+Binary:    [ANONYMIZED]
 Version:      ldm 2.15.27-pre.4
 Script Ver:   2.15.27-pre.3
 ⚠️  WARNING: this script (v2.15.27-pre.3) does not match the installed ldm binary (v2.15.27-pre.4).
@@ -46,7 +46,7 @@ Compose:   5.2.0
 ✅ Hot Deploy verified.
 >> Creating Snapshot
 [0;32m✅  Database dump completed.[0m
-[0;32m✅  Snapshot saved: /Users/peterrichards/ldm-verify/e2e-work-dir-59396/ldm-smoke-test-59396/snapshots/20260811_145834[0m
+[0;32m✅  Snapshot saved: [HOME]/ldm-verify/e2e-work-dir-59396/ldm-smoke-test-59396/snapshots/20260811_145834[0m
 >> Bypassing Integrity
 [1;33m=== Snapshots for ldm-smoke-test-59396 ===[0m
 [1] [0;36m20260811_145834[0m - [1mBinary-Verify[0m (1.0 GB)[2m [DB,VOL,MOD][0m

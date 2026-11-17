@@ -1,8 +1,8 @@
 === LDM BINARY VERIFICATION REPORT ===
 Timestamp:    Thu Aug 27 14:31:58 BST 2026
-Hostname:     PRICHARDS
+Hostname:  [ANONYMIZED]
 Platform:     Ubuntu 24.04.4 LTS
-Binary:       /usr/local/bin/ldm
+Binary:    [ANONYMIZED]
 Version:      ldm 2.18.0-pre.7
 Script Ver:   2.18.0-pre.7
 Docker:    29.3.0
@@ -85,7 +85,7 @@ Compose:   5.1.1
 [0;33mℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...[0m
 [0;32m✅  Database dump completed.[0m
 [0;33mℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...[0m
-[0;32m✅  Snapshot saved: /home/prichards/ldm-verify/e2e-work-dir-60641/ldm-smoke-test-60641/snapshots/20260827_144046[0m
+[0;32m✅  Snapshot saved: /home/[USER]/ldm-verify/e2e-work-dir-60641/ldm-smoke-test-60641/snapshots/20260827_144046[0m
 ✅ Integrity check verified.
 >> Bypassing Integrity
 [1;33m=== Snapshots for ldm-smoke-test-60641 ===[0m

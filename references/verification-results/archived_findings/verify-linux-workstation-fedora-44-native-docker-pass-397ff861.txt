@@ -1,9 +1,9 @@
 === LDM BINARY VERIFICATION REPORT ===
 Timestamp:    Thu  1 Oct 09:28:15 BST 2026
-Hostname:     fedora.mac.lan
+Hostname:  [ANONYMIZED]
 Platform:     Fedora Linux 44 (Workstation Edition)
 Run Context:  workstation
-Binary:       /usr/local/bin/ldm
+Binary:    [ANONYMIZED]
 Version:      ldm 2.26.0-pre.15
 Script Ver:   2.26.0-pre.15
 Docker:    29.8.1
@@ -110,7 +110,7 @@ Compose:   5.5.1
 [0;33mℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...[0m
 [0;32m✅  Database dump completed.[0m
 [0;33mℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...[0m
-[0;32m✅  Snapshot saved: /home/peterrichards/ldm-verify/e2e-work-dir-33189/ldm-smoke-test-33189/snapshots/20261001_093748[0m
+[0;32m✅  Snapshot saved: /home/[USER]/ldm-verify/e2e-work-dir-33189/ldm-smoke-test-33189/snapshots/20261001_093748[0m
 ✅ Integrity check verified.
 >> Bypassing Integrity
 [1;33m=== Snapshots for ldm-smoke-test-33189 ===[0m
@@ -200,7 +200,7 @@ Compose:   5.5.1
 [0;33mℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...[0m
 [0;32m✅  Database dump completed.[0m
 [0;33mℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...[0m
-[0;32m✅  Snapshot saved: /home/peterrichards/ldm-verify/e2e-work-dir-33189/ldm-smoke-test-33189/snapshots/20261001_094317[0m
+[0;32m✅  Snapshot saved: /home/[USER]/ldm-verify/e2e-work-dir-33189/ldm-smoke-test-33189/snapshots/20261001_094317[0m
 ✅ Snapshot manifest lists the client extension it claims (LDM-#1573).
 >> Applying portal patch
 [0;33m⚠️  ldm-verify-noop-patch.jar does not exist in /opt/liferay/osgi/portal for this image -- it may have been renamed or removed upstream; copying anyway (--force-portal-patches).[0m

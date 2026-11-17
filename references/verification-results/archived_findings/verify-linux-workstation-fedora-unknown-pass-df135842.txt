@@ -31,7 +31,7 @@ Compose:   5.1.3
 [0;33mℹ  + Dehydrating volume [0;36mldm-smoke-test-data[0m to host...[0m
 [0;33mℹ  + Dehydrating volume [0;36mldm-smoke-test-state[0m to host...[0m
 [0;33mℹ  Reclaiming project permissions before snapshot...[0m
-[0;32m✅  Snapshot saved: /home/peterrichards/ldm-verify/e2e-work-dir/ldm-smoke-test/snapshots/20260603_195209[0m
+[0;32m✅  Snapshot saved: /home/[USER]/ldm-verify/e2e-work-dir/ldm-smoke-test/snapshots/20260603_195209[0m
 >> Bypassing Integrity
 [1;33m=== Snapshots for ldm-smoke-test ===[0m
 [1] [0;36m20260603_195209[0m - [1mBinary-Verify[0m (1.0 GB)

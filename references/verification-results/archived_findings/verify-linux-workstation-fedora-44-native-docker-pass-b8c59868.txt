@@ -51,7 +51,7 @@ Compose:   5.5.0
 ✅ Hot Deploy verified.
 >> Creating Snapshot
 [0;32m✅  Database dump completed.[0m
-[0;32m✅  Snapshot saved: /home/peterrichards/ldm-verify/e2e-work-dir-59385/ldm-smoke-test-59385/snapshots/20260818_134007[0m
+[0;32m✅  Snapshot saved: /home/[USER]/ldm-verify/e2e-work-dir-59385/ldm-smoke-test-59385/snapshots/20260818_134007[0m
 >> Bypassing Integrity
 [1;33m=== Snapshots for ldm-smoke-test-59385 ===[0m
 [1] [0;36m20260818_134007[0m - [1mBinary-Verify[0m (1.0 GB)[2m [DB,VOL,MOD][0m
