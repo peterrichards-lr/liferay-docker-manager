@@ -102,6 +102,34 @@ PIP_INSTALL_TIMEOUT = 600  # 10 min -- plugin/completion dependency installs
 RELEASE_ANNOUNCEMENTS = {
     # LDM-#1663: a patch needs its OWN key, or the banner falls back to the
     # minor series and re-prints highlights the user has already seen.
+    "2.26.11": [
+        (
+            "Security: ldm share start publishes the project you asked for",
+            "Without --ports, the tunnel client could pick another project on "
+            "8080, or LDM's own proxy, and publish it under this project's "
+            "URL. LDM now always shares the project's own port and prints "
+            "which port it shares.",
+        ),
+        (
+            "Sharing works on any port, and sign-in no longer goes to 127.0.0.1",
+            "ldm share start --ports kept failing for a project not on 8080, "
+            "and signing in through the tunnel redirected to "
+            "https://127.0.0.1/. Both are fixed for the native lfr-tunnel "
+            "client.",
+        ),
+        (
+            "Restores clear the previous build's search data",
+            "With shared search stopped, a restore or quickstart --replace "
+            "kept the old documents. It now starts shared search first, or "
+            "stops with exit code 3 before changing anything.",
+        ),
+        (
+            "A search index that cannot answer fails the command",
+            "ldm run, ldm wait and ldm restore now exit with code 3, naming "
+            "the index and the fix, instead of reporting a ready portal whose "
+            "search-backed lists are empty.",
+        ),
+    ],
     "2.26.9": [
         (
             "Security: the ldm binary is writable only by its owner",
