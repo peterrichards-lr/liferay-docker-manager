@@ -160,6 +160,8 @@ ldm upgrade --beta
 
 `--check` always states its result: either that LDM is already up to date, or which newer version is available.
 
+**On Windows the upgrade finishes in its own window.** A running `ldm.exe` cannot replace itself, so `ldm system upgrade` stages the new binary, exits, and a separate window swaps it in. That window says `[OK] LDM upgraded`, runs `ldm doctor --skip-project` so you can see the new version is healthy, and then closes after 60 seconds or when you press a key. It used to close the moment the swap succeeded, with `doctor` in a second window that vanished as soon as it finished (LDM-#2327). The window is drawn by the version you upgrade *from*, so this applies from the upgrade after the one that installs the fix.
+
 **Upgrading from a pre-release.** On a pre-release build, a plain `ldm system upgrade` offers to switch back to the stable tier and defaults to *No*. With `-y` that prompt is not asked, so the default applies: LDM stays on the pre-release and says so. To take the stable release unattended, pass `--beta` (which considers stable and pre-release versions alike) or name it with `-v vX.Y.Z`.
 
 **The upgraded binary is writable only by its owner.** On macOS and Linux the new binary is installed with mode 755. An upgrade through `sudo` installs it owned by root, with the same mode. Releases v2.7.6 to v2.26.8 left it writable by every local user (mode 777), so anyone with an account on the machine could replace it ([GHSA-cq82-rxm7-vw5c](https://github.com/peterrichards-lr/liferay-docker-manager/security/advisories/GHSA-cq82-rxm7-vw5c)).
