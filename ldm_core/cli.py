@@ -2124,7 +2124,7 @@ def get_parser():  # noqa: PLR0915
     )
     share_start.add_argument(
         "--ports",
-        help="Comma-separated ports to expose (defaults to 8080)",
+        help="Comma-separated ports to expose (defaults to the project's own port)",
     )
     share_start.add_argument(
         "--provider",

@@ -4389,6 +4389,19 @@ zf.close()
             Add-ShareDryRunFailure "the resolved domain's source was not named (LDM-#2019)." $r.Output
         }
 
+        # 8b. LDM-#2397/#2398: a known project shares ITS port, named
+        #     explicitly -- left to the client, discovery can publish another
+        #     project on 8080 -- and the client keeps the public Host header,
+        #     without which Liferay redirects sign-in to https://127.0.0.1/.
+        #     -v for the composed command.
+        $rPort = Invoke-ShareDryRun @("-v", "--subdomain", "peters")
+        if (-not ($rPort.Output -cmatch [regex]::Escape("lfr-tunnel -background -preserve-host -ports 8080 -subdomain peters"))) {
+            Add-ShareDryRunFailure "a known project's tunnel did not pass -preserve-host and the project's own -ports (LDM-#2397, #2398)." $rPort.Output
+        }
+        if (-not ($rPort.Output -cmatch [regex]::Escape("local port 8080 from project 'share-dryrun'"))) {
+            Add-ShareDryRunFailure "'share start' did not say which port it shares (LDM-#2397)." $rPort.Output
+        }
+
         # 9. The reported case end to end: a domain nobody typed, arriving
         #    from a machine-wide pin. A SEPARATE home, so the stored value
         #    cannot leak into the checks above.

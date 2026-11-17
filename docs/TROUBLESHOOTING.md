@@ -787,9 +787,10 @@ Project 'my-project' is not running, so there is nothing to share.
 ```
 
 If the project *is* running and you still see the gateway message, the tunnel
-is pointed at the wrong port. Check the project's `port` in its `meta`, and
-pass `--ports` explicitly if the service you want exposed is not the one LDM
-would auto-discover.
+is pointed at the wrong port. `ldm share start` prints the port it shares
+(`local port 8095 from project 'my-project'`); if that is not the one Liferay
+answers on, check the project's `port` in its `meta`, or name the port with
+`--ports`.
 
 ---
 
@@ -972,4 +973,4 @@ Projects are discovered from the current folder, its parent, `~/ldm`, the LDM in
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-16* | *Last Reviewed: 2026-11-16*
+*Last Updated: 2026-11-17* | *Last Reviewed: 2026-11-17*

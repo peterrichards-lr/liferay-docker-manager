@@ -637,7 +637,7 @@ ldm tray --uninstall-autostart  # Remove launch-on-login autostart
 - **`--non-interactive`**: Run in non-interactive mode.
 - **`--output`**: Directory path to save generated output.
 - **`--overwrite-registry`**: Automatically overwrite existing project registry entries.
-- **`--ports`**: Comma-separated ports to expose.
+- **`--ports`**: Comma-separated ports to expose. `share start` defaults to the project's own port.
 - **`--print`**: Output current version string only.
 - **`--project`**: Show detailed Project diagnostic checks.
 - **`--project-id`**: Specific project ID to target.
@@ -795,4 +795,4 @@ ldm target migrate win-wsl node-a
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-16* | *Last Reviewed: 2026-11-16*
+*Last Updated: 2026-11-17* | *Last Reviewed: 2026-11-17*

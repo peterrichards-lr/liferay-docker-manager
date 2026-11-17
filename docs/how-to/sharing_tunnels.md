@@ -99,10 +99,24 @@ ldm share start [project] --provider lfr-tunnel --subdomain my-subdomain --ports
   ℹ    subdomain 'peters' from the command line, domain 'dev.example.com' from ~/.ldmrc
   ```
 
-- If `--ports` is omitted, the tunnel client auto-discovers what to expose:
-  running Docker containers first, then common Liferay ports, then the
-  client-extension ports declared by the workspace. Passing `--ports`
-  narrows it to exactly what you name, so omit it unless you need that.
+- If `--ports` is omitted, LDM shares the project's own port -- the `port` in
+  its `meta`, 8080 unless you chose another -- and says so:
+
+  ```text
+  ℹ    local port 8095 from project 'my-project'
+  ```
+
+  Name `--ports` to share anything else, such as a client extension
+  alongside Liferay (`--ports 8095,3000`). Only when no project is found does
+  the tunnel client auto-discover what to expose. Discovery considers any
+  running Liferay or LDM container on host port 80, 443, 8080 or 3000, so it
+  can pick a *different* project, or LDM's own proxy -- which is why LDM no
+  longer relies on it for a project it knows (LDM-#2397).
+
+- The client is started with `-preserve-host`, so Liferay sees the public
+  host name. Without it, Liferay saw `127.0.0.1` and sent sign-in redirects
+  to `https://127.0.0.1/` (LDM-#2398). The `lfr-tunnel-docker` sidecar has
+  always done this.
 
 ### What `--domain` accepts
 
@@ -559,7 +573,7 @@ When starting or running projects via LDM, you can configure the sharing behavio
 - **`--url <url>`**: The public URL to claim, e.g.
   `https://peters.lfr-demo.se`. Shorthand for `--subdomain` and `--domain`
   together.
-- **`--ports <ports>`**: Overrides target downstream port mapping (e.g. `--ports 8080,3000`).
+- **`--ports <ports>`**: The local ports to share (e.g. `--ports 8080,3000`). Defaults to the project's own port.
 - **`--image <image>`**: Overrides sidecar Docker image.
 - **`--inspector`**: Exposes the Web Inspector Dashboard on host port `4040`.
 
@@ -595,4 +609,4 @@ If you are running the `lfr-tunnel` Go executable directly or writing custom scr
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-19* | *Last Reviewed: 2026-10-19*
+*Last Updated: 2026-11-17* | *Last Reviewed: 2026-11-17*

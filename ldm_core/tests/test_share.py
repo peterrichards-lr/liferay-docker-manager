@@ -1755,8 +1755,8 @@ class TestShareTunnelTopology(unittest.TestCase):
     @patch.dict(os.environ, {}, clear=True)
     @patch("subprocess.run")
     def test_ports_omitted_when_the_user_named_none(self, mock_run):
-        """No -ports at all, so the client auto-discovers -- including the
-        client-extension ports LDM projects routinely expose."""
+        """No -ports and no project, so the client auto-discovers -- including
+        the client-extension ports LDM projects routinely expose."""
         cmd, _env = self._run_start(mock_run, subdomain="demo")
 
         self.assertNotIn("-ports", cmd)
@@ -1769,6 +1769,67 @@ class TestShareTunnelTopology(unittest.TestCase):
 
         self.assertIn("-ports", cmd)
         self.assertEqual(cmd[cmd.index("-ports") + 1], "9090,3001")
+
+    def _with_project(self, **meta):
+        self.mock_manager.detect_project_path = MagicMock(  # type: ignore[method-assign]
+            return_value=Path("/fake/barbara")
+        )
+        self.mock_manager.read_meta = MagicMock(  # type: ignore[method-assign]
+            return_value={"share_provider": "lfr-tunnel", **meta}
+        )
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("subprocess.run")
+    def test_a_known_project_shares_its_own_port(self, mock_run):
+        """LDM-#2397: discovery only considers host ports 80/443/8080/3000, so
+        a project on 8095 is never eligible -- and another project on 8080
+        is. When LDM knows the project it must name the project's port."""
+        self._with_project(port="8095")
+
+        cmd, _env = self._run_start(mock_run, subdomain="demo")
+
+        self.assertEqual(cmd[cmd.index("-ports") + 1], "8095")
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("subprocess.run")
+    def test_a_known_project_without_a_port_shares_ldm_default(self, mock_run):
+        self._with_project()
+
+        cmd, _env = self._run_start(mock_run, subdomain="demo")
+
+        self.assertEqual(cmd[cmd.index("-ports") + 1], "8080")
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("subprocess.run")
+    def test_named_ports_beat_the_project_port(self, mock_run):
+        self._with_project(port="8095")
+
+        cmd, _env = self._run_start(mock_run, subdomain="demo", ports="9090,3001")
+
+        self.assertEqual(cmd[cmd.index("-ports") + 1], "9090,3001")
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("ldm_core.handlers.share.UI")
+    @patch("subprocess.run")
+    def test_the_shared_port_and_its_source_are_announced(self, mock_run, mock_ui):
+        """The reported run printed the project's URL while the client looked
+        for 8080; nothing showed which port was being published."""
+        self._with_project(port="8095")
+
+        self._run_start(mock_run, subdomain="demo")
+
+        said = " ".join(str(c[0][0]) for c in mock_ui.info.call_args_list)
+        self.assertIn("local port 8095 from project 'barbara'", said)
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("subprocess.run")
+    def test_the_incoming_host_header_is_preserved(self, mock_run):
+        """LDM-#2398: without -preserve-host the client sends
+        Host: 127.0.0.1:<port>, and Liferay redirects sign-in to
+        https://127.0.0.1/."""
+        cmd, _env = self._run_start(mock_run, subdomain="demo")
+
+        self.assertIn("-preserve-host", cmd)
 
     # --- identity still ours ---------------------------------------------
 

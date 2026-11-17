@@ -35,6 +35,16 @@ class TestUI(unittest.TestCase):
             UI.redact("ldm --password=secret run"), "ldm --password=[REDACTED] run"
         )
 
+    def test_redact_leaves_the_ports_flag_alone(self):
+        """LDM-#2399: the MySQL -p rule printed `-p[REDACTED] 8095` for the
+        port being shared, so the port looked dropped exactly when checked."""
+        self.assertEqual(
+            UI.redact("lfr-tunnel -background -preserve-host -ports 8095 -subdomain x"),
+            "lfr-tunnel -background -preserve-host -ports 8095 -subdomain x",
+        )
+        self.assertEqual(UI.redact("x -ports=8095"), "x -ports=8095")
+        self.assertEqual(UI.redact("mysql -portsSecret"), "mysql -p[REDACTED]")
+
     def test_redact_no_match(self):
         # Normal text should remain untouched
         self.assertEqual(UI.redact("Starting Liferay..."), "Starting Liferay...")
