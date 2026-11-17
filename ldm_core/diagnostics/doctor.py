@@ -1782,6 +1782,7 @@ class DoctorRunner:
                 if lcp_errors:
                     for err in lcp_errors:
                         UI.raw(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {err}")
+                self._check_oauth_erc_list(p_path, lcp_file)
 
             # 7.2.4 License Check
             base_path = self.project_paths[0] if self.project_paths else None
@@ -2167,6 +2168,38 @@ class DoctorRunner:
                     )
             except Exception:
                 pass
+
+    def _check_oauth_erc_list(self, p_path, lcp_file):
+        """Warn when a config-node microservice's LCP.json lacks its ERC list.
+
+        LDM-#2407. A warning, never a failure, and only for an ABSENT
+        variable. A present list that omits a declared ERC is usually
+        deliberate, so it is a verbose-only detail. See `oauth_erc_list_gap`.
+        """
+        from ldm_core.workspace.metadata import (
+            describe_oauth_erc_list_gap,
+            oauth_erc_list_gap,
+        )
+
+        try:
+            gap = oauth_erc_list_gap(lcp_file.parent)
+        except Exception:
+            return
+        if not gap:
+            return
+        label = lcp_file.parent.relative_to(p_path).as_posix()
+        summary, tip = describe_oauth_erc_list_gap(gap, label)
+        if gap["listed"] is not None:
+            UI.detail(f"[{p_path.name}] {summary}")
+            return
+        self.results.append(
+            (f"[{p_path.name}] OAuth ERC List", f"Missing ({label})", "warn")
+        )
+        self.add_hint(
+            f"[{p_path.name}] {summary} {tip}",
+            f"{GITHUB_DOCS_URL}/how-to/client_extensions.md"
+            "#oauth-applications-must-be-listed-in-lcpjson",
+        )
 
     def _check_pinned_mac(self, p_path, meta):
         """Is the running container still carrying the node's pinned MAC?
