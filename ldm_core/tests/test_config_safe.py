@@ -139,7 +139,9 @@ class TestConfigSafe(unittest.TestCase):
                 {"99.99": [("ldm test", "Custom test command")]},
                 clear=True,
             ):
-                with patch("ldm_core.constants.VERSION", "99.99.1"):
+                # X.Y.0: only a minor release falls back to the series key
+                # (LDM-#2412).
+                with patch("ldm_core.constants.VERSION", "99.99.0"):
                     check_and_display_upgrade_banner()
                     self.assertTrue(mock_heading.called)
                     # Verify custom announcement text was printed

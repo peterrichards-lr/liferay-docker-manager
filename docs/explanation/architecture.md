@@ -344,8 +344,8 @@ To ensure that projects using Liferay's internal search do not interfere with ot
 
 When the `ldm` command is executed, it runs through a lightweight initialization sequence before parsing arguments:
 
-- **Version Validation**: LDM checks its runtime state against the last known executed version stored in `~/.ldm/state`.
-- **Post-Upgrade Banner**: If a new version is detected, the `post-upgrade` hook triggers automatically. It retrieves and displays the version-specific **Release Notes banner** from the embedded changelog directly in the terminal, ensuring developers are immediately aware of breaking changes, UX refactors (like the transition from `init-from` to `link`), or new features.
+- **Version Validation**: LDM compares its version with the `last_run_version` recorded in `~/.ldmrc`.
+- **Post-Upgrade Banner**: If a new version is detected (and stdout is a terminal), LDM prints a welcome banner saying it was upgraded, followed by that release's highlights from `RELEASE_ANNOUNCEMENTS` in `ldm_core/constants.py`. The highlights are looked up by the exact version, then the version without its `-pre.N` suffix, then the `X.Y` series key **only for an `X.Y.0` release** (LDM-#2412). A patch release with no entry of its own shows the upgrade line and no highlights, rather than re-printing the `X.Y.0` notes as new; `scripts/release.py --promote` refuses to promote such a patch (LDM-#1663).
 
 ---
 
@@ -396,4 +396,4 @@ sequenceDiagram
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-21* | *Last Reviewed: 2026-10-21*
+*Last Updated: 2026-11-17* | *Last Reviewed: 2026-11-17*

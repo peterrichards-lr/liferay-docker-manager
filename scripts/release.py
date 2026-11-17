@@ -517,6 +517,42 @@ def check_release_announcements(version, announcements):
     )
 
 
+def check_patch_announcement_for_promotion(version, announcements):
+    """Does the stable patch being PROMOTED have its own entry (LDM-#1663, #2412)?
+
+    Returns (ok, message). `version` is the version being promoted, with or
+    without its "-pre.N" suffix -- the stable it becomes is the base.
+
+    The upgrade banner falls back to the "X.Y" key only for an X.Y.0 release
+    (`cli.resolve_release_announcements`), so a stable X.Y.Z with Z > 0 and no
+    "X.Y.Z" key would upgrade every user silently. v2.26.10 shipped exactly
+    so, and at the time the fallback showed them 2.26.0's notes as new.
+
+    Unlike `check_release_announcements` this is a refusal, not a warning:
+    promotion is the last point at which the entry can still be added, and
+    after the tag the Burn Rule makes the shipped banner permanent. X.Y.0 is
+    covered by the series key, which that check and the LDM-#1758 contract
+    test already guard.
+    """
+    base = version.split("-", 1)[0]
+    parts = base.split(".")
+    if len(parts) != 3 or parts[2] == "0":
+        return (
+            True,
+            f"✅ '{base}' is not a patch release; no patch announcement required.",
+        )
+    if announcements.get(base):
+        return True, (
+            f"✅ Verified release announcements key for patch '{base}' "
+            f"({len(announcements[base])} highlights registered)."
+        )
+    return False, (
+        f"❌ Error: RELEASE_ANNOUNCEMENTS in constants.py has no entry for "
+        f"'{base}'. A patch release needs its own key (LDM-#1663), or its "
+        f"upgrade banner announces nothing. Add one before promoting."
+    )
+
+
 def print_behaviour_coverage_gate(previous_tag):
     """Print the LDM-#1516 gate: exercised, or only its config asserted?
 
@@ -908,6 +944,16 @@ def main():  # noqa: C901, PLR0912, PLR0915
                 "   master does not carry this version, so this is not an "
                 "interrupted promotion. Cut a new pre-release cycle instead."
             )
+            sys.exit(1)
+
+        # LDM-#2412: refuse BEFORE the bump, while nothing is spent.
+        from ldm_core.constants import RELEASE_ANNOUNCEMENTS
+
+        patch_ok, patch_msg = check_patch_announcement_for_promotion(
+            current_version, RELEASE_ANNOUNCEMENTS
+        )
+        print(patch_msg)
+        if not patch_ok:
             sys.exit(1)
 
         print(

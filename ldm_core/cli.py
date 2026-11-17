@@ -3056,6 +3056,35 @@ def get_parser():  # noqa: PLR0915
     return parser, subparsers
 
 
+def resolve_release_announcements(version, announcements):
+    """Pick the upgrade banner's announcements for `version` (LDM-#2412).
+
+    Tried in order, first present key wins:
+
+      1. the exact version                        "2.26.11-pre.2"
+      2. the version without any pre-release      "2.26.11"
+         or build suffix
+      3. the "X.Y" minor key, ONLY for an X.Y.0   "2.26" (for "2.26.0[-pre.N]")
+
+    A patch with no entry of its own gets an empty list, never the minor's:
+    the "X.Y" entry describes X.Y.0, which the user has already seen, so the
+    old unconditional fallback re-printed it as new (v2.26.10 shipped like
+    that). Step 2 is what lets a pre-release tester see the entry its stable
+    will show; before it, "2.26.11-pre.2" could never match "2.26.11".
+    """
+    if version in announcements:
+        return announcements[version]
+
+    base = version.split("-", 1)[0].split("+", 1)[0]
+    if base in announcements:
+        return announcements[base]
+
+    parts = base.split(".")
+    if len(parts) == 3 and parts[2] == "0":
+        return announcements.get(".".join(parts[:2]), [])
+    return []
+
+
 def check_and_display_upgrade_banner():
     # Only run if not completing/testing
 
@@ -3095,9 +3124,8 @@ def check_and_display_upgrade_banner():
             UI.heading("Welcome to Liferay Docker Manager")
             print(f"🎉 {UI.GREEN}LDM has been upgraded to v{VERSION}!{UI.COLOR_OFF}")
 
-            v_prefix = ".".join(VERSION.split(".")[:2]) if "." in VERSION else VERSION
-            announcements = RELEASE_ANNOUNCEMENTS.get(
-                VERSION, RELEASE_ANNOUNCEMENTS.get(v_prefix, [])
+            announcements = resolve_release_announcements(
+                VERSION, RELEASE_ANNOUNCEMENTS
             )
 
             if announcements:
