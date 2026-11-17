@@ -1,0 +1,300 @@
+=== LDM BINARY VERIFICATION REPORT ===
+Timestamp:    Tue 17 Nov 2026 15:00:32 GMT
+Hostname:  [ANONYMIZED]
+Platform:     macos-27.2.1 arm64
+Run Context:  workstation
+Binary:    [ANONYMIZED]
+Version:      ldm 2.26.11-pre.2
+Script Ver:   2.26.11-pre.2
+Docker:    29.4.0
+Compose:   5.1.2
+
+>> Initializing Infrastructure
+[0;32m✅  Infrastructure setup complete.[0m
+>> Custom SSL Port Setup
+[0;32m✅  Infrastructure setup complete.[0m
+✅ Custom SSL Port & Recreate verified (port 8443).
+✅ Dev Guardrails verified.
+✅ Cascading default write refused with the working command named; non-cascading keys still write.
+✅ Config reset-all and revert verified, including the state-bearing refusal (LDM-#1853/#1854).
+✅ 'ldm config' answers from the deciding store, expands the defaults block and redacts inside it (LDM-#2174).
+✅ 'ldm renew-ssl' re-issues into <home>/liferay-docker-certs (serial changes), and .ldm/infra/certs is not used.
+✅ 'target add --mac-address' persists the value to ~/.ldmrc (LDM-#1759).
+✅ A stale container's MAC is refused with exit 3, naming both values (LDM-#1798).
+✅ Removed containers report 'Not Created' (not 'Stopped'), 'ldm start' refuses naming 'ldm run' (exit 1), and 'ldm run' recreates from the surviving volume with no data loss (LDM-#1870/#1873).
+✅ 'ldm stop' leaves containers present and names 'ldm start' (not 'ldm run'), and 'ldm start' confirms success with a next-step hint at default verbosity (LDM-#1937).
+✅ '--delete' removed the project directory, and stayed local.
+✅ A node-targeted '--delete' announces the node, degrades on an unreachable one, and still removes locally.
+✅ LDM_BRINGUP_TIMEOUT is read by the binary: a malformed value warns and falls back.
+✅ '--force' renders as an option, not an always-firing positional (LDM-#1835).
+✅ '--container' is honoured and stored sanitised as 'LDM-Cname' (LDM-#1836).
+✅ 'ldm guide' describes the real precedence and a command that works (LDM-#1824).
+✅ Linked workspace recorded: ldm link completes with --no-monitor and meta carries workspace_path (LDM-#1684/#1689).
+✅ Cloud workspace import verified: services copied, infrastructure skipped, cloud project ID recorded, code read from <repo>/liferay, and an undeterminable ID refused with exit 2 (LDM-#1681).
+✅ Workspace product pin verified: a mismatch warns and proceeds, an explicit -t and an agreeing pin stay silent (LDM-#1658).
+✅ Unparseable .ldmp manifest refused (trailing-junk; exit 1, before any project was created).
+✅ Unparseable .ldmp manifest refused (html-error-page; exit 1, before any project was created).
+✅ Portless OAuth redirect rewritten on deploy: http://localhost/o/oauth2/redirect -> http://localhost:8080/o/oauth2/redirect (LDM-#2175).
+✅ System Tray application started successfully and remained alive.
+✅ Project Collision verified.
+✅ Tag Validation Guardrail verified.
+✅ --nightly flag resolution verified.
+✅ --master flag alias verified.
+>> Target List
+[1;33m=== Registered Target Compute Nodes ===[0m
+[2m╭─────────────┬─────────────────┬──────────┬────────────────╮[0m
+│ [0;37m[1mTARGET NAME[0m │ [0;37m[1mHOST / ENDPOINT[0m │ [0;37m[1mSSH USER[0m │ [0;37m[1mACTIVE DEFAULT[0m │
+[2m├─────────────┼─────────────────┼──────────┼────────────────┤[0m
+│ local       │ localhost       │ -        │ YES [DEFAULT]  │
+[2m╰─────────────┴─────────────────┴──────────┴────────────────╯[0m
+>> Target Status (Local)
+[1;33m=== Target Compute Nodes Status & Connectivity Probe ===[0m
+[2m╭────────┬─────────────────┬────────┬────────────────┬─────────────────┬────────────────────╮[0m
+│ [0;37m[1mTARGET[0m │ [0;37m[1mHOST / ENDPOINT[0m │ [0;37m[1mSTATUS[0m │ [0;37m[1mENGINE VERSION[0m │ [0;37m[1mCPUs / MEMORY  [0m │ [0;37m[1mRUNNING CONTAINERS[0m │
+[2m├────────┼─────────────────┼────────┼────────────────┼─────────────────┼────────────────────┤[0m
+│ local  │ localhost       │ [0;32mONLINE[0m │ v29.4.0        │ 8 CPUs / 5.8 GB │ 3                  │
+[2m╰────────┴─────────────────┴────────┴────────────────┴─────────────────┴────────────────────╯[0m
+>> Target Add (Mock Node)
+[0;32m✅  Target node 'e2e-target-59917' (127.0.0.1) registered successfully.[0m
+✅ Target registration verified.
+>> Target Remove (Mock Node)
+[0;32m✅  Target node 'e2e-target-59917' removed.[0m
+>> Target Add (127.0.0.2 Loopback)
+[0;32m✅  Target node 'loopback-node-59917' (127.0.0.2) registered successfully.[0m
+✅ Loopback target registration verified.
+>> Target Status (Loopback Node)
+[1;33m=== Target Compute Nodes Status & Connectivity Probe ===[0m
+[2m╭─────────────────────┬─────────────────┬────────┬────────────────┬─────────────────┬────────────────────╮[0m
+│ [0;37m[1mTARGET             [0m │ [0;37m[1mHOST / ENDPOINT[0m │ [0;37m[1mSTATUS[0m │ [0;37m[1mENGINE VERSION[0m │ [0;37m[1mCPUs / MEMORY  [0m │ [0;37m[1mRUNNING CONTAINERS[0m │
+[2m├─────────────────────┼─────────────────┼────────┼────────────────┼─────────────────┼────────────────────┤[0m
+│ loopback-node-59917 │ 127.0.0.2       │ [0;32mONLINE[0m │ v29.4.0        │ 8 CPUs / 5.8 GB │ 3                  │
+[2m╰─────────────────────┴─────────────────┴────────┴────────────────┴─────────────────┴────────────────────╯[0m
+>> Target Remove (Loopback Node)
+[0;32m✅  Target node 'loopback-node-59917' removed.[0m
+>> Target Add (TEST-NET-1 Remote Node)
+[0;32m✅  Target node 'announce-node-59917' (192.0.2.10) registered successfully.[0m
+[0;33mℹ  Docker context 'announce-node-59917' dials ssh://192.0.2.10.[0m
+[1;33m=== LDM Sandbox Projects ===[0m
+[0;33mℹ  1 project targets a remote compute node (announce-proj-59917 -> announce-node-59917); this may take longer than usual, and will wait if the node is asleep.[0m
+[2m╭─────────────────────┬───────────────┬─────────────────────┬─────────────┬───────────────────────╮[0m
+│ [0;37m[1mProject            [0m │ [0;37m[1mVersion      [0m │ [0;37m[1mTarget             [0m │ [0;37m[1mStatus     [0m │ [0;37m[1mURL                  [0m │
+[2m├─────────────────────┼───────────────┼─────────────────────┼─────────────┼───────────────────────┤[0m
+│ [0;36mannounce-proj-59917[0m │ 2026.q1.7-lts │ [1;36mannounce-node-59917[0m │ [0;33mNot Created[0m │ [4mhttp://localhost:8099[0m │
+[2m╰─────────────────────┴───────────────┴─────────────────────┴─────────────┴───────────────────────╯[0m
+✅ Remote compute node announced up front, naming project -> node (LDM-#1341).
+✅ Announcement correctly suppressed under --json (LDM-#1093).
+[0;33mℹ  1 project targets a remote compute node (sshfail-proj-59917 -> sshfail-node-59917); this may take longer than usual, and will wait if the node is asleep.[0m
+[0;33mℹ  Cannot reach compute node 'sshfail-node-59917' over SSH (nobody@127.0.0.1:60183 refused the connection). It may still be starting -- retrying for up to 30s. Set LDM_SSH_READY_TIMEOUT=0 to disable.[0m
+[1;31m❌  Cannot reach compute node 'sshfail-node-59917' over SSH (nobody@127.0.0.1:60183 refused the connection).[0m
+[0;36m💡 Tip:      Nothing is listening on port 60183. If the node was started moments ago, sshd may not be up yet -- wait a few seconds and retry. Otherwise it may be stopped or re-addressed: check with 'ldm target status sshfail-node-59917', then re-register with 'ldm target add sshfail-node-59917 --host <ip> --user nobody --key <key>'.[0m
+✅ Unreachable node diagnosed by name and cause, with no raw blob (LDM-#1345).
+[0;33mℹ  The LDM project 'portconflict-59917' already exists and this command will reconfigure it.[0m
+[1;36m▶  Synchronizing Assets[0m
+[0;33mℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...[0m
+[1;31m❌  Port conflict detected: Port 5601 is already in use on the host and is required by service 'kibana' in your compose configuration. It is currently held by container 'ldm-e2e-port-holder-59917'.[0m
+[0;36m💡 Tip:      Service 'kibana' has a fixed port, so a re-run will produce 5601 again. Free up port 5601 on the host, or disable/move that service, then re-run.[0m
+✅ Late port conflict exits 4 and gives honest advice for a fixed-port service (LDM-#1350/#1397).
+>> Running LDM Project
+[0;33mℹ  The LDM project 'ldm-smoke-test-59917' already exists and this command will reconfigure it.[0m
+[1;36m▶  Synchronizing Assets[0m
+[0;33mℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...[0m
+[1;36m▶  Starting Container Stack[0m
+[0;32m✅  Project 'ldm-smoke-test-59917' started in background.[0m
+[0;36m💡  Next step: Run 'ldm link <path-to-cx>' to attach client extensions, or 'ldm logs -f ldm-smoke-test-59917' to tail logs.[0m
+❌ ERROR: Liferay failed to become healthy. Dumping logs...
+
+--- FAILURE DEBUG LOGS ---
+>> Logs for liferay-proxy-global:
+   state=running exit=0 oom-killed=false health=none
+
+   first errors:
+   last 50 lines:
+>> Logs for liferay-search-global:
+   state=running exit=0 oom-killed=false health=none
+
+   first errors:
+     {"@timestamp":"2026-11-17T15:01:06.113Z", "log.level": "INFO", "message":"failed to obtain region from default provider chain", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.repositories.s3.S3RepositoryPlugin","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster","
+     {"@timestamp":"2026-11-17T15:01:07.368Z", "log.level": "WARN", "message":"Failed to revoke access to default inference endpoint IDs: [rainbow-sprinkles, rerank-v1, multilingual-embed-v1, elser-v2], error: org.elasticsearch.cluster.block.ClusterBlockException: blocked by: [SERVICE_UNAVAILABLE/1/state not recovered / initialized];", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"ela
+     {"@timestamp":"2026-11-17T15:01:35.817Z", "log.level": "INFO", "message":"failed to obtain region from default provider chain", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.repositories.s3.S3RepositoryPlugin","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster","
+     {"@timestamp":"2026-11-17T15:01:37.058Z", "log.level": "WARN", "message":"Failed to revoke access to default inference endpoint IDs: [rainbow-sprinkles, rerank-v1, multilingual-embed-v1, elser-v2], error: org.elasticsearch.cluster.block.ClusterBlockException: blocked by: [SERVICE_UNAVAILABLE/1/state not recovered / initialized];", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"ela
+   last 50 lines:
+{"@timestamp":"2026-11-17T15:01:22.134Z", "log.level": "WARN", "message":"SLF4J: See https://www.slf4j.org/codes.html#noProviders for further details.", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"stderr","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:22.943Z", "log.level": "WARN",  "data_stream.dataset":"deprecation.elasticsearch","data_stream.namespace":"default","data_stream.type":"logs","elasticsearch.event.category":"settings","event.code":"indices.query.bool.max_clause_count","message":"[indices.query.bool.max_clause_count] setting was deprecated in Elasticsearch and will be removed in a future release." , "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"deprecation.elasticsearch","process.thread.name":"main","log.logger":"org.elasticsearch.deprecation.common.settings.Settings","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:22.961Z", "log.level": "INFO", "message":"using [1] data paths, mounts [[/usr/share/elasticsearch/data (mac)]], net usable_space [57.9gb], net total_space [228.2gb], types [virtiofs]", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.env.NodeEnvironment","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:22.962Z", "log.level": "INFO", "message":"heap size [512mb], compressed ordinary object pointers [true]", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.env.NodeEnvironment","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:23.214Z", "log.level": "INFO", "message":"node name [[CONTAINER-ID]], node ID [sjIBghYUT0SrqK3G-6L34w], cluster name [liferay-cluster], roles [data_cold, data, remote_cluster_client, master, data_warm, data_content, transform, data_hot, ml, data_frozen, ingest]", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.node.Node","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:25.337Z", "log.level": "INFO", "message":"Registered local node features [cluster.stats.source_modes, data_stream.auto_sharding, data_stream.failure_store, data_stream.lifecycle.global_retention, data_stream.rollover.lazy, desired_node.version_deprecated, esql.agg_values, esql.async_query, esql.base64_decode_encode, esql.casting_operator, esql.counter_types, esql.disable_nullable_opts, esql.from_options, esql.metadata_fields, esql.metrics_counter_fields, esql.mv_ordering_sorted_ascending, esql.mv_sort, esql.resolve_fields_api, esql.spatial_points_from_source, esql.spatial_shapes, esql.st_centroid_agg, esql.st_contains_within, esql.st_disjoint, esql.st_intersects, esql.st_x_y, esql.string_literal_auto_casting, esql.string_literal_auto_casting_extended, esql.timespan_abbreviations, features_supported, file_settings, flattened.ignore_above_support, geoip.downloader.database.configuration, get_database_configuration_action.multi_node, health.dsl.info, health.extended_repository_indicator, knn_retriever_supported, license-trial-independent-version, linear_retriever_supported, logsdb_telemetry, logsdb_telemetry_stats, mapper.boolean_dimension, mapper.flattened.ignore_above_with_arrays_support, mapper.ignore_above_index_level_setting, mapper.index_sorting_on_nested, mapper.keyword_dimension_ignore_above, mapper.keyword_normalizer_synthetic_source, mapper.pass_through_priority, mapper.query_index_mode, mapper.range.null_values_off_by_one_fix, mapper.segment_level_fields_stats, mapper.source.synthetic_source_copy_to_fix, mapper.source.synthetic_source_copy_to_inside_objects_fix, mapper.source.synthetic_source_fallback, mapper.source.synthetic_source_stored_fields_advance_fix, mapper.source.synthetic_source_with_copy_to_and_doc_values_false, mapper.subobjects_auto, mapper.subobjects_auto_fixes, mapper.synthetic_source_keep, mapper.track_ignored_source, mapper.vectors.bbq, mapper.vectors.bit_vectors, mapper.vectors.int4_quantization, put_database_configuration_action.ipinfo, query_rule_list_types, query_rule_retriever_supported, query_rules.test, random_reranker_retriever_supported, repositories.supports_usage_stats, rest.capabilities_action, rest.local_only_capabilities, retrievers_supported, routing.boolean_routing_path, routing.multi_value_routing_path, rrf_retriever_composition_supported, rrf_retriever_supported, script.hamming, script.term_stats, search.vectors.k_param_supported, security.migration_framework, security.queryable_built_in_roles, security.role_mapping_cleanup, security.roles_metadata_flattened, semantic_text.default_elser_2, semantic_text.search_inference_id, simulate.component.template.substitutions, simulate.ignored.fields, simulate.index.template.substitutions, simulate.mapping.addition, simulate.mapping.validation, simulate.mapping.validation.templates, simulate.support.non.template.mapping, slm.interval_schedule, snapshot.repository_verify_integrity, standard_retriever_supported, stats.include_disk_thresholds, text_similarity_reranker_retriever_composition_supported, text_similarity_reranker_retriever_supported, tsdb.ts_routing_hash_doc_value_parse_byte_ref, unified_highlighter_matched_fields, usage.data_tiers.precalculate_stats]", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.features.FeatureService","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:26.515Z", "log.level": "INFO", "message":"using rate limit [40mb] with [default=40mb, read=0b, write=0b, max=0b]", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.indices.recovery.RecoverySettings","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:26.632Z", "log.level": "INFO", "message":"Updated global default retention to [null]", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.cluster.metadata.DataStreamGlobalRetentionSettings","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:26.632Z", "log.level": "INFO", "message":"Updated global max retention to [null]", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.cluster.metadata.DataStreamGlobalRetentionSettings","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:26.633Z", "log.level": "INFO", "message":"Updated failures default retention to [30d]", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.cluster.metadata.DataStreamGlobalRetentionSettings","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:26.633Z", "log.level": "INFO", "message":"Updated data stream name patterns for enabling failure store to [[]]", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.cluster.metadata.DataStreamFailureStoreSettings","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:26.865Z", "log.level": "INFO", "message":"[controller/110] [Main.cc@123] controller (64 bit): Version 8.19.1 (Build c2028ca912237b) Copyright (c) 2025 Elasticsearch BV", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"ml-cpp-log-tail-thread","log.logger":"org.elasticsearch.xpack.ml.process.logging.CppLogMessageHandler","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:27.185Z", "log.level": "INFO", "message":"OTel ingest plugin is enabled", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.xpack.oteldata.OTelPlugin","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:27.209Z", "log.level": "INFO", "message":"OpenTelemetry index template registry is enabled", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.xpack.core.template.YamlTemplateRegistry","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:27.211Z", "log.level": "INFO", "message":"Sending apm metrics is disabled", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.telemetry.apm.APM","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:27.212Z", "log.level": "INFO", "message":"Sending apm tracing is disabled", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.telemetry.apm.APM","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:27.239Z", "log.level": "INFO", "message":"Security is disabled", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.xpack.security.Security","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:27.498Z", "log.level": "INFO", "message":"Watcher initialized components at 2026-11-17T15:01:27.498Z", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.xpack.watcher.Watcher","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:27.622Z", "log.level": "INFO", "message":"Profiling is enabled", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.xpack.profiling.ProfilingPlugin","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:27.641Z", "log.level": "INFO", "message":"profiling index templates will not be installed or reinstalled", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.xpack.profiling.ProfilingPlugin","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:27.648Z", "log.level": "INFO", "message":"APM ingest plugin is enabled", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.xpack.apmdata.APMPlugin","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:27.692Z", "log.level": "INFO", "message":"apm index template registry is enabled", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.xpack.core.template.YamlTemplateRegistry","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:28.085Z", "log.level": "INFO", "message":"creating NettyAllocator with the following configs: [name=unpooled, suggested_max_allocation_size=1mb, factors={es.unsafe.use_unpooled_allocator=null, g1gc_enabled=true, g1gc_region_size=4mb, heap_size=512mb}]", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.transport.netty4.NettyAllocator","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:28.123Z", "log.level": "INFO", "message":"using discovery type [single-node] and seed hosts providers [settings]", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.discovery.DiscoveryModule","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:28.958Z", "log.level": "INFO", "message":"initialized", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.node.Node","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:28.958Z", "log.level": "INFO", "message":"starting ...", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.node.Node","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:35.817Z", "log.level": "INFO", "message":"failed to obtain region from default provider chain", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.repositories.s3.S3RepositoryPlugin","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster","error.type":"software.amazon.awssdk.core.exception.SdkClientException","error.message":"Unable to load region from any of the providers in the chain software.amazon.awssdk.regions.providers.DefaultAwsRegionProviderChain@2172104e: [software.amazon.awssdk.regions.providers.SystemSettingsRegionProvider@1cdc470b: Unable to load region from system settings. Region must be specified either via environment variable (AWS_REGION) or  system property (aws.region)., software.amazon.awssdk.regions.providers.AwsProfileRegionProvider@1d7ff206: No region provided in profile: default, software.amazon.awssdk.regions.providers.InstanceProfileRegionProvider@31bca9c1: Unable to contact EC2 metadata service.]","error.stack_trace":"software.amazon.awssdk.core.exception.SdkClientException: Unable to load region from any of the providers in the chain software.amazon.awssdk.regions.providers.DefaultAwsRegionProviderChain@2172104e: [software.amazon.awssdk.regions.providers.SystemSettingsRegionProvider@1cdc470b: Unable to load region from system settings. Region must be specified either via environment variable (AWS_REGION) or  system property (aws.region)., software.amazon.awssdk.regions.providers.AwsProfileRegionProvider@1d7ff206: No region provided in profile: default, software.amazon.awssdk.regions.providers.InstanceProfileRegionProvider@31bca9c1: Unable to contact EC2 metadata service.]\n\tat software.amazon.awssdk.core.exception.SdkClientException$BuilderImpl.build(SdkClientException.java:130)\n\tat software.amazon.awssdk.regions.providers.AwsRegionProviderChain.getRegion(AwsRegionProviderChain.java:70)\n\tat org.elasticsearch.repositories.s3.S3RepositoryPlugin.getDefaultRegion(S3RepositoryPlugin.java:83)\n\tat org.elasticsearch.repositories.s3.S3Service.lambda$new$0(S3Service.java:144)\n\tat org.elasticsearch.server@8.19.1/org.elasticsearch.common.util.concurrent.RunOnce.run(RunOnce.java:41)\n\tat org.elasticsearch.repositories.s3.S3Service.doStart(S3Service.java:467)\n\tat org.elasticsearch.server@8.19.1/org.elasticsearch.common.component.AbstractLifecycleComponent.start(AbstractLifecycleComponent.java:51)\n\tat java.base/java.lang.Iterable.forEach(Iterable.java:75)\n\tat org.elasticsearch.server@8.19.1/org.elasticsearch.node.Node.start(Node.java:294)\n\tat org.elasticsearch.server@8.19.1/org.elasticsearch.bootstrap.Elasticsearch.start(Elasticsearch.java:617)\n\tat org.elasticsearch.server@8.19.1/org.elasticsearch.bootstrap.Elasticsearch.initPhase3(Elasticsearch.java:417)\n\tat org.elasticsearch.server@8.19.1/org.elasticsearch.bootstrap.Elasticsearch.main(Elasticsearch.java:99)\n"}
+{"@timestamp":"2026-11-17T15:01:35.887Z", "log.level": "INFO", "message":"persistent cache index loaded", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.xpack.searchablesnapshots.cache.full.PersistentCache","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:35.888Z", "log.level": "INFO", "message":"deprecation component started", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.xpack.deprecation.logging.DeprecationIndexingComponent","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:35.944Z", "log.level": "INFO", "message":"publish_address {192.168.97.2:9300}, bound_addresses {[::]:9300}", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.transport.TransportService","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:36.840Z", "log.level": "INFO", "message":"this node is locked into cluster UUID [qqKaqR-gR6eECOjH_FtLsQ] and will not attempt further cluster bootstrapping", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.cluster.coordination.ClusterBootstrapService","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:36.955Z", "log.level": "INFO", "message":"elected-as-master ([1] nodes joined in term 22)[_FINISH_ELECTION_, {[CONTAINER-ID]}{sjIBghYUT0SrqK3G-6L34w}{VACGJuHrSL2yUZvEr7-FVg}{[CONTAINER-ID]}{192.168.97.2}{192.168.97.2:9300}{cdfhilmrstw}{8.19.1}{7000099-8536000} completing election], term: 22, version: 1591, delta: master node changed {previous [], current [{[CONTAINER-ID]}{sjIBghYUT0SrqK3G-6L34w}{VACGJuHrSL2yUZvEr7-FVg}{[CONTAINER-ID]}{192.168.97.2}{192.168.97.2:9300}{cdfhilmrstw}{8.19.1}{7000099-8536000}]}", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"elasticsearch[[CONTAINER-ID]][masterService#updateTask][T#1]","log.logger":"org.elasticsearch.cluster.service.MasterService","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:37.004Z", "log.level": "INFO", "message":"master node changed {previous [], current [{[CONTAINER-ID]}{sjIBghYUT0SrqK3G-6L34w}{VACGJuHrSL2yUZvEr7-FVg}{[CONTAINER-ID]}{192.168.97.2}{192.168.97.2:9300}{cdfhilmrstw}{8.19.1}{7000099-8536000}]}, term: 22, version: 1591, reason: Publication{term=22, version=1591}", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"elasticsearch[[CONTAINER-ID]][clusterApplierService#updateTask][T#1]","log.logger":"org.elasticsearch.cluster.service.ClusterApplierService","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:37.029Z", "log.level": "INFO", "message":"node-join: [{[CONTAINER-ID]}{sjIBghYUT0SrqK3G-6L34w}{VACGJuHrSL2yUZvEr7-FVg}{[CONTAINER-ID]}{192.168.97.2}{192.168.97.2:9300}{cdfhilmrstw}{8.19.1}{7000099-8536000}] with reason [completing election]", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"elasticsearch[[CONTAINER-ID]][masterService#updateTask][T#1]","log.logger":"org.elasticsearch.cluster.coordination.NodeJoinExecutor","elasticsearch.cluster.uuid":"qqKaqR-gR6eECOjH_FtLsQ","elasticsearch.node.id":"sjIBghYUT0SrqK3G-6L34w","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:37.029Z", "log.level": "INFO", "message":"publish_address {192.168.97.2:9200}, bound_addresses {[::]:9200}", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.http.AbstractHttpServerTransport","elasticsearch.cluster.uuid":"qqKaqR-gR6eECOjH_FtLsQ","elasticsearch.node.id":"sjIBghYUT0SrqK3G-6L34w","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:37.036Z", "log.level": "INFO", "message":"license state changed, now [valid]", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"elasticsearch[[CONTAINER-ID]][generic][T#3]","log.logger":"org.elasticsearch.xpack.writeloadforecaster.LicensedWriteLoadForecaster","elasticsearch.cluster.uuid":"qqKaqR-gR6eECOjH_FtLsQ","elasticsearch.node.id":"sjIBghYUT0SrqK3G-6L34w","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:37.044Z", "log.level": "INFO", "message":"started {[CONTAINER-ID]}{sjIBghYUT0SrqK3G-6L34w}{VACGJuHrSL2yUZvEr7-FVg}{[CONTAINER-ID]}{192.168.97.2}{192.168.97.2:9300}{cdfhilmrstw}{8.19.1}{7000099-8536000}{ml.machine_memory=6272442368, transform.config_version=10.0.0, xpack.installed=true, ml.config_version=12.0.0, ml.max_jvm_size=536870912, ml.allocated_processors_double=8.0, ml.allocated_processors=8}", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.node.Node","elasticsearch.cluster.uuid":"qqKaqR-gR6eECOjH_FtLsQ","elasticsearch.node.id":"sjIBghYUT0SrqK3G-6L34w","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:37.054Z", "log.level": "INFO", "message":"updating [action.auto_create_index] from [true] to [-ldm-ldm-smoke-test-55126-roundtrip-*,-ldm-ldm-smoke-test-62356-roundtrip-*,-ldm-ldm-smoke-test-59614-roundtrip-*,-ldm-ldm-smoke-test-52681-roundtrip-*,-ldm-ldm-smoke-test-53996-roundtrip-*,-ldm-ldm-smoke-test-51099-roundtrip-*,*]", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"elasticsearch[[CONTAINER-ID]][clusterApplierService#updateTask][T#1]","log.logger":"org.elasticsearch.common.settings.ClusterSettings","elasticsearch.cluster.uuid":"qqKaqR-gR6eECOjH_FtLsQ","elasticsearch.node.id":"sjIBghYUT0SrqK3G-6L34w","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:37.058Z", "log.level": "WARN", "message":"Failed to revoke access to default inference endpoint IDs: [rainbow-sprinkles, rerank-v1, multilingual-embed-v1, elser-v2], error: org.elasticsearch.cluster.block.ClusterBlockException: blocked by: [SERVICE_UNAVAILABLE/1/state not recovered / initialized];", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"elasticsearch[[CONTAINER-ID]][inference_utility][T#1]","log.logger":"org.elasticsearch.xpack.inference.services.elastic.authorization.ElasticInferenceServiceAuthorizationHandler","elasticsearch.cluster.uuid":"qqKaqR-gR6eECOjH_FtLsQ","elasticsearch.node.id":"sjIBghYUT0SrqK3G-6L34w","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:37.380Z", "log.level": "INFO", "message":"ML legacy indices rolled over", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"elasticsearch[[CONTAINER-ID]][ml_utility][T#1]","log.logger":"org.elasticsearch.xpack.ml.MlIndexRollover","elasticsearch.cluster.uuid":"qqKaqR-gR6eECOjH_FtLsQ","elasticsearch.node.id":"sjIBghYUT0SrqK3G-6L34w","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:37.380Z", "log.level": "INFO", "message":"legacy ml anomalies indices rolled over and aliases updated", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"elasticsearch[[CONTAINER-ID]][ml_utility][T#1]","log.logger":"org.elasticsearch.xpack.ml.MlAnomaliesIndexUpdate","elasticsearch.cluster.uuid":"qqKaqR-gR6eECOjH_FtLsQ","elasticsearch.node.id":"sjIBghYUT0SrqK3G-6L34w","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:37.450Z", "log.level": "INFO", "message":"license [ae090aea-d79e-432c-81fc-6d683f123a9c] mode [basic] - valid", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"elasticsearch[[CONTAINER-ID]][clusterApplierService#updateTask][T#1]","log.logger":"org.elasticsearch.license.ClusterStateLicenseService","elasticsearch.cluster.uuid":"qqKaqR-gR6eECOjH_FtLsQ","elasticsearch.node.id":"sjIBghYUT0SrqK3G-6L34w","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:37.452Z", "log.level": "INFO", "message":"starting file watcher ...", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"elasticsearch[[CONTAINER-ID]][clusterApplierService#updateTask][T#1]","log.logger":"org.elasticsearch.common.file.AbstractFileWatchingService","elasticsearch.cluster.uuid":"qqKaqR-gR6eECOjH_FtLsQ","elasticsearch.node.id":"sjIBghYUT0SrqK3G-6L34w","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:37.456Z", "log.level": "INFO", "message":"file settings service up and running [tid=70]", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"elasticsearch[file-watcher[/usr/share/elasticsearch/config/operator/settings.json]]","log.logger":"org.elasticsearch.common.file.AbstractFileWatchingService","elasticsearch.cluster.uuid":"qqKaqR-gR6eECOjH_FtLsQ","elasticsearch.node.id":"sjIBghYUT0SrqK3G-6L34w","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:37.456Z", "log.level": "INFO", "message":"setting file [/usr/share/elasticsearch/config/operator/settings.json] not found, initializing [file_settings] as empty", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"elasticsearch[file-watcher[/usr/share/elasticsearch/config/operator/settings.json]]","log.logger":"org.elasticsearch.reservedstate.service.FileSettingsService","elasticsearch.cluster.uuid":"qqKaqR-gR6eECOjH_FtLsQ","elasticsearch.node.id":"sjIBghYUT0SrqK3G-6L34w","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:37.456Z", "log.level": "INFO", "message":"recovered [105] indices into cluster_state", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"elasticsearch[[CONTAINER-ID]][masterService#updateTask][T#1]","log.logger":"org.elasticsearch.gateway.GatewayService","elasticsearch.cluster.uuid":"qqKaqR-gR6eECOjH_FtLsQ","elasticsearch.node.id":"sjIBghYUT0SrqK3G-6L34w","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:37.580Z", "log.level": "INFO", "message":"license state changed, now [not valid]", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"elasticsearch[[CONTAINER-ID]][generic][T#2]","log.logger":"org.elasticsearch.xpack.writeloadforecaster.LicensedWriteLoadForecaster","elasticsearch.cluster.uuid":"qqKaqR-gR6eECOjH_FtLsQ","elasticsearch.node.id":"sjIBghYUT0SrqK3G-6L34w","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:38.663Z", "log.level": "INFO", "message":"Node [{[CONTAINER-ID]}{sjIBghYUT0SrqK3G-6L34w}] is selected as the current health node.", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"elasticsearch[[CONTAINER-ID]][management][T#4]","log.logger":"org.elasticsearch.health.node.selection.HealthNodeTaskExecutor","elasticsearch.cluster.uuid":"qqKaqR-gR6eECOjH_FtLsQ","elasticsearch.node.id":"sjIBghYUT0SrqK3G-6L34w","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:01:41.613Z", "log.level": "INFO",  "current.health":"GREEN","message":"Cluster health status changed from [RED] to [GREEN] (reason: [shards started [[ldm-ldm-smoke-test-51099-roundtrip-0][0]]]).","previous.health":"RED","reason":"shards started [[ldm-ldm-smoke-test-51099-roundtrip-0][0]]" , "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"elasticsearch[[CONTAINER-ID]][masterService#updateTask][T#1]","log.logger":"org.elasticsearch.cluster.routing.allocation.AllocationService","elasticsearch.cluster.uuid":"qqKaqR-gR6eECOjH_FtLsQ","elasticsearch.node.id":"sjIBghYUT0SrqK3G-6L34w","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+{"@timestamp":"2026-11-17T15:04:54.938Z", "log.level": "WARN", "message":"timer thread slept for [2m/124905ms] on absolute clock which is above the warn threshold of [5000ms]", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"elasticsearch[[CONTAINER-ID]][[timer]]","log.logger":"org.elasticsearch.threadpool.ThreadPool","elasticsearch.cluster.uuid":"qqKaqR-gR6eECOjH_FtLsQ","elasticsearch.node.id":"sjIBghYUT0SrqK3G-6L34w","elasticsearch.node.name":"[CONTAINER-ID]","elasticsearch.cluster.name":"liferay-cluster"}
+>> Logs for ldm-smoke-test-59917:
+   state=running exit=0 oom-killed=false health=starting failing-streak=0
+
+   first errors:
+   last 50 lines:
+
+NOTE: Picked up JDK_JAVA_OPTIONS:  --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/sun.net.www.protocol.http=ALL-UNNAMED --add-opens=java.base/sun.net.www.protocol.https=ALL-UNNAMED --add-opens=java.base/sun.util.calendar=ALL-UNNAMED --add-opens=java.rmi/sun.rmi.transport=ALL-UNNAMED --add-opens=jdk.zipfs/jdk.nio.zipfs=ALL-UNNAMED
+17-Nov-2026 15:10:41.414 INFO [main] org.apache.catalina.startup.Catalina.load Server initialization in [534] milliseconds
+Loading jar:file:/opt/liferay/tomcat/webapps/ROOT/WEB-INF/shielded-container-lib/portal-impl.jar!/system.properties
+15:10:42,512 WARN  [EnvPropertiesUtil:54] Unable to decode part "status" from "container_status_enabled", preserve it literally
+15:10:42,514 WARN  [EnvPropertiesUtil:54] Unable to decode part "status" from "container_status_request_timeout", preserve it literally
+15:10:42,515 WARN  [EnvPropertiesUtil:54] Unable to decode part "tomcat" from "container_tomcat_thread_active_count_enabled", preserve it literally
+15:10:42,515 WARN  [EnvPropertiesUtil:54] Unable to decode part "active" from "container_tomcat_thread_active_count_enabled", preserve it literally
+15:10:42,515 WARN  [EnvPropertiesUtil:54] Unable to decode part "status" from "container_status_request_content", preserve it literally
+15:10:42,516 WARN  [EnvPropertiesUtil:54] Unable to decode part "startup" from "container_startup_lock_file", preserve it literally
+15:10:42,516 WARN  [EnvPropertiesUtil:54] Unable to decode part "thread" from "container_thread_dump_interval_file", preserve it literally
+15:10:42,516 WARN  [EnvPropertiesUtil:54] Unable to decode part "interval" from "container_thread_dump_interval_file", preserve it literally
+15:10:42,517 WARN  [EnvPropertiesUtil:54] Unable to decode part "status" from "container_status_active_modules", preserve it literally
+15:10:42,517 WARN  [EnvPropertiesUtil:54] Unable to decode part "trial" from "disable_trial_license", preserve it literally
+15:10:42,517 WARN  [EnvPropertiesUtil:54] Unable to decode part "configuration" from "log4j2_configuration_file", preserve it literally
+15:10:42,518 WARN  [EnvPropertiesUtil:54] Unable to decode part "tomcat" from "container_tomcat_thread_active_count_threshold", preserve it literally
+15:10:42,518 WARN  [EnvPropertiesUtil:54] Unable to decode part "active" from "container_tomcat_thread_active_count_threshold", preserve it literally
+15:10:42,518 WARN  [EnvPropertiesUtil:54] Unable to decode part "status" from "container_status_request_url", preserve it literally
+15:10:42,518 WARN  [EnvPropertiesUtil:54] Unable to decode part "thread" from "container_thread_dumps_directory", preserve it literally
+15:10:42,519 WARN  [EnvPropertiesUtil:54] Unable to decode part "startup" from "container_startup_lock_enabled", preserve it literally
+15:10:42,519 WARN  [EnvPropertiesUtil:54] Unable to decode part "kill" from "container_kill_on_failure", preserve it literally
+Loading jar:file:/opt/liferay/tomcat/webapps/ROOT/WEB-INF/shielded-container-lib/portal-impl.jar!/portal.properties
+Loading file:/opt/liferay/portal-ext.properties
+2026-11-17 15:10:42.817 INFO  [main][PortalContextLoaderListener:531] JVM arguments: --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/sun.net.www.protocol.http=ALL-UNNAMED --add-opens=java.base/sun.net.www.protocol.https=ALL-UNNAMED --add-opens=java.base/sun.util.calendar=ALL-UNNAMED --add-opens=java.rmi/sun.rmi.transport=ALL-UNNAMED --add-opens=jdk.zipfs/jdk.nio.zipfs=ALL-UNNAMED -Djava.util.logging.config.file=/opt/liferay/tomcat/conf/logging.properties -Djava.util.logging.manager=org.apache.juli.ClassLoaderLogManager -Djdk.tls.ephemeralDHKeySize=2048 -Djava.protocol.handler.pkgs=org.apache.catalina.webresources -Dsun.io.useCanonCaches=false -Dorg.apache.catalina.security.SecurityListener.UMASK=0022 --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.util.concurrent=ALL-UNNAMED --add-opens=java.rmi/sun.rmi.transport=ALL-UNNAMED -Dfile.encoding=UTF-8 -Djava.net.preferIPv4Stack=true -Duser.timezone=GMT -Xms2560m -Xmx2560m -XX:MaxNewSize=1536m -XX:MaxMetaspaceSize=768m -XX:MetaspaceSize=768m -XX:NewSize=1536m -XX:SurvivorRatio=7 -Xms2048m -Xmx3072m -XX:MaxMetaspaceSize=512m -XX:MetaspaceSize=512m -XX:NewSize=1013m -XX:MaxNewSize=1013m -Dfile.encoding=UTF8 -Duser.timezone=GMT --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.util.concurrent=ALL-UNNAMED --add-opens=java.base/java.text=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/sun.net.www.protocol.http=ALL-UNNAMED --add-opens=java.base/sun.net.www.protocol.https=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED --add-opens=java.base/sun.security.action=ALL-UNNAMED --add-opens=java.base/sun.security.ssl=ALL-UNNAMED --add-opens=java.base/sun.security.util=ALL-UNNAMED --add-opens=java.base/sun.security.x509=ALL-UNNAMED --add-opens=java.base/sun.util.calendar=ALL-UNNAMED --add-opens=java.management/sun.management=ALL-UNNAMED --add-opens=java.rmi/sun.rmi.transport=ALL-UNNAMED --add-opens=jdk.management/com.sun.management.internal=ALL-UNNAMED --add-opens=jdk.zipfs/jdk.nio.zipfs=ALL-UNNAMED -Djdk.util.zip.disableZip64ExtraFieldValidation=true -Dcatalina.base=/opt/liferay/tomcat -Dcatalina.home=/opt/liferay/tomcat -Djava.io.tmpdir=/opt/liferay/tomcat/temp
+2026-11-17 15:10:42.826 INFO  [main][AutoDeployDir:306] Processing trial-dxp-license-1778776154000.xml
+2026-11-17 15:10:50.338 INFO  [SystemExecutorServiceUtil-1][DataSourceFactoryUtil:426] Rewrote JDBC URL from jdbc:postgresql://ldm-smoke-test-59917-db:5432/lportal to jdbc:postgresql://ldm-smoke-test-59917-db:5432/lportal?reWriteBatchedInserts=true
+2026-11-17 15:10:50.647 INFO  [SystemExecutorServiceUtil-1][DialectDetector:134] Using dialect org.hibernate.dialect.PostgreSQL10Dialect for PostgreSQL 16.2
+2026-11-17 15:10:50.750 INFO  [SystemExecutorServiceUtil-1][DBInitUtil:138] Create tables and populate with default data
+2026-11-17 15:10:55.022 INFO  [main][ModuleFrameworkImpl:1355] Starting initial bundles
+2026-11-17 15:10:56.565 INFO  [main][InterpolationConfigurationPlugin:109] Configured directory for secrets: /opt/liferay/osgi/configs
+2026-11-17 15:10:57.718 INFO  [main][ModuleFrameworkImpl:1645] Started initial bundles
+2026-11-17 15:10:57.721 INFO  [main][ModuleFrameworkImpl:1684] Starting dynamic bundles
+2026-11-17 15:11:00.135 WARN  [Start Level: Equinox Container: ec5739ab-d97e-4fe2-9bc1-e2ba62836d3c][SidecarManager:79] Liferay automatically starts a child process of Elasticsearch named sidecar for convenient development and demonstration purposes. Do NOT use sidecar in production. Refer to the documentation for details on the limitations of sidecar and instructions on configuring a remote Elasticsearch connection in the Control Panel.
+2026-11-17 15:11:08.700 INFO  [main][ModuleFrameworkImpl:1707] Started dynamic bundles
+2026-11-17 15:11:08.703 INFO  [main][ModuleFrameworkImpl:1714] Starting web bundles
+2026-11-17 15:11:10.594 INFO  [SystemExecutorServiceUtil-2][Sidecar:210] Sidecar Elasticsearch 8.19.11 liferay_sidecar started at 127.0.0.1:9201
+2026-11-17 15:11:11.186 INFO  [main][ModuleFrameworkImpl:1768] Started web bundles
+2026-11-17 15:11:11.187 INFO  [main][ModuleFrameworkImpl:283] Navigate to Control Panel > System > Gogo Shell and enter "lb" to see all bundles
+
+    __    ____________________  _____  __
+   / /   /  _/ ____/ ____/ __ \/   \ \/ /
+  / /    / // /_  / __/ / /_/ / /| |\  /
+ / /____/ // __/ / /___/ _, _/ ___ |/ /
+/_____/___/_/   /_____/_/ |_/_/  |_/_/
+
+Starting Liferay Digital Experience Platform 2026.Q1.7 LTS (May 12, 2026)
+
+2026-11-17 15:11:13.120 INFO  [main][StartupHelperUtil:102] There are no patches installed
+2026-11-17 15:11:13.356 INFO  [main][c:-1] Failed to find directory /opt/liferay/data/license
+2026-11-17 15:11:13.741 INFO  [main][AutoDeployDir:207] Auto deploy scanner started for /opt/liferay/deploy
+>> Logs for ldm-smoke-test-59917-db:
+   state=running exit=0 oom-killed=false health=healthy failing-streak=0
+   probe exit=0: /var/run/postgresql:5432 - accepting connections
+
+   probe exit=0: /var/run/postgresql:5432 - accepting connections
+
+   probe exit=0: /var/run/postgresql:5432 - accepting connections
+
+   probe exit=0: /var/run/postgresql:5432 - accepting connections
+
+   probe exit=0: /var/run/postgresql:5432 - accepting connections
+
+
+   first errors:
+     2026-11-17 15:10:50.728 UTC [84] ERROR:  relation "release_" does not exist at character 127
+     2026-11-17 15:10:50.748 UTC [84] ERROR:  relation "release_" does not exist
+     2026-11-17 15:10:50.748 UTC [84] ERROR:  relation "release_" does not exist
+     2026-11-17 15:10:50.749 UTC [84] ERROR:  relation "release_" does not exist
+     2026-11-17 15:10:50.749 UTC [84] ERROR:  relation "release_" does not exist
+     2026-11-17 15:10:50.749 UTC [84] ERROR:  relation "release_" does not exist at character 127
+   last 50 lines:
+syncing data to disk ... ok
+
+
+Success. You can now start the database server using:
+
+    pg_ctl -D /var/lib/postgresql/data -l logfile start
+
+initdb: warning: enabling "trust" authentication for local connections
+initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+waiting for server to start....2026-11-17 15:10:32.398 UTC [48] LOG:  starting PostgreSQL 16.2 (Debian 16.2-1.pgdg120+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 12.2.0-14) 12.2.0, 64-bit
+2026-11-17 15:10:32.400 UTC [48] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-11-17 15:10:32.403 UTC [51] LOG:  database system was shut down at 2026-11-17 15:10:31 UTC
+2026-11-17 15:10:32.407 UTC [48] LOG:  database system is ready to accept connections
+ done
+server started
+CREATE DATABASE
+
+
+/usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+
+waiting for server to shut down...2026-11-17 15:10:32.586 UTC [48] LOG:  received fast shutdown request
+.2026-11-17 15:10:32.588 UTC [48] LOG:  aborting any active transactions
+2026-11-17 15:10:32.590 UTC [48] LOG:  background worker "logical replication launcher" (PID 54) exited with exit code 1
+2026-11-17 15:10:32.590 UTC [49] LOG:  shutting down
+2026-11-17 15:10:32.592 UTC [49] LOG:  checkpoint starting: shutdown immediate
+2026-11-17 15:10:32.859 UTC [49] LOG:  checkpoint complete: wrote 923 buffers (0.7%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.028 s, sync=0.232 s, total=0.269 s; sync files=301, longest=0.009 s, average=0.001 s; distance=4257 kB, estimate=4257 kB; lsn=0/1913018, redo lsn=0/1913018
+2026-11-17 15:10:32.866 UTC [48] LOG:  database system is shut down
+ done
+server stopped
+
+PostgreSQL init process complete; ready for start up.
+
+2026-11-17 15:10:32.919 UTC [1] LOG:  starting PostgreSQL 16.2 (Debian 16.2-1.pgdg120+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 12.2.0-14) 12.2.0, 64-bit
+2026-11-17 15:10:32.919 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+2026-11-17 15:10:32.919 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+2026-11-17 15:10:32.921 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-11-17 15:10:32.924 UTC [64] LOG:  database system was shut down at 2026-11-17 15:10:32 UTC
+2026-11-17 15:10:32.927 UTC [1] LOG:  database system is ready to accept connections
+2026-11-17 15:10:50.728 UTC [84] ERROR:  relation "release_" does not exist at character 127
+2026-11-17 15:10:50.728 UTC [84] STATEMENT:  select schemaVersion, buildNumber, buildDate, versionDisplayName, state_, testString, (testString = $1) as caseSensitive from Release_ where releaseId = $2
+2026-11-17 15:10:50.748 UTC [84] ERROR:  relation "release_" does not exist
+2026-11-17 15:10:50.748 UTC [84] STATEMENT:  alter table Release_ add mvccVersion bigint default 0 not null
+2026-11-17 15:10:50.748 UTC [84] ERROR:  relation "release_" does not exist
+2026-11-17 15:10:50.748 UTC [84] STATEMENT:  alter table Release_ add schemaVersion varchar(75) null
+2026-11-17 15:10:50.749 UTC [84] ERROR:  relation "release_" does not exist
+2026-11-17 15:10:50.749 UTC [84] STATEMENT:  alter table Release_ add versionDisplayName varchar(75) null
+2026-11-17 15:10:50.749 UTC [84] ERROR:  relation "release_" does not exist
+2026-11-17 15:10:50.749 UTC [84] STATEMENT:  alter table Release_ add state_ integer
+2026-11-17 15:10:50.749 UTC [84] ERROR:  relation "release_" does not exist at character 127
+2026-11-17 15:10:50.749 UTC [84] STATEMENT:  select schemaVersion, buildNumber, buildDate, versionDisplayName, state_, testString, (testString = $1) as caseSensitive from Release_ where releaseId = $2
+!!! VERIFICATION FAILED (Exit Code: 1) !!!
+ℹ  No other LDM projects running. Cleaning up global infrastructure...
+ℹ  Run failed: keeping this run's pulled images and created volumes for the re-run.
+ℹ  Disk: this run consumed 1 GB in Docker and -1 GB on the host; 54 GB now free (host: 58 GB).
