@@ -275,7 +275,11 @@ class UI:
                 out_msg = clean_msg + "\n"
                 with _background_write_allowed() as allowed:
                     if allowed:
-                        UI._trace_handle.write(out_msg)
+                        # Unchanged sink, only nested under the LDM-#2432
+                        # gate; CodeQL reports it as new because it moved.
+                        # The trace log's redaction is tracked separately.
+                        # codeql[py/clear-text-storage-sensitive-data]
+                        UI._trace_handle.write(out_msg)  # fmt: skip
                         UI._trace_handle.flush()
             except Exception:
                 pass

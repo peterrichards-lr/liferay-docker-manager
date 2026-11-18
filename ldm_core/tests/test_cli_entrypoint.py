@@ -76,6 +76,9 @@ class TestCLIEntrypoint(unittest.TestCase):
         # Verify cmd_completion WAS called
         mock_manager.diagnostics.cmd_completion.assert_called_once_with("zsh")
 
+    # LDM-#2432: the update check is skipped under CI/GITHUB_ACTIONS, which
+    # GitHub Actions sets -- so this test must not inherit them.
+    @patch.dict("os.environ", {"CI": "", "GITHUB_ACTIONS": ""})
     @patch("ldm_core.cli.LiferayManager")
     @patch("ldm_core.cli.get_parser")
     @patch("ldm_core.cli.check_for_updates")
