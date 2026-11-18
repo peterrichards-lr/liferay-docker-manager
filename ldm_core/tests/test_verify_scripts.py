@@ -4668,6 +4668,13 @@ _ENV_CASES = (
         False,
         "meta changed",
     ),
+    # debian, 2026-11-18: a fatal error at interpreter shutdown, SIGABRT.
+    (
+        "aborted",
+        'echo "Fatal Python error: simulated" >&2\nexit 134\n',
+        False,
+        "exited 134",
+    ),
 )
 _DOCTOR_CASES = (
     (
@@ -4784,6 +4791,42 @@ class ThePowerShellGuardrailChecksAgree(_GuardrailHarness, unittest.TestCase):
                 binary, ps_fn, stub, work
             )
         )
+
+
+@unittest.skipIf(os.name == "nt", "the stubs are POSIX shell scripts")
+class TheConfigEnvCheckNeedsNoDiffutils(unittest.TestCase):
+    """rockylinux:9 has no `cmp` (diffutils is not installed). The #2384 check
+    used `! cmp -s`, so "command not found" (127) read as "the meta changed"
+    and failed a correct binary on 2026-11-18. Reproduce that host: a `cmp`
+    that does not work must not change the verdict."""
+
+    def test_a_correct_binary_passes_where_cmp_is_missing(self):
+        func_name = "verify_config_env_refuses_other_service"
+        func = _extract_function(
+            BASH_SCRIPT, re.compile(rf"^{func_name}\s*\(\)\s*\{{.*?^\}}", re.M | re.S)
+        )
+        with tempfile.TemporaryDirectory() as d:
+            work = Path(d) / "workspace"
+            work.mkdir()
+            stub = _script_stub(Path(d), _say(_ENV_REFUSAL, 1))
+            bin_dir = Path(d) / "bin"
+            bin_dir.mkdir()
+            broken = bin_dir / "cmp"
+            broken.write_text(
+                '#!/bin/sh\necho "cmp: command not found" >&2\nexit 127\n'
+            )
+            # lint: executable-stub -- shadows cmp on PATH to reproduce a host without diffutils; no agent watches the name
+            broken.chmod(0o755)
+            res = subprocess.run(
+                ["bash", "-c", f"{func}\n{func_name} '{stub}' '{work}'\n"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+            )
+            out = res.stdout + res.stderr
+            self.assertEqual(res.returncode, 0, out)
+            self.assertIn("nothing is written", out)
 
 
 #: Each script's guardrails section: from its opener to the next section's.

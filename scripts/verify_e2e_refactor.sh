@@ -2451,24 +2451,47 @@ verify_config_env_refuses_other_service() {
     printf '%s' '{"container_name": "envsvc-proj", "tag": "2026.q1.7-lts", "custom_env": "{\"EXISTING\": \"1\"}"}' >"${proj_dir}/meta"
     cp "${proj_dir}/meta" "${iso_home}/meta.before"
 
+    # PYTHONFAULTHANDLER: a fatal error at interpreter shutdown (exit 134 on
+    # debian, 2026-11-18) printed only its last lines; this dumps every
+    # thread's stack so the next one names its cause.
     local out code
-    out=$(cd "$proj_dir" && LDM_HOME="$iso_home" "$ldm_cmd" -y --no-color config env -s my-ext "${probe_var}=1" 2>&1) && code=0 || code=$?
+    out=$(cd "$proj_dir" && PYTHONFAULTHANDLER=1 LDM_HOME="$iso_home" "$ldm_cmd" -y --no-color config env -s my-ext "${probe_var}=1" 2>&1) && code=0 || code=$?
+
+    # Compared in the shell, never with cmp: rockylinux:9 ships without
+    # diffutils, so `cmp` was "command not found" (127) and `! cmp` reported a
+    # change that never happened. The trailing `x` keeps a trailing newline
+    # from being stripped by the substitution.
+    local meta_now meta_before
+    meta_now="$(cat "${proj_dir}/meta" 2>/dev/null; printf x)"
+    meta_before="$(cat "${iso_home}/meta.before" 2>/dev/null; printf x)"
 
     local verdict=""
     if [ "$code" -ne 1 ]; then
         verdict="'ldm config env -s my-ext' exited ${code}; expected 1 (LDM-#2384)."
+        [ "$code" -gt 128 ] && verdict="${verdict} That is signal $((code - 128)) -- the process was killed or aborted, not refused."
     elif ! printf '%s\n' "$out" | grep -qF "cannot target service 'my-ext'"; then
         verdict="'ldm config env -s my-ext' exited 1, but not for the service refusal (LDM-#2384)."
-    elif ! cmp -s "${proj_dir}/meta" "${iso_home}/meta.before"; then
+    elif [ "$meta_now" != "$meta_before" ]; then
         verdict="'ldm config env -s my-ext' refused, yet the project's meta changed (LDM-#2384)."
     fi
 
-    rm -rf "$iso_home" "$proj_dir"
     if [ -n "$verdict" ]; then
+        # Everything needed to diagnose it, before the fixture is removed.
         echo "❌ ERROR: ${verdict}"
-        echo "   Output was: $(printf '%s\n' "$out" | tail -3)"
+        echo "   Full output was:"
+        printf '%s\n' "$out" | sed 's/^/   | /'
+        if [ "$meta_now" != "$meta_before" ]; then
+            echo "   meta before: ${meta_before%x}"
+            echo "   meta after:  ${meta_now%x}"
+        fi
+        if [ -f "${iso_home}/.ldm/last-command.log" ]; then
+            echo "   last-command.log (tail):"
+            tail -40 "${iso_home}/.ldm/last-command.log" | sed 's/^/   | /'
+        fi
+        rm -rf "$iso_home" "$proj_dir"
         return 1
     fi
+    rm -rf "$iso_home" "$proj_dir"
     echo "✅ 'ldm config env -s <non-liferay service>' is refused with exit 1 and nothing is written (LDM-#2384)."
     return 0
 }
