@@ -42,6 +42,9 @@ class RestoreHarness(unittest.TestCase):
 
     # What the patched `_restore_search` reports as unable to search.
     restore_search_result: tuple = ()
+    # Whether `liferay-search-global` exists. Always patched: a test must
+    # never ask the real Docker daemon (LDM-#2434 added this probe).
+    search_exists: bool = True
 
     def setUp(self):
         self.manager = MockSnapshotManager()
@@ -102,6 +105,10 @@ class RestoreHarness(unittest.TestCase):
                 ),
             ),
             patch("time.sleep"),
+            patch(
+                "ldm_core.docker_service.DockerService.exists",
+                return_value=self.search_exists,
+            ) as self.exists_probe,
         ):
             self.manager.snapshot.cmd_restore("test")
 
@@ -148,3 +155,54 @@ class RestoreStartsSharedSearchFirst(RestoreHarness):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RestoreProvisionsAbsentSharedSearch(RestoreHarness):
+    """LDM-#2434. On a machine that has never had `liferay-search-global`,
+    `ldm quickstart aica` died with exit 3 at the start step above: quickstart
+    reaches this restore before anything provisions search. A restore now
+    provisions an ABSENT container, as `ldm run` does, before starting it."""
+
+    def setUp(self):
+        super().setUp()
+        self.infra.setup_global_search.side_effect = lambda **_kw: self._record(
+            "provision-search"
+        )
+
+    def _restore_with(self, exists, target=None):
+        self.manager.target = target
+        self.search_exists = exists
+        self._restore(SHARED_COMPOSE)
+        return self.exists_probe
+
+    def test_an_absent_container_is_provisioned_before_it_is_started(self):
+        self._restore_with(exists=False)
+
+        self.assertIn("provision-search", self.calls)
+        self.assertLess(
+            self.calls.index("provision-search"), self.calls.index("start-search")
+        )
+        self.assertLess(self.calls.index("provision-search"), self.calls.index("reset"))
+
+    def test_an_existing_container_is_not_reprovisioned(self):
+        self._restore_with(exists=True)
+
+        self.assertNotIn("provision-search", self.calls)
+        self.assertIn("start-search", self.calls)
+
+    def test_a_remote_restore_keeps_the_refusal(self):
+        """`setup_global_search` reads `manager.target` and cannot create
+        search on a remote node, so the remote case is left to the start
+        step's refusal and its tip."""
+        probe = self._restore_with(exists=False, target="node-a")
+
+        self.assertNotIn("provision-search", self.calls)
+        self.assertIn("start-search", self.calls)
+        probe.assert_not_called()
+
+    def test_a_sidecar_project_touches_no_shared_search(self):
+        self.search_exists = False
+        self._restore(SIDECAR_COMPOSE)
+
+        self.assertNotIn("provision-search", self.calls)
+        self.assertNotIn("start-search", self.calls)
