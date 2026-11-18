@@ -103,6 +103,26 @@ RELEASE_ANNOUNCEMENTS = {
     # LDM-#1663: a patch needs its OWN key, or the banner shows no
     # announcements for it (LDM-#2412); `release.py --promote` refuses a
     # stable X.Y.Z (Z > 0) without one.
+    "2.26.12": [
+        (
+            "ldm wait survives a sleeping laptop or a paused Docker VM",
+            "Time the host or Docker VM spent suspended no longer counts "
+            "toward the readiness timeout. LDM warns once, naming how long "
+            "the suspension lasted, instead of reporting a failed boot.",
+        ),
+        (
+            "ldm doctor warns when a microservice cannot find its OAuth apps",
+            "A config-node microservice whose LCP.json does not set "
+            "LIFERAY_OAUTH_APPLICATION_EXTERNAL_REFERENCE_CODES now gets a "
+            "warning with the exact line to add, from doctor and from import.",
+        ),
+        (
+            "Windows: a PYI-10120 error after upgrading is harmless",
+            "If the upgrade window reported 'Failed to load Python DLL', the "
+            "upgrade itself succeeded. It came from the previous version's "
+            "updater, and upgrades from this version on no longer show it.",
+        ),
+    ],
     "2.26.11": [
         (
             "Security: ldm share start publishes the project you asked for",
