@@ -607,6 +607,21 @@ class SnapshotService(BaseHandler):
         if compose_file.exists() and "liferay-search-global" in compose_file.read_text(
             errors="replace"
         ):
+            # LDM-#2434: on a machine that has never had shared search -- every
+            # first `ldm quickstart`, every fresh CI runner -- the refusal
+            # below stopped the restore with exit 3, because quickstart reaches
+            # this point before anything provisions search. A restore is about
+            # to boot the project, so it provisions an ABSENT container the way
+            # `ldm run` does. `ldm start` keeps refusing (LDM-#2319): there the
+            # container's absence means someone removed it. Local targets
+            # only: `setup_global_search` reads `manager.target`, not the
+            # meta's target, and cannot create search on a remote node anyway,
+            # so a remote restore keeps the refusal and its tip.
+            if target_name in (None, "local") and not DockerService.exists(
+                "liferay-search-global", target_name=target_name
+            ):
+                UI.info("Shared search does not exist yet; provisioning it...")
+                self.manager.infra.setup_global_search()
             self.manager.infra.ensure_global_search_started(target_name=target_name)
 
         if (

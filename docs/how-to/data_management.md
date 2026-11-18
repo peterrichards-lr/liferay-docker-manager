@@ -89,8 +89,11 @@ and those documents survived the restore invisibly.
 
 If the shared search service is stopped -- after a Docker VM restart, for
 instance -- the restore starts it first, as `ldm start` does, so the indices
-can be cleared. If it cannot be started, because the container does not exist
-or does not come up, the restore stops with exit code `3` before resetting
+can be cleared. If the container does not exist at all, as on a machine that
+has never run LDM, a local restore (including `ldm quickstart` and a package
+`ldm import`) provisions it first, as `ldm run` does (LDM-#2434). If it cannot
+be started or does not come up -- or it is missing on a remote target, where
+LDM cannot create it -- the restore stops with exit code `3` before resetting
 anything, and says to run `ldm run`. It used to warn and carry on, leaving the
 previous build's documents in place (LDM-#2392).
 
@@ -323,4 +326,4 @@ ldm re-seed demo              # Total project reset to Day Zero (Seeded)
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-17* | *Last Reviewed: 2026-11-17*
+*Last Updated: 2026-11-18* | *Last Reviewed: 2026-11-18*
