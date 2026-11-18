@@ -29,7 +29,7 @@ from ldm_core.ui import UI
 
 VAR = "LIFERAY_OAUTH_APPLICATION_EXTERNAL_REFERENCE_CODES"
 
-OAUTH_YAML = """\
+APPS_YAML = """\
 assemble:
     -   from: build
         into: static
@@ -52,7 +52,7 @@ svc-object-action:
     type: objectAction
 """
 
-NO_OAUTH_YAML = """\
+NO_APPS_YAML = """\
 svc-custom-element:
     name: Svc Element
     type: customElement
@@ -66,7 +66,7 @@ def write_cx(
     parent: Path,
     name: str,
     *,
-    yaml_text: str | None = OAUTH_YAML,
+    yaml_text: str | None = APPS_YAML,
     env: dict | None = None,
     lcp: bool = True,
     dockerfile: bool = True,
@@ -224,7 +224,7 @@ class TheDoctorStaysQuiet(DoctorCase):
 
     def test_an_extension_without_an_oauth_application_is_not_flagged(self):
         project = self.base / "proj"
-        write_cx(project, "svc", yaml_text=NO_OAUTH_YAML)
+        write_cx(project, "svc", yaml_text=NO_APPS_YAML)
         self.assert_quiet(project)
 
     def test_an_extension_with_no_lcp_json_is_not_flagged(self):
@@ -291,7 +291,7 @@ class TheImportWarns(_ImportCase):
         workspace = self.base / "ws"
         write_cx(workspace, "ok", env={VAR: "svc-oahs,svc-oaua"})
         write_cx(workspace, "omits", env={VAR: "svc-oaua"})
-        write_cx(workspace, "plain", yaml_text=NO_OAUTH_YAML)
+        write_cx(workspace, "plain", yaml_text=NO_APPS_YAML)
         write_cx(workspace, "spring", package=None)
         write_cx(workspace, "express", package=PLAIN_NODE)
         write_cx(workspace, "frontend", lcp=False, dockerfile=False)
