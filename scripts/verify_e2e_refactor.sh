@@ -2391,6 +2391,151 @@ verify_guide_precedence() {
     return 0
 }
 
+verify_init_accepts_tag_prefix() {
+    # LDM-#2168. `ldm init --tag-prefix 2026.q3` was refused with
+    # `unrecognized arguments: --tag-prefix 2026.q3`, so the command a new user
+    # reaches for first could not scope tag discovery to a release line.
+    #
+    # Asserted as a PARSE, with nothing run: a sentinel option no parser knows
+    # rides along, so argparse refuses before `cmd_init` runs and names every
+    # argument it did not recognise. A fixed binary names only the sentinel; a
+    # broken one names `--tag-prefix 2026.q3` with it. A real `ldm init` would
+    # scaffold a project and resolve the prefix against the network for no
+    # extra signal -- `test_init_tag_prefix.py` covers the value reaching
+    # discovery. Observed on 2026-11-18 against the fix and against a copy with
+    # the one `init.add_argument("--tag-prefix", ...)` line removed.
+    local ldm_cmd="$1"
+    local sentinel="--ldm-e2e-not-an-option"
+    local out code
+
+    out=$("$ldm_cmd" init ldm-e2e-tag-prefix --tag-prefix 2026.q3 "$sentinel" 2>&1) && code=0 || code=$?
+
+    local refused
+    refused=$(printf '%s\n' "$out" | grep -F 'unrecognized arguments:' | head -1)
+    if [ "$code" -ne 2 ] || [ -z "$refused" ] || ! printf '%s\n' "$refused" | grep -qF -- "$sentinel"; then
+        echo "❌ ERROR: 'ldm init ... ${sentinel}' did not fail at the parser (exit ${code}), so the parse of --tag-prefix could not be observed."
+        echo "   Output was: $(printf '%s\n' "$out" | tail -3)"
+        return 1
+    fi
+    if printf '%s\n' "$refused" | grep -qF -- '--tag-prefix'; then
+        echo "❌ ERROR: 'ldm init' does not accept --tag-prefix (LDM-#2168)."
+        echo "   | ${refused}"
+        return 1
+    fi
+
+    echo "✅ 'ldm init' accepts --tag-prefix; the parser refused only the sentinel (LDM-#2168)."
+    return 0
+}
+
+verify_config_env_refuses_other_service() {
+    # LDM-#2384. `ldm config env -s <service> KEY=VAL` parsed `-s` and then
+    # dropped it, so the variable was written into custom_env -- which the
+    # composer applies to the LIFERAY container only. The fix refuses any
+    # service but Liferay, before the project is even resolved.
+    #
+    # Asserted on all three things a user depends on: exit 1, the refusal
+    # naming the service (exit 1 alone also means "Docker not accessible" --
+    # the first observation of this check got exactly that), and the project's
+    # meta left byte-for-byte unchanged. Observed on 2026-11-18 against the fix
+    # and against a copy with the refusal disabled, which wrote the key into
+    # custom_env and exited for an unrelated reason.
+    local ldm_cmd="$1"
+    local work_dir="$2"
+
+    local iso_home="${work_dir}/envsvc-home"
+    local proj_dir="${work_dir}/envsvc-proj"
+    local probe_var="LDM_E2E_2384_PROBE"
+
+    rm -rf "$iso_home" "$proj_dir"
+    mkdir -p "$iso_home" "$proj_dir" || return 1
+    printf '%s' '{"container_name": "envsvc-proj", "tag": "2026.q1.7-lts", "custom_env": "{\"EXISTING\": \"1\"}"}' >"${proj_dir}/meta"
+    cp "${proj_dir}/meta" "${iso_home}/meta.before"
+
+    local out code
+    out=$(cd "$proj_dir" && LDM_HOME="$iso_home" "$ldm_cmd" -y --no-color config env -s my-ext "${probe_var}=1" 2>&1) && code=0 || code=$?
+
+    local verdict=""
+    if [ "$code" -ne 1 ]; then
+        verdict="'ldm config env -s my-ext' exited ${code}; expected 1 (LDM-#2384)."
+    elif ! printf '%s\n' "$out" | grep -qF "cannot target service 'my-ext'"; then
+        verdict="'ldm config env -s my-ext' exited 1, but not for the service refusal (LDM-#2384)."
+    elif ! cmp -s "${proj_dir}/meta" "${iso_home}/meta.before"; then
+        verdict="'ldm config env -s my-ext' refused, yet the project's meta changed (LDM-#2384)."
+    fi
+
+    rm -rf "$iso_home" "$proj_dir"
+    if [ -n "$verdict" ]; then
+        echo "❌ ERROR: ${verdict}"
+        echo "   Output was: $(printf '%s\n' "$out" | tail -3)"
+        return 1
+    fi
+    echo "✅ 'ldm config env -s <non-liferay service>' is refused with exit 1 and nothing is written (LDM-#2384)."
+    return 0
+}
+
+verify_doctor_warns_missing_oauth_erc_list() {
+    # LDM-#2407. config-node's `lxcConfig.oauthApplication(erc)` resolves only
+    # ERCs listed in LIFERAY_OAUTH_APPLICATION_EXTERNAL_REFERENCE_CODES, which
+    # only the extension author writes (in LCP.json), and config-node 0.4.1
+    # throws an unhelpful TypeError without it. `ldm doctor` now warns.
+    #
+    # Static fixture, no boot: doctor reads the project from the working
+    # directory and walks it for LCP.json whether or not anything runs. Its
+    # exit code is NOT asserted -- a throwaway project with no compose file or
+    # licence fails other doctor checks by design. Asserted instead: the warn
+    # row, the hint carrying the exact line to add (`--detailed` prints hints),
+    # and silence once the variable is present, so the row is about THIS gap
+    # and not something every microservice trips. Observed on 2026-11-18
+    # against the fix and against a copy with the check disabled.
+    local ldm_cmd="$1"
+    local work_dir="$2"
+
+    local iso_home="${work_dir}/ercdoc-home"
+    local proj_dir="${work_dir}/ercdoc-proj"
+    local cx="${proj_dir}/client-extensions/svc"
+    local var="LIFERAY_OAUTH_APPLICATION_EXTERNAL_REFERENCE_CODES"
+
+    rm -rf "$iso_home" "$proj_dir"
+    mkdir -p "$iso_home" "$cx" || return 1
+    printf '%s' '{"container_name": "ercdoc-proj", "tag": "2026.q1.7-lts"}' >"${proj_dir}/meta"
+    cat >"${cx}/client-extension.yaml" <<'YAML'
+svc-oahs:
+    .serviceAddress: localhost:3001
+    name: Svc Headless Server
+    scopes:
+        -   Liferay.Headless.Delivery.everything
+    type: oAuthApplicationHeadlessServer
+YAML
+    printf '%s' '{"id": "svc", "kind": "Deployment", "env": {}}' >"${cx}/LCP.json"
+    printf 'FROM node:22\n' >"${cx}/Dockerfile"
+    printf '%s' '{"dependencies": {"@rotty3000/config-node": "^0.4.1"}}' >"${cx}/package.json"
+
+    local out quiet verdict=""
+    out=$(cd "$proj_dir" && LDM_HOME="$iso_home" "$ldm_cmd" --no-color doctor --detailed 2>&1) || true
+
+    if ! printf '%s\n' "$out" | grep 'OAuth ERC List' | grep -qF 'Missing (client-extensions/svc)'; then
+        verdict="'ldm doctor' did not warn that client-extensions/svc's LCP.json lacks ${var} (LDM-#2407)."
+    elif ! printf '%s\n' "$out" | grep -qF "\"${var}\": \"svc-oahs\""; then
+        verdict="'ldm doctor' warned, but its hint does not carry the line to add (LDM-#2407)."
+    else
+        printf '%s' "{\"id\": \"svc\", \"kind\": \"Deployment\", \"env\": {\"${var}\": \"svc-oahs\"}}" >"${cx}/LCP.json"
+        quiet=$(cd "$proj_dir" && LDM_HOME="$iso_home" "$ldm_cmd" --no-color doctor --detailed 2>&1) || true
+        if printf '%s\n' "$quiet" | grep -qF 'OAuth ERC List'; then
+            verdict="'ldm doctor' still warns once LCP.json lists the ERC, so the warning is not specific (LDM-#2407)."
+            out="$quiet"
+        fi
+    fi
+
+    rm -rf "$iso_home" "$proj_dir"
+    if [ -n "$verdict" ]; then
+        echo "❌ ERROR: ${verdict}"
+        echo "   doctor said: $(printf '%s\n' "$out" | grep -E 'OAuth|ERC|Traceback|Error' | head -5)"
+        return 1
+    fi
+    echo "✅ 'ldm doctor' warns for a config-node microservice whose LCP.json lacks ${var}, and is quiet once it is set (LDM-#2407)."
+    return 0
+}
+
 verify_mac_pin_refusal() {
     local ldm_cmd="$1"
     local work_dir="$2"
@@ -3282,6 +3427,30 @@ if GUIDE_OUT=$(verify_guide_precedence "$LDM_CMD"); then
     report_ok "$GUIDE_OUT"
 else
     echo "$GUIDE_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying 'ldm init' accepts --tag-prefix (LDM-#2168)..."
+if INIT_TAG_PREFIX_OUT=$(verify_init_accepts_tag_prefix "$LDM_CMD"); then
+    report_ok "$INIT_TAG_PREFIX_OUT"
+else
+    echo "$INIT_TAG_PREFIX_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying 'ldm config env -s <service>' refuses rather than writing to Liferay (LDM-#2384)..."
+if ENV_SVC_OUT=$(verify_config_env_refuses_other_service "$LDM_CMD" "$LDM_WORKSPACE"); then
+    report_ok "$ENV_SVC_OUT"
+else
+    echo "$ENV_SVC_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying 'ldm doctor' warns on a missing OAuth ERC list (LDM-#2407)..."
+if ERC_DOCTOR_OUT=$(verify_doctor_warns_missing_oauth_erc_list "$LDM_CMD" "$LDM_WORKSPACE"); then
+    report_ok "$ERC_DOCTOR_OUT"
+else
+    echo "$ERC_DOCTOR_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
 
@@ -5928,6 +6097,10 @@ fi
 # Asserted from startup-status.json, which LDM writes on EVERY boot, rather
 # than from the --benchmark output: an assertion that only runs under a flag is
 # one more thing that silently does not run (LDM-#2135).
+#
+# LDM-#2172: the same file must carry `docker_allocation`, the figures the heap
+# was sized from. `cmd_wait` reads them with every exception suppressed, so a
+# broken seam writes null silently; the checker demands them of a ready boot.
 echo ">> Verifying LDM recorded the phases of the boot it just performed (LDM-#2169)..."
 PHASES_RC=0
 PHASES_OUT=$("$VENV_PYTHON" \
@@ -5935,11 +6108,11 @@ PHASES_OUT=$("$VENV_PYTHON" \
     "${LDM_WORKSPACE}/${PROJECT_NAME}" 2>&1) || PHASES_RC=$?
 printf '%s\n' "$PHASES_OUT" | tee -a "$RESULTS_FILE_TMP"
 if [ "$PHASES_RC" -eq 0 ]; then
-    report_ok "✅ LDM recorded a decomposable startup phase breakdown (LDM-#2169)."
+    report_ok "✅ LDM recorded a decomposable startup phase breakdown (LDM-#2169), with the Docker allocation beside it (LDM-#2172)."
 elif [ "$PHASES_RC" -eq 3 ]; then
     echo "⚠️  SKIPPED (not run): the startup phases were NOT evaluated -- see the reason above. This is not a pass." | tee -a "$RESULTS_FILE_TMP"
 elif [ "$PHASES_RC" -eq 1 ]; then
-    echo "❌ ERROR: LDM did not record usable startup phases for this boot (LDM-#2169)." | tee -a "$RESULTS_FILE_TMP"
+    echo "❌ ERROR: LDM did not record usable startup phases, or the Docker allocation, for this boot (LDM-#2169/#2172)." | tee -a "$RESULTS_FILE_TMP"
     exit 1
 else
     echo "❌ ERROR: the startup-phase check could not run (exit ${PHASES_RC}). The assertion was NOT evaluated and this is not a skip." | tee -a "$RESULTS_FILE_TMP"
@@ -7133,6 +7306,33 @@ fi
 if [ "$ROUNDTRIP_OK" = true ]; then
     roundtrip_env_check "The package ${PROJECT_NAME}.ldmp" --package "$ROUNDTRIP_PKG"
 fi
+# LDM-#2359: the package must not carry LDM's own portal-workaround bundle.
+# `ldm run` places it in osgi/modules, and v2.26.9's `ldm package` shipped it
+# inside AICA's .ldmp, where AICA's release gate refused it as "shipped but not
+# built". The same checker streams the .ldmp once, reading the payload's osgi
+# block and meta's osgi_modules list, and extracts nothing. It compares against
+# the SOURCE project's osgi/modules: with no bundle there to leave out (the
+# source's tag is outside every workaround window) a clean package proves
+# nothing, and that is reported as SKIPPED, not as a pass. The verdict goes in
+# ROUNDTRIP_ENV_OK with the env leak -- both are things a package must not
+# carry, and neither may skip the reset check that ROUNDTRIP_OK gates.
+if [ "$ROUNDTRIP_OK" = true ]; then
+    ROUNDTRIP_BUNDLE_RC=0
+    ROUNDTRIP_BUNDLE_OUT=$("$VENV_PYTHON" "${E2E_SCRIPT_DIR}/check_roundtrip_env_leak.py" \
+        --package-bundles "$ROUNDTRIP_PKG" "${LDM_WORKSPACE}/${PROJECT_NAME}" 2>&1) || ROUNDTRIP_BUNDLE_RC=$?
+    printf '%s\n' "$ROUNDTRIP_BUNDLE_OUT" | tee -a "$RESULTS_FILE_TMP"
+    if [ "$ROUNDTRIP_BUNDLE_RC" -eq 0 ]; then
+        report_ok "✅ The package ${PROJECT_NAME}.ldmp leaves out LDM's own portal-workaround bundle (LDM-#2359)."
+    elif [ "$ROUNDTRIP_BUNDLE_RC" -eq 3 ]; then
+        echo "⚠️  SKIPPED (not run): LDM-#2359 was NOT evaluated -- see the reason above. This is not a pass." | tee -a "$RESULTS_FILE_TMP"
+    elif [ "$ROUNDTRIP_BUNDLE_RC" -eq 1 ]; then
+        echo "❌ ERROR: the package ${PROJECT_NAME}.ldmp carries LDM's own portal-workaround bundle -- named above (LDM-#2359)." | tee -a "$RESULTS_FILE_TMP"
+        ROUNDTRIP_ENV_OK=false
+    else
+        echo "❌ ERROR: the bundle check of ${PROJECT_NAME}.ldmp could not run (exit ${ROUNDTRIP_BUNDLE_RC}). LDM-#2359 was NOT evaluated and this is not a skip." | tee -a "$RESULTS_FILE_TMP"
+        ROUNDTRIP_ENV_OK=false
+    fi
+fi
 # The sidecar checksum is the artefact LDM-#2159 was about: it exists, it is
 # correct, and the importer could not read it.
 if [ "$ROUNDTRIP_OK" = true ] && [ ! -f "${ROUNDTRIP_PKG}.sha256" ]; then
@@ -7299,7 +7499,7 @@ fi
 rm -rf "${LDM_WORKSPACE:?}/${ROUNDTRIP_PROJECT}" "$ROUNDTRIP_PKG_DIR"
 
 # LDM-#2372: an env leak fails the run too, but only here, after the reset
-# check has had its turn.
+# check has had its turn. So does an LDM-#2359 bundle in the package.
 if [ "$ROUNDTRIP_OK" != true ] || [ "$ROUNDTRIP_ENV_OK" != true ]; then
     exit 1
 fi

@@ -31,6 +31,13 @@ boot that succeeded left a file indistinguishable from one that stalled. The
 suite always boots, so this costs nothing and catches a state the dashboard and
 the MCP tools would otherwise read as "still starting" forever.
 
+And it asserts the Docker allocation recorded beside the timings
+(LDM-#2172). A 9m57s boot on a 7.6 GB Windows host was attributed to search
+mode because the timing was recorded without it (LDM-#2164). The figures are
+read inside `cmd_wait` through `self.manager.composer` with every exception
+suppressed, so a seam that stopped reaching the composer would write `null`
+silently -- which is exactly what a unit test stubbing the composer cannot see.
+
 Exit codes:
     0  LDM recorded a usable set of phases, and a terminal outcome, for this boot
     1  it did not -- the message names what was recorded
@@ -102,6 +109,49 @@ def pre_readiness_complaint(status: dict) -> str | None:
     return None
 
 
+def allocation_complaint(status: dict) -> tuple[str | None, str | None]:
+    """What is wrong with the recorded Docker allocation, and how to show it.
+
+    LDM-#2172. `write_startup_status` always emits `docker_allocation`; it is
+    `null` only when reading it raised. `sizing_memory_gb` is the figure the
+    heap was sized from and falls back to the host's memory, so on any real
+    boot it is a positive number. `cpus` and `memory_gb` come from
+    `docker info` alone and may legitimately be null, so they are reported,
+    not demanded.
+    """
+    if "docker_allocation" not in status:
+        return (
+            "ERROR: LDM recorded no 'docker_allocation' key for a boot that "
+            "reached ready (LDM-#2172). Every boot writes it, so its absence "
+            "means this binary predates the fix, and the boot timing cannot "
+            "be compared with one taken on another machine.",
+            None,
+        )
+    alloc = status["docker_allocation"]
+    if not isinstance(alloc, dict):
+        return (
+            f"ERROR: LDM recorded 'docker_allocation' as {alloc!r} (LDM-#2172). "
+            "It is null only when reading the allocation raised, so the "
+            "readiness wait did not reach the figures the heap was sized from.",
+            None,
+        )
+    sizing = alloc.get("sizing_memory_gb")
+    shown = (
+        f"   docker allocation: cpus={alloc.get('cpus')} "
+        f"memory_gb={alloc.get('memory_gb')} "
+        f"host_memory_gb={alloc.get('host_memory_gb')} "
+        f"sizing_memory_gb={sizing}"
+    )
+    if isinstance(sizing, bool) or not isinstance(sizing, (int, float)) or sizing <= 0:
+        return (
+            f"ERROR: the recorded 'docker_allocation' has no usable "
+            f"'sizing_memory_gb' ({sizing!r}) (LDM-#2172). It is the memory "
+            f"the heap was sized from and is never absent on a real boot.",
+            shown,
+        )
+    return None, shown
+
+
 def judge(status: dict) -> tuple[int, list[str]]:
     """The verdict: 0 when the recorded phases could answer a slow boot."""
     phases = status.get("milestone_seconds")
@@ -159,6 +209,12 @@ def judge(status: dict) -> tuple[int, list[str]]:
     # and it is a gap this check cannot close from the `cmd_wait` path.
     if status.get("status") == "ready":
         complaint = pre_readiness_complaint(status)
+        # LDM-#2172: like the span above, demanded of a READY boot only. A
+        # boot that timed out fails the suite long before this runs.
+        if not complaint:
+            complaint, shown = allocation_complaint(status)
+            if shown:
+                lines.append(shown)
         if complaint:
             return 1, [*lines, complaint]
 

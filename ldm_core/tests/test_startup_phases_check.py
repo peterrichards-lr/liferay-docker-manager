@@ -42,6 +42,15 @@ REAL_BOOT = {
     "Tomcat Server Ready": 331.0,
 }
 
+#: What `allocation_summary` writes on a real boot (LDM-#2172): the 7.6 GB
+#: Windows host whose missing allocation caused LDM-#2164's misattribution.
+ALLOCATION = {
+    "cpus": 8,
+    "memory_gb": 7.6,
+    "host_memory_gb": 16.0,
+    "sizing_memory_gb": 7.6,
+}
+
 
 class _Project:
     """A project tree holding only the file the checker reads."""
@@ -73,6 +82,7 @@ class TestARealBootIsAccepted(unittest.TestCase):
                     "status": READY,
                     "milestone_seconds": REAL_BOOT,
                     "pre_readiness_seconds": 64.0,
+                    "docker_allocation": ALLOCATION,
                 },
             ).check()
         self.assertEqual(code, ASSERTED, out)
@@ -87,6 +97,7 @@ class TestARealBootIsAccepted(unittest.TestCase):
                     "status": READY,
                     "milestone_seconds": REAL_BOOT,
                     "pre_readiness_seconds": 64.0,
+                    "docker_allocation": ALLOCATION,
                 },
             ).check()
         self.assertEqual(code, ASSERTED, out)
@@ -104,6 +115,7 @@ class TestARealBootIsAccepted(unittest.TestCase):
                     "status": READY,
                     "milestone_seconds": shuffled,
                     "pre_readiness_seconds": 64.0,
+                    "docker_allocation": ALLOCATION,
                 },
             ).check()
         positions = [out.index(name) for name in REAL_BOOT]
@@ -279,6 +291,7 @@ class TestTheBootsOutcomeIsAsserted(unittest.TestCase):
                     "status": "ready",
                     "milestone_seconds": REAL_BOOT,
                     "pre_readiness_seconds": 64.0,
+                    "docker_allocation": ALLOCATION,
                 },
             ).check()
         self.assertEqual(code, ASSERTED, out)
@@ -328,6 +341,7 @@ class TestTheSpanBeforeTheWaitIsRecorded(unittest.TestCase):
                     "status": "ready",
                     "milestone_seconds": REAL_BOOT,
                     "pre_readiness_seconds": None,
+                    "docker_allocation": ALLOCATION,
                 },
             ).check()
         self.assertEqual(code, ASSERTED, out)
@@ -342,6 +356,7 @@ class TestTheSpanBeforeTheWaitIsRecorded(unittest.TestCase):
                     "status": "ready",
                     "milestone_seconds": REAL_BOOT,
                     "pre_readiness_seconds": -3.2,
+                    "docker_allocation": ALLOCATION,
                 },
             ).check()
         self.assertEqual(code, NOT_RECORDED, out)
@@ -354,6 +369,7 @@ class TestTheSpanBeforeTheWaitIsRecorded(unittest.TestCase):
                     "status": "ready",
                     "milestone_seconds": REAL_BOOT,
                     "pre_readiness_seconds": "64.0",
+                    "docker_allocation": ALLOCATION,
                 },
             ).check()
         self.assertEqual(code, NOT_RECORDED, out)
@@ -366,6 +382,7 @@ class TestTheSpanBeforeTheWaitIsRecorded(unittest.TestCase):
                     "status": "ready",
                     "milestone_seconds": REAL_BOOT,
                     "pre_readiness_seconds": 64.0,
+                    "docker_allocation": ALLOCATION,
                 },
             ).check()
         self.assertEqual(code, ASSERTED, out)
@@ -388,8 +405,67 @@ class TestTheSpanBeforeTheWaitIsRecorded(unittest.TestCase):
                     "status": "ready",
                     "milestone_seconds": REAL_BOOT,
                     "pre_readiness_seconds": 0,
+                    "docker_allocation": ALLOCATION,
                 },
             ).check()
+        self.assertEqual(code, ASSERTED, out)
+
+
+class TestTheDockerAllocationIsRecorded(unittest.TestCase):
+    """LDM-#2172: a boot timing cannot be compared across machines without the
+    Docker allocation beside it. A 9m57s boot on a 7.6 GB Windows host was
+    attributed to search mode because the allocation was not recorded
+    (LDM-#2164). `cmd_wait` reads it through `self.manager.composer` with every
+    exception suppressed, so a broken seam writes `null` without a sound."""
+
+    def _ready(self, **extra):
+        status = {
+            "status": "ready",
+            "milestone_seconds": REAL_BOOT,
+            "pre_readiness_seconds": None,
+        }
+        status.update(extra)
+        return status
+
+    def _check(self, status):
+        with tempfile.TemporaryDirectory() as tmp:
+            return _Project(tmp, status).check()
+
+    def test_a_recorded_allocation_passes_and_is_reported(self):
+        code, out = self._check(self._ready(docker_allocation=ALLOCATION))
+        self.assertEqual(code, ASSERTED, out)
+        self.assertIn("sizing_memory_gb=7.6", out)
+        self.assertIn("cpus=8", out)
+
+    def test_a_ready_boot_with_no_such_key_fails(self):
+        """A binary predating LDM-#2172 writes no key at all."""
+        code, out = self._check(self._ready())
+        self.assertEqual(code, NOT_RECORDED, out)
+        self.assertIn("docker_allocation", out)
+
+    def test_a_null_allocation_fails(self):
+        """The suppressed-exception path: the composer was never reached."""
+        code, out = self._check(self._ready(docker_allocation=None))
+        self.assertEqual(code, NOT_RECORDED, out)
+
+    def test_an_allocation_without_a_sizing_figure_fails(self):
+        for sizing in (None, 0, "7.6", True):
+            with self.subTest(sizing=sizing):
+                code, out = self._check(
+                    self._ready(
+                        docker_allocation={**ALLOCATION, "sizing_memory_gb": sizing}
+                    )
+                )
+                self.assertEqual(code, NOT_RECORDED, out)
+
+    def test_docker_figures_may_be_null(self):
+        """`docker info` can fail; the host fallback still sizes the heap."""
+        alloc = {**ALLOCATION, "cpus": None, "memory_gb": None}
+        code, out = self._check(self._ready(docker_allocation=alloc))
+        self.assertEqual(code, ASSERTED, out)
+
+    def test_a_timeout_is_exempt(self):
+        code, out = self._check({"status": "timeout", "milestone_seconds": REAL_BOOT})
         self.assertEqual(code, ASSERTED, out)
 
 

@@ -45,19 +45,41 @@ Shared by `verify_e2e_refactor.sh` and `verify_e2e_refactor.ps1`, following
 `check_published_dxp_domain.py`: one implementation cannot drift from itself
 (LDM-#1982), and YAML is parsed by PyYAML rather than by a grep in each shell.
 
+4. **The PACKAGE carries none of LDM's own portal-workaround bundles**
+   (`--package-bundles`, LDM-#2359). `ldm run` places
+   `com.liferay.custom.dxp.routes.domain.jar` in the project's `osgi/modules`,
+   and a snapshot archived the whole `osgi` tree, so v2.26.9's `ldm package`
+   shipped it inside AICA's `.ldmp` and AICA's release gate refused it as
+   "shipped but not built". Asserted on both places a package records it:
+   the `osgi/modules` members of the nested `files.tar.gz` payload, and the
+   `osgi_modules` list in the top-level `meta`. Both are read in ONE streamed
+   pass that stops as soon as both are found: the payload is only read up to
+   the end of its `osgi` block, which `tar.add` writes contiguously.
+
+   The assertion is only meaningful when the SOURCE project held the bundle
+   at packaging time -- `sync_workarounds` installs it only for tags inside
+   the workaround's window. When it did not, a clean package proves nothing,
+   and this reports SKIPPED (exit 3) rather than a pass. A bundle found in the
+   package is a failure either way.
+
 Usage:
     check_roundtrip_env_leak.py <project_dir>          # checks 1 and 2
     check_roundtrip_env_leak.py --package <file.ldmp>   # check 3
+    check_roundtrip_env_leak.py --package-bundles <file.ldmp> <source_project_dir>
+                                                        # check 4
 
 Exit codes:
     0  neither defect present
     1  a defect is present -- the message names the keys
+    3  check 4 only: the source project never held an LDM bundle, so a clean
+       package proves nothing. The CALLER must announce this as SKIPPED,
+       never as a pass. Checks 1-3 have no skip and never return it.
     4  the artefacts could not be read, so nothing was asserted. The caller
        must treat this, and any other code, as a hard error: after a copy has
        booted its compose file and meta must exist, and a package with no
        top-level `meta` is not one `ldm import` accepts. Not 2, which `python`
        itself returns when it cannot open this script; not 3, which the sibling
-       checkers use for a benign skip this check deliberately does not have.
+       checkers -- and check 4 -- use for a benign skip.
 """
 
 import json
@@ -100,7 +122,13 @@ LDM_RENDERED_PREFIXES = (
     "LIFERAY_ROUTES_",
 )
 
-CHECK_FAILED, CANNOT_READ = 1, 4
+#: LDM's own portal-workaround bundles (LDM-#2359): every `Workaround.prefix`
+#: and `RETIRED_PREFIXES` entry in `ldm_core/runtime/portal_workarounds.py`.
+#: Kept in step by hand for the same reason as the lists above -- this script
+#: ships in the verification bundle and runs against a binary.
+LDM_BUNDLE_PREFIXES = ("com.liferay.custom.dxp.routes.domain",)
+
+CHECK_FAILED, SKIPPED, CANNOT_READ = 1, 3, 4
 
 
 class ArtefactError(Exception):
@@ -257,7 +285,131 @@ def judge_custom_env(custom_env: dict, whose: str) -> tuple[bool, list[str]]:
     ]
 
 
+def is_ldm_bundle(name: str) -> bool:
+    """Whether a bare file name is one of LDM's workaround jars (LDM-#2359)."""
+    return name.endswith(".jar") and name.startswith(LDM_BUNDLE_PREFIXES)
+
+
+def source_bundles(project_dir: Path) -> list[str]:
+    """LDM bundles in the source project's `osgi/modules`, by bare name."""
+    if not project_dir.is_dir():
+        raise ArtefactError(f"the source project {project_dir} does not exist")
+    modules = project_dir / "osgi" / "modules"
+    try:
+        names = [p.name for p in modules.iterdir()] if modules.is_dir() else []
+    except OSError as e:
+        raise ArtefactError(f"cannot list {modules}: {e}") from e
+    return sorted(n for n in names if is_ldm_bundle(n))
+
+
+def _payload_bundles(handle) -> list[str]:
+    """LDM bundles among the `osgi/modules` members of a streamed payload.
+
+    Stops at the first member after the `osgi` block: `tar.add` recurses a
+    directory contiguously, so nothing under `osgi/modules` follows it.
+    """
+    found = []
+    in_osgi = False
+    with tarfile.open(fileobj=handle, mode="r|gz") as payload:
+        for member in payload:
+            name = member.name.removeprefix("./")
+            if name == "osgi" or name.startswith("osgi/"):
+                in_osgi = True
+                parent, _, base = name.rpartition("/")
+                if parent == "osgi/modules" and is_ldm_bundle(base):
+                    found.append(base)
+            elif in_osgi:
+                break
+    return sorted(found)
+
+
+def package_bundles(package: Path) -> tuple[list[str], list[str]]:
+    """LDM bundles in the package's payload, and in its manifest's list.
+
+    One streamed pass over the `.ldmp`, ending as soon as both the top-level
+    `meta` and `files.tar.gz` have been read; nothing is extracted to disk.
+    """
+    payload: list[str] | None = None
+    manifest: list[str] | None = None
+    try:
+        with tarfile.open(package, mode="r|gz") as tar:
+            for member in tar:
+                name = member.name.removeprefix("./")
+                if not member.isfile() or name not in ("meta", "files.tar.gz"):
+                    continue
+                handle = tar.extractfile(member)
+                if handle is None:
+                    continue
+                if name == "files.tar.gz":
+                    payload = _payload_bundles(handle)
+                else:
+                    meta = json.loads(handle.read().decode("utf-8"))
+                    listed = (
+                        meta.get("osgi_modules") if isinstance(meta, dict) else None
+                    )
+                    manifest = sorted(
+                        n.strip()
+                        for n in str(listed or "").split(",")
+                        if is_ldm_bundle(n.strip())
+                    )
+                if payload is not None and manifest is not None:
+                    break
+    except (OSError, tarfile.TarError, EOFError, UnicodeDecodeError, ValueError) as e:
+        raise ArtefactError(f"cannot read {package}: {e}") from e
+    if manifest is None:
+        raise ArtefactError(f"{package} has no top-level 'meta' member")
+    if payload is None:
+        raise ArtefactError(
+            f"{package} has no top-level 'files.tar.gz' payload, so there is no "
+            "osgi tree to assert"
+        )
+    return payload, manifest
+
+
+def judge_bundles(
+    payload: list[str], manifest: list[str], in_source: list[str]
+) -> tuple[int, list[str]]:
+    """The check 4 verdict: 0 asserted, 1 shipped, 3 nothing to assert."""
+    if payload or manifest:
+        lines = [
+            "ERROR: the package carries LDM's own portal-workaround bundle "
+            "(LDM-#2359). It is internal to LDM and pinned to the publisher's "
+            "Liferay line, and consumers that check package contents refuse it:"
+        ]
+        lines.extend(f"     files.tar.gz!osgi/modules/{n}" for n in payload)
+        lines.extend(f"     meta osgi_modules: {n}" for n in manifest)
+        return CHECK_FAILED, lines
+    if not in_source:
+        return SKIPPED, [
+            "SKIPPED (not run): the source project's osgi/modules held no LDM "
+            "bundle when it was packaged -- its tag is outside every "
+            "workaround's window -- so a package without one proves nothing "
+            "about LDM-#2359."
+        ]
+    return 0, [
+        f"ASSERTED: the source project held {', '.join(in_source)} and the "
+        "package carries it neither in files.tar.gz nor in meta osgi_modules."
+    ]
+
+
+def main_package_bundles(package: Path, source: Path) -> int:
+    """Check 4 (`--package-bundles`): the exit code is the verdict."""
+    try:
+        in_source = source_bundles(source)
+        payload, manifest = package_bundles(package)
+    except ArtefactError as e:
+        print(f"ERROR: nothing was asserted -- {e}")
+        return CANNOT_READ
+    code, lines = judge_bundles(payload, manifest, in_source)
+    for line in lines:
+        print(line)
+    return code
+
+
 def main(argv: list[str]) -> int:
+    if len(argv) == 4 and argv[1] == "--package-bundles":
+        return main_package_bundles(Path(argv[2]), Path(argv[3]))
+
     if len(argv) == 3 and argv[1] == "--package":
         try:
             custom_env = package_custom_env(Path(argv[2]))
@@ -271,7 +423,8 @@ def main(argv: list[str]) -> int:
 
     if len(argv) != 2:
         print(
-            "usage: check_roundtrip_env_leak.py <project_dir> | --package <file.ldmp>"
+            "usage: check_roundtrip_env_leak.py <project_dir> | --package "
+            "<file.ldmp> | --package-bundles <file.ldmp> <source_project_dir>"
         )
         return 2
     project_dir = Path(argv[1])
