@@ -2,6 +2,7 @@ import contextlib
 import logging
 import os
 import sys
+import threading
 from pathlib import Path
 from typing import TextIO
 
@@ -57,6 +58,33 @@ class _TraceLogHandler(logging.Handler):
             # A logging handler must never take the process down, and there is
             # nowhere to report a failure to anyway -- the trace log IS the sink.
             pass
+
+
+# LDM-#2432: the update check runs on a daemon thread that nothing stops before
+# the interpreter exits. If finalization begins while that thread is inside a
+# write to stdout/stderr or the trace log, it is frozen holding the stream's
+# buffer lock, and the main thread's final flush aborts CPython ("could not
+# acquire lock ... at interpreter shutdown, possibly due to daemon threads",
+# exit 134). Writes from a gated thread therefore check the flag and write
+# under this lock, and `UI.close_background_writes` sets the flag and THEN takes
+# the lock: once it returns, no gated write is in progress and none can start.
+# Flag first, lock second: the lock is not fair, so a thread writing in a loop
+# could re-take it every time and starve a caller waiting before setting the
+# flag. Only threads that opt in via `UI.gated_background_writes` are affected;
+# the main thread never touches the lock.
+_background_shutdown = threading.Event()
+_background_write_lock = threading.RLock()
+_background_local = threading.local()
+
+
+@contextlib.contextmanager
+def _background_write_allowed():
+    """Yield whether the calling thread may write to a shared stream now."""
+    if not getattr(_background_local, "gated", False):
+        yield True
+        return
+    with _background_write_lock:
+        yield not _background_shutdown.is_set()
 
 
 # --- UI Helpers ---
@@ -208,6 +236,35 @@ class UI:
             cls._log_bridge = None
 
     @staticmethod
+    @contextlib.contextmanager
+    def gated_background_writes():
+        """Mark the current thread's UI writes as stoppable at exit (LDM-#2432)."""
+        _background_local.gated = True
+        try:
+            yield
+        finally:
+            _background_local.gated = False
+
+    @staticmethod
+    def open_background_writes():
+        """Re-allow gated writes. Only matters when dispatch runs more than once
+        in a process, i.e. in tests."""
+        _background_shutdown.clear()
+
+    @staticmethod
+    def close_background_writes(timeout=0.5):
+        """Stop every gated thread writing, waiting for one mid-write (LDM-#2432).
+
+        Returns False if a single write held the lock past `timeout` (e.g. a
+        blocked pipe); that one write may then still be in flight.
+        """
+        _background_shutdown.set()
+        acquired = _background_write_lock.acquire(timeout=timeout)
+        if acquired:
+            _background_write_lock.release()
+        return acquired
+
+    @staticmethod
     def trace(msg):
         """Writes a message strictly to the trace log, silently."""
         if UI._trace_handle:
@@ -216,8 +273,10 @@ class UI:
 
                 clean_msg = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", str(msg))
                 out_msg = clean_msg + "\n"
-                UI._trace_handle.write(out_msg)
-                UI._trace_handle.flush()
+                with _background_write_allowed() as allowed:
+                    if allowed:
+                        UI._trace_handle.write(out_msg)
+                        UI._trace_handle.flush()
             except Exception:
                 pass
 
@@ -322,6 +381,12 @@ class UI:
     @staticmethod
     def _print(msg, color=None, icon=None, file=None):
         """Internal print helper with Unicode safety and automatic redaction."""
+        with _background_write_allowed() as allowed:
+            if allowed:
+                UI._print_unguarded(msg, color, icon, file)
+
+    @staticmethod
+    def _print_unguarded(msg, color=None, icon=None, file=None):
         if file is None:
             file = sys.stdout
 
