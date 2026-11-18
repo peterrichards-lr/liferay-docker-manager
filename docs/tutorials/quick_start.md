@@ -120,7 +120,7 @@ newgrp docker
 
 ## Global Configuration (The `common/` Folder)
 
-LDM allows you to synchronize files (e.g., OSGi configs, licenses, LPKG modules) to **every** project stack automatically.
+LDM allows you to synchronize files (e.g., OSGi configs, licenses, LPKG modules) to **every** project stack automatically. See [Sharing Configuration Across Projects](../reference/configuration.md#sharing-configuration-across-projects-common) for what can be shared, which folders are read, and how to override a shared file in one project.
 
 ### 1. Baseline Assets (`init-common`)
 
@@ -748,4 +748,4 @@ LDM binaries use **"Magic Byte" detection** to accurately report their checksum 
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-11* | *Last Reviewed: 2026-11-11*
+*Last Updated: 2026-11-18* | *Last Reviewed: 2026-11-18*

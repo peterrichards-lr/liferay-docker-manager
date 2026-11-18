@@ -72,17 +72,61 @@ These custom containers are seamlessly integrated into the generated `docker-com
 - **`common/`**: Files here (configs, XML licenses, LPKG files) are synced to all project stacks.
 - **`services/`**: Place standalone `Dockerfile` directories here for orchestration.
 
-## Shared Configuration (`LDM_COMMON_DIR`)
+## Sharing Configuration Across Projects (`common/`)
 
-By default, LDM uses a `common/` directory located in the project's parent, the current working directory, or `~/.ldm/common/` to store shared configurations and licenses.
+Anything you put in a `common/` folder reaches every project LDM runs. This is the supported way to share configuration, such as an API key in an OSGi configuration, across several projects. Each time a project is created or run, LDM syncs:
 
-If you need to use a specific, shared configuration across multiple independent project directories or CI pipelines, you can override this by setting the `LDM_COMMON_DIR` environment variable:
+| in `common/` | copied to the project's |
+|---|---|
+| `*.config`, `*.cfg` | `osgi/configs` |
+| `*.xml` (licences) | `deploy` |
+| `*.lpkg` | `deploy` |
+| `portal-ext.properties` | merged into the project's `portal-ext.properties` |
+
+### Which `common/` folders are used
+
+LDM reads up to two, in this order:
+
+1. `~/.ldm/common/`, always, when it exists.
+2. **Then one more:** `LDM_COMMON_DIR` if it is set; otherwise the first `common/` found in the current directory, the project's parent, or its grandparent.
+
+The second folder is **added after** `~/.ldm/common/`, not used instead of it. For a `.config` or `.cfg` file present in both, the second folder's copy is the one that ends up in the project.
 
 ```bash
-# Example: Point LDM to a shared organization config folder
+# Example: add a shared organisation config folder for this shell
 export LDM_COMMON_DIR="/path/to/shared/organization/common"
 ldm run my-project
 ```
+
+### What can and cannot be shared
+
+| Liferay setting lives in | shareable via `common/` |
+|---|---|
+| System Settings (OSGi Configuration Admin) | yes, as a `.config` file |
+| Portal properties | yes, via `portal-ext.properties` |
+| Instance Settings (per instance, stored in the database) | **no** |
+| Control Panel screens with no OSGi configuration behind them | **no** |
+
+Settings in the last two rows have no file to place, so they must be entered in each project by hand.
+
+### Credentials are stored in plaintext
+
+A credential in a `common/` `.config` file sits in plaintext in that folder and is copied, in plaintext, into every project's `osgi/configs`. Treat both locations as you would any file holding a secret. This is the same exposure that makes `--keep-credentials` opt-in for snapshots (LDM-#1703).
+
+### Overriding a shared file in one project
+
+> [!WARNING]
+> **Editing a shared `.config` or `.cfg` inside a project does not stick.** LDM records each file it copies from `common/` in the project's `.liferay-docker.deployed`. On every later sync it overwrites a recorded file with the `common/` copy, silently, so an edit made in the project is lost on the next `ldm run`.
+>
+> This is **not the intended behaviour** and is under review: LDM-#2424 proposes a setting to protect, warn about, or overwrite such edits, defaulting to protecting them.
+
+Until then, to give one project its own version of a shared `.config` or `.cfg`:
+
+1. Delete the file from the project's `osgi/configs`.
+2. Remove its name from the project's `.liferay-docker.deployed`.
+3. Create your own version in `osgi/configs`.
+
+A file LDM did not copy is never overwritten. Licences follow their own rule: a `common/` licence replaces the project's only when it is better (for example, it expires later).
 
 ## State Directory (`LDM_HOME`)
 
@@ -163,7 +207,7 @@ itself behaves.
 | `LDM_ADMIN_PORT` | `18080` | Host port for the global proxy's admin endpoint. |
 | `LDM_ALLOW_ROOT` | `false` | Set `true` to permit running as root, overriding the sudo guard. |
 | `LDM_BRINGUP_TIMEOUT` | `1800` | Seconds allowed for `docker compose up`/`create` when starting a project's stack. A liveness bound, not a performance limit: it stops a dead Docker transport hanging a run for ever (exit `124`). `0` removes the bound and restores the unbounded wait. See [Stack bring-up timed out](../TROUBLESHOOTING.md#stack-bring-up-timed-out-exit-code-124). |
-| `LDM_COMMON_DIR` | — | Shared configuration directory. See [above](#shared-configuration-ldm_common_dir). |
+| `LDM_COMMON_DIR` | — | An extra `common/` folder, read after `~/.ldm/common/`. See [above](#which-common-folders-are-used). |
 | `LDM_CPU_IDLE_CHECKS` | `3` | Consecutive idle CPU samples before the readiness wait treats the portal as settled. |
 | `LDM_CPU_IDLE_THRESHOLD` | `15.0` | CPU percentage below which a sample counts as idle. |
 | `LDM_DEV_MODE` | unset | Must be `true` for developer-only commands; they refuse otherwise. |
@@ -318,4 +362,4 @@ LDM mounts.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-16* | *Last Reviewed: 2026-11-16*
+*Last Updated: 2026-11-18* | *Last Reviewed: 2026-11-18*
