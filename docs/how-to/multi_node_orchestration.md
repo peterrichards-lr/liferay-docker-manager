@@ -211,7 +211,7 @@ ldm logs my-project --target prod-node
 ldm shell my-project --target prod-node
 
 # Run safe SELECT query against remote database
-ldm db query "SELECT userId, emailAddress FROM User_" --target prod-node
+ldm db query my-project -s "SELECT userId, emailAddress FROM User_" --target prod-node
 
 # Lifecycle management on remote node
 ldm stop my-project --target prod-node
@@ -311,4 +311,4 @@ ldm run my-project --target prod-node --share --share-provider lfr-tunnel-docker
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-23* | *Last Reviewed: 2026-10-23*
+*Last Updated: 2026-11-18* | *Last Reviewed: 2026-11-18*
