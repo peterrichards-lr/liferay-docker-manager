@@ -1714,8 +1714,12 @@ function Test-ConfigEnvRefusesOtherService {
     [System.IO.File]::WriteAllText($metaPath, $before, (New-Object System.Text.UTF8Encoding $false))
 
     $prevHome = $env:LDM_HOME
+    $prevFault = $env:PYTHONFAULTHANDLER
     $prevLoc = Get-Location
     $env:LDM_HOME = $isoHome
+    # Parity with the bash half: a fatal error at interpreter shutdown dumps
+    # every thread's stack instead of only its last lines.
+    $env:PYTHONFAULTHANDLER = '1'
     Set-Location $projDir
     try {
         $out = & $LdmCmd -y --no-color config env -s my-ext "${probeVar}=1" 2>&1 | ConvertTo-LdmText
@@ -1724,6 +1728,7 @@ function Test-ConfigEnvRefusesOtherService {
     finally {
         Set-Location $prevLoc
         $env:LDM_HOME = $prevHome
+        $env:PYTHONFAULTHANDLER = $prevFault
     }
     $after = [System.IO.File]::ReadAllText($metaPath)
     Remove-Item -Recurse -Force $isoHome, $projDir -ErrorAction SilentlyContinue
