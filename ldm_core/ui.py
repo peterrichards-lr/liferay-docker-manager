@@ -178,7 +178,7 @@ class UI:
             UI._trace_handle = open(UI.TRACE_LOG_PATH, "w", encoding="utf-8")  # noqa: SIM115
 
             ts = datetime.now().isoformat()
-            command_line = " ".join(args)
+            command_line = UI._redact_command_line(args)
             UI._trace_handle.write(f"--- LDM Trace Log Started at {ts} ---\n")
             msg = f"Command: {command_line}\n"
             UI._trace_handle.write(msg)
@@ -192,6 +192,29 @@ class UI:
         except Exception:
             # Silently ignore trace log failures
             UI._trace_handle = None
+
+    @staticmethod
+    def _redact_command_line(args):
+        """The command line for the trace log header, credentials masked.
+
+        LDM-#2437. `UI.redact` catches `KEY=value` and `-p`/`--password`, but
+        not `ldm config admin_password <value>`, where the secret is the word
+        AFTER a credential-shaped key -- so mask that by name, as LDM-#1970
+        decided masking must be, then redact the rest.
+        """
+        from ldm_core.utils import is_credential_shaped
+
+        words = [str(a) for a in args]
+        masked = [
+            "[REDACTED]"
+            if i
+            and not words[i - 1].startswith("-")
+            and "=" not in words[i - 1]
+            and is_credential_shaped(words[i - 1])
+            else w
+            for i, w in enumerate(words)
+        ]
+        return UI.redact(" ".join(masked))
 
     @classmethod
     def _install_log_bridge(cls):
@@ -272,14 +295,15 @@ class UI:
                 import re
 
                 clean_msg = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", str(msg))
-                out_msg = clean_msg + "\n"
+                # LDM-#2437: redacted here, not by each caller. `_print`
+                # redacted its own messages, but the logging bridge and the
+                # direct `UI.trace` callers (tracebacks among them) did not, and
+                # the trace log is what users attach to bug reports. Redaction
+                # is idempotent, so `_print`'s messages are unaffected.
+                out_msg = UI.redact(clean_msg) + "\n"
                 with _background_write_allowed() as allowed:
                     if allowed:
-                        # Unchanged sink, only nested under the LDM-#2432
-                        # gate; CodeQL reports it as new because it moved.
-                        # The trace log's redaction is tracked separately.
-                        # codeql[py/clear-text-storage-sensitive-data]
-                        UI._trace_handle.write(out_msg)  # fmt: skip
+                        UI._trace_handle.write(out_msg)
                         UI._trace_handle.flush()
             except Exception:
                 pass
