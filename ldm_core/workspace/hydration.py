@@ -12,6 +12,7 @@ from ldm_core.utils import (
     safe_copy,
     safe_move,
 )
+from ldm_core.workspace.metadata import warn_oauth_erc_list_gaps
 from ldm_core.workspace.site_initializers import (
     is_site_initializer_zip,
     stage_for_deferred_deploy,
@@ -99,6 +100,14 @@ def _hydrate_from_workspace(self, workspace_root, paths, overwrite=True):
     _sync_modules_and_themes(self, workspace_root, paths, overwrite)
     _sync_fragments(self, workspace_root, paths, overwrite)
     _sync_fragment_overrides(self, workspace_root, paths, overwrite)
+
+    # LDM-#2407: the workspace source is the one place import sees a
+    # microservice's client-extension.yaml beside its LCP.json. Advisory, so a
+    # failure to read either must never fail the import.
+    try:
+        warn_oauth_erc_list_gaps(workspace_root)
+    except Exception:
+        pass
 
     return True
 

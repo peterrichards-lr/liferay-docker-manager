@@ -92,6 +92,59 @@ It exists because the rewrite used to skip any URL it could not match and
 report nothing at all, leaving the extension pointing at `localhost` with no
 indication of why (LDM-#2175).
 
+### OAuth applications must be listed in `LCP.json`
+
+A microservice that looks up its OAuth application by ERC -- for example
+`lxcConfig.oauthApplication(erc)` from `@rotty3000/config-node` -- resolves
+only an ERC named in `LIFERAY_OAUTH_APPLICATION_EXTERNAL_REFERENCE_CODES`, a
+comma-separated list. **This variable is required, and supplying it is your
+job:** Liferay's PaaS documentation puts it in the `env` block of the
+microservice's `LCP.json`, as required for all microservice client
+extensions. Neither DXP nor LDM writes it. LDM passes your `LCP.json` `env`
+block into the container, so the same entry works locally and on PaaS.
+
+```json
+"env": {
+    "LIFERAY_OAUTH_APPLICATION_EXTERNAL_REFERENCE_CODES": "my-service-oahs,my-service-oaua"
+}
+```
+
+Without it, config-node 0.4.1 throws
+`TypeError: Cannot read properties of undefined (reading 'includes')`, which
+says nothing about the cause; from 0.4.2 the lookup returns `undefined`
+instead.
+
+LDM warns when all of these hold for a client extension directory:
+
+- it declares an `oAuthApplicationHeadlessServer` or
+  `oAuthApplicationUserAgent`;
+- it is a microservice: it has an `LCP.json` and a `Dockerfile`, and is not a
+  `Job`;
+- its `package.json` lists `@rotty3000/config-node` or
+  `@liferay/client-extension` in `dependencies` or `devDependencies`;
+- its `LCP.json` `env` has no `LIFERAY_OAUTH_APPLICATION_EXTERNAL_REFERENCE_CODES`
+  at all.
+
+The warning names the line to add, listing every declared ERC; trim it to the
+applications the service actually looks up. It appears when `ldm import` or
+`ldm link` reads the workspace, and in `ldm doctor`'s project health. It is a
+warning, never an error.
+
+Other runtimes are not checked. A Spring Boot extension reads
+`liferay.oauth.application.external.reference.codes` from its own
+`application-default.properties` and fails clearly at startup without it.
+A list that is present but leaves out a declared ERC is not a warning either:
+leaving out an application the service never looks up is normal. `ldm doctor`
+mentions it only with `--info` or `--verbose`.
+
+config-node can also read the key from an `application.json` in the process's
+working directory or project root. LDM does not count that file, because
+which one is read depends on the working directory at runtime. Use the
+`LCP.json` entry.
+
+Do not try to put the list into the routes tree instead: Liferay recreates
+`routes/default/<project>` on every publish (LDM-#2407).
+
 ---
 
 ## 🔄 3. Live Hot-Reloading Workflow

@@ -52,6 +52,199 @@ def _parse_client_extension_yaml(self, content):
     return info
 
 
+OAUTH_APPLICATION_TYPES = (
+    "oAuthApplicationHeadlessServer",
+    "oAuthApplicationUserAgent",
+)
+OAUTH_ERC_LIST_VAR = "LIFERAY_OAUTH_APPLICATION_EXTERNAL_REFERENCE_CODES"
+
+
+def declared_oauth_application_ercs(cx_dir):
+    """Every OAuth application ERC a client extension directory declares.
+
+    LDM-#2407. Read from `client-extension.yaml`, where the ERC is the block
+    key; failing that from the built `*.client-extension-config.json`, where
+    it is the configuration key's suffix after `~`. The second form is what an
+    LDM project holds: it keeps extracted build zips, which carry no YAML.
+    `_parse_client_extension_yaml` is not reused because it keeps only the
+    first headless-server ERC and no user-agent ones.
+    """
+    ercs: list[str] = []
+    yaml_file = next(cx_dir.glob("client-extension.y*ml"), None)
+    if yaml_file:
+        try:
+            data = yaml.safe_load(yaml_file.read_text())
+        except Exception:
+            data = None
+        if isinstance(data, dict):
+            for key, block in data.items():
+                if (
+                    isinstance(block, dict)
+                    and block.get("type") in OAUTH_APPLICATION_TYPES
+                ):
+                    ercs.append(str(key).strip())
+        return ercs
+
+    for cfg_file in sorted(cx_dir.glob("*client-extension-config.json")):
+        try:
+            data = json.loads(cfg_file.read_text())
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        for key, val in data.items():
+            if (
+                isinstance(val, dict)
+                and val.get("type") in OAUTH_APPLICATION_TYPES
+                and "~" in key
+            ):
+                erc = key.split("~", 1)[1].strip()
+                if erc and erc not in ercs:
+                    ercs.append(erc)
+    return ercs
+
+
+def _split_erc_list(raw):
+    """The ERCs in a `LIFERAY_OAUTH_APPLICATION_EXTERNAL_REFERENCE_CODES` value.
+
+    Mirrors config-node's `unquote`: one pair of surrounding quotes is
+    stripped, then the value splits on commas.
+    """
+    if isinstance(raw, list):
+        return [str(v).strip() for v in raw if str(v).strip()]
+    text = str(raw).strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
+        text = text[1:-1]
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
+CONFIG_NODE_PACKAGES = ("@rotty3000/config-node", "@liferay/client-extension")
+
+
+def _depends_on_config_node(cx_dir):
+    """Whether the extension's package.json depends on config-node.
+
+    A missing or unreadable package.json counts as no: a Spring Boot or other
+    runtime reads its own configuration and fails clearly when the key is
+    absent, whereas config-node 0.4.1 throws an unrelated TypeError.
+    """
+    try:
+        data = json.loads((cx_dir / "package.json").read_text())
+    except Exception:
+        return False
+    if not isinstance(data, dict):
+        return False
+    for section in ("dependencies", "devDependencies"):
+        deps = data.get(section)
+        if isinstance(deps, dict) and any(p in deps for p in CONFIG_NODE_PACKAGES):
+            return True
+    return False
+
+
+def oauth_erc_list_gap(cx_dir):
+    """Report a config-node microservice whose LCP.json does not name its OAuth apps.
+
+    LDM-#2407. config-node's `lxcConfig.oauthApplication(erc)` resolves only
+    an ERC listed in `liferay.oauth.application.external.reference.codes`,
+    which its env provider (`7000-individual-env-vars`) maps from
+    `LIFERAY_OAUTH_APPLICATION_EXTERNAL_REFERENCE_CODES`. Neither DXP nor LDM
+    writes that list -- Liferay's PaaS docs make it the author's `LCP.json`
+    `env` entry -- and config-node 0.4.1 throws a TypeError when it is absent,
+    which names nothing useful.
+
+    Considered only: a directory that declares an `oAuthApplication*` ERC,
+    ships a microservice (`LCP.json` plus `Dockerfile`, not a `Job`), and
+    whose `package.json` depends on config-node. The association is
+    same-directory: Liferay's samples, AICA and ldm-cx-samples all declare a
+    service's OAuth application in that service's own `client-extension.yaml`.
+
+    config-node can also read the key from `application.json`, but from the
+    process's working directory and the nearest `package.json` above it --
+    a runtime location LDM cannot see -- so that is deliberately not treated
+    as satisfying the list.
+
+    Returns None when there is nothing to say, else a dict with `declared`,
+    `listed` (None when the variable is absent, which is the warning case) and
+    `missing` (ERCs a present list omits, which is informational only).
+    """
+    lcp_file = cx_dir / "LCP.json"
+    if (
+        not lcp_file.is_file()
+        or not (cx_dir / "Dockerfile").is_file()
+        or not _depends_on_config_node(cx_dir)
+    ):
+        return None
+    try:
+        lcp = json.loads(lcp_file.read_text())
+    except Exception:
+        # An unreadable LCP.json is reported by validate_lcp_json already.
+        return None
+    if not isinstance(lcp, dict) or str(lcp.get("kind") or "").lower() == "job":
+        return None
+
+    declared = declared_oauth_application_ercs(cx_dir)
+    if not declared:
+        return None
+
+    env = lcp.get("env")
+    raw = env.get(OAUTH_ERC_LIST_VAR) if isinstance(env, dict) else None
+    if raw is None:
+        return {"declared": declared, "listed": None, "missing": declared}
+    listed = _split_erc_list(raw)
+    missing = [erc for erc in declared if erc not in listed]
+    return (
+        {"declared": declared, "listed": listed, "missing": missing}
+        if missing
+        else None
+    )
+
+
+def describe_oauth_erc_list_gap(gap, label):
+    """The (summary, tip) pair for a gap from `oauth_erc_list_gap`."""
+    if gap["listed"] is None:
+        summary = (
+            f"'{label}' uses config-node and declares OAuth application(s) "
+            f"{', '.join(gap['declared'])}, but its LCP.json env has no "
+            f"{OAUTH_ERC_LIST_VAR}. lxcConfig.oauthApplication(erc) resolves "
+            "only ERCs in that list, and config-node 0.4.1 throws a TypeError "
+            "without it."
+        )
+        tip = (
+            f'Add to the "env" block of {label}/LCP.json: '
+            f'"{OAUTH_ERC_LIST_VAR}": "{",".join(gap["declared"])}" -- '
+            "listing the applications this service looks up."
+        )
+    else:
+        summary = (
+            f"'{label}' declares OAuth application(s) "
+            f"{', '.join(gap['missing'])} that its LCP.json "
+            f"{OAUTH_ERC_LIST_VAR} does not list; oauthApplication(erc) will "
+            "not resolve them in this service. Fine if it never looks them up."
+        )
+        tip = ""
+    return summary, tip
+
+
+def warn_oauth_erc_list_gaps(workspace_root):
+    """Warn, at import, for each config-node microservice lacking the list.
+
+    LDM-#2407. Advisory only, and only for an ABSENT variable: a list that
+    omits an ERC is usually deliberate (AICA leaves out user-agent
+    applications it never looks up), so import says nothing about it.
+    """
+    ce_dir = workspace_root / "client-extensions"
+    if not ce_dir.is_dir():
+        return
+    for item in sorted(ce_dir.iterdir()):
+        if not item.is_dir() or item.name.startswith("."):
+            continue
+        gap = oauth_erc_list_gap(item)
+        if gap and gap["listed"] is None:
+            summary, tip = describe_oauth_erc_list_gap(gap, item.name)
+            UI.warning(summary)
+            UI.raw(f"  {tip}")
+
+
 def _get_effective_blacklist(self, paths=None):
     blacklist = load_env_blacklist(SCRIPT_DIR / "common" / "env-blacklist.txt")
     if paths and paths.get("root"):
