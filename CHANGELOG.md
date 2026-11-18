@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.12] - 2026-11-18
+
+### Added
+
+- **`ldm doctor` warns when a config-node microservice's `LCP.json` does not set `LIFERAY_OAUTH_APPLICATION_EXTERNAL_REFERENCE_CODES`** (LDM-#2407). config-node's `lxcConfig.oauthApplication(erc)` resolves only the ERCs listed in that variable, and neither DXP nor LDM writes it. Without it, config-node 0.4.1 fails with an unhelpful TypeError. The warning shows the exact line to add. It appears only for a microservice (an `LCP.json` and a `Dockerfile`, not a `Job`) that depends on `@rotty3000/config-node` or `@liferay/client-extension` and declares an OAuth application, and only when the variable is absent. `ldm import`, `link` and `init-from` give the same warning, and it can never fail an import.
+
+### Changed
+
+- **`release.py --promote` refuses a patch release that has no upgrade notes of its own** (LDM-#2412), so a patch can no longer ship showing an older version's notes.
+
+- **The verification reports already in the repository are anonymized** (Refs LDM-#2410). v2.26.11 stopped new reports being archived with home-directory paths. This removes the user names from the 96 reports archived before that.
+
+### Fixed
+
+- **`ldm wait` no longer times out because the host slept or the Docker VM was suspended** (LDM-#2413). The readiness timeout ran on the wall clock, so a MacBook that slept mid-boot used up the whole 600 s and LDM reported "Liferay failed to become healthy". A gap of more than 60 s between polls is now treated as a suspension and excluded from the timeout, with one warning naming how long it lasted. At most `max(1 h, timeout)` is excluded, so a wedged Docker daemon still times out rather than hanging automation.
+
+- **The post-upgrade check on Windows no longer fails with `PYI-10120: Failed to load Python DLL`** (LDM-#2411). The updater inherited the old `ldm.exe`'s PyInstaller environment, which pointed the new binary at a runtime folder that had already been deleted. The upgrade itself always succeeded. This takes effect from the upgrade *out of* this release, because the updater is written by the version you upgrade from.
+
+- **The upgrade banner shows only the notes for the version you installed** (LDM-#2412). A patch with no notes of its own showed the minor's notes as new, as v2.26.10 did, and a pre-release never matched its own notes. Notes are now looked up by the exact version, then the version without its `-pre.N` suffix, and the minor's notes only for an `X.Y.0` release. The 2.26 note for LDM-#1944 wrongly said the config tree was "still blocked"; it now says `UMASK=0022` fixed it.
+
+## [v2.26.12-pre.1] - 2026-11-18
+
+### Added
+
+- **`ldm doctor` warns when a config-node microservice's `LCP.json` does not set `LIFERAY_OAUTH_APPLICATION_EXTERNAL_REFERENCE_CODES`** (LDM-#2407). config-node's `lxcConfig.oauthApplication(erc)` resolves only the ERCs listed in that variable, and neither DXP nor LDM writes it. Without it, config-node 0.4.1 fails with an unhelpful TypeError. The warning shows the exact line to add. It appears only for a microservice (an `LCP.json` and a `Dockerfile`, not a `Job`) that depends on `@rotty3000/config-node` or `@liferay/client-extension` and declares an OAuth application, and only when the variable is absent. `ldm import`, `link` and `init-from` give the same warning, and it can never fail an import.
+
+### Fixed
+
+- **`ldm wait` no longer times out because the host slept or the Docker VM was suspended** (LDM-#2413). The readiness timeout ran on the wall clock, so a MacBook that slept mid-boot used up the whole 600 s and LDM reported "Liferay failed to become healthy". A gap of more than 60 s between polls is now treated as a suspension and excluded from the timeout, with one warning naming how long it lasted. At most `max(1 h, timeout)` is excluded, so a wedged Docker daemon still times out rather than hanging automation.
+- **The post-upgrade check on Windows no longer fails with `PYI-10120: Failed to load Python DLL`** (LDM-#2411). The updater inherited the old `ldm.exe`'s PyInstaller environment, which pointed the new binary at a runtime folder that had already been deleted. The upgrade itself always succeeded. This takes effect from the upgrade *out of* this release, because the updater is written by the version you upgrade from.
+- **The upgrade banner shows only the notes for the version you installed** (LDM-#2412). A patch with no notes of its own showed the minor's notes as new, as v2.26.10 did, and a pre-release never matched its own notes. Notes are now looked up by the exact version, then the version without its `-pre.N` suffix, and the minor's notes only for an `X.Y.0` release. The 2.26 note for LDM-#1944 wrongly said the config tree was "still blocked"; it now says `UMASK=0022` fixed it.
+
+### Changed
+
+- **`release.py --promote` refuses a patch release that has no upgrade notes of its own** (LDM-#2412), so a patch can no longer ship showing an older version's notes.
+- **The verification reports already in the repository are anonymized** (Refs LDM-#2410). v2.26.11 stopped new reports being archived with home-directory paths. This removes the user names from the 96 reports archived before that.
+
 ## [v2.26.11] - 2026-11-17
 
 ### Fixed
