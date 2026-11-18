@@ -1666,6 +1666,149 @@ function Test-GuidePrecedence {
     return @{ Ok = $true; Message = "[SUCCESS] 'ldm guide' describes the real precedence and a command that works (LDM-#1824)." }
 }
 
+function Test-InitAcceptsTagPrefix {
+    # LDM-#2168. 'ldm init --tag-prefix 2026.q3' was refused with
+    # 'unrecognized arguments: --tag-prefix 2026.q3', so the command a new user
+    # reaches for first could not scope tag discovery to a release line.
+    #
+    # Asserted as a PARSE, with nothing run: a sentinel option no parser knows
+    # rides along, so argparse refuses before cmd_init runs and names every
+    # argument it did not recognise. A fixed binary names only the sentinel; a
+    # broken one names '--tag-prefix 2026.q3' with it. test_init_tag_prefix.py
+    # covers the value reaching discovery. Parity with the bash half.
+    param([string]$LdmCmd)
+
+    $sentinel = '--ldm-e2e-not-an-option'
+    $out = & $LdmCmd init ldm-e2e-tag-prefix --tag-prefix 2026.q3 $sentinel 2>&1 | ConvertTo-LdmText
+    $code = $LASTEXITCODE
+
+    $refused = ($out -split "`n" | Where-Object { $_.Contains('unrecognized arguments:') } | Select-Object -First 1)
+    if ($code -ne 2 -or -not $refused -or -not $refused.Contains($sentinel)) {
+        return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm init ... ${sentinel}' did not fail at the parser (exit ${code}), so the parse of --tag-prefix could not be observed.`n   Output was: ${out}" }
+    }
+    if ($refused.Contains('--tag-prefix')) {
+        return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm init' does not accept --tag-prefix (LDM-#2168).`n   | ${refused}" }
+    }
+    return @{ Ok = $true; Message = "[SUCCESS] 'ldm init' accepts --tag-prefix; the parser refused only the sentinel (LDM-#2168)." }
+}
+
+function Test-ConfigEnvRefusesOtherService {
+    # LDM-#2384. 'ldm config env -s <service> KEY=VAL' parsed -s and then
+    # dropped it, so the variable was written into custom_env -- which the
+    # composer applies to the LIFERAY container only. The fix refuses any
+    # service but Liferay, before the project is even resolved.
+    #
+    # Asserted on exit 1, the refusal naming the service (exit 1 alone also
+    # means "Docker not accessible"), and the project's meta left unchanged.
+    # Parity with the bash half.
+    param([string]$LdmCmd, [string]$WorkDir)
+
+    $isoHome = Join-Path $WorkDir 'envsvc-home'
+    $projDir = Join-Path $WorkDir 'envsvc-proj'
+    $probeVar = 'LDM_E2E_2384_PROBE'
+
+    Remove-Item -Recurse -Force $isoHome, $projDir -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $isoHome, $projDir | Out-Null
+    $metaPath = Join-Path $projDir 'meta'
+    $before = '{"container_name": "envsvc-proj", "tag": "2026.q1.7-lts", "custom_env": "{\"EXISTING\": \"1\"}"}'
+    [System.IO.File]::WriteAllText($metaPath, $before, (New-Object System.Text.UTF8Encoding $false))
+
+    $prevHome = $env:LDM_HOME
+    $prevLoc = Get-Location
+    $env:LDM_HOME = $isoHome
+    Set-Location $projDir
+    try {
+        $out = & $LdmCmd -y --no-color config env -s my-ext "${probeVar}=1" 2>&1 | ConvertTo-LdmText
+        $code = $LASTEXITCODE
+    }
+    finally {
+        Set-Location $prevLoc
+        $env:LDM_HOME = $prevHome
+    }
+    $after = [System.IO.File]::ReadAllText($metaPath)
+    Remove-Item -Recurse -Force $isoHome, $projDir -ErrorAction SilentlyContinue
+
+    $verdict = $null
+    if ($code -ne 1) {
+        $verdict = "'ldm config env -s my-ext' exited ${code}; expected 1 (LDM-#2384)."
+    }
+    elseif (-not $out.Contains("cannot target service 'my-ext'")) {
+        $verdict = "'ldm config env -s my-ext' exited 1, but not for the service refusal (LDM-#2384)."
+    }
+    elseif ($after -cne $before) {
+        $verdict = "'ldm config env -s my-ext' refused, yet the project's meta changed (LDM-#2384)."
+    }
+    if ($verdict) {
+        return @{ Ok = $false; Message = "[ERROR] ERROR: ${verdict}`n   Output was: ${out}" }
+    }
+    return @{ Ok = $true; Message = "[SUCCESS] 'ldm config env -s <non-liferay service>' is refused with exit 1 and nothing is written (LDM-#2384)." }
+}
+
+function Test-DoctorWarnsMissingOAuthErcList {
+    # LDM-#2407. config-node's lxcConfig.oauthApplication(erc) resolves only
+    # ERCs listed in LIFERAY_OAUTH_APPLICATION_EXTERNAL_REFERENCE_CODES, which
+    # only the extension author writes (in LCP.json), and config-node 0.4.1
+    # throws an unhelpful TypeError without it. 'ldm doctor' now warns.
+    #
+    # Static fixture, no boot: doctor reads the project from the working
+    # directory and walks it for LCP.json whether or not anything runs. Its
+    # exit code is NOT asserted -- a throwaway project with no compose file or
+    # licence fails other doctor checks by design. Asserted: the warn row, the
+    # hint carrying the exact line to add ('--detailed' prints hints), and
+    # silence once the variable is present. Parity with the bash half.
+    param([string]$LdmCmd, [string]$WorkDir)
+
+    $isoHome = Join-Path $WorkDir 'ercdoc-home'
+    $projDir = Join-Path $WorkDir 'ercdoc-proj'
+    $cx = Join-Path (Join-Path $projDir 'client-extensions') 'svc'
+    $var = 'LIFERAY_OAUTH_APPLICATION_EXTERNAL_REFERENCE_CODES'
+    $noBom = New-Object System.Text.UTF8Encoding $false
+
+    Remove-Item -Recurse -Force $isoHome, $projDir -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $isoHome, $cx | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $projDir 'meta'), '{"container_name": "ercdoc-proj", "tag": "2026.q1.7-lts"}', $noBom)
+    $yaml = "svc-oahs:`n    .serviceAddress: localhost:3001`n    name: Svc Headless Server`n    scopes:`n        -   Liferay.Headless.Delivery.everything`n    type: oAuthApplicationHeadlessServer`n"
+    [System.IO.File]::WriteAllText((Join-Path $cx 'client-extension.yaml'), $yaml, $noBom)
+    [System.IO.File]::WriteAllText((Join-Path $cx 'LCP.json'), '{"id": "svc", "kind": "Deployment", "env": {}}', $noBom)
+    [System.IO.File]::WriteAllText((Join-Path $cx 'Dockerfile'), "FROM node:22`n", $noBom)
+    [System.IO.File]::WriteAllText((Join-Path $cx 'package.json'), '{"dependencies": {"@rotty3000/config-node": "^0.4.1"}}', $noBom)
+
+    $prevHome = $env:LDM_HOME
+    $prevLoc = Get-Location
+    $env:LDM_HOME = $isoHome
+    Set-Location $projDir
+    $verdict = $null
+    try {
+        $out = & $LdmCmd --no-color doctor --detailed 2>&1 | ConvertTo-LdmText
+        $row = ($out -split "`n" | Where-Object { $_.Contains('OAuth ERC List') -and $_.Contains('Missing (client-extensions/svc)') } | Select-Object -First 1)
+        if (-not $row) {
+            $verdict = "'ldm doctor' did not warn that client-extensions/svc's LCP.json lacks ${var} (LDM-#2407)."
+        }
+        elseif (-not $out.Contains("`"${var}`": `"svc-oahs`"")) {
+            $verdict = "'ldm doctor' warned, but its hint does not carry the line to add (LDM-#2407)."
+        }
+        else {
+            [System.IO.File]::WriteAllText((Join-Path $cx 'LCP.json'), "{`"id`": `"svc`", `"kind`": `"Deployment`", `"env`": {`"${var}`": `"svc-oahs`"}}", $noBom)
+            $quiet = & $LdmCmd --no-color doctor --detailed 2>&1 | ConvertTo-LdmText
+            if ($quiet.Contains('OAuth ERC List')) {
+                $verdict = "'ldm doctor' still warns once LCP.json lists the ERC, so the warning is not specific (LDM-#2407)."
+                $out = $quiet
+            }
+        }
+    }
+    finally {
+        Set-Location $prevLoc
+        $env:LDM_HOME = $prevHome
+        Remove-Item -Recurse -Force $isoHome, $projDir -ErrorAction SilentlyContinue
+    }
+
+    if ($verdict) {
+        $said = ($out -split "`n" | Where-Object { $_.Contains('OAuth') -or $_.Contains('ERC') -or $_.Contains('Traceback') } | Select-Object -First 5) -join "`n   "
+        return @{ Ok = $false; Message = "[ERROR] ERROR: ${verdict}`n   doctor said: ${said}" }
+    }
+    return @{ Ok = $true; Message = "[SUCCESS] 'ldm doctor' warns for a config-node microservice whose LCP.json lacks ${var}, and is quiet once it is set (LDM-#2407)." }
+}
+
 function Test-MacPinRefusal {
     # LDM-#1808: exercise the MAC pin's REFUSAL, which had never executed.
     #
@@ -3273,6 +3416,33 @@ try {
         Write-Verdict $guide.Message
     } else {
         Write-TrapNote $guide.Message -Color Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying 'ldm init' accepts --tag-prefix (LDM-#2168)..."
+    $initTagPrefix = Test-InitAcceptsTagPrefix -LdmCmd $LDM_CMD
+    if ($initTagPrefix.Ok) {
+        Write-Verdict $initTagPrefix.Message
+    } else {
+        Write-TrapNote $initTagPrefix.Message -Color Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying 'ldm config env -s <service>' refuses rather than writing to Liferay (LDM-#2384)..."
+    $envSvc = Test-ConfigEnvRefusesOtherService -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE
+    if ($envSvc.Ok) {
+        Write-Verdict $envSvc.Message
+    } else {
+        Write-TrapNote $envSvc.Message -Color Red
+        exit 1
+    }
+
+    Write-Host ">> Verifying 'ldm doctor' warns on a missing OAuth ERC list (LDM-#2407)..."
+    $ercDoctor = Test-DoctorWarnsMissingOAuthErcList -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE
+    if ($ercDoctor.Ok) {
+        Write-Verdict $ercDoctor.Message
+    } else {
+        Write-TrapNote $ercDoctor.Message -Color Red
         exit 1
     }
 
@@ -5815,6 +5985,11 @@ echo "SEEN $seen BAD$bad"
     # Asserted from startup-status.json, which LDM writes on EVERY boot,
     # rather than from the --benchmark output: an assertion that only runs
     # under a flag is one more thing that silently does not run (LDM-#2135).
+    #
+    # LDM-#2172: the same file must carry 'docker_allocation', the figures the
+    # heap was sized from. cmd_wait reads them with every exception suppressed,
+    # so a broken seam writes null silently; the checker demands them of a
+    # ready boot. Parity with the bash half.
     Write-Verdict ">> Verifying LDM recorded the phases of the boot it just performed (LDM-#2169)..."
     $phasesRaw = & $VENV_PYTHON (Join-Path $PSScriptRoot "check_startup_phases.py") (Join-Path $LDM_WORKSPACE $PROJECT_NAME) 2>&1
     $phasesRc = $LASTEXITCODE
@@ -5823,13 +5998,13 @@ echo "SEEN $seen BAD$bad"
         if ($phaseLine.Trim()) { Write-Verdict $phaseLine.TrimEnd() }
     }
     if ($phasesRc -eq 0) {
-        Write-Verdict "[SUCCESS] LDM recorded a decomposable startup phase breakdown (LDM-#2169)."
+        Write-Verdict "[SUCCESS] LDM recorded a decomposable startup phase breakdown (LDM-#2169), with the Docker allocation beside it (LDM-#2172)."
     }
     elseif ($phasesRc -eq 3) {
         Write-Verdict "[WARNING] SKIPPED (not run): the startup phases were NOT evaluated -- see the reason above. This is not a pass."
     }
     elseif ($phasesRc -eq 1) {
-        throw "LDM did not record usable startup phases for this boot (LDM-#2169). What it did record is listed above."
+        throw "LDM did not record usable startup phases, or the Docker allocation, for this boot (LDM-#2169/#2172). What it did record is listed above."
     }
     else {
         throw "The startup-phase check could not run (exit $phasesRc). The LDM-#2169 assertion was NOT evaluated, and this is not a skip."
@@ -7183,6 +7358,37 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     if ($roundTripOk) {
         Invoke-RoundTripEnvCheck -What "The package $PROJECT_NAME.ldmp" -CheckerArgs @("--package", $roundTripPkg)
     }
+    # LDM-#2359: the package must not carry LDM's own portal-workaround
+    # bundle. 'ldm run' places it in osgi/modules, and v2.26.9's 'ldm package'
+    # shipped it inside AICA's .ldmp, where AICA's release gate refused it as
+    # "shipped but not built". The same checker streams the .ldmp once and
+    # extracts nothing. With no bundle in the SOURCE project's osgi/modules (its
+    # tag is outside every workaround window) a clean package proves nothing,
+    # and that is reported as SKIPPED, not as a pass. The verdict goes in
+    # $script:roundTripEnvOk with the env leak, so neither skips the reset
+    # check that $roundTripOk gates. Parity with the bash half.
+    if ($roundTripOk) {
+        $bundleRaw = & $VENV_PYTHON (Join-Path $PSScriptRoot "check_roundtrip_env_leak.py") --package-bundles $roundTripPkg (Join-Path $LDM_WORKSPACE $PROJECT_NAME) 2>&1
+        $bundleRc = $LASTEXITCODE
+        $bundleText = $bundleRaw | ConvertTo-LdmText
+        foreach ($bundleLine in ($bundleText -split "`n")) {
+            if ($bundleLine.Trim()) { Write-Verdict $bundleLine.TrimEnd() }
+        }
+        if ($bundleRc -eq 0) {
+            Write-Verdict "[SUCCESS] The package $PROJECT_NAME.ldmp leaves out LDM's own portal-workaround bundle (LDM-#2359)."
+        }
+        elseif ($bundleRc -eq 3) {
+            Write-Verdict "[WARNING] SKIPPED (not run): LDM-#2359 was NOT evaluated -- see the reason above. This is not a pass."
+        }
+        elseif ($bundleRc -eq 1) {
+            Write-Verdict "[ERROR] The package $PROJECT_NAME.ldmp carries LDM's own portal-workaround bundle -- named above (LDM-#2359)."
+            $script:roundTripEnvOk = $false
+        }
+        else {
+            Write-Verdict "[ERROR] The bundle check of $PROJECT_NAME.ldmp could not run (exit $bundleRc). LDM-#2359 was NOT evaluated and this is not a skip."
+            $script:roundTripEnvOk = $false
+        }
+    }
     # The sidecar checksum is the artefact LDM-#2159 was about: it exists, it
     # is correct, and the importer could not read it.
     if ($roundTripOk -and -not (Test-Path "$roundTripPkg.sha256")) {
@@ -7367,7 +7573,7 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     # LDM-#2372: an env leak fails the run too, but only here, after the reset
     # check has had its turn.
     if (-not $script:roundTripEnvOk) {
-        throw "The .ldmp round-trip env-leak check failed or could not run (LDM-#2370/#2372). The reason is recorded above."
+        throw "The .ldmp round-trip env-leak or bundle check failed or could not run (LDM-#2370/#2372/#2359). The reason is recorded above."
     }
 
     } # LDM-#1975 end section: extras

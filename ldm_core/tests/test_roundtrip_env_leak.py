@@ -12,6 +12,7 @@ subprocess because the exit code IS the contract the shell halves consume:
 0 clean, 1 defect, anything else means nothing was asserted.
 """
 
+import importlib.util
 import io
 import json
 import os
@@ -168,6 +169,173 @@ class ThePackageIsReadWithoutExtracting(unittest.TestCase):
         self.assertEqual(code, CANNOT_READ, out)
 
 
+BUNDLE = "com.liferay.custom.dxp.routes.domain.jar"
+SKIPPED = 3
+
+
+def _gz_tar(members) -> bytes:
+    """A gzipped tar of (name, data) members; data None makes a directory."""
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for name, data in members:
+            info = tarfile.TarInfo(name)
+            if data is None:
+                info.type = tarfile.DIRTYPE
+                tar.addfile(info)
+            else:
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+    return buf.getvalue()
+
+
+class ThePackageCarriesNoLdmBundle(unittest.TestCase):
+    """`--package-bundles` (LDM-#2359): v2.26.9's `ldm package` shipped LDM's
+    portal-workaround jar inside AICA's .ldmp, because a snapshot archived the
+    whole `osgi` tree. The package is the shape `cmd_package` writes: a w:gz
+    tar of the snapshot directory, holding `meta` and the nested
+    `files.tar.gz` payload whose `osgi` block `tar.add` writes contiguously."""
+
+    def _check(self, payload_members, *, osgi_modules="", source_has=True, order=None):
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as cwd:
+            root = Path(tmp)
+            source = root / "source"
+            (source / "osgi" / "modules").mkdir(parents=True)
+            if source_has:
+                (source / "osgi" / "modules" / BUNDLE).write_bytes(b"PK")
+            meta = json.dumps(
+                {"project_name": "p", "osgi_modules": osgi_modules}
+            ).encode()
+            members = {"meta": meta, "files.tar.gz": _gz_tar(payload_members)}
+            names = order or ["files.tar.gz", "meta"]
+            package = root / "p.ldmp"
+            package.write_bytes(_gz_tar([(n, members[n]) for n in names]))
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(CHECKER),
+                    "--package-bundles",
+                    str(package),
+                    str(source),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                cwd=cwd,
+            )
+            # Streamed into memory: nothing is extracted beside it or in the cwd.
+            self.assertEqual(
+                sorted(p.name for p in root.iterdir()), ["p.ldmp", "source"]
+            )
+            self.assertEqual(list(Path(cwd).iterdir()), [])
+            return result.returncode, result.stdout + result.stderr
+
+    CLEAN_PAYLOAD = (
+        ("files", None),
+        ("files/portal-ext.properties", b"x=1"),
+        ("osgi", None),
+        ("osgi/modules", None),
+        ("osgi/modules/my.module.jar", b"PK"),
+        ("data", None),
+        ("data/document_library/blob", os.urandom(64 * 1024)),
+    )
+
+    def test_a_clean_package_from_a_source_holding_the_bundle_passes(self):
+        code, out = self._check(self.CLEAN_PAYLOAD, osgi_modules="my.module.jar")
+        self.assertEqual(code, CLEAN, out)
+        self.assertIn("ASSERTED", out)
+        self.assertIn(BUNDLE, out)
+
+    def test_the_bundle_in_the_payload_is_named(self):
+        payload = [*self.CLEAN_PAYLOAD[:5], (f"osgi/modules/{BUNDLE}", b"PK")]
+        for order in (["files.tar.gz", "meta"], ["meta", "files.tar.gz"]):
+            with self.subTest(order=order):
+                code, out = self._check(payload, order=order)
+                self.assertEqual(code, DEFECT, out)
+                self.assertIn(f"files.tar.gz!osgi/modules/{BUNDLE}", out)
+
+    def test_the_bundle_in_the_manifest_alone_is_named(self):
+        code, out = self._check(
+            self.CLEAN_PAYLOAD, osgi_modules=f"my.module.jar,{BUNDLE}"
+        )
+        self.assertEqual(code, DEFECT, out)
+        self.assertIn(f"meta osgi_modules: {BUNDLE}", out)
+
+    def test_a_bundle_is_a_failure_even_when_the_source_had_none(self):
+        payload = [
+            ("osgi", None),
+            ("osgi/modules", None),
+            (f"osgi/modules/{BUNDLE}", b"PK"),
+        ]
+        code, out = self._check(payload, source_has=False)
+        self.assertEqual(code, DEFECT, out)
+
+    def test_a_source_that_never_had_the_bundle_is_a_skip_not_a_pass(self):
+        code, out = self._check(self.CLEAN_PAYLOAD, source_has=False)
+        self.assertEqual(code, SKIPPED, out)
+        self.assertIn("SKIPPED (not run)", out)
+        self.assertNotIn("ASSERTED", out)
+
+    def test_a_bundle_named_elsewhere_in_the_tree_is_not_the_defect(self):
+        # Only `osgi/modules` is where `ldm run` places it and the filter acts.
+        payload = [*self.CLEAN_PAYLOAD, (f"deploy/{BUNDLE}", b"PK")]
+        code, out = self._check(payload)
+        self.assertEqual(code, CLEAN, out)
+
+    def test_a_package_without_a_payload_is_never_a_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "source").mkdir()
+            package = root / "p.ldmp"
+            package.write_bytes(_gz_tar([("meta", b"{}")]))
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(CHECKER),
+                    "--package-bundles",
+                    str(package),
+                    str(root / "source"),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertEqual(result.returncode, CANNOT_READ, result.stdout)
+
+    def test_a_missing_source_is_never_a_skip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            package = Path(tmp) / "p.ldmp"
+            package.write_bytes(
+                _gz_tar([("meta", b"{}"), ("files.tar.gz", _gz_tar([]))])
+            )
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(CHECKER),
+                    "--package-bundles",
+                    str(package),
+                    str(Path(tmp) / "nope"),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertEqual(result.returncode, CANNOT_READ, result.stdout)
+
+    def test_the_prefixes_match_the_shipped_workarounds(self):
+        """The checker cannot import ldm_core; a new workaround must reach it."""
+        from ldm_core.runtime.portal_workarounds import RETIRED_PREFIXES, WORKAROUNDS
+
+        spec = importlib.util.spec_from_file_location("checker", CHECKER)
+        assert spec is not None, f"could not load {CHECKER}"
+        assert spec.loader is not None, f"no loader for {CHECKER}"
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertEqual(
+            set(module.LDM_BUNDLE_PREFIXES),
+            {w.prefix for w in WORKAROUNDS} | set(RETIRED_PREFIXES),
+        )
+
+
 #: Per half: the text each structural assertion locates.
 HALVES = {
     "verify_e2e_refactor.sh": {
@@ -182,6 +350,8 @@ HALVES = {
         "round_trip_flag_cleared": "ROUNDTRIP_OK=false",
         "final_gate": '[ "$ROUNDTRIP_ENV_OK" != true ]',
         "reset": 'reset "$ROUNDTRIP_PROJECT" all',
+        "bundle_call": '--package-bundles "$ROUNDTRIP_PKG" "${LDM_WORKSPACE}/${PROJECT_NAME}"',
+        "bundle_skip": '"$ROUNDTRIP_BUNDLE_RC" -eq 3',
     },
     "verify_e2e_refactor.ps1": {
         "package_call": '-CheckerArgs @("--package", $roundTripPkg)',
@@ -195,6 +365,8 @@ HALVES = {
         "round_trip_flag_cleared": "$roundTripOk = $false",
         "final_gate": "if (-not $script:roundTripEnvOk) {",
         "reset": "reset $ROUNDTRIP_PROJECT all",
+        "bundle_call": "--package-bundles $roundTripPkg (Join-Path $LDM_WORKSPACE $PROJECT_NAME)",
+        "bundle_skip": "$bundleRc -eq 3",
     },
 }
 
@@ -241,6 +413,25 @@ class BothHalvesRunItInTheRoundTrip(unittest.TestCase):
                 self.assertLess(at(marks["booted_gate"]), at(marks["copy_call"]))
                 # The failing run is decided after the reset has had its turn.
                 self.assertLess(at(marks["reset"]), at(marks["final_gate"]))
+
+    def test_both_halves_check_the_package_for_ldm_bundles(self):
+        """LDM-#2359: on the package, before import, against the SOURCE
+        project; a skip is branched on; a bundle never clears the round-trip
+        flag, which gates the reset check (LDM-#2118)."""
+        for name, marks in HALVES.items():
+            with self.subTest(script=name):
+                section = self._section(name)
+                at = section.index
+                self.assertIn(marks["bundle_call"], section)
+                self.assertLess(at(marks["package_call"]), at(marks["bundle_call"]))
+                self.assertLess(at(marks["bundle_call"]), at(marks["import"]))
+                block = section[
+                    at(marks["bundle_call"]) : at(
+                        "The sidecar checksum is the artefact"
+                    )
+                ]
+                self.assertIn(marks["bundle_skip"], block)
+                self.assertNotIn(marks["round_trip_flag_cleared"], block)
 
     def test_a_leak_never_clears_the_round_trip_flag(self):
         # The flag gates `ldm reset all` (LDM-#2118); a leak must not skip it.

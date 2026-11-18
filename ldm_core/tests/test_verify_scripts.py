@@ -4604,3 +4604,214 @@ class TestPowerShellInlinePythonHasNoDoubleQuotes(unittest.TestCase):
             "Build the string without literal double quotes (json.dumps, or "
             "chr(34)), or pass it through an environment variable.",
         )
+
+
+# ---------------------------------------------------------------------------
+# LDM-#2168 / #2384 / #2407: the no-boot guardrail checks, in both scripts.
+#
+# Each is driven against a stub `ldm` playing both the fixed and the broken
+# binary. The stub bodies reproduce what the real binary printed when these
+# checks were observed on 2026-11-18, against the fix and against a copy of
+# ldm_core with the fix disabled. Stubs only: none of these may run a real
+# `ldm`, which would scaffold projects and call Docker.
+# ---------------------------------------------------------------------------
+
+_SENTINEL_ONLY = "ldm: error: unrecognized arguments: --ldm-e2e-not-an-option"
+_TAG_PREFIX_REFUSED = (
+    "ldm: error: unrecognized arguments: --tag-prefix 2026.q3 --ldm-e2e-not-an-option"
+)
+_ENV_REFUSAL = (
+    "'ldm config env' cannot target service 'my-ext': it only sets variables "
+    "on the Liferay container. Nothing was changed."
+)
+_ERC_VAR = "LIFERAY_OAUTH_APPLICATION_EXTERNAL_REFERENCE_CODES"
+_ERC_ROW = "[ercdoc-proj] OAuth ERC List            Missing (client-extensions/svc)"
+_ERC_HINT = f'Fix: ... Add to the "env" block: "{_ERC_VAR}": "svc-oahs" -- listing'
+
+
+def _script_stub(directory, body):
+    """A stub `ldm` whose behaviour is a shell body; named per LDM-#1899."""
+    path = directory / "ldm-stub"
+    path.write_text("#!/bin/sh\n" + body)
+    # lint: executable-stub -- bash/pwsh must exec it to drive the verify function; named ldm-stub, which no agent watches (LDM-#1899)
+    path.chmod(0o755)
+    return path
+
+
+def _say(text, code):
+    return f"cat <<'MSG'\n{text}\nMSG\nexit {code}\n"
+
+
+#: (function suffix, stub body, expected ok, a phrase the verdict must carry)
+_INIT_CASES = (
+    ("fixed", _say(_SENTINEL_ONLY, 2), True, "accepts --tag-prefix"),
+    ("broken", _say(_TAG_PREFIX_REFUSED, 2), False, "does not accept --tag-prefix"),
+    (
+        "never-parsed",
+        _say("Initialization complete.", 0),
+        False,
+        "did not fail at the parser",
+    ),
+)
+_ENV_CASES = (
+    ("fixed", _say(_ENV_REFUSAL, 1), True, "nothing is written"),
+    (
+        "wrong-reason",
+        _say("Docker not accessible.", 1),
+        False,
+        "not for the service refusal",
+    ),
+    ("accepted", _say("Environment updated.", 0), False, "exited 0"),
+    (
+        "refused-but-wrote",
+        'printf "%s" "{\\"custom_env\\": \\"{}\\"}" > meta\n' + _say(_ENV_REFUSAL, 1),
+        False,
+        "meta changed",
+    ),
+)
+_DOCTOR_CASES = (
+    (
+        "fixed",
+        f"if grep -q {_ERC_VAR} client-extensions/svc/LCP.json; then\n"
+        + _say("[ercdoc-proj] Metadata Healthy", 1)
+        + "fi\n"
+        + _say(f"{_ERC_ROW}\n{_ERC_HINT}", 1),
+        True,
+        "quiet once it is set",
+    ),
+    ("silent", _say("[ercdoc-proj] Metadata Healthy", 1), False, "did not warn"),
+    ("no-hint", _say(_ERC_ROW, 1), False, "does not carry the line to add"),
+    ("always-warns", _say(f"{_ERC_ROW}\n{_ERC_HINT}", 1), False, "not specific"),
+)
+
+#: name -> (bash function, PowerShell function, takes a work dir, cases)
+_GUARDRAILS = {
+    "init --tag-prefix": (
+        "verify_init_accepts_tag_prefix",
+        "Test-InitAcceptsTagPrefix",
+        False,
+        _INIT_CASES,
+    ),
+    "config env -s": (
+        "verify_config_env_refuses_other_service",
+        "Test-ConfigEnvRefusesOtherService",
+        True,
+        _ENV_CASES,
+    ),
+    "doctor ERC list": (
+        "verify_doctor_warns_missing_oauth_erc_list",
+        "Test-DoctorWarnsMissingOAuthErcList",
+        True,
+        _DOCTOR_CASES,
+    ),
+}
+
+
+def _run_guardrail_bash(func_name, stub, work):
+    func = _extract_function(
+        BASH_SCRIPT, re.compile(rf"^{func_name}\s*\(\)\s*\{{.*?^\}}", re.M | re.S)
+    )
+    args = f"'{stub}'" + (f" '{work}'" if work else "")
+    res = subprocess.run(
+        ["bash", "-c", f"{func}\n{func_name} {args}\n"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return res.returncode == 0, res.stdout + res.stderr
+
+
+def _run_guardrail_ps(binary, func_name, stub, work):
+    func = _extract_function(
+        PS1_SCRIPT, re.compile(rf"^function {func_name}\s*\{{.*?^\}}", re.M | re.S)
+    )
+    args = f"-LdmCmd '{stub}'" + (f" -WorkDir '{work}'" if work else "")
+    script = (
+        f"{func}\n$r = {func_name} {args}\n"
+        "Write-Output ('Ok=' + $r.Ok)\nWrite-Output ('Message=' + $r.Message)\n"
+    )
+    res = subprocess.run(
+        [binary, "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return "Ok=True" in res.stdout, res.stdout + res.stderr
+
+
+class _GuardrailHarness(unittest.TestCase):
+    """Shared runner; it defines no tests, so collecting it runs nothing."""
+
+    def _each(self, runner):
+        for label, (bash_fn, ps_fn, takes_work, cases) in _GUARDRAILS.items():
+            for case, body, expected, phrase in cases:
+                with (
+                    self.subTest(check=label, case=case),
+                    tempfile.TemporaryDirectory() as d,
+                ):
+                    work = Path(d) / "workspace"
+                    work.mkdir()
+                    stub = _script_stub(Path(d), body)
+                    ok, out = runner(bash_fn, ps_fn, stub, work if takes_work else None)
+                    self.assertEqual(ok, expected, out)
+                    self.assertIn(phrase, out)
+                    # A check that leaks its fixture is a cost on every run.
+                    self.assertEqual(sorted(p.name for p in work.iterdir()), [], out)
+
+
+@unittest.skipIf(os.name == "nt", "the stubs are POSIX shell scripts")
+class TheNoBootGuardrailChecksCanFail(_GuardrailHarness, unittest.TestCase):
+    """LDM-#2168/#2384/#2407, bash half: each check passes the fixed binary's
+    output and fails every broken shape, including exit 1 for another reason."""
+
+    def test_bash_half(self):
+        self._each(
+            lambda bash_fn, _ps, stub, work: _run_guardrail_bash(bash_fn, stub, work)
+        )
+
+
+@unittest.skipIf(os.name == "nt", "the stubs are POSIX shell scripts")
+@unittest.skipUnless(_pwsh_binary(), "pwsh/powershell not available on this machine")
+class ThePowerShellGuardrailChecksAgree(_GuardrailHarness, unittest.TestCase):
+    """The .ps1 twins, EXECUTED rather than grepped: a name in the file is not
+    a call site that runs (LDM-#2132), and these return the same verdict as
+    bash on the same output."""
+
+    def test_powershell_half(self):
+        binary = _pwsh_binary()
+        self._each(
+            lambda _bash, ps_fn, stub, work: _run_guardrail_ps(
+                binary, ps_fn, stub, work
+            )
+        )
+
+
+#: Each script's guardrails section: from its opener to the next section's.
+_GUARDRAIL_SECTIONS = {
+    BASH_SCRIPT: (
+        "if section_enabled guardrails; then",
+        "if section_enabled boundary; then",
+    ),
+    PS1_SCRIPT: (
+        'if (Test-SectionEnabled "guardrails") {',
+        'if (Test-SectionEnabled "boundary") {',
+    ),
+}
+
+
+class BothHalvesCallTheGuardrailChecks(unittest.TestCase):
+    """Each new function is called from its suite, in the guardrails section."""
+
+    def test_both_halves_call_them_in_the_guardrails_section(self):
+        for label, (bash_fn, ps_fn, _w, _c) in _GUARDRAILS.items():
+            calls = {
+                BASH_SCRIPT: f'$({bash_fn} "$LDM_CMD"',
+                PS1_SCRIPT: f"= {ps_fn} -LdmCmd $LDM_CMD",
+            }
+            for script, call in calls.items():
+                text = script.read_text(encoding="utf-8")
+                opener, closer = _GUARDRAIL_SECTIONS[script]
+                begin = text.index(opener)
+                section = text[begin : text.index(closer, begin)]
+                with self.subTest(check=label, script=script.name):
+                    self.assertIn(call, section, f"{script.name} never calls it there")
