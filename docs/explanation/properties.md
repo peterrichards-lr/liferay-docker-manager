@@ -12,11 +12,11 @@ When LDM synchronizes or rebuilds project properties, it merges settings from fi
 | :---: | :--- | :--- | :--- |
 | **1** | **Pre-warmed Seed** | Built-in resource baseline | Baseline properties for standard Liferay Docker configuration. |
 | **2** | **`.ldmp` package overrides** | `[project]/.liferay-docker/ldmp-portal-ext.properties` | Properties imported from a snapshot or snapshot package restore. |
-| **3** | **Global User Common** | `~/.ldm/common/portal-ext.properties` | Machine-wide developer overrides. |
-| **4** | **Local Workspace Common** | `[workspace]/common/portal-ext.properties` | Project-group/workspace developer defaults shared across projects. |
+| **3** | **Global User Common** | `~/.ldm/common/portal-ext.properties` (`~` is `LDM_HOME` when set) | Machine-wide developer overrides. |
+| **4** | **Local Workspace Common** | `[workspace]/common/portal-ext.properties`, or `$LDM_COMMON_DIR/portal-ext.properties` | Project-group/workspace developer defaults shared across projects. |
 | **5** | **Project Customizations** | `[project]/files/portal-ext.properties` | Manual project-level settings (retains user edits). |
 
-Which `common/` folders LDM reads is described in [Sharing Configuration Across Projects](../reference/configuration.md#which-common-folders-are-used). LDM assigns a folder's `portal-ext.properties` to layer 3 or layer 4 **by its path**: a folder whose path contains `.ldm`, `home` or `global` is treated as layer 3, any other as layer 4. If both folders match -- for example a workspace `common/` under `/home/` on Linux -- both count as layer 3; when both hold a `portal-ext.properties`, only the second folder's is used and the other is ignored.
+Which `common/` folders LDM reads is described in [Sharing Configuration Across Projects](../reference/configuration.md#which-common-folders-are-used). LDM assigns a folder's `portal-ext.properties` to a layer **by which folder it is**, not by what its path contains: layer 3 is `~/.ldm/common/` (under `LDM_HOME` when that is set) and nothing else; every other folder -- a workspace `common/`, or the folder named by `LDM_COMMON_DIR` -- is layer 4, wherever it lives. A workspace under `/home/` on Linux, or a folder named `global`, is still layer 4. If two folders ever land in the same layer, LDM prints a warning naming both and uses the second.
 
 ```mermaid
 graph TD
