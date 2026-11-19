@@ -275,6 +275,7 @@ nav:
       - Data management: how-to/data_management.md
       - Custom containers: how-to/custom_containers.md
       - Multi-Compose architecture: how-to/multi_compose.md
+      - Sharing configuration across projects: how-to/share_configuration.md
     - Share & connect:
       - Sharing and tunnels: how-to/sharing_tunnels.md
       - AI & MCP: how-to/ai_mcp_guide.md

@@ -16,6 +16,8 @@ When LDM synchronizes or rebuilds project properties, it merges settings from fi
 | **4** | **Local Workspace Common** | `[workspace]/common/portal-ext.properties` | Project-group/workspace developer defaults shared across projects. |
 | **5** | **Project Customizations** | `[project]/files/portal-ext.properties` | Manual project-level settings (retains user edits). |
 
+Which `common/` folders LDM reads is described in [Sharing Configuration Across Projects](../reference/configuration.md#which-common-folders-are-used). LDM assigns a folder's `portal-ext.properties` to layer 3 or layer 4 **by its path**: a folder whose path contains `.ldm`, `home` or `global` is treated as layer 3, any other as layer 4. If both folders match -- for example a workspace `common/` under `/home/` on Linux -- both count as layer 3; when both hold a `portal-ext.properties`, only the second folder's is used and the other is ignored.
+
 ```mermaid
 graph TD
     L1[1. Pre-warmed Seed]
@@ -141,4 +143,4 @@ The Visual Diagnostics Web Dashboard (`ldm dashboard`) includes a **Properties I
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-10*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*

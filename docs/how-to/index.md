@@ -43,6 +43,9 @@ walked through from the start, begin with
   alongside Liferay.
 - **[Multi-Compose Architecture](multi_compose.md)** — decoupled compose stacks
   and shared networks.
+- **[Sharing Configuration Across Projects](share_configuration.md)** — put a
+  System Setting or portal property in `~/.ldm/common/` once and have every
+  project pick it up, and what cannot be shared that way.
 
 ## Share and connect
 
@@ -61,4 +64,4 @@ walked through from the start, begin with
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-16* | *Last Reviewed: 2026-10-16*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*
