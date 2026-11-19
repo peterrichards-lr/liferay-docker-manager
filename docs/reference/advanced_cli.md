@@ -257,11 +257,12 @@ In `isolated` mode the database is always called `lportal` and the project name 
   - **`-s`, `--sql "<query>"`**: Inline SQL statement to execute. If not provided, LDM will read from stdin.
   - **`-f`, `--format {table,csv,json}`**: Output format (default: `table`).
   - **`--allow-db-query`**: Explicitly bypasses the interactive confirmation prompt.
+  - **Errors and empty results**: a query the database rejects exits with code `1` and shows the database's error message. A query that returns no rows prints `(0 rows)` in `table` format, `[]` in `json`, and only the header (if the database sends one) in `csv`, so automation can tell "no rows" from "failed".
 
 - **`ldm db start`** ![Added in v2.15.16](https://img.shields.io/badge/Added%20in-v2.15.16-blue): Starts the shared global databases (e.g. Postgres, MySQL) defined in the infrastructure mode.
 
 - **`ldm db stop`** ![Added in v2.15.16](https://img.shields.io/badge/Added%20in-v2.15.16-blue): Stops the shared global databases defined in the infrastructure mode.
-- **`ldm db reset-admin [project]`**: Forcefully resets the password for the default admin account (`test@liferay.com`) to `test` by injecting the known PBKDF2 hash directly into the database. Also activates the account and resets failed login locks.
+- **`ldm db reset-admin [project]`**: Forcefully resets the password for the default admin account (`test@liferay.com`) to `test` by injecting the known PBKDF2 hash directly into the database. Also activates the account and resets failed login locks. If the database rejects the update, the command fails with the database's error rather than reporting success.
 
 ## Custom Containers ![Added in v2.15.22](https://img.shields.io/badge/Added%20in-v2.15.22-blue)
 
@@ -282,4 +283,4 @@ These commands keep their node definitions and wake state in `~/.ldm/node-power-
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-09* | *Last Reviewed: 2026-11-09*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*
