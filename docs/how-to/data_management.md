@@ -207,6 +207,8 @@ ldm package my-project --output /tmp/packages --repo my-owner/my-repo
 
 A package does not carry your licence keys, Marketplace products or
 client-extension `routes/`; see [What a package leaves out](../reference/cli/core.md#what-a-package-leaves-out).
+Whoever imports it adds their own DXP key; see
+[After importing a package, add your licence](workspace_import.md#after-importing-a-package-add-your-licence).
 
 ### ⚠️ CI/CD Release Pipelines vs. Local DB Packaging
 

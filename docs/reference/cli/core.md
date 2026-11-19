@@ -447,7 +447,8 @@ Some of what a snapshot holds belongs to the machine that made it, not to
 whoever imports the package. `ldm package` leaves it out and names each file:
 
 - **Licence keys**: licence XML files in `deploy/` and `osgi/modules/`, and
-  `data/license/` (LDM-#2443). Whoever imports the package uses their own key.
+  `data/license/` (LDM-#2443). Whoever imports the package uses their own key;
+  `ldm doctor` and `ldm run` tell them where to put it.
 - **Marketplace products**: `.lpkg` files in `deploy/` and `osgi/marketplace/`.
   Add `--include-marketplace` only if their licence allows you to
   redistribute them.

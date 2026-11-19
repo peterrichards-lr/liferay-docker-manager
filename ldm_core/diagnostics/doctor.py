@@ -1638,7 +1638,7 @@ class DoctorRunner:
                 if prop_ok is not True:
                     self.add_hint(
                         f"[{p_path.name}] Verify syntax in '{UI.WHITE}{p_path.name}/files/portal-ext.properties{UI.COLOR_OFF}'.",
-                        f"{GITHUB_DOCS_URL}/LDM_ARCHITECTURE.md#5-metadata--property-injection",
+                        f"{GITHUB_DOCS_URL}/explanation/properties.md",
                     )
                     if prop_details:
                         for detail in prop_details:
@@ -1785,23 +1785,7 @@ class DoctorRunner:
                 self._check_oauth_erc_list(p_path, lcp_file)
 
             # 7.2.4 License Check
-            base_path = self.project_paths[0] if self.project_paths else None
-            common_dir = self.handler.manager.get_common_dir(base_path)
-            lic_status, lic_ok, lic_details = (
-                self.handler.manager.license.check_license_health(
-                    {"common": common_dir, **self.handler.manager.setup_paths(p_path)},
-                    image_tag=meta.get("tag"),
-                )
-            )
-            self.results.append((f"[{p_path.name}] License", lic_status, lic_ok))
-            if lic_ok is not True:
-                self.add_hint(
-                    f"[{p_path.name}] Place a valid DXP license in global '{UI.WHITE}common/{UI.COLOR_OFF}' or '{UI.WHITE}deploy/{UI.COLOR_OFF}'.",
-                    f"{GITHUB_DOCS_URL}/LDM_ARCHITECTURE.md#key-architectural-pillars",
-                )
-            if lic_details:
-                for detail in lic_details:
-                    UI.raw(f"  {UI.CYAN}ℹ{UI.COLOR_OFF} {detail}")
+            self._check_project_license(p_path, meta)
 
             host_name = meta.get("host_name", "localhost")
             ssl_enabled = str(meta.get("ssl", "false")).lower() == "true"
@@ -2200,6 +2184,48 @@ class DoctorRunner:
             f"{GITHUB_DOCS_URL}/how-to/client_extensions.md"
             "#oauth-applications-must-be-listed-in-lcpjson",
         )
+
+    def _check_project_license(self, p_path, meta):
+        """Report the project's licence, and say where a missing one goes.
+
+        LDM-#2443: a package no longer carries its publisher's licence, so a
+        project imported from one is unlicensed until the consumer adds their
+        own key. The hint says so, with the absolute path to put it in.
+
+        The image is resolved the way the composer resolves it: a CE project
+        stores `portal: "true"` with a bare tag, so `meta["tag"]` alone never
+        contains "portal" and CE was reported as a missing licence.
+        """
+        from ldm_core.handlers.license import (
+            is_restored_from_package,
+            own_licence_locations,
+        )
+
+        manager = self.handler.manager
+        base_path = self.project_paths[0] if self.project_paths else None
+        common_dir = manager.get_common_dir(base_path)
+        image = manager.composer._resolve_liferay_image(meta)
+        lic_status, lic_ok, lic_details = manager.license.check_license_health(
+            {"common": common_dir, **manager.setup_paths(p_path)},
+            image_tag=image,
+        )
+        self.results.append((f"[{p_path.name}] License", lic_status, lic_ok))
+        if lic_ok is not True:
+            if is_restored_from_package(meta):
+                self.add_hint(
+                    f"[{p_path.name}] This project was imported from a package, "
+                    "which does not carry its publisher's licence: "
+                    f"{UI.WHITE}{own_licence_locations(p_path)}{UI.COLOR_OFF}.",
+                    f"{GITHUB_DOCS_URL}/reference/cli/core.md#what-a-package-leaves-out",
+                )
+            else:
+                self.add_hint(
+                    f"[{p_path.name}] Place a valid DXP license in global '{UI.WHITE}common/{UI.COLOR_OFF}' or '{UI.WHITE}deploy/{UI.COLOR_OFF}'.",
+                    f"{GITHUB_DOCS_URL}/how-to/share_configuration.md#2-add-the-file",
+                )
+        if lic_details:
+            for detail in lic_details:
+                UI.raw(f"  {UI.CYAN}ℹ{UI.COLOR_OFF} {detail}")
 
     def _check_pinned_mac(self, p_path, meta):
         """Is the running container still carrying the node's pinned MAC?
