@@ -73,6 +73,8 @@ Blocks execution until a Liferay instance is genuinely ready for work. This is h
 2. **HTTP Availability**: Polls the instance until it responds with an `HTTP 200` or `302` on its primary port.
 3. **CPU Idle State**: Actively monitors the container's CPU usage, blocking until it drops below the threshold (default: 15.0%) for consecutive checks (default: 3). This is configurable via `--cpu-idle-threshold` and `--cpu-idle-checks` options.
 
+Before any phase, `ldm wait` checks that the project's Liferay container is running. If it is exited, created, dead or absent, the command fails at once with exit code `1` and a hint to start the project with `ldm start` or `ldm run`. It does not wait out the timeout, and it does not read the stopped run's logs, which still hold that run's ready markers.
+
 ```bash
 # Wait for the current project to be fully idle (up to 15 minutes by default)
 ldm wait
@@ -801,4 +803,4 @@ ldm target migrate win-wsl node-a
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-17* | *Last Reviewed: 2026-11-17*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*

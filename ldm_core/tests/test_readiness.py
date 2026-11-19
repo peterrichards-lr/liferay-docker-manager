@@ -73,6 +73,11 @@ class MockRuntime(BaseHandler):
     def get_resource_path(self, name):
         return Path("/tmp/res") / name
 
+    def get_container_state(self, container_name, target_name=None):
+        # cmd_wait refuses a container that is not running (LDM-#2429); the
+        # inherited helper would ask the real daemon about 'test-runtime'.
+        return "running"
+
     def get_config(self, key, default=None):
         return default
 
