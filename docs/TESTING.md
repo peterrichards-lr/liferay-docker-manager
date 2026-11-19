@@ -349,6 +349,15 @@ re-pull, the same reasoning LDM-#1414 used to exclude them from project
 teardown. It cannot be combined with `--keep`, which preserves the artefacts it
 would remove.
 
+**`--keep`** (`-k`; `-Keep` in the PowerShell harness) skips the teardown so a
+failed run's project, containers, images and workspace survive for inspection —
+a re-run cannot recreate them, because it draws a new random test port and a
+fresh project. The shared global infrastructure is left running too. The
+short-lived fixtures of the remote-node and port-conflict checks are still
+removed, since a leftover Docker context pointing at an unroutable address makes
+every later `ldm list` hang on an SSH timeout. The PowerShell harness has no
+`-PruneAfter`, so the contradiction above cannot arise there (LDM-#2262).
+
 ### The #1345 diagnosis check needs an ssh client
 
 The unreachable-node check works by genuinely attempting and genuinely failing
@@ -1073,4 +1082,4 @@ table above as the CI budget** — the workflow prints its own timings from
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-15* | *Last Reviewed: 2026-11-18*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*
