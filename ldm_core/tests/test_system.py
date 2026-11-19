@@ -378,6 +378,41 @@ class TestSystemService(unittest.TestCase):
         self.assertIn("on:\n  workflow_dispatch:", content)
         self.assertNotIn("release:", content)
 
+    @patch("ldm_core.ui.UI.success")
+    def test_cmd_init_ci_writes_project_and_hooks(self, mock_success):
+        """LDM-#2447: the handler threads project and hooks into the file."""
+        self.manager.defaults = MagicMock()
+        self.manager.defaults.get.return_value = None
+        self.manager.workspace = MagicMock()
+        self.manager.workspace._parse_github_repo.return_value = ("my-org", "my-repo")
+
+        def run_cmd_side_effect(args, **kwargs):
+            if "rev-parse" in args:
+                return str(self.temp_home)
+            if "remote" in args:
+                return "https://github.com/my-org/my-repo.git"
+            return ""
+
+        self.manager.run_command.side_effect = run_cmd_side_effect
+
+        res = self.system.cmd_init_ci(
+            project_id="demo",
+            setup_steps=["setup/rebuild.sh"],
+            verify_steps=["setup/step7-verify.sh"],
+        )
+        self.assertTrue(res)
+        content = (
+            self.temp_home / ".github" / "workflows" / "ldm-package-release.yml"
+        ).read_text()
+        self.assertIn("ldm link . demo --no-monitor --build --non-interactive", content)
+        self.assertIn("ldm down demo --non-interactive", content)
+        self.assertIn(
+            '- name: "Setup 1/1: setup/rebuild.sh"\n        run: |\n'
+            "          setup/rebuild.sh\n",
+            content,
+        )
+        self.assertIn('- name: "Verify 1/1: setup/step7-verify.sh"', content)
+
     @patch("ldm_core.ui.UI.confirm")
     @patch("ldm_core.ui.UI.success")
     def test_cmd_init_ci_collision_interactive(self, mock_success, mock_confirm):
