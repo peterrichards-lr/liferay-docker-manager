@@ -296,7 +296,8 @@ When importing, LDM automatically looks for this checksum file to perform the ch
 To automate the generation of `.ldmp` packages on code changes or releases, you can scaffold a GitHub Actions workflow inside your Git repository.
 
 ```bash
-ldm system init-ci [project] [--trigger release|tag|push|manual] [--repo owner/repo]
+ldm system init-ci [project] [--trigger release|tag|push|manual] [--repo owner/repo] \
+    [--setup-step CMD ...] [--verify-step CMD ...]
 ```
 
 ### Trigger Presets
@@ -308,15 +309,53 @@ ldm system init-ci [project] [--trigger release|tag|push|manual] [--repo owner/r
 
 ### Workflow Output
 
-This scaffolds a `.github/workflows/ldm-package-release.yml` file which:
+This scaffolds a `.github/workflows/ldm-package-release.yml` file whose job
+runs under `bash` and:
 
 1. Provisions a clean Ubuntu environment.
-2. Installs LDM from PyPI.
-3. Boots up your local Liferay environment.
-4. Waits for all OSGi modules and Client Extensions to deploy cleanly.
-5. Bundles the database and volume into a `.ldmp` package.
-6. Automatically attaches the package and its checksum as GitHub Release assets.
+2. Installs LDM from PyPI, pinned to the version that generated the file.
+3. Links and builds the checked-out workspace with
+   `ldm link . [project] --no-monitor --build --non-interactive`. Without
+   `--no-monitor`, `ldm link` ends in the file watcher and the step never
+   finishes.
+4. Waits for all OSGi modules and Client Extensions to deploy cleanly
+   (`ldm wait --wait-for-deployables`).
+5. Runs each `--setup-step`, then each `--verify-step`, in the order given.
+6. Bundles the database and volume into a `.ldmp` package.
+7. Stops the environment with `ldm down`. This step runs even when an
+   earlier one failed.
+8. Uploads the package and its checksum as an Actions artifact, and attaches
+   them as GitHub Release assets on a release or tag.
+
+If you pass a `project`, every `ldm` command in the workflow receives it. If
+you do not, each command resolves the project from the checkout.
+
+### Setup and Verify Hooks
+
+A demo often needs work between "deployables are up" and "package": rebuild
+content through setup scripts, then confirm the result before it is worth
+packaging. Pass each command with `--setup-step` or `--verify-step`; both can
+be repeated.
+
+```bash
+ldm system init-ci --trigger tag \
+    --setup-step "setup/rebuild.sh" \
+    --verify-step "setup/step7-verify.sh"
+```
+
+Each command becomes its own workflow step (`Setup 1/1: setup/rebuild.sh`,
+`Verify 1/1: setup/step7-verify.sh`) and is copied into the file verbatim.
+A non-zero exit fails the job. Packaging and both uploads run only if every
+step before them succeeded, so a failed verify step publishes nothing.
+
+### Upgrading the Workflow
+
+The generated file pins the LDM version that wrote it, and its header says
+so. Changing the pin by hand keeps the old version's template. To upgrade,
+install the newer LDM and run `ldm system init-ci` again with the same
+`--setup-step` and `--verify-step` flags. It overwrites the existing file
+after asking, or straight away with `-y`.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-16* | *Last Reviewed: 2026-11-16*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*
