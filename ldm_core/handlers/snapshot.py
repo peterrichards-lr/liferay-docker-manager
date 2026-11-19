@@ -11,6 +11,7 @@ from ldm_core.pipelines.base import die_if_the_pipeline_failed
 from ldm_core.snapshot.archive import (
     ArchiveSnapshotService,
     describe_publisher_material,
+    describe_shipped_portal_patches,
     write_redistributable_payload,
 )
 from ldm_core.snapshot.custom_containers import CustomContainersSnapshotService
@@ -528,6 +529,14 @@ class SnapshotService(BaseHandler):
 
         self.volumes._dehydrate_named_volumes(paths)
 
+        # LDM-#2444: give every patch JAR its sidecar before the archive is
+        # written, as `ldm run` would, so the package carries the release each
+        # patch was introduced against rather than leaving the consumer's first
+        # boot to stamp its own.
+        from ldm_core.runtime.portal_patches import discover_patches
+
+        discover_patches(paths["root"], project_meta.get("tag"))
+
         files_tar = self.archive._create_archive(paths, snap_dir, search_snapshot_name)
 
         self.archive._generate_snapshot_metadata(
@@ -976,6 +985,7 @@ class SnapshotService(BaseHandler):
         from ldm_core.utils import calculate_sha256
 
         omitted = []
+        shipped_patches = []
         try:
             with (
                 tempfile.TemporaryDirectory() as scratch,
@@ -994,6 +1004,9 @@ class SnapshotService(BaseHandler):
                     omitted = write_redistributable_payload(
                         item, payload, include_marketplace
                     )
+                    shipped_patches = describe_shipped_portal_patches(
+                        payload, meta.get("portal_patches")
+                    )
                     tar.add(payload, arcname="files.tar.gz")
                     sha_copy = Path(scratch) / "files.tar.gz.sha256"
                     sha_copy.write_text(calculate_sha256(payload))
@@ -1007,6 +1020,15 @@ class SnapshotService(BaseHandler):
                 "installation rather than to whoever imports it:"
             )
             for line in describe_publisher_material(omitted):
+                UI.info(f"  - {line}")
+
+        # LDM-#2444: whoever imports this boots these JARs over the stock ones.
+        if shipped_patches:
+            UI.info(
+                f"Portal patches shipped in the package ({len(shipped_patches)}), "
+                "applied over the stock JARs on every boot:"
+            )
+            for line in shipped_patches:
                 UI.info(f"  - {line}")
 
         # 5. Generate checksum

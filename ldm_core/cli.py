@@ -919,6 +919,11 @@ def get_parser():  # noqa: PLR0915
         action="store_true",
         help="(Deprecated) LDM no longer downloads a client. Still suppresses the prompt when lfr_tunnel_install_cmd is configured",
     )
+    imp.add_argument(
+        "--force-portal-patches",
+        action="store_true",
+        help="Import and boot a package whose portal-patches/ JARs were recorded against a different Liferay release line than the one it will run",
+    )
     imp.add_argument("--backup-dir")
     imp.add_argument("--build", action="store_true")
     imp.add_argument("--host-name")

@@ -207,6 +207,10 @@ ldm package my-project --output /tmp/packages --repo my-owner/my-repo
 
 A package does not carry your licence keys, Marketplace products or
 client-extension `routes/`; see [What a package leaves out](../reference/cli/core.md#what-a-package-leaves-out).
+It does carry `portal-patches/`, and `ldm package` lists the patches it ships;
+`ldm import` refuses a package whose patches were built for a different
+Liferay quarter than the one it will run. See
+[Portal patches travel with the package](../reference/cli/core.md#portal-patches-travel-with-the-package).
 
 ### ⚠️ CI/CD Release Pipelines vs. Local DB Packaging
 
