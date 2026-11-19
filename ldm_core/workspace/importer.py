@@ -968,6 +968,12 @@ def cmd_import(
         or getattr(self.manager.args, "project", None)
         or getattr(self.manager.args, "project_flag", None)
     )
+    # LDM-#2457: an explicit name is refused before anything is downloaded or
+    # cloned. A name derived from the source is refused where the project path
+    # is resolved (`detect_project_path(..., for_init=True)`).
+    from ldm_core.utils import refuse_reserved_project_name
+
+    refuse_reserved_project_name(should_project_name)
     should_clone_only = (
         clone_only
         if clone_only is not None

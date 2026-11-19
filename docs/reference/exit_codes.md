@@ -38,6 +38,7 @@ likely to meet.
 | `ldm snapshot restore` | `3` | A restored search index cannot answer a search. LDM names the index and does not report the restore complete. |
 | `ldm infra down` / `ldm infra restart` | `3` | With `-y`, any LDM project is still running. See [System Commands](cli/system.md). |
 | `ldm config revert`, `ldm config defaults --reset-all` | `5` | Nothing differed from the defaults, so nothing changed. See [System Commands](cli/system.md). |
+| `ldm run`, `init`, `import`, `link`, `clone`, `quickstart`, `fork` | `1` | The project name is reserved (`resources`, used by LDM's shared infrastructure). Nothing is created or started. See [Core Commands](cli/core.md#reserved-project-name). |
 | `ldm link` (a Liferay Cloud workspace) | `2` | With `-y`, no Liferay Cloud project ID can be found. LDM refuses rather than guess. See [Core Commands](cli/core.md). |
 
 ## Not LDM's own codes

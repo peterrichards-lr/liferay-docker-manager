@@ -28,6 +28,7 @@ from ldm_core.constants import (
     LIFERAY_RELEASES_JSON_URL,
     MAX_INACTIVE_TAG_CHECKS,
     NIGHTLY_TAG_PATTERN,
+    RESERVED_COMPOSE_PROJECT_NAMES,
     SCRIPT_DIR,
     TAG_DISCOVERY_MAX_PAGES,
     TAG_PATTERN,
@@ -952,6 +953,45 @@ def sanitize_id(identifier):
         return f"project-{short_hash}"
 
     return sanitized
+
+
+def reserved_compose_project_name(name):
+    """The reserved Compose project name `name` would collide with, or None.
+
+    LDM-#2457. `name` is a project name as the user gave it (or a meta
+    `container_name`); the compose file's `name:` is its `sanitize_id()` form
+    (`ComposeHandler`). The comparison is deliberately conservative: it also
+    ignores case and any character Compose does not allow in a project name,
+    so `Resources` is refused too rather than relying on how a given Compose
+    version treats such a `name:`.
+    """
+    if not name:
+        return None
+    sanitized = sanitize_id(str(name)) or ""
+    normalized = re.sub(r"[^a-z0-9_-]", "", sanitized.lower()).lstrip("_-")
+    return normalized if normalized in RESERVED_COMPOSE_PROJECT_NAMES else None
+
+
+def refuse_reserved_project_name(name):
+    """Exit 1 when `name` would share a Compose project LDM reserves (LDM-#2457).
+
+    Called before any compose or docker command, from every path that names
+    or creates a project.
+    """
+    reserved = reserved_compose_project_name(name)
+    if not reserved:
+        return
+    UI.die(
+        f"The project name '{name}' is reserved: LDM's shared infrastructure "
+        f"uses the Docker Compose project '{reserved}'.",
+        details=(
+            "A project of that name would share the infrastructure's Compose "
+            "project, and starting it would remove the shared Traefik proxy "
+            "that routes every project."
+        ),
+        tip="Choose another project name, e.g. 'my-resources'.",
+        exit_code=1,
+    )
 
 
 def _blacklist_pattern_matches(key, pattern):

@@ -27,6 +27,12 @@ def _drop_source_search_env(target_meta, source):
 
 def cmd_fork(self, source, target, snapshot=None):
     """Forks an existing project into a new one, cloning database and DL assets."""
+    from ldm_core.utils import refuse_reserved_project_name
+
+    # LDM-#2457: the target becomes the fork's `container_name`, and so its
+    # Compose project name. Refused before the source is snapshotted.
+    refuse_reserved_project_name(target)
+
     is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
     if is_dry_run:
         UI.detail(

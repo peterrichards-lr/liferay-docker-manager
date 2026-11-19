@@ -608,9 +608,12 @@ class ComposerService:
         if not isinstance(paths, dict):
             paths = self.manager.setup_paths(paths)
 
-        from ldm_core.utils import sanitize_id
+        from ldm_core.utils import refuse_reserved_project_name, sanitize_id
 
         original_name = meta.get("container_name") or paths["root"].name
+        # LDM-#2457: backstop for any caller that reaches compose generation
+        # without resolving the project through `detect_project_path`.
+        refuse_reserved_project_name(original_name)
         project_name = sanitize_id(original_name)
 
         if original_name != project_name and getattr(
