@@ -90,6 +90,7 @@ def _resolve_legacy_config_commands(cmd_idx, processed_list):
         "revert",
         "ssl-mode",
         "database-mode",
+        "common-config-policy",
     ]
     if cmd_idx + 1 < len(processed_list) and processed_list[cmd_idx + 1] in subcmds:
         return processed_list
@@ -236,6 +237,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "remove",
         "ssl-mode",
         "database-mode",
+        "common-config-policy",
         "fork",
         "db",
         "query",
@@ -2480,6 +2482,31 @@ def get_parser():  # noqa: PLR0915
     log_level.add_argument("--remove", action="store_true")
     log_level.add_argument("--list", action="store_true")
 
+    # LDM-#2424. The value is validated by the handler rather than through
+    # `choices`, so an invalid one exits 1 with the valid values named instead
+    # of argparse's exit 2.
+    common_policy = config_subparsers.add_parser(
+        "common-config-policy",
+        parents=[base_sub_parent],
+        help=(
+            "View or set what the common/ sync does to this project's edited "
+            "copy of a shared .config (protect, warn or overwrite)"
+        ),
+    )
+    common_policy.add_argument(
+        "policy",
+        nargs="?",
+        metavar="POLICY",
+        help="protect, warn or overwrite. Omit to show the effective value",
+    )
+    common_policy.add_argument("project", nargs="?")
+    common_policy.add_argument("-p", "--project", dest="project_flag")
+    common_policy.add_argument(
+        "--unset",
+        action="store_true",
+        help="Remove the project's value so it inherits 'ldm defaults' again",
+    )
+
     edit_cmd = config_subparsers.add_parser(
         "edit",
         parents=[_new_base_sub_parent()],
@@ -3687,6 +3714,11 @@ def _build_command_map(args, manager):
         ),
         ("config", "log-level"): lambda: manager.config.cmd_log_level(
             getattr(args, "project", None)
+        ),
+        ("config", "common-config-policy"): (
+            lambda: manager.config.cmd_common_config_policy(
+                getattr(args, "policy", None), getattr(args, "project", None)
+            )
         ),
         ("config", "edit"): lambda: manager.config.cmd_edit(
             getattr(args, "project", None), args.target, getattr(args, "tui", False)

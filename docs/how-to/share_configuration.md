@@ -85,13 +85,23 @@ ls my-project/osgi/configs
 
 ## 4. Giving one project a different value
 
-A file LDM did not copy is left alone (other than the Elasticsearch files
-above), so a project-local file wins **if it was
-there before LDM first copied the shared one**. Once LDM has copied a shared
-`.config` or `.cfg`, it overwrites it on every later sync, and an edit made in
-the project is lost. Follow
-[Overriding a shared file in one project](../reference/configuration.md#overriding-a-shared-file-in-one-project)
-to break that link.
+Edit the project's copy in `osgi/configs`. By default LDM keeps it: later
+syncs leave an edited copy alone, and if the shared file changes in the
+meantime, LDM warns that the new version was not applied to that project.
+
+To have the shared file win instead, set `common_config_policy` to `warn`
+(replace the copy and say so) or `overwrite` (replace it silently):
+
+```bash
+ldm defaults common_config_policy overwrite                # every project
+ldm config common-config-policy overwrite my-project       # one project
+ldm config common-config-policy --unset my-project         # back to the default
+```
+
+To take the shared version back into one protected project, delete the
+project's copy and run the project again. The full rules, including the
+Elasticsearch exceptions and the settings LDM checks for in a kept copy, are in
+[Overriding a shared file in one project](../reference/configuration.md#overriding-a-shared-file-in-one-project).
 
 <!-- markdownlint-disable MD049 -->
 ---

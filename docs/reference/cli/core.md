@@ -903,6 +903,29 @@ ldm config log-level
 ldm log-level [project] --list
 ```
 
+## `config common-config-policy`
+
+View or set what the `common/` sync does to **one project's** edited copy of a
+shared `.config` or `.cfg`: `protect` (keep it), `warn` (replace it and say so)
+or `overwrite` (replace it silently). The value is written to the project's
+`meta` and overrides `ldm defaults common_config_policy` for that project only.
+
+```bash
+# Show the effective value for the current project, and where it comes from
+ldm config common-config-policy
+ldm config common-config-policy -p my-project
+
+# Set it for one project
+ldm config common-config-policy overwrite my-project
+
+# Remove the project's value, so it inherits `ldm defaults` again
+ldm config common-config-policy --unset my-project
+```
+
+An invalid value is refused (exit `1`). There is no flat legacy alias. The
+rules are in
+[Overriding a shared file in one project](../configuration.md#overriding-a-shared-file-in-one-project).
+
 ## Global Flags
 
 The following flags can be passed to almost any command:

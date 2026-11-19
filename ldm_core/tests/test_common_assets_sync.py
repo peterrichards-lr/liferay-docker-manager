@@ -138,9 +138,12 @@ class TestCommonAssetsSync(_IsolatedHome):
         self.assertEqual(local.read_text(), 'setting="local"\n')
         self.assertNotIn(SHARED_CONFIG, self._history())
 
-    def test_search_connection_config_overwrites_a_local_edit_and_is_not_recorded(
+    def test_search_connection_config_without_a_checksum_is_rewritten_then_recorded(
         self,
     ):
+        # A connection config copied before LDM-#2424 has no recorded checksum,
+        # so it is treated as unedited: rewritten once from common/, then
+        # recorded so common_config_policy applies to it from now on.
         (self.global_common / ES_CONN_REMOTE).write_text(
             'networkHostAddresses=["http://search:9200"]\n'
         )
@@ -152,9 +155,7 @@ class TestCommonAssetsSync(_IsolatedHome):
         self.assertEqual(
             local.read_text(), 'networkHostAddresses=["http://search:9200"]\n'
         )
-        history = self._history()
-        self.assertNotIn(ES_CONN_REMOTE, history)
-        self.assertNotIn(ES_CONN, history)
+        self.assertIn(ES_CONN_REMOTE, self._history())
 
 
 class TestInitCommon(_IsolatedHome):
