@@ -3779,16 +3779,56 @@ def _execute_command(args, current_cmd, cmds):
 
     def run_update_check():
         latest: Any = None
-        latest, _url = check_for_updates(VERSION)
+        # LDM-#2432: gated so its writes can be stopped before shutdown.
+        with UI.gated_background_writes():
+            latest, _url = check_for_updates(VERSION)
         update_info["latest"] = latest
 
     update_thread = None
     is_upgrade_or_completion = args.command == "system" and getattr(
         args, "subcommand", None
     ) in ["upgrade", "completion", "setup-completion"]
-    if not is_upgrade_or_completion:
+    # LDM-#2432: CI never acts on the notice, and a network call racing a
+    # short-lived command is where the exit-134 abort was observed.
+    is_ci = bool(os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"))
+    if not is_upgrade_or_completion and not is_ci:
+        UI.open_background_writes()
         update_thread = threading.Thread(target=run_update_check, daemon=True)
         update_thread.start()
+
+    try:
+        _dispatch_command(args, current_cmd, cmds)
+    finally:
+        # LDM-#2432: runs on every exit, including the SystemExit raised by
+        # UI.die, which used to skip the join entirely. A thread still running
+        # after the join is left to die with the process, but it can no longer
+        # be holding -- or later take -- a stream lock the shutdown flush needs.
+        if update_thread:
+            update_thread.join(timeout=0.05)
+            UI.close_background_writes()
+
+    is_completion = args.command == "system" and getattr(args, "subcommand", None) in [
+        "completion",
+        "setup-completion",
+    ]
+    if update_thread and not is_completion:
+        latest = update_info.get("latest")
+        if latest:
+            from ldm_core.utils import version_to_tuple
+
+            if version_to_tuple(latest) > version_to_tuple(VERSION):
+                print(
+                    f"\n{UI.BYELLOW}[!] A new version of LDM is available: v{latest}{UI.COLOR_OFF}",
+                    file=sys.stderr,
+                )
+                print(
+                    f"    Run {UI.CYAN}ldm system upgrade{UI.COLOR_OFF} to install the latest version.\n",
+                    file=sys.stderr,
+                )
+
+
+def _dispatch_command(args, current_cmd, cmds):
+    import sys
 
     try:
         from ldm_core.utils import Benchmarker
@@ -3833,26 +3873,6 @@ def _execute_command(args, current_cmd, cmds):
 
         UI.trace(traceback.format_exc())
         UI.die("An unexpected error occurred.", details=f"{type(e).__name__}: {e}")
-
-    is_completion = args.command == "system" and getattr(args, "subcommand", None) in [
-        "completion",
-        "setup-completion",
-    ]
-    if update_thread and not is_completion:
-        update_thread.join(timeout=0.05)
-        latest = update_info.get("latest")
-        if latest:
-            from ldm_core.utils import version_to_tuple
-
-            if version_to_tuple(latest) > version_to_tuple(VERSION):
-                print(
-                    f"\n{UI.BYELLOW}[!] A new version of LDM is available: v{latest}{UI.COLOR_OFF}",
-                    file=sys.stderr,
-                )
-                print(
-                    f"    Run {UI.CYAN}ldm system upgrade{UI.COLOR_OFF} to install the latest version.\n",
-                    file=sys.stderr,
-                )
 
 
 def _setup_sigpipe_handler():

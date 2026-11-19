@@ -735,6 +735,14 @@ This occurs when the shared IP address hits the GitHub unauthenticated REST API 
 
 **The Solution:** LDM automatically falls back to an HTML redirect check on `https://github.com/peterrichards-lr/liferay-docker-manager/releases/latest` (which is not rate-limited). If the fallback also fails, verify your network connectivity or try again later.
 
+### **No "A new version of LDM is available" notice in CI**
+
+The background update check that prints this notice after a command is
+skipped when the `CI` or `GITHUB_ACTIONS` environment variable is set
+(LDM-#2432). Nobody acts on the notice in a pipeline, and a network call racing
+a short-lived command is where an exit-134 abort was observed. Run
+`ldm system upgrade --check` to check explicitly.
+
 ### **"GitHub rejected the credential from GITHUB_PAT (HTTP 401)"**
 
 ```text
@@ -973,4 +981,4 @@ Projects are discovered from the current folder, its parent, `~/ldm`, the LDM in
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-17* | *Last Reviewed: 2026-11-17*
+*Last Updated: 2026-11-18* | *Last Reviewed: 2026-11-18*

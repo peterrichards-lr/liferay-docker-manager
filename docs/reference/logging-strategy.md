@@ -295,6 +295,8 @@ for path in paths:
 
 `UI.trace()` is called automatically by `UI._print()`. All output goes to `~/.ldm/last-command.log` regardless of level.
 
+`UI.trace()` redacts every message before writing it, with the same `UI.redact` patterns the console uses, and the log's `Command:` header masks the value after a credential-shaped key such as `ldm config admin_password <value>` (LDM-#2437). Callers no longer need to redact first. The trace log is what users attach to bug reports.
+
 **One narrow exception: facts that are never printed at all.** A handful of
 call sites record something the console deliberately never shows, so
 `UI._print()` never runs and there is nothing for it to trace. These are not a
@@ -420,4 +422,4 @@ tier system above and has nothing to do with the `logging` module.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-11* | *Last Reviewed: 2026-09-11*
+*Last Updated: 2026-11-18* | *Last Reviewed: 2026-11-18*

@@ -2,6 +2,7 @@ import contextlib
 import logging
 import os
 import sys
+import threading
 from pathlib import Path
 from typing import TextIO
 
@@ -57,6 +58,33 @@ class _TraceLogHandler(logging.Handler):
             # A logging handler must never take the process down, and there is
             # nowhere to report a failure to anyway -- the trace log IS the sink.
             pass
+
+
+# LDM-#2432: the update check runs on a daemon thread that nothing stops before
+# the interpreter exits. If finalization begins while that thread is inside a
+# write to stdout/stderr or the trace log, it is frozen holding the stream's
+# buffer lock, and the main thread's final flush aborts CPython ("could not
+# acquire lock ... at interpreter shutdown, possibly due to daemon threads",
+# exit 134). Writes from a gated thread therefore check the flag and write
+# under this lock, and `UI.close_background_writes` sets the flag and THEN takes
+# the lock: once it returns, no gated write is in progress and none can start.
+# Flag first, lock second: the lock is not fair, so a thread writing in a loop
+# could re-take it every time and starve a caller waiting before setting the
+# flag. Only threads that opt in via `UI.gated_background_writes` are affected;
+# the main thread never touches the lock.
+_background_shutdown = threading.Event()
+_background_write_lock = threading.RLock()
+_background_local = threading.local()
+
+
+@contextlib.contextmanager
+def _background_write_allowed():
+    """Yield whether the calling thread may write to a shared stream now."""
+    if not getattr(_background_local, "gated", False):
+        yield True
+        return
+    with _background_write_lock:
+        yield not _background_shutdown.is_set()
 
 
 # --- UI Helpers ---
@@ -150,7 +178,7 @@ class UI:
             UI._trace_handle = open(UI.TRACE_LOG_PATH, "w", encoding="utf-8")  # noqa: SIM115
 
             ts = datetime.now().isoformat()
-            command_line = " ".join(args)
+            command_line = UI._redact_command_line(args)
             UI._trace_handle.write(f"--- LDM Trace Log Started at {ts} ---\n")
             msg = f"Command: {command_line}\n"
             UI._trace_handle.write(msg)
@@ -164,6 +192,29 @@ class UI:
         except Exception:
             # Silently ignore trace log failures
             UI._trace_handle = None
+
+    @staticmethod
+    def _redact_command_line(args):
+        """The command line for the trace log header, credentials masked.
+
+        LDM-#2437. `UI.redact` catches `KEY=value` and `-p`/`--password`, but
+        not `ldm config admin_password <value>`, where the secret is the word
+        AFTER a credential-shaped key -- so mask that by name, as LDM-#1970
+        decided masking must be, then redact the rest.
+        """
+        from ldm_core.utils import is_credential_shaped
+
+        words = [str(a) for a in args]
+        masked = [
+            "[REDACTED]"
+            if i
+            and not words[i - 1].startswith("-")
+            and "=" not in words[i - 1]
+            and is_credential_shaped(words[i - 1])
+            else w
+            for i, w in enumerate(words)
+        ]
+        return UI.redact(" ".join(masked))
 
     @classmethod
     def _install_log_bridge(cls):
@@ -208,6 +259,35 @@ class UI:
             cls._log_bridge = None
 
     @staticmethod
+    @contextlib.contextmanager
+    def gated_background_writes():
+        """Mark the current thread's UI writes as stoppable at exit (LDM-#2432)."""
+        _background_local.gated = True
+        try:
+            yield
+        finally:
+            _background_local.gated = False
+
+    @staticmethod
+    def open_background_writes():
+        """Re-allow gated writes. Only matters when dispatch runs more than once
+        in a process, i.e. in tests."""
+        _background_shutdown.clear()
+
+    @staticmethod
+    def close_background_writes(timeout=0.5):
+        """Stop every gated thread writing, waiting for one mid-write (LDM-#2432).
+
+        Returns False if a single write held the lock past `timeout` (e.g. a
+        blocked pipe); that one write may then still be in flight.
+        """
+        _background_shutdown.set()
+        acquired = _background_write_lock.acquire(timeout=timeout)
+        if acquired:
+            _background_write_lock.release()
+        return acquired
+
+    @staticmethod
     def trace(msg):
         """Writes a message strictly to the trace log, silently."""
         if UI._trace_handle:
@@ -215,9 +295,16 @@ class UI:
                 import re
 
                 clean_msg = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", str(msg))
-                out_msg = clean_msg + "\n"
-                UI._trace_handle.write(out_msg)
-                UI._trace_handle.flush()
+                # LDM-#2437: redacted here, not by each caller. `_print`
+                # redacted its own messages, but the logging bridge and the
+                # direct `UI.trace` callers (tracebacks among them) did not, and
+                # the trace log is what users attach to bug reports. Redaction
+                # is idempotent, so `_print`'s messages are unaffected.
+                out_msg = UI.redact(clean_msg) + "\n"
+                with _background_write_allowed() as allowed:
+                    if allowed:
+                        UI._trace_handle.write(out_msg)
+                        UI._trace_handle.flush()
             except Exception:
                 pass
 
@@ -322,6 +409,12 @@ class UI:
     @staticmethod
     def _print(msg, color=None, icon=None, file=None):
         """Internal print helper with Unicode safety and automatic redaction."""
+        with _background_write_allowed() as allowed:
+            if allowed:
+                UI._print_unguarded(msg, color, icon, file)
+
+    @staticmethod
+    def _print_unguarded(msg, color=None, icon=None, file=None):
         if file is None:
             file = sys.stdout
 
