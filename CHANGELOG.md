@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.13-pre.1] - 2026-11-19
+
+### Fixed
+
+- **`ldm quickstart` and package imports work on a machine that has never had shared search** (LDM-#2434). Since v2.26.11, a restore started shared search before clearing indices, but refused when the `liferay-search-global` container did not exist. So `ldm quickstart aica` on a fresh machine, or a fresh CI runner, stopped with exit code 3: "This project uses shared search, but the 'liferay-search-global' container does not exist." A local restore now provisions shared search first, the way `ldm run` does. A container that exists but will not start still stops the restore with exit code 3 before anything is reset. `ldm start`, and restores on a remote target, keep the refusal.
+- **A command that stops with an error no longer crashes Python as it exits** (LDM-#2432). LDM checks for a newer version on a background thread. When a command ended early with an error while that thread was writing output, Python could abort with "Fatal Python error: _enter_buffered_busy" and exit code 134, instead of the error and its exit code. On macOS each one also showed a "Python quit unexpectedly" dialog. LDM now stops that thread writing before it exits, and skips the version check entirely in CI.
+- **The trace log no longer records credentials** (LDM-#2437). `~/.ldm/last-command.log`, the file users attach to bug reports, redacted messages LDM printed, but not other lines: messages from Python's `logging`, tracebacks, and other direct trace output were written as given, and the header recorded the full command line. Every trace-log line is now redacted. The command line also masks the value after a credential-shaped setting, such as `ldm config admin_password <value>`, and a `-p<password>` flag.
+
 ## [v2.26.12] - 2026-11-18
 
 ### Added
