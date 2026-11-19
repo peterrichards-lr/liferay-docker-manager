@@ -120,11 +120,11 @@ newgrp docker
 
 ## Global Configuration (The `common/` Folder)
 
-LDM allows you to synchronize files (e.g., OSGi configs, licenses, LPKG modules) to **every** project stack automatically. See [Sharing Configuration Across Projects](../reference/configuration.md#sharing-configuration-across-projects-common) for what can be shared, which folders are read, and how to override a shared file in one project.
+LDM allows you to synchronize files (e.g., OSGi configs, licenses, LPKG modules) to **every** project stack automatically. [Sharing Configuration Across Projects](../how-to/share_configuration.md) walks through it; the [configuration reference](../reference/configuration.md#sharing-configuration-across-projects-common) lists what can be shared, which folders are read, and how to override a shared file in one project.
 
 ### 1. Baseline Assets (`init-common`)
 
-LDM bundles a "Gold Standard" development baseline internally. To initialize or recreate this baseline in your global `common/` folder, run:
+LDM bundles a "Gold Standard" development baseline internally. To initialize or recreate this baseline in your global `common/` folder, create `~/.ldm/common/` first (`mkdir -p ~/.ldm/common`), then run the command below from a directory that has no `common/` folder of its own. If `~/.ldm/common/` does not exist yet, `init-common` creates `common/` in the current directory instead. It never overwrites a file already there.
 
 ```bash
 
@@ -748,4 +748,4 @@ LDM binaries use **"Magic Byte" detection** to accurately report their checksum 
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-18* | *Last Reviewed: 2026-11-18*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*
