@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.13-pre.2] - 2026-11-19
+
+This pre-release includes everything in v2.26.13-pre.1, which was not verified separately.
+
+### Added
+
+- **`ldm package --include-marketplace`** (LDM-#2443). Ships Marketplace products (`.lpkg`) in a package, which is now left out by default. Use it only when their licence allows redistribution.
+- **An exit-code reference** (LDM-#2428). `docs/reference/exit_codes.md` and a new EXIT STATUS section in `man ldm` give the codes scripts can branch on. They also note that code 5 is returned only with `-y`, and list the commands with notable codes.
+
+### Changed
+
+- **The routes contract is documented for client-extension developers** (LDM-#2152). The new `docs/explanation/routes-tree.md` covers which container mounts which part of `routes/`, the variables LDM sets, how each extension's directory is named, and when the tree is filled. Until now this lived only in agent notes.
+
+### Fixed
+
+- **A package no longer hands out the publisher's licences, Marketplace products or client-extension credentials** (LDM-#2443, LDM-#2446). An `.ldmp` used to carry the DXP and Marketplace activation keys from `deploy/`, `osgi/modules/` and `data/license/`, any `.lpkg` products, and `routes/`, which holds the OAuth client IDs and secrets and the DXP host the publisher's Liferay wrote for its client extensions. `ldm package` now leaves all of these out and names each file. A local snapshot still keeps everything, so `ldm restore` on the same machine brings a licensed project back licensed. `ldm import` warns when a package made before this release still contains any of it.
+- **`ldm wait` on a project that is not running fails at once** (LDM-#2429). On a stopped container it used to wait about four minutes, then print "Liferay ready" from the stopped run's logs. It now exits with code 1 and says to start the project with `ldm start` or `ldm run`.
+- **`ldm db query` tells a failed query from an empty result** (LDM-#2431). A query the database rejected used to print nothing and exit 0, exactly like a query that matched no rows. A failed query now exits with code 1 and shows the database's error. An empty result prints `(0 rows)`, or `[]` in JSON. `ldm db reset-admin` no longer reports success when the database rejects the reset.
+
 ## [v2.26.13-pre.1] - 2026-11-19
 
 ### Fixed
