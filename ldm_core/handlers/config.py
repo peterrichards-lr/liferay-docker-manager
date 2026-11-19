@@ -8,6 +8,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from ldm_core import common_assets
+from ldm_core.common_assets import REQUIRED_CONFIG_KEYS
 from ldm_core.constants import PROJECT_META_FILE, SCRIPT_DIR
 from ldm_core.defaults import CONVENTION_DEFAULTS, STATE_BEARING_DEFAULTS
 from ldm_core.ui import UI
@@ -1070,6 +1072,12 @@ class ConfigService:
             except (FileNotFoundError, OSError):
                 pass
 
+        # LDM-#2424: each `.config`/`.cfg` is resolved to the ONE common dir that
+        # supplies it (the last, as before) and applied once, after the loop.
+        # Applying it once per dir wrote a name present in two dirs twice per
+        # sync, which the checksum record would then read as a project edit.
+        config_winners: dict[str, tuple[Path, Path]] = {}
+
         has_any_common = False
         for common_dir in paths.get("common_dirs", []):
             if not common_dir.exists():
@@ -1174,6 +1182,16 @@ class ConfigService:
                                 dest.unlink()
                             continue
 
+                        # LDM-#2424: the connection config follows the
+                        # common_config_policy, with its required keys checked
+                        # when the policy keeps a user's copy.
+                        if dest_name in REQUIRED_CONFIG_KEYS:
+                            config_winners[dest_name] = (match, dest)
+                            continue
+
+                        # ElasticsearchConfiguration: rewritten by the composer
+                        # after this sync (`_write_shared_search_config`), so no
+                        # policy applies to it.
                         content = match.read_text(encoding="utf-8")
                         if (
                             not dest.exists()
@@ -1182,7 +1200,7 @@ class ConfigService:
                             from ldm_core.utils import safe_write_text
 
                             # Deliberately neither reads nor records .liferay-docker.deployed
-                            # history: these files must track common/ (LDM-#2453).
+                            # history: this file must track common/ (LDM-#2453).
                             safe_write_text(dest, content)
                         continue
 
@@ -1219,17 +1237,18 @@ class ConfigService:
                                 )
                             continue
 
+                    if pattern.endswith("config") or pattern.endswith("cfg"):
+                        config_winners[dest_name] = (match, dest)
+                        continue
+
                     if not dest.exists():
                         atomic_copy(match, dest)
                         history.add(match.name)
-                    elif match.name in history and (
-                        pattern.endswith("config") or pattern.endswith("cfg")
-                    ):
-                        atomic_copy(match, dest)
 
         if has_any_common:
             from ldm_core.utils import safe_write_text
 
+            self._apply_common_configs(paths, project_meta, config_winners, history)
             safe_write_text(history_file, "\n".join(sorted(history)))
         else:
             UI.warning(
@@ -1238,6 +1257,151 @@ class ConfigService:
             UI.detail(
                 f"You can recreate the baseline by running: {UI.CYAN}ldm init-common{UI.COLOR_OFF}"
             )
+
+    def _common_config_policy(self, paths, project_meta):
+        """`common_config_policy` for this project (LDM-#2424).
+
+        The project's own `meta` value wins; a project without one inherits the
+        defaults cascade (`ldm defaults common_config_policy ...`), as the
+        `jvm_*` tuning keys do. `ldm infra migrate-search` syncs without passing
+        the meta, so it is read from disk then.
+        """
+        meta = project_meta
+        if meta is None:
+            with contextlib.suppress(Exception):
+                meta = self.manager.read_meta(paths["root"])
+        policy, rejected = common_assets.resolve_policy(
+            meta, getattr(self.manager, "defaults", None)
+        )
+        if rejected is not None:
+            UI.warning(
+                f"Ignoring unknown {common_assets.POLICY_KEY} '{rejected}'; using "
+                f"'{policy}'. Valid values: {', '.join(common_assets.POLICIES)}."
+            )
+        return policy
+
+    def _apply_common_configs(self, paths, project_meta, winners, history):  # noqa: C901, PLR0915
+        """Applies each common-supplied `.config`/`.cfg` once, under the policy (LDM-#2424).
+
+        `winners` maps destination name -> (source in common, destination). A
+        file is "edited" when its checksum differs from the one recorded for
+        what LDM last wrote, in `.liferay-docker/common_assets.json`.
+        """
+        if not winners:
+            return
+
+        root = paths["root"]
+        checksums = common_assets.load_checksums(root)
+        original = dict(checksums)
+        policy = None
+        project = root.name
+        key = common_assets.POLICY_KEY
+        remedies = (
+            "  To take the common/ version instead, delete the project's copy, or "
+            "set the policy to overwrite:\n"
+            f"    every project:  ldm defaults {key} overwrite\n"
+            f"    this project:   ldm config common-config-policy overwrite "
+            f"{project}"
+        )
+
+        for dest_name, (match, dest) in winners.items():
+            try:
+                common_bytes = match.read_bytes()
+            except OSError:
+                continue
+            common_sum = common_assets.sha256_bytes(common_bytes)
+
+            if not dest.exists():
+                atomic_copy(match, dest)
+                history.add(match.name)
+                checksums[dest_name] = common_sum
+                continue
+
+            # A file LDM did not copy is the user's own, as before. The
+            # required-key files are the exception: LDM always rewrote them and
+            # never recorded them, so they are treated as LDM's.
+            managed = dest_name in REQUIRED_CONFIG_KEYS
+            if match.name not in history and not managed:
+                continue
+
+            try:
+                current_bytes = dest.read_bytes()
+            except OSError:
+                continue
+            current_sum = common_assets.sha256_bytes(current_bytes)
+
+            if current_sum == common_sum:
+                history.add(match.name)
+                checksums[dest_name] = common_sum
+                continue
+
+            recorded = checksums.get(dest_name)
+            if recorded is None:
+                # Listed before checksums existed: an edit cannot be told from
+                # an older common/ copy, so it is not treated as an edit -- but
+                # replacing content that differed is said out loud.
+                atomic_copy(match, dest)
+                history.add(match.name)
+                checksums[dest_name] = common_sum
+                UI.warning(
+                    f"Replaced {dest_name} in '{project}' with the common/ "
+                    "version. It differed, and LDM has no record of what it last "
+                    "wrote there, so it could not tell an edit from an older "
+                    f"copy. From now on, edits to it follow {key}."
+                )
+                continue
+
+            if current_sum == recorded:
+                atomic_copy(match, dest)
+                checksums[dest_name] = common_sum
+                continue
+
+            if policy is None:
+                policy = self._common_config_policy(paths, project_meta)
+
+            if policy == common_assets.OVERWRITE:
+                atomic_copy(match, dest)
+                checksums[dest_name] = common_sum
+                continue
+
+            if policy == common_assets.WARN:
+                atomic_copy(match, dest)
+                checksums[dest_name] = common_sum
+                UI.warning(
+                    f"Replaced your edited {dest_name} in '{project}' with the "
+                    f"common/ version ({key} is 'warn')."
+                )
+                continue
+
+            # protect: the user's copy stays, and so does the recorded checksum,
+            # so the warning repeats on every sync until the two are reconciled.
+            if common_sum != recorded:
+                UI.warning(
+                    f"Kept your edited {dest_name} in '{project}': the common/ "
+                    f"version has changed and was NOT applied ({key} is "
+                    f"'protect').\n{remedies}"
+                )
+
+            problems = common_assets.required_key_problems(
+                dest_name, current_bytes.decode("utf-8", errors="replace")
+            )
+            if problems:
+                lines = [
+                    f"    {k}: expected {expected}, "
+                    + ("missing" if actual is None else f"found {actual}")
+                    for k, expected, actual in problems
+                ]
+                UI.warning(
+                    f"Kept your edited {dest_name} in '{project}', but settings "
+                    "LDM needs are missing or different, so the project may "
+                    "behave unexpectedly:\n"
+                    + "\n".join(lines)
+                    + "\n  Fix those keys in the project's copy. "
+                    + remedies.lstrip()
+                )
+
+        if checksums != original:
+            common_assets.save_checksums(root, checksums)
 
     def sync_common_assets(
         self, paths, host_updates=None, version=None, project_meta=None
@@ -1844,6 +2008,78 @@ class ConfigService:
             meta["database_mode"] = mode
             self.manager.write_meta(project_path, meta)
             UI.success(f"Project database mode set to: {UI.CYAN}{mode}{UI.COLOR_OFF}")
+
+    def cmd_common_config_policy(self, policy=None, project_id=None):
+        """View or set one project's `common_config_policy` (LDM-#2424).
+
+        Writes the project's `meta`, which overrides the defaults cascade for
+        that project only; `--unset` removes it so the project inherits
+        `ldm defaults common_config_policy` again.
+        """
+        key = common_assets.POLICY_KEY
+        unset = getattr(self.manager.args, "unset", False)
+        valid = ", ".join(common_assets.POLICIES)
+
+        # `--unset myproj`: argparse fills the first positional, POLICY.
+        if unset and project_id is None and policy not in common_assets.POLICIES:
+            policy, project_id = None, policy
+
+        if policy is not None and policy not in common_assets.POLICIES:
+            UI.die(
+                f"'{policy}' is not a valid {key}. Valid values: {valid}.",
+                tip=(
+                    "To show a named project's value, use "
+                    f"'ldm config common-config-policy -p {policy}'."
+                ),
+            )
+        if policy is not None and unset:
+            UI.die(f"Give a value or --unset, not both. Valid values: {valid}.")
+
+        root = self.manager.detect_project_path(project_id, fatal=False)
+        if not root:
+            UI.die(
+                "Project not found or not initialized. Name it explicitly, or "
+                "run this from inside the project folder. To set the policy for "
+                f"every project, use 'ldm defaults {key} <value>'."
+            )
+        meta = self.manager.read_meta(root) or {}
+
+        if unset:
+            if key in meta:
+                del meta[key]
+                self.manager.write_meta(root, meta)
+            default, source = self._common_config_policy_default()
+            UI.success(
+                f"Removed {key} from '{root.name}'. It now inherits '{default}' "
+                f"from the {source}."
+            )
+            return
+
+        if policy is not None:
+            meta[key] = policy
+            self.manager.write_meta(root, meta)
+            UI.success(f"Set {key} for '{root.name}' to '{policy}'.")
+            return
+
+        own = meta.get(key)
+        if own not in (None, ""):
+            UI.raw(f"{own}  (set on project '{root.name}')")
+        else:
+            default, source = self._common_config_policy_default()
+            UI.raw(f"{default}  (inherited from the {source})")
+
+    def _common_config_policy_default(self):
+        """The value a project without its own policy inherits, and its layer."""
+        key = common_assets.POLICY_KEY
+        defaults_mgr = self.manager.defaults
+        value, _rejected = common_assets.resolve_policy(None, defaults_mgr)
+        if key in defaults_mgr.user_defaults:
+            source = "user default (~/.ldmrc)"
+        elif key in defaults_mgr.global_defaults:
+            source = "global default (/etc/ldmrc)"
+        else:
+            source = "convention default"
+        return value, source
 
     def cmd_edit(self, project_id=None, target="meta", tui=False):  # noqa: C901, PLR0912, PLR0915
         root_path = self.manager.detect_project_path(project_id)

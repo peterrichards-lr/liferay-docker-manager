@@ -434,6 +434,10 @@ ldm config defaults --remove db_type
 # Set a system-wide global default (requires permissions, writes to /etc/ldmrc)
 sudo ldm config defaults port 9090 --global
 
+# Let common/ always replace a project's edited copy of a shared .config
+# (protect | warn | overwrite; default protect)
+ldm config defaults common_config_policy overwrite
+
 # Return every customised default to convention ("get me back to stock")
 ldm config defaults --reset-all
 
@@ -446,6 +450,11 @@ sudo ldm config defaults --reset-all --global
 # Legacy flat form (still works):
 ldm defaults db_type mysql
 ```
+
+`common_config_policy` decides what the `common/` sync does to a project's
+edited copy of a shared `.config` or `.cfg`. One project overrides it with
+[`ldm config common-config-policy`](core.md#config-common-config-policy). See
+[Overriding a shared file in one project](../configuration.md#overriding-a-shared-file-in-one-project).
 
 ## `config revert`
 

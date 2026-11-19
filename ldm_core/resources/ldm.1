@@ -191,6 +191,9 @@ Toggle Liferay feature flags.
 \fBldm config log-level\fR [\fIPROJECT\fR]
 Manage Liferay internal Log4j2 logging levels without restarts.
 .TP
+\fBldm config common\-config\-policy\fR [\fIprotect\fR|\fIwarn\fR|\fIoverwrite\fR|\fB\-\-unset\fR] [\fIPROJECT\fR]
+View or set what the common/ sync does to this project's edited copy of a shared \fB.config\fR or \fB.cfg\fR. Written to the project's meta, overriding \fBldm config defaults common_config_policy\fR; \fB\-\-unset\fR returns the project to that default.
+.TP
 \fBldm config edit\fR [\fIPROJECT\fR]
 Open project config files in \fB$EDITOR\fR.
 .TP
