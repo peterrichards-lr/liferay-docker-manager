@@ -544,6 +544,23 @@ class ReadinessService(BaseHandler):
 
         container_name = liferay_container_of(meta) or root.name
 
+        # LDM-#2429: refuse a container that is not running before anything
+        # waits. An exited container keeps its last StartedAt, so the log
+        # window (LDM-#2346) still covers the dead run's ready markers, and
+        # readiness reported "Liferay ready" for a stack that was down. The
+        # state, not get_container_status: an exited container can keep a stale
+        # "healthy" health status.
+        state = self.manager.get_container_state(
+            container_name, target_name=target_name
+        )
+        if state in ("exited", "created", "dead", "unknown"):
+            shown = "does not exist" if state == "unknown" else f"is {state}"
+            UI.die(
+                f"Project '{project_id or root.name}' is not running: "
+                f"container '{container_name}' {shown}.",
+                tip="Start it with 'ldm start' or 'ldm run', then wait again.",
+            )
+
         log_proc = None
         if stream_logs:
             # Streams Liferay logs to stdout in background

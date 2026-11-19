@@ -336,6 +336,36 @@ Liferay configuration in the \fBfiles/\fR subdirectory.
 \fB~/.ldmrc\fR
 Global LDM configuration and preferences.
 
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+Generic or validation error: bad input, an unknown project, or a precondition
+that does not hold.
+.TP
+.B 2
+Authentication or permission error.
+.TP
+.B 3
+Infrastructure or data error: the input was accepted but the environment did
+not deliver, e.g. a failed download, shared search down, or a boot that never
+became healthy.
+.TP
+.B 4
+Orchestration or deployment error inside LDM, e.g. a port conflict.
+.TP
+.B 5
+Idempotent no-op: nothing needed doing. Returned only with
+\fB\-y\fR/\fB\-\-non\-interactive\fR; interactively LDM prompts instead.
+.TP
+.B 130
+Interrupted with Ctrl+C.
+.PP
+When LDM runs another program, a failure may carry that program's code:
+124 for a timeout, 127 for a command not found, or the program's own code.
+
 .SH EXAMPLES
 .TP
 \fBldm run my-site --samples --open\fR
@@ -367,4 +397,4 @@ Peter Richards <peter.richards@liferay.com>
 
 .SH SEE ALSO
 .B docker(1), docker-compose(1)
-.\" Last Updated: 2026-11-16 | Last Reviewed: 2026-11-16
+.\" Last Updated: 2026-11-19 | Last Reviewed: 2026-11-19

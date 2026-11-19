@@ -408,6 +408,11 @@ follow for anyone adding a stage:
 
 To support CI/CD pipelines and headless automation, all LDM commands MUST adhere to a standardized exit code contract:
 
+The user-facing statement of this contract is `docs/reference/exit_codes.md`,
+with an EXIT STATUS section in `ldm_core/resources/ldm.1` (LDM-#2428). Change
+a code here and update both in the same pull request: users' scripts branch on
+the page, not on this file. The triage notes below stay here, for agents.
+
 - `0`: Success.
 - `1`: Generic/Validation Error.
 - `2`: Authentication/Permission Error (e.g. LCP login required).
@@ -484,250 +489,59 @@ LDM serves as a bridge for Liferay Cloud development. To maintain stability, it 
 in the project. It is a **shared space**, not a Liferay-private directory, and
 it is written at runtime by Liferay itself.
 
+**The contract lives in [`docs/explanation/routes-tree.md`](../../../docs/explanation/routes-tree.md)**
+(LDM-#2152): the mount table, the variables LDM sets, the
+`depends_on: service_healthy` requirement and what it resolves against, the
+`projectName` naming rule, deploy timing, when the tree is populated, and the
+no-port DXP domain rule -- each with the incident that produced it. Read it
+before touching any routes mount. Do not restate the table here or anywhere
+else; point at that page. The code it describes is `handlers/composer.py`:
+`LXC_ROUTES_MOUNT`, `_extension_routes_mounts`, `_extension_routes_env`,
+`_apply_shared_project_context`, `_scaffold_routes_tree`, and the Liferay
+service's `/opt/liferay/routes` volume. If the doc and the code disagree, the
+code wins and the doc is the bug.
+
 This mechanism was not recorded anywhere before LDM-#1928, which is exactly how
-it came to be broken three separate times. Any change to a routes mount must
-be checked against this section.
+it came to be broken three separate times.
 
-| Container | Host source | Container target |
-|---|---|---|
-| Liferay | `routes/` (whole tree) | `/opt/liferay/routes` |
-| Client extension | `routes/default` (the virtual-instance tree) | `/etc/liferay/lxc/routes` |
-| Custom service | `routes/default/dxp` | `/etc/liferay/lxc/dxp-metadata` |
+### What an agent must do that a developer need not
 
-A client extension addresses the two trees it needs as **subdirectories of
-that one mount**, through the variables it already reads:
-
-| Variable | Value LDM sets |
-|---|---|
-| `LIFERAY_ROUTES_DXP` | `/etc/liferay/lxc/routes/dxp` |
-| `LIFERAY_ROUTES_CLIENT_EXTENSION` | `/etc/liferay/lxc/routes/<projectName>` |
-
-The Liferay Cloud defaults -- `/etc/liferay/lxc/dxp-metadata` and
-`/etc/liferay/lxc/ext-init-metadata` -- are what an extension's own LCP.json
-declares, and what it gets when it runs on Liferay Cloud. **Under LDM they are
-overridden**, because LDM owns the mount layout and the extension cannot know
-it. See *Mount the root, not the leaf* below.
-
-### Mount above the leaf, but not above the instance
-
-**A bind mount resolves its source inode once, at container-create time.**
-
-Until LDM-#1944 each tree was mounted separately, at its leaf. Something
-deletes and recreates `routes/default/<projectName>` between the mount being
-established and Liferay publishing into it. The container keeps the orphaned
-inode and reads an empty directory for the rest of its life, while the live
-directory is populated beside it.
-
-Measured on a live deployment: the extension container held inode `2013443`
-while the live host directory was `2013444`, in the same capture where the
-mount still read as empty. Reproduced against plain Docker with no Liferay
-involved -- a leaf mount shows `(EMPTY)` after a host deltree and recreate; a
-parent mount survives it.
-
-Anchoring above it means the leaf is resolved **inside** the container, on
-every read, so it follows whatever the live directory is. This is why the
-Liferay container never had this bug: it has always mounted above the level
-that gets replaced.
-
-**Stop at `routes/default`, not `routes`.** `default` is the virtual-instance
-id, so mounting `routes` would expose every other virtual instance's trees --
-a separate decision, recorded in
-`test_refactor_regressions.py::test_it_is_the_instance_subtree_not_the_whole_routes_directory`
-before this change and deliberately kept. One level is enough: measured across
-four days on the deployment that reported this, `default/` and `default/dxp/`
-both persisted while `default/<projectName>/` was replaced.
-
-**The controlled comparison.** The same capture holds `routes/default/dxp/`
-(inode 2213516, directory mtime four days earlier) mounted into the same
-container at the same moment, reading correctly. Liferay does not recreate
-that one. Same host, same container-create moment, same mechanism -- the only
-variable is whether the directory is deleted and recreated after the mount is
-established.
-
-**Do not re-narrow this mount.** Anchoring at the instance tree means every
-extension in a project can read every other extension's OAuth2 credentials. That is a
-knowing trade, decided on LDM-#1944: LDM is for demos, testbeds and
-experimentation, never production. Narrowing the mount to restore isolation
-reintroduces the stale-inode bug. Isolation needs a mechanism that does not
-depend on a leaf bind mount surviving deletion -- a copy-on-publish, or a
-sidecar projecting only the relevant subtree.
-
-### Two trees, not one
-
-A real client extension declares **both** and reads **both**:
-
-```json
-"LIFERAY_ROUTES_CLIENT_EXTENSION": "/etc/liferay/lxc/ext-init-metadata",
-"LIFERAY_ROUTES_DXP":              "/etc/liferay/lxc/dxp-metadata"
-"config.node.config.trees": ["${LIFERAY_ROUTES_CLIENT_EXTENSION}",
-                             "${LIFERAY_ROUTES_DXP}"]
-```
-
-`default/dxp` is what Liferay publishes about **itself** -- the main domain,
-which `lxcConfig.dxpMainDomain()` resolves. `default/<projectName>` is what Liferay
-publishes about **that extension**, including the OAuth2 credentials generated
-when it registers the extension's application. LDM forwarded the second
-variable out of LCP.json and mounted nothing at it, so extensions were pointed
-at an empty path.
-
-**LDM sets both variables, overriding LCP.json.** This is the one place where
-the extension's own declaration does not win, and the exception is deliberate:
-the declaration describes Liferay Cloud's layout, where those paths ARE the
-trees. Under the anchored mount nothing is mounted at them, so honouring the
-declaration points the extension at an empty path -- the exact failure
-LDM-#1944 removes. LCP.json still reaches the composer as `ext["env"]`
-(`ldm_core/workspace/metadata.py:135`) and still wins for every other
-variable.
-
-**The per-extension subtree is named from `projectName`, not the LCP.json
-id.** Liferay resolves the directory from the `ext.lxc.liferay.com/projectName`
-ConfigMap label and calls `Files.createDirectories` on it
-(`RoutesPortalK8sConfigMapModifier`); that label is fed from `projectName` in
-the extension's `<name>.client-extension-config.json`. The two differ for
-essentially every extension -- the id drops the hyphens the directory keeps
-(`ecopulseheadlessauth` against `ecopulse-headless-auth`) -- and all 16 samples
-in `ldm-cx-samples` differ. Using the id binds a directory Liferay never writes
-to, and it does not fail loudly: the extension reads a real, empty, readable
-directory while Liferay populates a different one beside it, which is why this
-was diagnosed as a permissions problem four times over (LDM-#1944).
-
-### Deploying an extension is TWO things, with opposite timing
-
-They are routinely conflated, and gating the wrong one breaks the chain:
-
-| | What it is | When |
-|---|---|---|
-| **The zip into Liferay** | the artifact placed in `osgi/client-extensions/` | **immediately** -- before Liferay is running or ready |
-| **The extension's container** | the compose service built from the extension | **only once Liferay is healthy** |
-
-The zip is a file drop into a bind-mounted directory. `cmd_deploy`
-(`ldm_core/runtime/orchestration.py:1014`) resolves the project path and
-places files; it has **no running-Liferay precondition**, and must not gain
-one. Liferay picks the artifact up when it next scans.
-
-That ordering is load-bearing rather than incidental: the zip is what causes
-Liferay to register the extension and create its OAuth profile at all. Delay
-the zip until Liferay is ready and the whole chain starts later; gate it on
-Liferay being ready and a cold start can deadlock, because the thing being
-waited for is downstream of the thing being withheld.
-
-`depends_on: {liferay: {condition: service_healthy}}` therefore belongs on the
-**container only**, which is where LDM-#1928 put it.
-
-The full chain:
-
-```text
-zip deployed (before or during boot)
-  -> Liferay scans and registers the extension
-  -> servlet triggered
-  -> OAuth profile created
-  -> credentials written to routes/default/<ext-id>
-  -> visible inside the running container (the bind mount is live)
-```
-
-The container waiting on `service_healthy` sits at the END of that chain. It
-starts once Liferay is serving and picks up credentials as they appear.
-
-### When the tree is actually populated
-
-The mounts are only half the mechanism. The contents arrive on Liferay's
-schedule, not at container start, and nothing in LDM can hurry them:
-
-1. Liferay boots and becomes healthy. Its image `HEALTHCHECK` curls
-   `/c/portal/layout`, so reaching "healthy" is itself a servlet request.
-2. `default/dxp` is populated with what Liferay publishes about itself.
-3. **A client extension must be deployed before it has an OAuth profile at
-   all.** There is nothing to publish for an extension Liferay has not seen.
-4. The OAuth application — and therefore the credentials written into
-   `default/<ext-id>` — is **not created until the Liferay servlet is first
-   triggered.** On the deployment investigated in LDM-#1911 the files were
-   stamped roughly two minutes after the extension deployed.
-
-So `depends_on: service_healthy` guarantees Liferay is *serving* before an
-extension starts. It does **not** guarantee that extension's credentials
-already exist — they cannot, if the trigger has not happened yet.
-
-**A bind mount is live, and that is necessary but NOT sufficient.** Files the
-host gains after the container started appear inside it immediately. Measured,
-because the whole approach rests on it.
-
-**The SDK does not re-read.** This was the open half of LDM-#1915 and now has
-an answer, from the installed code on the reporting deployment. The OAuth
-application is resolved once, in the constructor --
-`serverOauthApp = lxcConfig.oauthApplication(erc)` -- so if the credentials are
-not on disk at container start it returns `undefined` and stays that way for
-the life of the process. `config-node` then caches the miss on purpose ("map
-undefined value so we don't process it over and over again"), so a lazy getter
-alone does not recover it either.
-
-**No amount of LDM-side scheduling fixes that.** The credentials are written
-when Liferay registers the extension's application, which is downstream of the
-portal being healthy -- see *When the tree is actually populated* below, where
-the observed gap was roughly two minutes. So even a container that correctly
-waits for `service_healthy` can start before its own credentials exist.
-
-LDM-#1978 claimed the wait was being skipped on the `compose create` +
-`compose start` path. It was measured and retracted: `compose start` honours
-`depends_on` conditions (24s against a 25s `up` baseline, on a dependency with
-a 20s healthcheck). The ordering is correct and the race is inherent, which
-makes the point above stronger rather than weaker.
-
-Do not conclude from a green E2E that an extension will pick the credentials
-up. LDM's responsibility ends at publishing them where the extension can read
-them; whether it re-reads is the consumer's.
-
-**Docker must actually share the host path.** If the project lives outside the
-paths Docker Desktop shares, Docker silently creates a VM-local directory
-instead of binding the host one — the mount looks correct, the container sees
-an empty directory, and nothing ever appears in it. This was mistaken for
-"bind mounts are not live" while writing LDM-#1928; the first probe simply used
-an unshared path.
-
-### The DXP domain must carry no port (LDM-#2289)
-
-Behind Traefik, `default/dxp` must publish the bare host. Liferay's routes
-writer (`com.liferay.portal.k8s.agent.impl`, active in every DXP, not only on
-Kubernetes) gets this wrong by itself. Its initial write asks for the
-**secure** local port, which is `-1` behind a TLS-terminating proxy, and
-writes the bare host. Its address listener, though, uses the **event's**
-secure flag, so the first plain request appends Tomcat's `:8080`. Upstream as
-LDM-#2344.
-
-No property, forwarded header or Tomcat setting stops this. LDM corrects it
-from inside the JVM with the `dxp-routes-domain` bundle (see *Portal
-Workarounds*). Do not "fix" `:8080` from the host side: a post-readiness
-rewrite leaves a window and misses any restart LDM is not watching. It was
-written once and discarded for exactly that.
-
-### The rules
-
-- **Never mount over `/opt/liferay/routes` in an extension container.** That
-  path is correct for Liferay, which writes its trees there, but an extension
-  built on `liferay/node-runner` does `COPY . /opt/liferay`, so it is the
-  application's own route handlers. Mounting over it shadows the app and the
-  container will not start (LDM-#1911; 16 `.cjs` handlers sat there on the
-  deployment that reported it). The two containers do not share a filesystem
-  convention -- every regression here came from assuming they did.
-- **Everything that mounts a subtree waits for Liferay.**
-  `depends_on: {liferay: {condition: service_healthy}}`. The tree is written
-  at boot, so a container that starts first reads an empty directory.
-  `service_healthy` resolves against the `liferay/dxp` image's **own**
-  `HEALTHCHECK`, which curls `/c/portal/layout` -- it means "serving pages",
-  not "process started". `_build_liferay_service` declares no compose-level
-  healthcheck, so this depends on the image providing one.
-- **Scaffold the host directory before mounting it.** Docker creates a missing
-  bind-mount source itself, as an empty root-owned directory. Subtrees are
-  created from the generated compose (`_scaffold_routes_tree`) so a mount and
-  its directory cannot drift, using local `paths` and never the remote-mapped
-  `mount_paths`. Since LDM-#1944 that function derives directories from **two**
-  places: the volume sources, and any `LIFERAY_ROUTES_*` variable pointing
-  inside the anchored mount. The second exists because the anchored mount's
-  only source is `routes` itself, so the per-extension subtrees would otherwise
-  never be created -- and `config.node` treats a MISSING tree as a
-  configuration error rather than an empty one.
-- **A custom service is an arbitrary third-party image.** It gets the same
-  shared space, but everything LDM adds is additive: a volume, variable,
-  `extra_hosts` or `depends_on` the user declared always wins.
+- **Check any proposed mount against the doc's table before adding it.** A
+  routes mount that is not in the table is a design change, not a fix. Update
+  the doc in the same change, or do not make it.
+- **Never mount over `/opt/liferay/routes` in an extension container**
+  (LDM-#1911). It is the right path for Liferay and the application's own code
+  for a `liferay/node-runner` extension.
+- **Do not re-narrow the extension mount to a per-extension leaf** to restore
+  credential isolation. It reintroduces the stale-inode bug (LDM-#1944). Do not
+  widen it to `routes` either:
+  `test_refactor_regressions.py::test_it_is_the_instance_subtree_not_the_whole_routes_directory`
+  pins `routes/default` deliberately.
+- **Never name a routes directory from the LCP.json id.** Use `projectName`
+  (`ext["project_name"]`, parsed by `parse_cx_project_name` in
+  `ldm_core/workspace/metadata.py`).
+- **Keep the `LIFERAY_ROUTES_*` override ordering.** `_extension_routes_env` is
+  appended AFTER the extension's own `ext["env"]` so LDM wins on those two;
+  every other variable keeps "the extension's declaration wins". Moving it
+  before re-breaks LDM-#1944.
+- **Never gate the zip on Liferay being ready.** `cmd_deploy`
+  (`ldm_core/runtime/orchestration.py`) has no running-Liferay precondition and
+  must not gain one; `service_healthy` belongs on the container only
+  (LDM-#1928).
+- **Scaffold from the generated compose, never from a second hand-kept list.**
+  `_scaffold_routes_tree` derives directories from the volume sources and from
+  `LIFERAY_ROUTES_*` values inside `LXC_ROUTES_MOUNT`, using local `paths` and
+  never the remote-mapped `mount_paths`.
+- **A custom service is an arbitrary third-party image.** Everything LDM adds
+  is additive: a volume, variable, `extra_hosts` or `depends_on` the user
+  declared always wins.
+- **Do not "fix" `:8080` in the DXP domain from the host side** (LDM-#2289). A
+  post-readiness rewrite was written once and discarded; the correction is the
+  `dxp-routes-domain` bundle (see *Portal Workarounds*).
+- **Do not conclude from a green E2E that an extension will pick its
+  credentials up.** The race between `service_healthy` and the credentials
+  existing is inherent (LDM-#1915, LDM-#1978); re-reading is the consumer's
+  job.
 
 ## Portal Workarounds (internal OSGi bundles)
 
@@ -785,4 +599,4 @@ When LDM generates, deploys, or reasons about Client Extensions:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-13* | *Last Reviewed: 2026-11-13*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*

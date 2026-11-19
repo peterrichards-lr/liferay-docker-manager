@@ -441,6 +441,30 @@ ldm package my-project --host-name custom.demo --ssl
 ldm package my-project --host-name custom.demo --no-ssl
 ```
 
+### What a package leaves out
+
+Some of what a snapshot holds belongs to the machine that made it, not to
+whoever imports the package. `ldm package` leaves it out and names each file:
+
+- **Licence keys**: licence XML files in `deploy/` and `osgi/modules/`, and
+  `data/license/` (LDM-#2443). Whoever imports the package uses their own key.
+- **Marketplace products**: `.lpkg` files in `deploy/` and `osgi/marketplace/`.
+  Add `--include-marketplace` only if their licence allows you to
+  redistribute them.
+- **`routes/`**: the OAuth client credentials and DXP host your Liferay wrote
+  for its client extensions (LDM-#2446). The importer's Liferay writes its own
+  when it starts.
+
+Only the package is filtered. A local snapshot keeps everything, so
+`ldm restore` on the same machine brings a licensed project back licensed.
+`ldm import` warns when a package made before v2.26.13 still contains any of
+this.
+
+```bash
+# Ship Marketplace products whose licence allows redistribution
+ldm package my-project --include-marketplace
+```
+
 ### Declaring What Was Tested ![Added in v2.22.0](https://img.shields.io/badge/Added%20in-v2.22.0-blue)
 
 The manifest's `tag` says how the package was **built**. These three flags say
@@ -499,7 +523,7 @@ ldm monitor [project_name] --delay 2.0
 
 ## `wait`
 
-Blocks the terminal until the Liferay project has fully started, initialized, and is ready to accept HTTP traffic.
+Blocks the terminal until the Liferay project has fully started, initialized, and is ready to accept HTTP traffic. A project whose container is not running fails at once with exit code `1`; start it first with `ldm start` or `ldm run`.
 
 ```bash
 ldm wait [project]
@@ -853,4 +877,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-17* | *Last Reviewed: 2026-11-17*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*

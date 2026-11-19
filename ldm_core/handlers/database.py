@@ -482,6 +482,10 @@ class DatabaseService(BaseHandler):
                 db_name,
                 "--csv",
                 "--pset=footer=off",
+                # LDM-#2431: psql reading a script on stdin otherwise exits 0
+                # after a failed statement, so an error read as "no rows".
+                "-v",
+                "ON_ERROR_STOP=1",
             ]
             delimiter = ","
         else:  # mysql / mariadb
@@ -510,36 +514,32 @@ class DatabaseService(BaseHandler):
             check=False,
         )
 
+        # LDM-#2431: a failed query exits non-zero, and an empty result says
+        # so; before, both printed nothing and exited 0.
         if res.returncode != 0:
             err_msg = (res.stderr or b"").decode(errors="ignore").strip()
-            UI.warning(f"Database query failed: {err_msg}")
+            UI.die(f"Database query failed: {err_msg}", exit_code=1)
             return
 
         raw_out = (res.stdout or b"").decode(errors="ignore").strip()
-        if not raw_out:
-            UI.detail("No rows returned.")
-            return
 
-        # 9. Format outputs
-        f_io = io.StringIO(raw_out)
-        reader = csv.reader(f_io, delimiter=delimiter)
-        try:
-            headers = next(reader)
-        except StopIteration:
-            UI.detail("No rows returned.")
-            return
-
+        # 9. Format outputs. MySQL prints no header for an empty result.
+        reader = csv.reader(io.StringIO(raw_out), delimiter=delimiter)
+        headers = next(reader, [])
         rows = list(reader)
 
         if output_format == "csv":
             writer = csv.writer(sys.stdout)
-            writer.writerow(headers)
+            if headers:
+                writer.writerow(headers)
             writer.writerows(rows)
         elif output_format == "json":
             results = [dict(zip(headers, row, strict=False)) for row in rows]
             print(json.dumps(results, indent=2))
-        else:
+        elif rows:
             UI.table(rows, headers=headers)
+        else:
+            print("(0 rows)")
 
     def cmd_reset_admin(self, project_id=None):
         """Force reset the test@liferay.com admin password to 'test' and unlock the account."""
@@ -643,6 +643,10 @@ class DatabaseService(BaseHandler):
                 db_user,
                 "-d",
                 db_name,
+                # LDM-#2431: otherwise a failed UPDATE exits 0 and reports
+                # the reset as successful.
+                "-v",
+                "ON_ERROR_STOP=1",
             ]
 
         # Use subprocess to pass the SQL string via stdin
