@@ -205,6 +205,9 @@ ldm package --use-latest
 ldm package my-project --output /tmp/packages --repo my-owner/my-repo
 ```
 
+A package does not carry your licence keys, Marketplace products or
+client-extension `routes/`; see [What a package leaves out](../reference/cli/core.md#what-a-package-leaves-out).
+
 ### ⚠️ CI/CD Release Pipelines vs. Local DB Packaging
 
 When packaging an `.ldmp` release using automated CI/CD pipelines (e.g. GitHub Actions), it is important to note that the database containers are typically **offline/not running** in the headless CI environment.
@@ -326,4 +329,4 @@ ldm re-seed demo              # Total project reset to Day Zero (Seeded)
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-18* | *Last Reviewed: 2026-11-18*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*

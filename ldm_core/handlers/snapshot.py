@@ -1,13 +1,18 @@
 import json
 import os
 import tarfile
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
 
 from ldm_core.handlers.base import BaseHandler
 from ldm_core.pipelines.base import die_if_the_pipeline_failed
-from ldm_core.snapshot.archive import ArchiveSnapshotService
+from ldm_core.snapshot.archive import (
+    ArchiveSnapshotService,
+    describe_publisher_material,
+    write_redistributable_payload,
+)
 from ldm_core.snapshot.custom_containers import CustomContainersSnapshotService
 from ldm_core.snapshot.database import DatabaseSnapshotService
 from ldm_core.snapshot.search import SearchSnapshotService
@@ -866,6 +871,7 @@ class SnapshotService(BaseHandler):
         repo=None,
         use_latest=False,
         snapshot=None,
+        include_marketplace=False,
     ):
         """Bundles a project snapshot into a .ldmp package for GitHub release."""
         # LDM-#1791: before anything is created. A claim with no evidence is
@@ -967,16 +973,43 @@ class SnapshotService(BaseHandler):
         sha_file = output_path / f"{project_name}.ldmp.sha256"
 
         UI.detail(f"Generating LDM package at: {package_file}...")
+        from ldm_core.utils import calculate_sha256
+
+        omitted = []
         try:
-            with tarfile.open(package_file, "w:gz") as tar:
+            with (
+                tempfile.TemporaryDirectory() as scratch,
+                tarfile.open(package_file, "w:gz") as tar,
+            ):
                 for item in latest_snap_dir.iterdir():
-                    tar.add(item, arcname=item.name)
+                    # LDM-#2443, LDM-#2446: the package carries a copy of the
+                    # payload without the publisher's licences and routes, and
+                    # a checksum for that copy. The snapshot itself is untouched.
+                    if item.name == "files.tar.gz.sha256":
+                        continue
+                    if item.name != "files.tar.gz":
+                        tar.add(item, arcname=item.name)
+                        continue
+                    payload = Path(scratch) / "files.tar.gz"
+                    omitted = write_redistributable_payload(
+                        item, payload, include_marketplace
+                    )
+                    tar.add(payload, arcname="files.tar.gz")
+                    sha_copy = Path(scratch) / "files.tar.gz.sha256"
+                    sha_copy.write_text(calculate_sha256(payload))
+                    tar.add(sha_copy, arcname="files.tar.gz.sha256")
         except Exception as e:
             UI.die(f"Failed to generate package archive: {e}")
 
-        # 5. Generate checksum
-        from ldm_core.utils import calculate_sha256
+        if omitted:
+            UI.info(
+                "Left out of the package, because they belong to this "
+                "installation rather than to whoever imports it:"
+            )
+            for line in describe_publisher_material(omitted):
+                UI.info(f"  - {line}")
 
+        # 5. Generate checksum
         sha = calculate_sha256(package_file)
         sha_file.write_text(f"{sha}  {package_file.name}\n")
 

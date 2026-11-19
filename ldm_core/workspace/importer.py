@@ -12,6 +12,8 @@ from ldm_core.pipelines.base import die_if_the_pipeline_failed
 from ldm_core.snapshot.archive import (
     CLIENT_EXTENSION_SOURCES,
     OSGI_MODULE_SOURCES,
+    describe_publisher_material,
+    find_publisher_material,
     scan_member_names,
 )
 from ldm_core.utils import (
@@ -404,6 +406,37 @@ def _recover_listing_from_payload(temp_extract_dir, sources):
     return scan_member_names(names, sources)
 
 
+def warn_publisher_material(temp_extract_dir):
+    """Warns when a package carries its publisher's licences or routes.
+
+    LDM-#2443, LDM-#2446: `ldm package` leaves them out since v2.26.13, so
+    this is what a package built before that still contains. Warn rather than
+    refuse: the import itself is sound, and the consumer needs to know to bring
+    their own licence and not to trust the shipped routes.
+    """
+    from ldm_core.utils import UI
+
+    payload = temp_extract_dir / "files.tar.gz"
+    if not payload.exists():
+        return
+    try:
+        found = find_publisher_material(payload)
+    except Exception:
+        return
+    if not found:
+        return
+    UI.warning(
+        "This package contains material that belongs to whoever built it, "
+        "not to you. Packages made with LDM v2.26.13 or later leave it out:"
+    )
+    for line in describe_publisher_material(found):
+        UI.warning(f"  - {line}")
+    UI.warning(
+        "Use your own licence (put the key in the project's deploy/ folder). "
+        "Liferay rewrites routes/ for your instance when it starts."
+    )
+
+
 def parse_package_manifest(manager, temp_extract_dir, *scratch_dirs):
     """The manifest of an .ldmp, read strictly, or a refusal.
 
@@ -541,6 +574,7 @@ def _verify_ldm_package_manifest(self, temp_extract_dir, temp_pkg_dir, owner, re
     reconcile_package_listings(
         temp_extract_dir, manifest, temp_pkg_dir, temp_extract_dir, refuse=True
     )
+    warn_publisher_material(temp_extract_dir)
 
     from ldm_core.utils import DB_ENGINES
 

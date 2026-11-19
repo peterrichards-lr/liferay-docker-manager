@@ -308,11 +308,13 @@ class PackageVerificationStage(PipelineStage):
         from ldm_core.workspace.importer import (
             parse_package_manifest,
             reconcile_package_listings,
+            warn_publisher_material,
         )
 
         scratch = [d for d in context.get("temp_dirs", []) if isinstance(d, Path)]
         manifest = parse_package_manifest(context.manager, Path(backup_dir), *scratch)
         reconcile_package_listings(Path(backup_dir), manifest, *scratch, refuse=False)
+        warn_publisher_material(Path(backup_dir))
         _note_unverifiable_origin(manifest)
 
 

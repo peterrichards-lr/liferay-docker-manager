@@ -1986,6 +1986,13 @@ def get_parser():  # noqa: PLR0915
         "--snapshot",
         help="Target a specific snapshot name or directory to package",
     )
+    # LDM-#2443: Marketplace products are licensed, so they are left out of a
+    # package unless the publisher says their licence allows redistribution.
+    package_cmd.add_argument(
+        "--include-marketplace",
+        action="store_true",
+        help="Ship Marketplace products (.lpkg) in the package; only if their licence allows redistribution",
+    )
     package_cmd.add_argument(
         "--host-name",
         help="Custom host-name / domain to store in the package metadata",
@@ -3394,6 +3401,7 @@ def _build_command_map(args, manager):
             repo=getattr(args, "repo", None),
             use_latest=getattr(args, "use_latest", False),
             snapshot=getattr(args, "snapshot", None),
+            include_marketplace=getattr(args, "include_marketplace", False),
         ),
         ("import", None): lambda: manager.workspace.cmd_import(args.source),
         ("link", None): lambda: manager.workspace.cmd_link(args.source),

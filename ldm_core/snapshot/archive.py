@@ -181,6 +181,104 @@ def _omit_ldm_bundles(tarinfo):
     return tarinfo
 
 
+# LDM-#2443, LDM-#2446: what a snapshot keeps for its own project but a
+# package must not hand to whoever imports it. Applied only when `ldm package`
+# builds the .ldmp: a local snapshot stays complete, so a licensed project
+# restores licensed.
+OMITTED_LICENCE = "licence"
+OMITTED_ROUTES = "routes"
+OMITTED_MARKETPLACE = "marketplace"
+
+_LICENCE_XML_DIRS = (PurePosixPath("deploy"), PurePosixPath("osgi/modules"))
+
+
+def _is_licence_xml(data: bytes) -> bool:
+    """The gate LicenseService._parse_license_xml applies before parsing."""
+    return b"<license" in data.lower()
+
+
+def publisher_only_reason(tar, member, include_marketplace=False):  # noqa: PLR0911
+    """Why `member` of a files.tar.gz belongs to the publisher, or None.
+
+    - `routes/`: the OAuth client credentials and DXP host the publisher's
+      Liferay wrote for its client extensions (LDM-#2446). The consumer's
+      Liferay writes its own on first boot.
+    - `data/license/`, and licence XMLs in `deploy/` or `osgi/modules/`: DXP
+      and Marketplace activation keys (LDM-#2443).
+    - `*.lpkg` in `deploy/` or `osgi/marketplace/`: licensed Marketplace
+      products, unless the publisher opts in with --include-marketplace.
+    """
+    rel = PurePosixPath(member.name.lstrip("./"))
+    if not rel.parts:
+        return None
+    if rel.parts[0] == "routes":
+        return OMITTED_ROUTES
+    if rel.parts[:2] == ("data", "license"):
+        return OMITTED_LICENCE
+    if not member.isfile():
+        return None
+    suffix = rel.suffix.lower()
+    if suffix == ".lpkg" and not include_marketplace:
+        if rel.parent == PurePosixPath("deploy") or rel.parts[:2] == (
+            "osgi",
+            "marketplace",
+        ):
+            return OMITTED_MARKETPLACE
+    if suffix == ".xml" and rel.parent in _LICENCE_XML_DIRS:
+        handle = tar.extractfile(member)
+        if handle is not None and _is_licence_xml(handle.read()):
+            return OMITTED_LICENCE
+    return None
+
+
+def find_publisher_material(payload, include_marketplace=False):
+    """Every file in a files.tar.gz that belongs to the publisher, as
+    (name, reason) pairs. Directory entries are not listed."""
+    found = []
+    with tarfile.open(payload, "r:gz") as tar:
+        for member in tar.getmembers():
+            reason = publisher_only_reason(tar, member, include_marketplace)
+            if reason and member.isfile():
+                found.append((member.name.lstrip("./"), reason))
+    return found
+
+
+def write_redistributable_payload(src, dst, include_marketplace=False):
+    """Copies files.tar.gz `src` to `dst` without the publisher's material.
+    Returns what it left out, as (name, reason) pairs."""
+    omitted = []
+    with tarfile.open(src, "r:gz") as tin, tarfile.open(dst, "w:gz") as tout:
+        for member in tin.getmembers():
+            reason = publisher_only_reason(tin, member, include_marketplace)
+            if reason:
+                if member.isfile():
+                    omitted.append((member.name.lstrip("./"), reason))
+                continue
+            data = tin.extractfile(member) if member.isfile() else None
+            tout.addfile(member, data)
+    return omitted
+
+
+def describe_publisher_material(found):
+    """One line per reason, naming the files, for the package and import
+    messages."""
+    labels = {
+        OMITTED_LICENCE: "licence keys",
+        OMITTED_MARKETPLACE: "Marketplace products",
+        OMITTED_ROUTES: "client-extension routes (OAuth credentials, DXP host)",
+    }
+    lines = []
+    for reason in (OMITTED_LICENCE, OMITTED_MARKETPLACE, OMITTED_ROUTES):
+        names = sorted(n for n, r in found if r == reason)
+        if not names:
+            continue
+        if reason == OMITTED_ROUTES:
+            lines.append(f"{labels[reason]}: routes/ ({len(names)} files)")
+        else:
+            lines.append(f"{labels[reason]}: {', '.join(names)}")
+    return lines
+
+
 def scan_member_names(names, sources):
     """Bare filenames among `names` matching any (directory, pattern) source.
 
