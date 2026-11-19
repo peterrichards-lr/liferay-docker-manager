@@ -296,6 +296,7 @@ nav:
     - Third-party tools: reference/third_party_tools.md
     - Networking: reference/networking.md
     - Advanced CLI: reference/advanced_cli.md
+    - Exit codes: reference/exit_codes.md
     - JVM and database tuning: reference/tuning.md
     - Logging strategy: reference/logging-strategy.md
   - Explanation:

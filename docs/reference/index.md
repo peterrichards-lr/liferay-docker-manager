@@ -15,6 +15,8 @@ through. For why LDM behaves the way it does, see
 - **[Cloud Commands](cli/cloud.md)** — `ldm cloud` against Liferay Cloud PaaS.
 - **[Advanced CLI Usage & Flags](advanced_cli.md)** — flags that do not belong
   to a single command, and the less common combinations.
+- **[Exit Codes](exit_codes.md)** — what each exit code means, for scripts and
+  CI pipelines that branch on them.
 
 ## Settings
 
@@ -38,4 +40,4 @@ through. For why LDM behaves the way it does, see
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-16* | *Last Reviewed: 2026-10-16*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*
