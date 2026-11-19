@@ -92,6 +92,8 @@ LDM reads up to two, in this order:
 
 The second folder is **added after** `~/.ldm/common/`, not used instead of it. For a `.config` or `.cfg` file present in both, the second folder's copy is the one that ends up in the project.
 
+Each folder's `portal-ext.properties` is a separate layer of the [properties cascade](../explanation/properties.md): `~/.ldm/common/` is layer 3 (global), and the second folder -- whether it is `LDM_COMMON_DIR` or a workspace `common/` -- is layer 4 (local), so its values win over the global ones unless a global key is marked `# !important`. The layer follows from which folder it is, not from its path: a workspace `common/` under `/home/` is still layer 4.
+
 ```bash
 # Example: add a shared organisation config folder for this shell
 export LDM_COMMON_DIR="/path/to/shared/organization/common"

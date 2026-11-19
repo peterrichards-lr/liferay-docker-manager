@@ -66,7 +66,7 @@ Some names are handled specially rather than copied as-is:
 
 `portal-ext.properties` is not copied but merged: `~/.ldm/common/` is one layer
 of the [properties cascade](../explanation/properties.md), below a workspace
-`common/` folder and below the project's own edits.
+`common/` folder (or `LDM_COMMON_DIR`) and below the project's own edits.
 
 > [!WARNING]
 > A credential in a shared `.config` file is stored in plaintext in

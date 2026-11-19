@@ -14,6 +14,7 @@ from ldm_core.ui import UI
 from ldm_core.utils import (
     atomic_copy,
     get_actual_home,
+    global_common_dir,
     is_continuation_line,
     is_credential_shaped,
     is_local_host,
@@ -35,6 +36,40 @@ def _match_meta_type(current, target):
         return target
     text = str(target)
     return int(text) if text.lstrip("-").isdigit() else target
+
+
+def classify_common_properties(common_dirs):
+    """Returns `(global_ext, local_ext)`: the layer 3 and 4 portal-ext.properties.
+
+    LDM-#2451. A folder is layer 3 (global) only when it IS the global common
+    folder, `<LDM_HOME>/.ldm/common`; every other folder -- a workspace
+    `common/` or `LDM_COMMON_DIR` -- is layer 4 (local). This used to test the
+    resolved path for the substrings `.ldm`, `home` and `global`, so on Linux,
+    where every user path is under `/home/`, a workspace `common/` landed in
+    layer 3 and silently overwrote `~/.ldm/common/portal-ext.properties`.
+
+    Both sides are resolved, because a symlinked home (macOS `/var` ->
+    `/private/var`) would otherwise compare unequal to itself.
+    """
+    global_dir = global_common_dir().resolve()
+    global_ext, local_ext = None, None
+    for cd in common_dirs or []:
+        cd_ext = cd / "portal-ext.properties"
+        if not cd_ext.exists():
+            continue
+        is_global = Path(cd).resolve() == global_dir
+        previous = global_ext if is_global else local_ext
+        if previous is not None and previous.resolve() != cd_ext.resolve():
+            UI.warning(
+                f"Two common folders map to the same properties layer "
+                f"({'global' if is_global else 'local'}): {previous} and "
+                f"{cd_ext}. Only {cd_ext} is used."
+            )
+        if is_global:
+            global_ext = cd_ext
+        else:
+            local_ext = cd_ext
+    return global_ext, local_ext
 
 
 class ConfigService:
@@ -819,18 +854,7 @@ class ConfigService:
         )
         ldmp_ext = paths["root"] / ".liferay-docker" / "ldmp-portal-ext.properties"
 
-        global_ext, local_ext = None, None
-        for cd in paths.get("common_dirs", []):
-            cd_ext = cd / "portal-ext.properties"
-            if cd_ext.exists():
-                if (
-                    ".ldm" in str(cd.resolve())
-                    or "home" in str(cd.resolve())
-                    or "global" in str(cd.resolve()).lower()
-                ):
-                    global_ext = cd_ext
-                else:
-                    local_ext = cd_ext
+        global_ext, local_ext = classify_common_properties(paths.get("common_dirs", []))
 
         current_hashes = {
             "seed": _hash_file(seed_ext),
