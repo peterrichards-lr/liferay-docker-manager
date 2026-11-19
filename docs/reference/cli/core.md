@@ -43,6 +43,14 @@ ldm run demo --feature LPS-122920 dev beta
 # Run on a custom port
 ldm run my-project --port 8081
 
+# Change an existing project's host port: stop it, then run with --port.
+# The new port is re-mapped and saved to the project's meta, so later runs
+# keep it without the flag. No hand edit of docker-compose.yml or meta.
+ldm stop my-project && ldm run my-project --port 9090
+
+# Give the Liferay container a fixed hostname (persisted to meta)
+ldm run my-project --container-hostname liferay
+
 # Using the alias
 ldm up demo
 
@@ -238,6 +246,20 @@ tested.
 
 See [`package`](#package) for how a publisher declares a claim.
 
+### Container Hostname
+
+Docker names a container's host after its container ID, so the hostname changes every time the container is recreated. Some Marketplace apps (Digital Sales Room among them) issue **host-locked activation keys**, checked against the container hostname, and fail their licence check after a recreate.
+
+`--container-hostname NAME` sets the Liferay container's `hostname:` in the generated `docker-compose.yml` and saves it to the project's meta as `container_hostname`, so it survives stop/start, `--force-recreate` and every regeneration of the compose file. A later `ldm run` without the flag keeps it. Change or remove it later with [`config container-hostname`](#config-container-hostname).
+
+- **Allowed characters.** One RFC 1123 label: lowercase letters, digits and hyphens, 1-63 characters, not starting or ending with a hyphen. Anything else is refused before anything is written.
+- **No dots, for now.** It has not been verified whether host-locked keys are checked against the short hostname or a fully qualified one, so `liferay.example.com` is refused until that is known.
+- **Scaled stacks.** With `--scale liferay=N` (N > 1) the hostname is not applied, with a warning: every replica would share it.
+- **Shared hostnames.** Two projects may use the same hostname; LDM warns and names the other project(s).
+- **Confirmed after boot.** Once the container is up, `ldm run` reads its hostname with `docker inspect` and stops with exit code 3 if it does not match.
+
+Carrying the hostname inside an `.ldmp` package is not implemented yet: a package does not record it, so set it again after `ldm import`.
+
 ### `--vanilla` Switch ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue)
 
 Bypasses downloading the pre-warmed database seed from GitHub releases. Spawns the Liferay project stack with a pristine, empty database.
@@ -252,6 +274,8 @@ Initialize project scaffolding (creating `.liferay-docker.meta`, `portal-ext.pro
 ldm init my-project --tag 2024.q4.0 --db mysql
 ldm init my-project --tag-prefix 2026.q3   # newest 2026.q3 tag (LDM-#2168)
 ```
+
+`--container-hostname` is accepted too, and is saved to meta exactly as it is by [`run`](#container-hostname).
 
 `--tag`, `--tag-latest` and `--tag-prefix` resolve exactly as they do for `run`. `--tag-prefix` was missing from `init` until LDM-#2168.
 
@@ -925,6 +949,28 @@ ldm config common-config-policy --unset my-project
 An invalid value is refused (exit `1`). There is no flat legacy alias. The
 rules are in
 [Overriding a shared file in one project](../configuration.md#overriding-a-shared-file-in-one-project).
+
+## `config container-hostname`
+
+Show, set or remove the Liferay container's fixed hostname (see [`--container-hostname`](#container-hostname)). The value is stored in the project's meta, never in `~/.ldmrc`.
+
+```bash
+# Print the current value for the project in this directory
+ldm config container-hostname
+
+# Print it for a named project
+ldm config container-hostname -p my-project
+
+# Set it (same rules as --container-hostname; no dots)
+ldm config container-hostname liferay my-project
+
+# Remove it -- Docker goes back to using the container ID
+ldm config container-hostname --unset my-project
+```
+
+With a single positional, the positional is the hostname to set on the project in the current directory; use `-p` to name a project when printing. With `--unset`, a single positional is the project.
+
+The hostname is fixed when the container is created, so a change takes effect only when the container is recreated: run `ldm stop <project>` and then `ldm run <project>`.
 
 ## Global Flags
 

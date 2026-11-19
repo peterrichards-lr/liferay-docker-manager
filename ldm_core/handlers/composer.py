@@ -1288,6 +1288,15 @@ class ComposerService:
             )
             service["container_name"] = liferay_container
 
+            # LDM-#2445: a stable hostname for host-locked Marketplace keys.
+            # Docker otherwise uses the container ID, which changes on every
+            # recreate. `ExecutionStage` confirms the running container has it.
+            from ldm_core.runtime.container_hostname import configured
+
+            container_hostname = configured(meta)
+            if container_hostname:
+                service["hostname"] = container_hostname
+
             # Host-mapped state if requested
             is_persist_osgi = str(meta.get("persist_osgi", "false")).lower() == "true"
             if is_persist_osgi:
@@ -1303,6 +1312,14 @@ class ComposerService:
                 ]
             )
         else:
+            from ldm_core.runtime.container_hostname import configured
+
+            if configured(meta):
+                UI.warning(
+                    f"Container hostname '{configured(meta)}' is not applied: "
+                    f"Liferay is scaled to {scale} and every replica would share "
+                    "it (LDM-#2445)."
+                )
             liferay_env.extend(
                 [
                     "LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_ENABLED=true",

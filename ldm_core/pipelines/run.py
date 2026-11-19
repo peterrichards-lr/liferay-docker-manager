@@ -1177,6 +1177,29 @@ class ConfigResolutionStage(PipelineStage):
             UI.info(compatibility.describe(claim, tag))
 
     @staticmethod
+    def _apply_container_hostname(manager, project_meta, project_root) -> None:
+        """`--container-hostname` -> meta, validated (LDM-#2445).
+
+        The flag wins over meta and is persisted with the rest of meta by
+        `EnvironmentSetupStage`, so a later `ldm run` without it keeps the
+        value. `isinstance` rather than truthiness: an unset attribute on a
+        mocked or foreign namespace must not be mistaken for a hostname.
+        """
+        from ldm_core.runtime import container_hostname as ch
+
+        flag = getattr(manager.args, "container_hostname", None)
+        if isinstance(flag, str) and flag:
+            ch.die_if_invalid(flag)
+            project_meta[ch.META_KEY] = flag
+            ch.warn_if_shared(flag, project_root)
+            return
+
+        existing = ch.configured(project_meta)
+        if existing:
+            # A hand-edited meta must not reach the compose file unchecked.
+            ch.die_if_invalid(existing)
+
+    @staticmethod
     def _apply_inert_flags(manager, project_meta) -> None:
         """Wire up `--env` and `--gogo-port`; warn that `--mount-logs` is a no-op.
 
@@ -1504,6 +1527,7 @@ class ConfigResolutionStage(PipelineStage):
         # ends of the plumbing were intact; only the flag-to-meta step was
         # missing, dropped with the rest of the literal in PR #497.
         self._apply_inert_flags(manager, project_meta)
+        self._apply_container_hostname(manager, project_meta, paths["root"])
 
         project_meta["root"] = str(paths["root"].resolve())
         project_meta["project_name"] = project_id
@@ -2715,6 +2739,22 @@ def _verify_pinned_mac(manager, context, project_meta) -> None:
     )
 
 
+def _verify_container_hostname(manager, context, project_meta) -> None:
+    """Pipeline wrapper around `verify_container_hostname` (LDM-#2445)."""
+    from ldm_core.runtime.container_hostname import verify_container_hostname
+
+    target_name = getattr(manager, "target", None) or (
+        project_meta.get("target") if isinstance(project_meta, dict) else None
+    )
+    project_id = context.get("project_id")
+    verify_container_hostname(
+        project_meta,
+        target_name,
+        dry_run=bool(getattr(manager, "dry_run", False)),
+        recreate_hint=f"ldm stop {project_id} && ldm run {project_id} --force-recreate",
+    )
+
+
 def _patch_docker_prefix(manager, target_context):
     """Returns the `docker` argv prefix to use for `docker cp` (LDM-#1264).
 
@@ -3131,6 +3171,9 @@ class ExecutionStage(PipelineStage):
             # them into one named error, before the operator spends fifteen
             # minutes waiting for a boot that will not let them sign in.
             _verify_pinned_mac(manager, context, project_meta)
+            # LDM-#2445: same request-then-confirm for the container hostname,
+            # which host-locked Marketplace activation keys are checked against.
+            _verify_container_hostname(manager, context, project_meta)
 
             if follow:
                 context.set("logs_attached", True)

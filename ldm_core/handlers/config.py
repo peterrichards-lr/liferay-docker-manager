@@ -1954,6 +1954,60 @@ class ConfigService:
             UI.raw(f"  {k.ljust(15)}: {display_v.ljust(20)} [{source}]")
         UI.raw("")
 
+    def cmd_container_hostname(self, value=None, project_id=None, unset=False):
+        """Show, set or unset a project's container hostname (LDM-#2445).
+
+        Written to project meta, never `~/.ldmrc`: the hostname is what a
+        host-locked activation key was issued for, so it belongs to the
+        project. With `--unset` a lone positional names the project, because
+        there is no value to set.
+        """
+        from ldm_core.runtime import container_hostname as ch
+
+        if unset and value and not project_id:
+            project_id, value = value, None
+        if unset and value:
+            UI.die("--unset takes no hostname; pass only the project.")
+
+        root = self.manager.detect_project_path(project_id)
+        if not root:
+            return
+        meta = self.manager.read_meta(root) or {}
+        current = ch.configured(meta)
+
+        if not unset and not value:
+            if current:
+                print(current)
+            else:
+                UI.detail(
+                    f"No container hostname is set for '{root.name}'; Docker "
+                    "uses the container ID."
+                )
+            return
+
+        if unset:
+            if not current:
+                UI.detail(f"No container hostname is set for '{root.name}'.")
+                return
+            meta.pop(ch.META_KEY, None)
+            self.manager.write_meta(root, meta)
+            UI.success(f"Container hostname removed for '{root.name}'.")
+        else:
+            ch.die_if_invalid(value)
+            if value == current:
+                UI.detail(f"Container hostname is already '{value}'.")
+                return
+            meta[ch.META_KEY] = value
+            self.manager.write_meta(root, meta)
+            ch.warn_if_shared(value, root)
+            UI.success(f"Container hostname for '{root.name}' set to '{value}'.")
+
+        UI.info(
+            "The hostname is fixed when the container is created. To apply it, "
+            f"run 'ldm stop {root.name}' and then 'ldm run {root.name}' "
+            "(this recreates the Liferay container)."
+        )
+
     def cmd_database_mode(self, mode=None):
         """View or change the active database profile (isolated or shared)."""
         global_level = getattr(self.manager.args, "global_level", False)

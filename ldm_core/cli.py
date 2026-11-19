@@ -91,6 +91,7 @@ def _resolve_legacy_config_commands(cmd_idx, processed_list):
         "ssl-mode",
         "database-mode",
         "common-config-policy",
+        "container-hostname",
     ]
     if cmd_idx + 1 < len(processed_list) and processed_list[cmd_idx + 1] in subcmds:
         return processed_list
@@ -238,6 +239,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "ssl-mode",
         "database-mode",
         "common-config-policy",
+        "container-hostname",
         "fork",
         "db",
         "query",
@@ -629,6 +631,10 @@ def get_parser():  # noqa: PLR0915
     )
     run.add_argument(
         "--port", type=int, help="Host port to publish Liferay on (default: 8080)"
+    )
+    run.add_argument(
+        "--container-hostname",
+        help="Fixed hostname for the Liferay container (persisted). Some Marketplace apps lock activation keys to it. Lowercase letters, digits and hyphens, max 63 (LDM-#2445)",
     )
     run.add_argument("--db", choices=["postgresql", "mysql", "hypersonic"])
     run.add_argument(
@@ -1025,6 +1031,10 @@ def get_parser():  # noqa: PLR0915
     # LDM-#2168: every other project-creating command had this.
     init.add_argument("--tag-prefix", help="Prefix for Liferay tag discovery")
     init.add_argument("--host-name", help="Virtual Hostname")
+    init.add_argument(
+        "--container-hostname",
+        help="Fixed hostname for the Liferay container (persisted). Some Marketplace apps lock activation keys to it. Lowercase letters, digits and hyphens, max 63 (LDM-#2445)",
+    )
     init.add_argument(
         "--db",
         choices=["postgresql", "mysql", "hypersonic", "external"],
@@ -2712,6 +2722,24 @@ def get_parser():  # noqa: PLR0915
         help="Do not automatically stop and restart the containers",
     )
 
+    container_hostname = config_subparsers.add_parser(
+        "container-hostname",
+        parents=[base_sub_parent],
+        help="Show, set or unset the Liferay container's fixed hostname (LDM-#2445)",
+    )
+    container_hostname.add_argument(
+        "value",
+        nargs="?",
+        help="Hostname to set. Omit to print the current value",
+    )
+    container_hostname.add_argument("project", nargs="?")
+    container_hostname.add_argument("-p", "--project", dest="project_flag")
+    container_hostname.add_argument(
+        "--unset",
+        action="store_true",
+        help="Remove the configured hostname (Docker then uses the container ID)",
+    )
+
     add_container = config_subparsers.add_parser(
         "add-container",
         parents=[base_sub_parent],
@@ -3740,6 +3768,14 @@ def _build_command_map(args, manager):
         ),
         ("config", "add-container"): lambda: manager.config.cmd_config_add_container(
             args
+        ),
+        (
+            "config",
+            "container-hostname",
+        ): lambda: manager.config.cmd_container_hostname(
+            getattr(args, "value", None),
+            getattr(args, "project", None) or getattr(args, "project_flag", None),
+            unset=getattr(args, "unset", False),
         ),
         # db namespace:
         ("db", "query"): lambda: manager.database.cmd_query(
