@@ -4474,7 +4474,7 @@ def _run_powershell_arg_guard(*argv):
         "w", suffix=".ps1", delete=False, encoding="utf-8"
     ) as handle:
         handle.write(
-            head + '\nWrite-Output "FELL-THROUGH KeepPulled=$KeepPulled '
+            head + '\nWrite-Output "FELL-THROUGH Keep=$Keep KeepPulled=$KeepPulled '
             'Avm=$AllowVersionMismatch"\n'
         )
         path = handle.name
@@ -4553,13 +4553,17 @@ class ThePowerShellHarnessRefusesUnknownArguments(unittest.TestCase):
         # `-keep` resolves to `-KeepPulled` by prefix and the script runs on
         # with an unrelated flag enabled.
         res = _run_powershell_arg_guard("-keep")
-        self.assertEqual(res.returncode, 1)
-        self.assertNotIn("FELL-THROUGH", res.stdout)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("Keep=True", res.stdout)
         self.assertNotIn("KeepPulled=True", res.stdout)
 
-    def test_the_keep_refusal_names_the_parity_issue(self):
+    def test_keep_is_accepted(self):
+        # LDM-#2262: -Keep was refused while the teardown guard did not exist.
+        # It now binds and the run proceeds; TheFinalizerHonoursKeep below
+        # proves the guard it binds to actually skips the teardown.
         res = _run_powershell_arg_guard("-Keep")
-        self.assertIn("2262", res.stdout + res.stderr)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("FELL-THROUGH Keep=True KeepPulled=False", res.stdout)
 
     def test_the_documented_switches_still_fall_through(self):
         res = _run_powershell_arg_guard("-KeepPulled")
@@ -4570,6 +4574,124 @@ class ThePowerShellHarnessRefusesUnknownArguments(unittest.TestCase):
         res = _run_powershell_arg_guard()
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertIn("FELL-THROUGH", res.stdout)
+
+
+_FINALIZER_STUBS = r"""
+$script:Calls = New-Object System.Collections.Generic.List[string]
+function Rec($s) { $script:Calls.Add($s) }
+function Write-FailureDebugLogs { }
+function Get-SlugOsSuffix { param($Edition) "x" }
+function Remove-Ldm1383Artifacts { Rec "Remove-Ldm1383Artifacts" }
+function Get-RunningProjectsExcept { param($n) Rec "Get-RunningProjectsExcept"; @() }
+function Invoke-Cleanup { param($a, $b) Rec "Invoke-Cleanup $a $b" }
+function Write-TrapNote { param($m, $Color) Rec "NOTE $m" }
+function Get-DockerFreeGb { 10 }
+function Get-HostFreeGb { 10 }
+function ldmstub { Rec "ldm $($args -join ' ')"; $global:LASTEXITCODE = 0 }
+function docker {
+    Rec "docker $($args -join ' ')"
+    if ($args[0] -eq 'images') { "built-img" }
+    if ($args[0] -eq 'image') { "pulled-img" }
+}
+$LDM_CMD = "ldmstub"
+$PROJECT_NAME = "ldm-smoke-test"
+$ORIGINAL_PWD = $env:H_PWD
+$LDM_WORKSPACE = $env:H_WS
+$RESULTS_FILE_TMP = Join-Path $env:H_PWD "absent.txt"
+$script:InventoryStartImages = @()
+$script:InventoryStartVolumes = @()
+"""
+
+
+def _run_powershell_finalizer(*argv):
+    """Execute the REAL teardown with ldm/docker stubbed (LDM-#2262).
+
+    Extracts Invoke-FinalizerBody and the post-finalise image sweep and reap
+    from the script, prepends the real param block, and runs them via -File so
+    -Keep binds exactly as it does for a user. Returns (result, calls,
+    workspace_survived).
+    """
+    text = PS1_SCRIPT.read_text(encoding="utf-8")
+    head = text.split("# Target: Verifies the INSTALLED binary", 1)[0]
+    finalizer = re.search(
+        r"^function Invoke-FinalizerBody \{.*?^\}\n", text, re.M | re.S
+    )
+    assert finalizer, "Invoke-FinalizerBody was not found"
+    tail = re.search(
+        r"    Set-Location \$ORIGINAL_PWD\n\n(    # LDM-#2084: remove every image.*?)"
+        r"\n\}\n\n# LDM-#1611",
+        text,
+        re.S,
+    )
+    assert tail, "the post-finalise sweep and reap were not found"
+    driver = (
+        "Set-Location $env:H_PWD\nInvoke-FinalizerBody 1\n"
+        "$script:VerificationExitCode = 0\n"
+        + tail.group(1)
+        + '\n$script:Calls | ForEach-Object { Write-Output "CALL $_" }\n'
+    )
+    with tempfile.TemporaryDirectory() as pwd, tempfile.TemporaryDirectory() as ws:
+        path = Path(pwd, "harness.ps1")
+        path.write_text(
+            head + _FINALIZER_STUBS + finalizer.group(0) + driver, encoding="utf-8"
+        )
+        res = subprocess.run(
+            [
+                _pwsh_binary(),
+                "-NoProfile",
+                "-NonInteractive",
+                "-File",
+                str(path),
+                *argv,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=dict(os.environ, H_PWD=pwd, H_WS=ws),
+        )
+        survived = Path(ws).exists()
+    calls = [line[5:] for line in res.stdout.splitlines() if line.startswith("CALL ")]
+    return res, calls, survived
+
+
+@unittest.skipUnless(_pwsh_binary(), "pwsh/powershell not available on this machine")
+class TheFinalizerHonoursKeep(unittest.TestCase):
+    """LDM-#2262: -Keep guards the same teardown as the bash half's --keep.
+
+    Executed, not grepped: a name-grep passes against a call site that cannot
+    run, which is how LDM-#2199 shipped a mandatory-parameter prompt.
+    """
+
+    TEARDOWN = (
+        "Invoke-Cleanup docker rm -f liferay-proxy-global",
+        "ldm -y rm ldm-smoke-test --delete",
+        "docker rmi -f built-img",
+        "docker rmi pulled-img",
+    )
+
+    def test_without_keep_everything_is_torn_down(self):
+        res, calls, survived = _run_powershell_finalizer()
+        self.assertEqual(res.returncode, 0, res.stderr)
+        joined = "\n".join(calls)
+        for call in self.TEARDOWN:
+            self.assertIn(call, joined)
+        self.assertFalse(survived, "the workspace was not removed")
+
+    def test_keep_skips_the_teardown(self):
+        res, calls, survived = _run_powershell_finalizer("-Keep")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        joined = "\n".join(calls)
+        for call in self.TEARDOWN:
+            self.assertNotIn(call, joined)
+        self.assertNotIn("Get-RunningProjectsExcept", joined)
+        self.assertTrue(survived, "-Keep removed the workspace")
+
+    def test_keep_still_removes_the_1383_artefacts(self):
+        # Parity with the bash half, where cleanup_1383_artifacts sits above
+        # the KEEP_ARTIFACTS guard: a leftover TEST-NET-1 Docker context makes
+        # every later `ldm list` block on an SSH timeout.
+        _, calls, _ = _run_powershell_finalizer("-Keep")
+        self.assertIn("Remove-Ldm1383Artifacts", calls)
 
 
 class TestPowerShellInlinePythonHasNoDoubleQuotes(unittest.TestCase):
