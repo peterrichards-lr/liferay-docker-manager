@@ -336,27 +336,27 @@ class TestTheCodeMatchesTheDocumentedContract:
     so in its own comment -- that assertion "has now been wrong three times".
 
     So this one does not assert a value. It reads the contract table out of
-    `.agents/skills/ldm-architecture/SKILL.md` and requires the composer to
-    agree with it. Changing a mount now means changing the architecture
-    document in the same commit, which is the step that was missing every
-    time: the mechanism was documented nowhere, so a refactor had nothing to
-    preserve.
+    `docs/explanation/routes-tree.md` and requires the composer to agree with
+    it. (It read the architecture skill until LDM-#2152 moved the contract into
+    user documentation, so the skill now points at that page.) Changing a mount
+    now means changing that page in the same commit, which is the step that
+    was missing every time: the mechanism was documented nowhere, so a
+    refactor had nothing to preserve.
     """
 
     SKILL = (
         Path(__file__).resolve().parent.parent.parent
-        / ".agents"
-        / "skills"
-        / "ldm-architecture"
-        / "SKILL.md"
+        / "docs"
+        / "explanation"
+        / "routes-tree.md"
     )
 
     def _documented_targets(self):
         text = self.SKILL.read_text(encoding="utf-8")
-        assert "## The Routes Tree (Shared Config Space)" in text, (
-            "The routes tree section has been removed from the architecture "
-            "skill. It exists because this mechanism was undocumented and "
-            "therefore silently dropped three times -- restore it rather than "
+        assert "# The Routes Tree" in text, (
+            "The routes tree page has lost its heading. It exists because "
+            "this mechanism was undocumented and therefore silently dropped "
+            "three times -- restore it rather than "
             "deleting this guard."
         )
         return text
@@ -366,14 +366,14 @@ class TestTheCodeMatchesTheDocumentedContract:
         for constant in (DXP, EXT_INIT):
             assert constant in text, (
                 f"{constant} is mounted by the composer but is not in the "
-                "architecture skill's routes table. Document it there, or the "
-                "next refactor has nothing telling it this mount matters."
+                "routes-tree page. Document it there, or the next refactor "
+                "has nothing telling it this mount matters."
             )
 
     def test_the_application_path_is_documented_as_forbidden(self):
         text = self._documented_targets()
         assert "/opt/liferay/routes" in text and "shadow" in text.lower(), (
-            "The architecture skill no longer records WHY an extension must "
+            "The routes-tree page no longer records WHY an extension must "
             "not be mounted at /opt/liferay/routes. That reason is the whole "
             "of LDM-#1911, and losing it is how the mount was 'corrected' back "
             "to the broken value once already."
@@ -388,7 +388,7 @@ class TestTheCodeMatchesTheDocumentedContract:
         for target in _targets(mounts):
             assert target in text, (
                 f"The composer mounts a client extension at {target}, which "
-                "appears nowhere in the architecture skill's routes table. "
+                "appears nowhere in the routes-tree page's table. "
                 "Add it there in this same change -- an undocumented mount is "
                 "one a future refactor will drop without noticing (LDM-#1928)."
             )

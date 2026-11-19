@@ -11,6 +11,9 @@ that, see the [How-to guides](../how-to/index.md) or
   and how the pieces fit.
 - **[Remote Node Architecture](remote-node-architecture.md)** — how a command
   finds the right machine, and how target resolution works.
+- **[The Routes Tree](routes-tree.md)** — how Liferay publishes its domain
+  and each client extension's OAuth2 credentials: what is mounted where, the
+  variables LDM sets, and when the tree is populated.
 - **[Permissions & the Reclaim Helper](permissions-and-reclaim.md)** — why
   short-lived Alpine containers appear during a run, which directories they
   change, and why the mode is `777`.
@@ -43,4 +46,4 @@ They are unrelated, and picking the wrong one wastes a reader's time:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-16* | *Last Reviewed: 2026-10-16*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*
