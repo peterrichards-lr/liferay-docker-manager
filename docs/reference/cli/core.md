@@ -66,6 +66,20 @@ ldm run demo --scale liferay=2 --open
 ldm run
 ```
 
+### Reserved project name
+
+You cannot name a project `resources`. LDM's shared infrastructure (the
+Traefik proxy) runs as a Docker Compose project with that name, and a project
+of the same name would share it: starting the project would remove the proxy
+that routes every project. The check uses the project name as Docker sees it,
+so names that become `resources` once LDM makes them Docker-safe are refused
+too, such as `Resources` or `résources`. A project whose metadata sets
+`container_name` to `resources` is refused as well.
+
+`run`, `init`, `import`, `link`, `clone`, `quickstart` and `fork` refuse such
+a name with exit code `1` before any Docker command runs. Choose another name,
+e.g. `my-resources`.
+
 ### `--open` Switch
 
 Use `--open` to automatically launch the Liferay URL in your system browser once the instance is ready. This is equivalent to running `ldm browser` immediately after startup, but in a single command.
