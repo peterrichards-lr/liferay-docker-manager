@@ -107,6 +107,19 @@ repos:
         pass_filenames: false
         always_run: true
 
+      # LDM-#2151: the reclaim matrix in the architecture skill and in
+      # docs/explanation/permissions-and-reclaim.md is generated from the
+      # reclaim loops in source. --check changes nothing and exits 1 on drift,
+      # naming the file and printing the diff. always_run, because the inputs
+      # are four source files and two docs, and a narrower `files:` filter is
+      # one more list to keep in step.
+      - id: sync-reclaim-table
+        name: Check Reclaim Table Drift
+        entry: scripts/run_python.sh scripts/sync_reclaim_table.py --check
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: sync-docs
         name: Sync Documentation
         entry: bash -c 'scripts/run_python.sh scripts/sync_docs.py && git diff --exit-code docs/*.md'

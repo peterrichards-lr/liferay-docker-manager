@@ -24,20 +24,21 @@ param([switch]$AllowVersionMismatch, [switch]$KeepPulled, [switch]$Keep)
 # mistyped -keep silently switched on an UNRELATED flag. Declaring [switch]
 # $Keep removes that collision, because an exact match beats a prefix.
 #
-# $Keep is declared but NOT implemented: the teardown guard the bash half has
-# does not exist here. It is refused explicitly rather than accepted and
-# ignored, which is the whole point of this change. Tracked as LDM-#2262.
+# LDM-#2262: -Keep is the twin of the bash half's -k/--keep (KEEP_ARTIFACTS).
+# It guards the same teardown the bash half guards -- global infrastructure,
+# the project removal, the built-image sweep, the pulled-image reap and the
+# workspace removal -- so a failed run's containers and project survive for
+# inspection. A re-run cannot recreate them: it draws a new random TEST_PORT
+# and a fresh project. The LDM-#1383 artefacts are still removed, as they are
+# in the bash half, because a leftover Docker context pointing at TEST-NET-1
+# makes every later `ldm list` block on an SSH timeout.
+#
+# The bash half also refuses --keep with --prune-after. This half has no
+# -PruneAfter, so there is no contradiction to refuse here.
 if ($args.Count -gt 0) {
     Write-Host "[ERROR] unknown argument(s): $($args -join ', ')" -ForegroundColor Red
-    Write-Host "   Accepted: -AllowVersionMismatch, -KeepPulled" -ForegroundColor Red
+    Write-Host "   Accepted: -Keep, -KeepPulled, -AllowVersionMismatch" -ForegroundColor Red
     Write-Host "   Nothing has run yet, so nothing was lost -- fix the argument and re-run." -ForegroundColor Red
-    exit 1
-}
-if ($Keep) {
-    Write-Host "[ERROR] -Keep is not implemented in the PowerShell harness (LDM-#2262)." -ForegroundColor Red
-    Write-Host "   It is declared only so that '-keep' cannot bind to -KeepPulled by" -ForegroundColor Red
-    Write-Host "   prefix abbreviation, which silently enabled an unrelated flag." -ForegroundColor Red
-    Write-Host "   To preserve a failed run's artefacts today, use the bash harness." -ForegroundColor Red
     exit 1
 }
 
@@ -48,8 +49,8 @@ if ($Keep) {
 # by scripts/release.py on every bump) so a locally-held copy can be checked
 # against what actually shipped, rather than guessing from a file mtime -- git
 # checkout/pull doesn't preserve original commit timestamps.
-# LDM_MAGIC_VERSION: 2.26.12
-$SCRIPT_VERSION = "2.26.12"
+# LDM_MAGIC_VERSION: 2.26.13
+$SCRIPT_VERSION = "2.26.13"
 
 # LDM-#1058: extracted into a named function (still in this same file -- the
 # real verification workflow copies just this one file onto test rigs with
@@ -794,88 +795,93 @@ function Invoke-FinalizerBody {
     }
     Remove-Ldm1383Artifacts
 
-    # LDM-#2113: this was UNCONDITIONAL, where the bash half has always
-    # checked first. A verification run on Docker Desktop destroyed the
-    # shared proxy and search node out from under any other LDM project on
-    # the machine -- its containers keep running, so nothing reports a
-    # failure and the symptom is a site that stops being reachable and a
-    # search index served by a node that no longer exists. The same silent
-    # shape as LDM-#2083.
-    #
-    # LDM-#2121: ask LDM which PROJECTS are running, not `docker ps` which
-    # containers exist. LDM-#2113 made the two halves agree on a pattern that
-    # was already wrong: it excluded $PROJECT_NAME and $PROJECT_NAME-db-1 but
-    # not $PROJECT_NAME-db, -syntheticsvc or -derivedsvc, so the suite counted
-    # its own containers as other projects and skipped the global cleanup on
-    # every run. Mirrors the bash half, which is now the same question asked
-    # of the same source.
-    $otherContainers = @(Get-RunningProjectsExcept $PROJECT_NAME)
-    if ($otherContainers.Count -eq 0) {
-        Write-TrapNote "[INFO]  No other LDM projects running. Cleaning up global infrastructure..."
-        Invoke-Cleanup "docker" "rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy"
-    } else {
-        Write-TrapNote "[INFO]  Other LDM projects are running ($($otherContainers -join ', ')). Skipping global infrastructure cleanup."
-    }
-
-    # LDM-#1436: this used Invoke-Cleanup, which discards stdout, stderr AND the
-    # exit code -- so a failed project removal was completely invisible here,
-    # worse than the bash twin, which at least reported that it failed. The
-    # removal has failed at the end of every run across pre.8, pre.9 and pre.10,
-    # including runs that otherwise passed, and the cause is still unknown
-    # because the output was thrown away. Capture and print it.
-    $rmOut = (& $LDM_CMD -y rm ldm-smoke-test --delete 2>&1) -join "`n"
-    $rmRc = $LASTEXITCODE
-    # LDM-#2035: a run that died before provisioning never created the project,
-    # so `rm` correctly reports it missing. Reporting that as a failure, with
-    # "the project directory may remain", invents a second problem on top of
-    # the real one and points the reader at the wrong line -- the project was
-    # never there to leave behind.
-    #
-    # The distinction is evidenced, not assumed: LDM says it is missing AND no
-    # container carries its name. If either is untrue this falls through to the
-    # warning below, which is LDM-#1436's signal and must not be swallowed --
-    # that fired on runs which otherwise passed, and is still unexplained.
-    $rmLeftover = @(& docker ps -a --filter "name=ldm-smoke-test" --format "{{.Names}}  {{.Status}}" 2>$null)
-    if ($rmRc -ne 0 -and $rmOut -cmatch "not found" -and $rmLeftover.Count -eq 0) {
-        Write-TrapNote "[INFO] No project to remove: the run ended before 'ldm-smoke-test' was created, and no container carries its name."
-    }
-    elseif ($rmRc -ne 0) {
-        Write-TrapNote "[WARNING] 'ldm rm ldm-smoke-test --delete' failed (exit $rmRc); the project directory may remain."
-        if ($rmOut) {
-            Write-TrapNote "          LDM said:"
-            foreach ($line in ($rmOut -split "`n")) { Write-TrapNote "            $line" }
+    # LDM-#2262: everything below is skipped under -Keep, mirroring the bash
+    # half's KEEP_ARTIFACTS guard. Remove-Ldm1383Artifacts stays above it, as
+    # cleanup_1383_artifacts stays above the guard there.
+    if (-not $Keep) {
+        # LDM-#2113: this was UNCONDITIONAL, where the bash half has always
+        # checked first. A verification run on Docker Desktop destroyed the
+        # shared proxy and search node out from under any other LDM project on
+        # the machine -- its containers keep running, so nothing reports a
+        # failure and the symptom is a site that stops being reachable and a
+        # search index served by a node that no longer exists. The same silent
+        # shape as LDM-#2083.
+        #
+        # LDM-#2121: ask LDM which PROJECTS are running, not `docker ps` which
+        # containers exist. LDM-#2113 made the two halves agree on a pattern that
+        # was already wrong: it excluded $PROJECT_NAME and $PROJECT_NAME-db-1 but
+        # not $PROJECT_NAME-db, -syntheticsvc or -derivedsvc, so the suite counted
+        # its own containers as other projects and skipped the global cleanup on
+        # every run. Mirrors the bash half, which is now the same question asked
+        # of the same source.
+        $otherContainers = @(Get-RunningProjectsExcept $PROJECT_NAME)
+        if ($otherContainers.Count -eq 0) {
+            Write-TrapNote "[INFO]  No other LDM projects running. Cleaning up global infrastructure..."
+            Invoke-Cleanup "docker" "rm -f liferay-proxy-global liferay-search-global liferay-docker-proxy"
         } else {
-            Write-TrapNote "          LDM produced no output, which is itself a finding."
+            Write-TrapNote "[INFO]  Other LDM projects are running ($($otherContainers -join ', ')). Skipping global infrastructure cleanup."
         }
-        # The stack still being up is the leading hypothesis (LDM-#1436);
-        # record it either way rather than asking the reader to re-run.
-        Write-TrapNote "          Containers still present for this project:"
-        foreach ($line in $rmLeftover) { Write-TrapNote "            $line" }
-    }
-    
-    # LDM-#1438: report what this run cost, so growth is visible per run rather
-    # than discovered at 100% capacity three platforms later.
-    $endDocker = Get-DockerFreeGb
-    $endHost = Get-HostFreeGb
-    if ($null -ne $endDocker -and $null -ne $script:DiskStartDockerGb) {
-        $usedDocker = $script:DiskStartDockerGb - $endDocker
-        $usedHost = 0
-        if ($null -ne $endHost -and $null -ne $script:DiskStartHostGb) {
-            $usedHost = $script:DiskStartHostGb - $endHost
-        }
-        $hostText = if ($null -ne $endHost) { "$endHost GB" } else { "unknown" }
-        if ($usedDocker -lt 0) {
-            # Reclaimed more than it consumed -- the outcome to hope for. Say so
-            # rather than printing a negative.
-            Write-TrapNote "[INFO] Disk: reclaimed $(-$usedDocker) GB in Docker; $endDocker GB now free (host: $hostText)."
-        } else {
-            Write-TrapNote "[INFO] Disk: this run consumed $usedDocker GB in Docker and $usedHost GB on the host; $endDocker GB now free (host: $hostText)."
-        }
-    }
 
-    # Keep venv if in repo, otherwise clean up
-    if (-not (Test-Path "pyproject.toml")) {
-        if (Test-Path $LDM_WORKSPACE) { Remove-Item -Recurse -Force $LDM_WORKSPACE -ErrorAction SilentlyContinue }
+        # LDM-#1436: this used Invoke-Cleanup, which discards stdout, stderr AND the
+        # exit code -- so a failed project removal was completely invisible here,
+        # worse than the bash twin, which at least reported that it failed. The
+        # removal has failed at the end of every run across pre.8, pre.9 and pre.10,
+        # including runs that otherwise passed, and the cause is still unknown
+        # because the output was thrown away. Capture and print it.
+        $rmOut = (& $LDM_CMD -y rm ldm-smoke-test --delete 2>&1) -join "`n"
+        $rmRc = $LASTEXITCODE
+        # LDM-#2035: a run that died before provisioning never created the project,
+        # so `rm` correctly reports it missing. Reporting that as a failure, with
+        # "the project directory may remain", invents a second problem on top of
+        # the real one and points the reader at the wrong line -- the project was
+        # never there to leave behind.
+        #
+        # The distinction is evidenced, not assumed: LDM says it is missing AND no
+        # container carries its name. If either is untrue this falls through to the
+        # warning below, which is LDM-#1436's signal and must not be swallowed --
+        # that fired on runs which otherwise passed, and is still unexplained.
+        $rmLeftover = @(& docker ps -a --filter "name=ldm-smoke-test" --format "{{.Names}}  {{.Status}}" 2>$null)
+        if ($rmRc -ne 0 -and $rmOut -cmatch "not found" -and $rmLeftover.Count -eq 0) {
+            Write-TrapNote "[INFO] No project to remove: the run ended before 'ldm-smoke-test' was created, and no container carries its name."
+        }
+        elseif ($rmRc -ne 0) {
+            Write-TrapNote "[WARNING] 'ldm rm ldm-smoke-test --delete' failed (exit $rmRc); the project directory may remain."
+            if ($rmOut) {
+                Write-TrapNote "          LDM said:"
+                foreach ($line in ($rmOut -split "`n")) { Write-TrapNote "            $line" }
+            } else {
+                Write-TrapNote "          LDM produced no output, which is itself a finding."
+            }
+            # The stack still being up is the leading hypothesis (LDM-#1436);
+            # record it either way rather than asking the reader to re-run.
+            Write-TrapNote "          Containers still present for this project:"
+            foreach ($line in $rmLeftover) { Write-TrapNote "            $line" }
+        }
+
+        # LDM-#1438: report what this run cost, so growth is visible per run rather
+        # than discovered at 100% capacity three platforms later.
+        $endDocker = Get-DockerFreeGb
+        $endHost = Get-HostFreeGb
+        if ($null -ne $endDocker -and $null -ne $script:DiskStartDockerGb) {
+            $usedDocker = $script:DiskStartDockerGb - $endDocker
+            $usedHost = 0
+            if ($null -ne $endHost -and $null -ne $script:DiskStartHostGb) {
+                $usedHost = $script:DiskStartHostGb - $endHost
+            }
+            $hostText = if ($null -ne $endHost) { "$endHost GB" } else { "unknown" }
+            if ($usedDocker -lt 0) {
+                # Reclaimed more than it consumed -- the outcome to hope for. Say so
+                # rather than printing a negative.
+                Write-TrapNote "[INFO] Disk: reclaimed $(-$usedDocker) GB in Docker; $endDocker GB now free (host: $hostText)."
+            } else {
+                Write-TrapNote "[INFO] Disk: this run consumed $usedDocker GB in Docker and $usedHost GB on the host; $endDocker GB now free (host: $hostText)."
+            }
+        }
+
+        # Keep venv if in repo, otherwise clean up
+        if (-not (Test-Path "pyproject.toml")) {
+            if (Test-Path $LDM_WORKSPACE) { Remove-Item -Recurse -Force $LDM_WORKSPACE -ErrorAction SilentlyContinue }
+        }
     }
 }
 
@@ -7624,12 +7630,17 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     #
     # Reported rather than silent. A cleanup that removes nothing should be
     # visible, because that is exactly how the rmi above failed unnoticed.
+    #
+    # LDM-#2262: skipped under -Keep, as in the bash half, where this sweep sits
+    # inside the KEEP_ARTIFACTS guard -- a kept project's containers need them.
     try {
-        $builtImages = @(& docker images -q --filter "reference=$PROJECT_NAME-*" 2>$null |
-            Where-Object { $_ } | Select-Object -Unique)
-        if ($builtImages.Count -gt 0) {
-            Write-TrapNote "[INFO]  Removing $($builtImages.Count) image(s) built by this run..."
-            & docker rmi -f @builtImages 2>&1 | Out-Null
+        if (-not $Keep) {
+            $builtImages = @(& docker images -q --filter "reference=$PROJECT_NAME-*" 2>$null |
+                Where-Object { $_ } | Select-Object -Unique)
+            if ($builtImages.Count -gt 0) {
+                Write-TrapNote "[INFO]  Removing $($builtImages.Count) image(s) built by this run..."
+                & docker rmi -f @builtImages 2>&1 | Out-Null
+            }
         }
     } catch {
         Write-TrapNote "[WARN]  Could not remove this run's built images: $($_.Exception.Message)" -Color Yellow
@@ -7651,8 +7662,14 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     #
     # No -f. Forcing would untag an image a running container still uses;
     # without it Docker refuses, which is correct and is reported below.
+    #
+    # LDM-#2262: skipped, silently, under -Keep -- the bash half's reap is inside
+    # its KEEP_ARTIFACTS guard and prints nothing either.
     try {
-        if ($script:VerificationExitCode -eq 0 -and -not $KeepPulled) {
+        if ($Keep) {
+            # Nothing to reap: -Keep preserves everything this run created.
+        }
+        elseif ($script:VerificationExitCode -eq 0 -and -not $KeepPulled) {
             $startImages = @($script:InventoryStartImages)
             $startVolumes = @($script:InventoryStartVolumes)
             $endImages = @(& docker image ls -q --no-trunc 2>$null | Where-Object { $_ })

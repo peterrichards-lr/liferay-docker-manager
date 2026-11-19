@@ -74,12 +74,12 @@ These custom containers are seamlessly integrated into the generated `docker-com
 
 ## Sharing Configuration Across Projects (`common/`)
 
-Anything you put in a `common/` folder reaches every project LDM runs. This is the supported way to share configuration, such as an API key in an OSGi configuration, across several projects. Each time a project is created or run, LDM syncs:
+Anything you put in a `common/` folder reaches every project LDM runs. This is the supported way to share configuration, such as an API key in an OSGi configuration, across several projects; [Sharing Configuration Across Projects](../how-to/share_configuration.md) walks through it. On every `ldm run` (which also creates a project), and on `ldm config rebuild-properties`, `ldm config reset-properties` and `ldm infra migrate-search`, LDM syncs:
 
 | in `common/` | copied to the project's |
 |---|---|
 | `*.config`, `*.cfg` | `osgi/configs` |
-| `*.xml` (licences) | `deploy` |
+| `*.xml` (licences and other XML, except `portal-log4j-ext.xml`) | `deploy` |
 | `*.lpkg` | `deploy` |
 | `portal-ext.properties` | merged into the project's `portal-ext.properties` |
 
@@ -126,7 +126,7 @@ Until then, to give one project its own version of a shared `.config` or `.cfg`:
 2. Remove its name from the project's `.liferay-docker.deployed`.
 3. Create your own version in `osgi/configs`.
 
-A file LDM did not copy is never overwritten. Licences follow their own rule: a `common/` licence replaces the project's only when it is better (for example, it expires later).
+A file LDM did not copy is never overwritten, with one exception: files with `elasticsearch` in the name follow the project's search mode, and LDM replaces or removes the project's copy to match it. Licences follow their own rule: a `common/` licence replaces the project's only when it is better (for example, it expires later).
 
 ## State Directory (`LDM_HOME`)
 
@@ -362,4 +362,4 @@ LDM mounts.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-18* | *Last Reviewed: 2026-11-18*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*

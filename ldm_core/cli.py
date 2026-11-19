@@ -3050,6 +3050,27 @@ def get_parser():  # noqa: PLR0915
         help="Optional specific project ID to package (defaults to current directory workspace)",
     )
     init_ci.add_argument("-p", "--project", dest="project_flag")
+    init_ci.add_argument(
+        "--setup-step",
+        action="append",
+        dest="setup_steps",
+        metavar="CMD",
+        help=(
+            "Command to run after Liferay and the deployables are up, before "
+            "packaging. Repeatable; runs in the order given, and a non-zero "
+            "exit fails the job (LDM-#2447)"
+        ),
+    )
+    init_ci.add_argument(
+        "--verify-step",
+        action="append",
+        dest="verify_steps",
+        metavar="CMD",
+        help=(
+            "Command to run after the setup steps; the package is built only "
+            "if every verify step exits 0. Repeatable, runs in the order given"
+        ),
+    )
 
     # Overwrite parse_known_args of the parser to run preprocess_args automatically:
     orig_parse_known_args = parser.parse_known_args
@@ -3744,6 +3765,8 @@ def _build_command_map(args, manager):
             trigger=getattr(args, "trigger", None),
             project_id=getattr(args, "project", None)
             or getattr(args, "project_flag", None),
+            setup_steps=getattr(args, "setup_steps", None),
+            verify_steps=getattr(args, "verify_steps", None),
         ),
         # target namespace:
         ("target", "add"): lambda: manager.config.cmd_target_add(
