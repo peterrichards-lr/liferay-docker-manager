@@ -17,7 +17,12 @@ import contextlib
 
 from ldm_core.constants import SCRIPT_DIR
 from ldm_core.ui import UI
-from ldm_core.utils import get_actual_home, helper_container_flags, safe_cwd
+from ldm_core.utils import (
+    get_actual_home,
+    helper_container_flags,
+    refuse_reserved_project_name,
+    safe_cwd,
+)
 
 # LDM-#2123: the boundary between the two things EACCES can mean on a bind.
 # Below it, an unprivileged process is being refused a privileged port and
@@ -1287,10 +1292,32 @@ class BaseHandler:
         path = self._detect_project_path_raw(
             project_id, for_init=for_init, fatal=fatal, interactive=interactive
         )
+        if path and for_init:
+            # LDM-#2457: every path that creates, adopts, imports or runs a
+            # project resolves it here with `for_init=True` -- `run`/`init`,
+            # every `import` variant (and so `link`/`clone`), `quickstart`,
+            # hydration and snapshot restore. Refused before the lock, and
+            # before any compose or docker command.
+            self._refuse_reserved_compose_name(path)
         if path:
             self._acquire_lock_if_needed(path)
             self._check_external_drive_warning(path)
         return path
+
+    def _refuse_reserved_compose_name(self, project_path):
+        """Refuse a project whose Compose project name LDM reserves (LDM-#2457).
+
+        The name checked is the one `ComposeHandler` writes as `name:` -- meta
+        `container_name`, else the directory name -- so an existing project
+        whose metadata names it `resources` is refused as well.
+        """
+        meta: dict = {}
+        with contextlib.suppress(Exception):
+            if Path(project_path).exists():
+                meta = self.read_meta(project_path) or {}
+        refuse_reserved_project_name(
+            meta.get("container_name") or Path(project_path).name
+        )
 
     def _check_external_drive_warning(self, project_path):
         """Warns the user if the project is located on a macOS external drive (/Volumes/)."""
