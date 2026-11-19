@@ -90,6 +90,7 @@ def _resolve_legacy_config_commands(cmd_idx, processed_list):
         "revert",
         "ssl-mode",
         "database-mode",
+        "common-config-policy",
         "container-hostname",
     ]
     if cmd_idx + 1 < len(processed_list) and processed_list[cmd_idx + 1] in subcmds:
@@ -237,6 +238,7 @@ def preprocess_args(args_list: list[str]) -> list[str]:
         "remove",
         "ssl-mode",
         "database-mode",
+        "common-config-policy",
         "container-hostname",
         "fork",
         "db",
@@ -924,6 +926,11 @@ def get_parser():  # noqa: PLR0915
         "--auto-install-lfr-tunnel",
         action="store_true",
         help="(Deprecated) LDM no longer downloads a client. Still suppresses the prompt when lfr_tunnel_install_cmd is configured",
+    )
+    imp.add_argument(
+        "--force-portal-patches",
+        action="store_true",
+        help="Import and boot a package whose portal-patches/ JARs were recorded against a different Liferay release line than the one it will run",
     )
     imp.add_argument("--backup-dir")
     imp.add_argument("--build", action="store_true")
@@ -2098,7 +2105,7 @@ def get_parser():  # noqa: PLR0915
     infra_subparsers.add_parser(
         "init-common",
         parents=[base_sub_parent],
-        help="Recreate the baseline global configuration from internal resources",
+        help="Create ~/.ldm/common, whose files reach every project, and fill in missing baseline files",
     )
 
     renew_ssl = infra_subparsers.add_parser(
@@ -2484,6 +2491,31 @@ def get_parser():  # noqa: PLR0915
     )
     log_level.add_argument("--remove", action="store_true")
     log_level.add_argument("--list", action="store_true")
+
+    # LDM-#2424. The value is validated by the handler rather than through
+    # `choices`, so an invalid one exits 1 with the valid values named instead
+    # of argparse's exit 2.
+    common_policy = config_subparsers.add_parser(
+        "common-config-policy",
+        parents=[base_sub_parent],
+        help=(
+            "View or set what the common/ sync does to this project's edited "
+            "copy of a shared .config (protect, warn or overwrite)"
+        ),
+    )
+    common_policy.add_argument(
+        "policy",
+        nargs="?",
+        metavar="POLICY",
+        help="protect, warn or overwrite. Omit to show the effective value",
+    )
+    common_policy.add_argument("project", nargs="?")
+    common_policy.add_argument("-p", "--project", dest="project_flag")
+    common_policy.add_argument(
+        "--unset",
+        action="store_true",
+        help="Remove the project's value so it inherits 'ldm defaults' again",
+    )
 
     edit_cmd = config_subparsers.add_parser(
         "edit",
@@ -3073,6 +3105,27 @@ def get_parser():  # noqa: PLR0915
         help="Optional specific project ID to package (defaults to current directory workspace)",
     )
     init_ci.add_argument("-p", "--project", dest="project_flag")
+    init_ci.add_argument(
+        "--setup-step",
+        action="append",
+        dest="setup_steps",
+        metavar="CMD",
+        help=(
+            "Command to run after Liferay and the deployables are up, before "
+            "packaging. Repeatable; runs in the order given, and a non-zero "
+            "exit fails the job (LDM-#2447)"
+        ),
+    )
+    init_ci.add_argument(
+        "--verify-step",
+        action="append",
+        dest="verify_steps",
+        metavar="CMD",
+        help=(
+            "Command to run after the setup steps; the package is built only "
+            "if every verify step exits 0. Repeatable, runs in the order given"
+        ),
+    )
 
     # Overwrite parse_known_args of the parser to run preprocess_args automatically:
     orig_parse_known_args = parser.parse_known_args
@@ -3690,6 +3743,11 @@ def _build_command_map(args, manager):
         ("config", "log-level"): lambda: manager.config.cmd_log_level(
             getattr(args, "project", None)
         ),
+        ("config", "common-config-policy"): (
+            lambda: manager.config.cmd_common_config_policy(
+                getattr(args, "policy", None), getattr(args, "project", None)
+            )
+        ),
         ("config", "edit"): lambda: manager.config.cmd_edit(
             getattr(args, "project", None), args.target, getattr(args, "tui", False)
         ),
@@ -3775,6 +3833,8 @@ def _build_command_map(args, manager):
             trigger=getattr(args, "trigger", None),
             project_id=getattr(args, "project", None)
             or getattr(args, "project_flag", None),
+            setup_steps=getattr(args, "setup_steps", None),
+            verify_steps=getattr(args, "verify_steps", None),
         ),
         # target namespace:
         ("target", "add"): lambda: manager.config.cmd_target_add(

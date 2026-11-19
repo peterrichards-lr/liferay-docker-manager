@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import tarfile
 from datetime import datetime
@@ -437,6 +438,54 @@ def warn_publisher_material(temp_extract_dir):
     )
 
 
+def check_package_portal_patches(manager, manifest):
+    """Refuses a package whose portal patches cannot boot here (LDM-#2444).
+
+    Runs before the project is created, against the tag the import will hand
+    to `ldm run`: an explicit `--tag` (quickstart), else the package's own,
+    else the user's default. When `--tag-latest`, `--tag-prefix` or
+    `--nightly` leaves that to discovery, the tag is not known yet, and the
+    check is left to `ldm run`, which makes it before any Liferay container is
+    created.
+    """
+    from ldm_core.runtime.portal_patches import refuse_incompatible_package_patches
+    from ldm_core.utils import UI
+
+    entries = manifest.get("portal_patches")
+    if not entries or not isinstance(entries, list):
+        return
+
+    args = manager.args
+
+    def _given(name):
+        # `is True` / a real string, so an unset attribute on a mocked or
+        # partially populated namespace never reads as a flag the user passed.
+        value = getattr(args, name, None)
+        return value is True or (isinstance(value, str) and bool(value))
+
+    if any(_given(flag) for flag in ("tag_latest", "tag_prefix", "nightly", "master")):
+        UI.detail(
+            "Portal patch compatibility will be checked when the tag is "
+            "discovered, before Liferay starts."
+        )
+        return
+
+    tag = getattr(args, "tag", None) if _given("tag") else None
+    tag = tag or manifest.get("tag")
+    if not tag:
+        defaults = getattr(manager, "defaults", None)
+        tag = defaults.get("tag") if isinstance(defaults, dict) else None
+    if not tag:
+        return
+
+    refuse_incompatible_package_patches(
+        manager,
+        entries,
+        re.sub(r"^(dxp|portal)-", "", str(tag)),
+        force=getattr(args, "force_portal_patches", False) is True,
+    )
+
+
 def parse_package_manifest(manager, temp_extract_dir, *scratch_dirs):
     """The manifest of an .ldmp, read strictly, or a refusal.
 
@@ -801,6 +850,8 @@ def _import_ldm_package(
                 manifest,
                 getattr(self.manager.args, "command", "") == "quickstart",
             )
+            # LDM-#2444: after the tag is settled, before the project exists.
+            check_package_portal_patches(self.manager, manifest)
             _hydrate_ldm_package_to_project(
                 self, project_path, project_name, manifest, temp_extract_dir
             )
@@ -968,6 +1019,12 @@ def cmd_import(
         or getattr(self.manager.args, "project", None)
         or getattr(self.manager.args, "project_flag", None)
     )
+    # LDM-#2457: an explicit name is refused before anything is downloaded or
+    # cloned. A name derived from the source is refused where the project path
+    # is resolved (`detect_project_path(..., for_init=True)`).
+    from ldm_core.utils import refuse_reserved_project_name
+
+    refuse_reserved_project_name(should_project_name)
     should_clone_only = (
         clone_only
         if clone_only is not None

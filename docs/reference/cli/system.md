@@ -235,7 +235,7 @@ ldm renew-ssl demo
 
 ## `infra init-common` (legacy: `init-common`)
 
-Initialize or recreate the baseline global configuration (`common/` folder) from internal resources.
+Create `~/.ldm/common`, whose files reach every project, and fill in any missing baseline files. Existing files are never overwritten, and it always writes to `~/.ldm/common`: when another `common/` folder is active (`LDM_COMMON_DIR` or a workspace `common/`), it says so and leaves that folder unchanged. See [Share configuration across projects](../../how-to/share_configuration.md).
 
 ```bash
 ldm infra init-common
@@ -350,6 +350,32 @@ Safely move your LDM global configuration, Docker volumes, and cached assets to 
 ldm system relocate /Volumes/SanDisk
 ```
 
+## `system init-ci` (legacy: `init-ci`)
+
+Write a GitHub Actions workflow to `.github/workflows/` that builds the
+checked-out workspace and packages it as an `.ldmp`. The workflow links the
+workspace with `ldm link . --no-monitor --build --non-interactive`, waits with
+`--wait-for-deployables`, runs your setup and verify steps, packages, and then
+runs `ldm down` even if an earlier step failed. A `project` argument, when
+given, is passed to every `ldm` command in the workflow. The step-by-step
+guide is in [Workspace Import](../../how-to/workspace_import.md).
+
+- **`--repo`**: GitHub `owner/repo` for the package metadata. Detected from the `origin` remote when omitted.
+- **`--trigger`**: `release` (default), `tag`, `push` or `manual`.
+- **`--workflow-name`**: File name to write (default: `ldm-package-release.yml`).
+- **`--setup-step`** `CMD`: A command to run once Liferay and the deployables are up. Repeatable; the commands run in the order given, one workflow step each, and a non-zero exit fails the job.
+- **`--verify-step`** `CMD`: A command to run after every setup step. Repeatable, in order. The package is built only if every verify step exits `0`.
+
+```bash
+ldm system init-ci --trigger tag \
+    --setup-step "setup/rebuild.sh" \
+    --verify-step "setup/step7-verify.sh"
+```
+
+The workflow pins the LDM version that generated it. To upgrade, run
+`init-ci` again from the newer LDM with the same `--setup-step` and
+`--verify-step` flags.
+
 ## `config` (get / set / remove)
 
 View or set generic custom environment variables inside a project's metadata. The `config` command now has explicit subcommands for clarity, while the legacy positional form is still supported.
@@ -408,6 +434,10 @@ ldm config defaults --remove db_type
 # Set a system-wide global default (requires permissions, writes to /etc/ldmrc)
 sudo ldm config defaults port 9090 --global
 
+# Let common/ always replace a project's edited copy of a shared .config
+# (protect | warn | overwrite; default protect)
+ldm config defaults common_config_policy overwrite
+
 # Return every customised default to convention ("get me back to stock")
 ldm config defaults --reset-all
 
@@ -420,6 +450,11 @@ sudo ldm config defaults --reset-all --global
 # Legacy flat form (still works):
 ldm defaults db_type mysql
 ```
+
+`common_config_policy` decides what the `common/` sync does to a project's
+edited copy of a shared `.config` or `.cfg`. One project overrides it with
+[`ldm config common-config-policy`](core.md#config-common-config-policy). See
+[Overriding a shared file in one project](../configuration.md#overriding-a-shared-file-in-one-project).
 
 ## `config revert`
 

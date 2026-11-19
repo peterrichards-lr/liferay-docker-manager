@@ -92,6 +92,8 @@ LDM reads up to two, in this order:
 
 The second folder is **added after** `~/.ldm/common/`, not used instead of it. For a `.config` or `.cfg` file present in both, the second folder's copy is the one that ends up in the project.
 
+Each folder's `portal-ext.properties` is a separate layer of the [properties cascade](../explanation/properties.md): `~/.ldm/common/` is layer 3 (global), and the second folder -- whether it is `LDM_COMMON_DIR` or a workspace `common/` -- is layer 4 (local), so its values win over the global ones unless a global key is marked `# !important`. The layer follows from which folder it is, not from its path: a workspace `common/` under `/home/` is still layer 4.
+
 ```bash
 # Example: add a shared organisation config folder for this shell
 export LDM_COMMON_DIR="/path/to/shared/organization/common"
@@ -115,18 +117,71 @@ A credential in a `common/` `.config` file sits in plaintext in that folder and 
 
 ### Overriding a shared file in one project
 
-> [!WARNING]
-> **Editing a shared `.config` or `.cfg` inside a project does not stick.** LDM records each file it copies from `common/` in the project's `.liferay-docker.deployed`. On every later sync it overwrites a recorded file with the `common/` copy, silently, so an edit made in the project is lost on the next `ldm run`.
->
-> This is **not the intended behaviour** and is under review: LDM-#2424 proposes a setting to protect, warn about, or overwrite such edits, defaulting to protecting them.
+To give one project its own version of a shared `.config` or `.cfg`, **edit the project's copy in `osgi/configs`.** What the next sync does with your edit is set by `common_config_policy` (LDM-#2424):
 
-Until then, to give one project its own version of a shared `.config` or `.cfg`:
+| value | when the project's copy has been edited since LDM last wrote it |
+|---|---|
+| `protect` (**default**) | your copy is kept. If the `common/` version has changed since, LDM warns that it was **not applied**, naming the file |
+| `warn` | the `common/` version replaces your copy, and LDM warns, naming the file |
+| `overwrite` | the `common/` version replaces your copy, silently. The behaviour before LDM-#2424 |
 
-1. Delete the file from the project's `osgi/configs`.
-2. Remove its name from the project's `.liferay-docker.deployed`.
-3. Create your own version in `osgi/configs`.
+A copy you have **not** edited is always updated when the `common/` version changes, whatever the policy. A file that was in the project before LDM first copied the shared one is never overwritten.
 
-A file LDM did not copy is never overwritten, with one exception: files with `elasticsearch` in the name follow the project's search mode, and LDM replaces or removes the project's copy to match it. Licences follow their own rule: a `common/` licence replaces the project's only when it is better (for example, it expires later).
+#### Setting the policy
+
+It is a [cascading default](#cascading-defaults): set it for every project, and override it in any one project.
+
+```bash
+# Every project that has no value of its own
+ldm defaults common_config_policy overwrite
+
+# One project: written to that project's meta, overriding the default
+ldm config common-config-policy overwrite my-project
+
+# Show a project's effective value, and whether it is its own or inherited
+ldm config common-config-policy -p my-project
+
+# Remove the project's value, so it inherits the default again
+ldm config common-config-policy --unset my-project
+```
+
+A project without its own value follows `ldm defaults`; `ldm defaults --remove common_config_policy` returns that default to `protect`. `ldm config common-config-policy` refuses an invalid value. A value that reaches a project's `meta` or `~/.ldmrc` some other way and is not recognised is ignored with a warning, and `protect` applies.
+
+#### How LDM tells an edit from its own copy
+
+LDM records, per project:
+
+- the **names** of the files it copied, in `.liferay-docker.deployed`, as before
+- a **checksum** of what it last wrote to each, in `.liferay-docker/common_assets.json`
+
+A copy whose checksum differs from the recorded one has been edited. A file on the list with no checksum yet -- every file copied by an LDM older than this setting -- cannot be told apart from an older `common/` copy, so it is **not** treated as an edit: the first sync after upgrading replaces it, and **warns** if its content differed. From then on it follows the policy.
+
+When the same name is in both `common/` folders, the [second one's copy](#which-common-folders-are-used) is the only one applied.
+
+#### Taking the `common/` version back
+
+When `protect` withholds an update, either:
+
+- delete the project's copy: the next sync copies the `common/` version afresh; or
+- set the policy to `overwrite`, globally or for the project, as above.
+
+#### Settings LDM needs
+
+Some `.config` content is not a preference: LDM relies on it for the project to work. When `protect` keeps your copy of one of these files, LDM checks it for the keys it needs. If they are all present with the expected values, your copy is kept quietly, whatever else you changed. If one is missing or different, your copy is still kept, but LDM warns that the project may behave unexpectedly, naming the file, the key and the value it expected.
+
+| file (in `osgi/configs`) | key | expected value |
+|---|---|---|
+| `com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConnectionConfiguration.config` and its `elasticsearch8` twin | `active` | `B"true"` |
+| | `connectionId` | `"REMOTE"` |
+| | `httpSSLEnabled` | `B"false"` |
+| | `networkHostAddresses` | `["http://liferay-search-global:9200"]` |
+
+The table is `REQUIRED_CONFIG_KEYS` in `ldm_core/common_assets.py`, and its values are what the shipped baseline writes for shared search. Values are compared as text, ignoring whitespace outside quotes.
+
+#### Exceptions
+
+- **Elasticsearch files** follow the project's search mode first. In a project using its own search sidecar, or with no shared search container, LDM removes them regardless of the policy. `ElasticsearchConfiguration.config` is rewritten on every `ldm run` for shared search, so no policy applies to it; the connection config above does follow the policy.
+- **Licences** follow their own rule: a `common/` licence replaces the project's only when it is better (for example, it expires later).
 
 ## State Directory (`LDM_HOME`)
 

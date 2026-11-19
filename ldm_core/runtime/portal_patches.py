@@ -216,17 +216,7 @@ def plan_patches(manager, root, current_tag, force=False):
         elif tier == WARN:
             warns.append((reason, manifest))
 
-    if aborts:
-        for reason in aborts:
-            UI.error(f"  {reason}")
-        if not force:
-            UI.die(
-                f"{len(aborts)} portal patch(es) were built against a different "
-                "Liferay release line. Re-patch against the current release, or "
-                "use '--force-portal-patches' to apply them anyway.",
-                exit_code=1,
-            )
-        UI.warning("--force-portal-patches: applying despite the mismatch above.")
+    _refuse_release_line_mismatch(aborts, force)
 
     if warns:
         strict = _strict_mode()
@@ -247,6 +237,82 @@ def plan_patches(manager, root, current_tag, force=False):
 
     UI.detail(f"Applying {len(patches)} portal patch(es) from {PATCH_DIR_NAME}/.")
     return patches
+
+
+def _refuse_release_line_mismatch(aborts, force):
+    """Stops on any ABORT-tier patch unless `force`.
+
+    Shared by `ldm run` (plan_patches) and `ldm import` (LDM-#2444), so a
+    package refused at import says exactly what the first boot would have.
+    """
+    if not aborts:
+        return
+    for reason in aborts:
+        UI.error(f"  {reason}")
+    if not force:
+        UI.die(
+            f"{len(aborts)} portal patch(es) were built against a different "
+            "Liferay release line. Re-patch against the current release, or "
+            "use '--force-portal-patches' to apply them anyway.",
+            exit_code=1,
+        )
+    UI.warning("--force-portal-patches: applying despite the mismatch above.")
+
+
+def package_patch_set(root):
+    """The project's patch set, as recorded in a package's meta (LDM-#2444).
+
+    One ``{"name", "introduced_in", "max_version"}`` entry per JAR, read from
+    the sidecars without creating any: `ldm snapshot` has already called
+    discover_patches, so a sidecar that is missing here could not be written.
+    An unreadable or missing sidecar is recorded as ``unreadable`` so the
+    import grades it as unknown origin, exactly as `ldm run` would.
+    """
+    directory = patch_dir(root)
+    if not directory.is_dir():
+        return []
+
+    entries = []
+    for jar in sorted(directory.glob("*.jar")):
+        try:
+            manifest = json.loads(sidecar_path(jar).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            manifest = None
+        entry = {"name": jar.name, "introduced_in": None, "max_version": None}
+        if isinstance(manifest, dict):
+            entry["introduced_in"] = manifest.get("introduced_in")
+            entry["max_version"] = manifest.get("max_version")
+        else:
+            entry["unreadable"] = True
+        entries.append(entry)
+    return entries
+
+
+def refuse_incompatible_package_patches(manager, entries, current_tag, force=False):
+    """Refuses a package whose patches cannot boot on `current_tag`.
+
+    LDM-#2444: the same grading and the same message as plan_patches, applied
+    to the patch set a package's meta records, so `ldm import` stops before it
+    creates the project rather than at the first boot. Only the ABORT tier is
+    enforced here; a WARN-tier drift is still reported, and strict mode still
+    applied, by `ldm run` when it boots.
+    """
+    entries = [e for e in entries or [] if isinstance(e, dict) and e.get("name")]
+    if not entries:
+        return
+
+    UI.detail(
+        f"Package ships {len(entries)} portal patch(es): "
+        + ", ".join(str(e["name"]) for e in entries)
+    )
+    aborts = []
+    for entry in entries:
+        tier, reason = _tier_for(
+            Path(str(entry["name"])), entry, current_tag, manager.parse_version
+        )
+        if tier == ABORT:
+            aborts.append(reason)
+    _refuse_release_line_mismatch(aborts, force)
 
 
 def _strict_mode():

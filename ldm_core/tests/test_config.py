@@ -728,10 +728,15 @@ class TestConfigService(unittest.TestCase):
                 "deploy": tmp_path / "deploy",
             }
 
-            global_common = tmp_path / "global_common"
-            global_common.mkdir()
+            # LDM-#2451: layer 3 is <LDM_HOME>/.ldm/common by identity, not
+            # any folder whose path happens to contain "global".
+            global_common = tmp_path / "home" / ".ldm" / "common"
+            global_common.mkdir(parents=True)
             local_common = tmp_path / "local_common"
             local_common.mkdir()
+            ldm_home = patch.dict("os.environ", {"LDM_HOME": str(tmp_path / "home")})
+            ldm_home.start()
+            self.addCleanup(ldm_home.stop)
 
             paths["common_dirs"] = [global_common, local_common]
             target_pe = files_dir / "portal-ext.properties"

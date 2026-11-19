@@ -171,3 +171,34 @@ class LicenseService:
             return True
 
         return bool(new_valid and old_valid and new_days > old_days)
+
+
+def is_restored_from_package(meta) -> bool:
+    """True for a project `ldm import` / `quickstart` built from a package.
+
+    The importer writes `restored_from_package: "true"` into the project meta
+    (`workspace/importer.py`). Such a project never carries its publisher's
+    licence: `ldm package` leaves licence keys out (LDM-#2443).
+    """
+    if not isinstance(meta, dict):
+        return False
+    return str(meta.get("restored_from_package", "false")).lower() == "true"
+
+
+def own_licence_locations(project_root) -> str:
+    """Where a consumer puts their own DXP key, as absolute paths.
+
+    `deploy/` covers one project. A key in `~/.ldm/common/` is copied into
+    each project's `deploy/` when it runs (see
+    docs/how-to/share_configuration.md), so it covers every project.
+    """
+    from pathlib import Path
+
+    from ldm_core.utils import get_actual_home
+
+    deploy_dir = Path(project_root).resolve() / "deploy"
+    common_dir = get_actual_home() / ".ldm" / "common"
+    return (
+        f"put your own DXP key in '{deploy_dir}/' for this project, "
+        f"or in '{common_dir}/' for every project"
+    )

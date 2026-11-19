@@ -21,6 +21,7 @@ from ldm_core.diagnostics.doctor import (
     validate_properties_file,
 )
 from ldm_core.handlers.base import BaseHandler
+from ldm_core.handlers.composer import ComposerService
 from ldm_core.handlers.diagnostics import DiagnosticsService
 from ldm_core.tests.tmproot import TEST_TMP_ROOT
 
@@ -53,6 +54,9 @@ class MockDiagManager(BaseHandler):
         self.config = MagicMock()
         self.license = MagicMock()
         self.license.check_license_health = MagicMock(return_value=("OK", True, []))
+        # The doctor licence check resolves the image as the composer does
+        # (LDM-#2443), so a CE project with a bare tag is not reported Missing.
+        self.composer = ComposerService(self)
 
     def detect_project_path(
         self, project_id=None, for_init=False, fatal=True, interactive=True

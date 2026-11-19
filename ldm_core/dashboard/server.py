@@ -519,20 +519,18 @@ def api_project_properties(project_name):  # noqa: C901, PLR0912, PLR0915
 
         global_props, global_imp = {}, set()
         local_props, local_imp = {}, set()
-        for cd in paths.get("common_dirs", []):
-            cd_ext = cd / "portal-ext.properties"
-            if cd_ext.exists():
-                c_props, c_imp = manager.config._get_properties_with_metadata(
-                    cd_ext.read_text()
-                )
-                if (
-                    ".ldm" in str(cd.resolve())
-                    or "home" in str(cd.resolve())
-                    or "global" in str(cd.resolve()).lower()
-                ):
-                    global_props, global_imp = c_props, c_imp
-                else:
-                    local_props, local_imp = c_props, c_imp
+        # LDM-#2451: layer by identity, shared with the sync cascade.
+        from ldm_core.handlers.config import classify_common_properties
+
+        global_ext, local_ext = classify_common_properties(paths.get("common_dirs", []))
+        if global_ext:
+            global_props, global_imp = manager.config._get_properties_with_metadata(
+                global_ext.read_text()
+            )
+        if local_ext:
+            local_props, local_imp = manager.config._get_properties_with_metadata(
+                local_ext.read_text()
+            )
 
         target_ext = paths["files"] / "portal-ext.properties"
         project_props, project_imp = {}, set()

@@ -26,24 +26,17 @@ Check which kind your setting is before you rely on `common/` for it. See
 ## 1. Create the folder
 
 ```bash
-mkdir -p ~/.ldm/common
-```
-
-Optionally fill it with LDM's baseline files (developer `portal-ext.properties`,
-`env-blacklist.txt`, and OSGi configurations for session timeout and search):
-
-```bash
 ldm init-common
 ```
 
-> [!NOTE]
-> **Create `~/.ldm/common/` first.** `ldm init-common` writes to the first of:
-> the folder in `LDM_COMMON_DIR`; a `common/` folder in the current directory;
-> `~/.ldm/common/` if it already exists. If none of these exists, it creates
-> `common/` **in the current directory** instead of in `~/.ldm/`. Run it from a
-> directory with no `common/` folder of its own, and with `LDM_COMMON_DIR`
-> unset, to be sure it fills `~/.ldm/common/`. It never overwrites a file that
-> is already there.
+This creates `~/.ldm/common/` and fills in LDM's baseline files (developer
+`portal-ext.properties`, `env-blacklist.txt`, and OSGi configurations for
+session timeout and search). It never overwrites a file that is already there,
+so it is safe to run again to restore a deleted baseline file.
+
+It always writes to `~/.ldm/common/`, wherever you run it. If another `common/`
+folder is active there -- one named by `LDM_COMMON_DIR`, or a `common/` folder
+in the current directory -- it names that folder and leaves it unchanged.
 
 ## 2. Add the file
 
@@ -66,7 +59,7 @@ Some names are handled specially rather than copied as-is:
 
 `portal-ext.properties` is not copied but merged: `~/.ldm/common/` is one layer
 of the [properties cascade](../explanation/properties.md), below a workspace
-`common/` folder and below the project's own edits.
+`common/` folder (or `LDM_COMMON_DIR`) and below the project's own edits.
 
 > [!WARNING]
 > A credential in a shared `.config` file is stored in plaintext in
@@ -92,13 +85,23 @@ ls my-project/osgi/configs
 
 ## 4. Giving one project a different value
 
-A file LDM did not copy is left alone (other than the Elasticsearch files
-above), so a project-local file wins **if it was
-there before LDM first copied the shared one**. Once LDM has copied a shared
-`.config` or `.cfg`, it overwrites it on every later sync, and an edit made in
-the project is lost. Follow
-[Overriding a shared file in one project](../reference/configuration.md#overriding-a-shared-file-in-one-project)
-to break that link.
+Edit the project's copy in `osgi/configs`. By default LDM keeps it: later
+syncs leave an edited copy alone, and if the shared file changes in the
+meantime, LDM warns that the new version was not applied to that project.
+
+To have the shared file win instead, set `common_config_policy` to `warn`
+(replace the copy and say so) or `overwrite` (replace it silently):
+
+```bash
+ldm defaults common_config_policy overwrite                # every project
+ldm config common-config-policy overwrite my-project       # one project
+ldm config common-config-policy --unset my-project         # back to the default
+```
+
+To take the shared version back into one protected project, delete the
+project's copy and run the project again. The full rules, including the
+Elasticsearch exceptions and the settings LDM checks for in a kept copy, are in
+[Overriding a shared file in one project](../reference/configuration.md#overriding-a-shared-file-in-one-project).
 
 <!-- markdownlint-disable MD049 -->
 ---

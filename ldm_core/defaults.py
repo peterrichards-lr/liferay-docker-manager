@@ -43,6 +43,11 @@ CONVENTION_DEFAULTS = {
     "custom_containers": [],
     "search_kibana_enabled": "false",
     "auto_pull_nightly": "prompt",
+    # LDM-#2424: what the common/ sync does to a project's copy of a shared
+    # .config/.cfg edited since LDM last wrote it -- protect, warn or
+    # overwrite. A project's own `meta` value overrides it. See
+    # ldm_core/common_assets.py.
+    "common_config_policy": "protect",
 }
 
 # LDM-#1854: which of the defaults above a project may safely be reverted to.

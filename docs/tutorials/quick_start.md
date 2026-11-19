@@ -124,7 +124,7 @@ LDM allows you to synchronize files (e.g., OSGi configs, licenses, LPKG modules)
 
 ### 1. Baseline Assets (`init-common`)
 
-LDM bundles a "Gold Standard" development baseline internally. To initialize or recreate this baseline in your global `common/` folder, create `~/.ldm/common/` first (`mkdir -p ~/.ldm/common`), then run the command below from a directory that has no `common/` folder of its own. If `~/.ldm/common/` does not exist yet, `init-common` creates `common/` in the current directory instead. It never overwrites a file already there.
+LDM bundles a "Gold Standard" development baseline internally. The command below creates `~/.ldm/common/`, whose files reach every project, and fills in any baseline file that is missing. It never overwrites a file already there.
 
 ```bash
 

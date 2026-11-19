@@ -13,11 +13,11 @@ Liferay Docker Manager (LDM) provides an excellent orchestration layer for testi
 
 When developing Client Extensions locally (e.g., Liferay AI Commerce Accelerator or Fragment repositories), you can use LDM to quickly spin up your test rig:
 
-1. **Import the Workspace**
+1. **Link the Workspace**
    Run the following command at the root of your Client Extension workspace. This will build the workspace using the local `gradlew` or `npm` toolchain and automatically map the deployed OSGi and CX modules to the Liferay container.
 
    ```bash
-   ldm import . --build
+   ldm link . --no-monitor --build -y
    ```
 
 2. **Wait for Health**
@@ -67,10 +67,10 @@ jobs:
           pipx install liferay-docker-manager
           ldm dev-setup -y
 
-      - name: Import Workspace & Start Environment
+      - name: Link Workspace & Start Environment
         run: |
-          # The --leave-running flag ensures the containers stay up for the tests
-          ldm import . --build --non-interactive --leave-running
+          # --no-monitor returns once the project is up instead of starting the file watcher
+          ldm link . --no-monitor --build -y
 
       - name: Run Playwright Tests
         run: |
@@ -97,11 +97,11 @@ If your tests require a specific database state (e.g., test users, pre-configure
    You can then pass the package URL or file path during import.
 
    ```bash
-   ldm import . --build --non-interactive --leave-running --hydrate-url "https://github.com/your-org/repo/releases/download/v1.0/e2e-seed.ldmp"
+   ldm link . --no-monitor --build -y
    ```
 
 This completely eliminates the need for expensive API-driven setup scripts before running your tests.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-08*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*
