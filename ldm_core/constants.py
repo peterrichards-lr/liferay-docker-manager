@@ -103,6 +103,26 @@ RELEASE_ANNOUNCEMENTS = {
     # LDM-#1663: a patch needs its OWN key, or the banner shows no
     # announcements for it (LDM-#2412); `release.py --promote` refuses a
     # stable X.Y.Z (Z > 0) without one.
+    "2.26.13": [
+        (
+            "ldm package leaves your licences and credentials out",
+            "A package no longer ships DXP or Marketplace activation keys, "
+            ".lpkg products, or routes/ (client-extension OAuth secrets). "
+            "It names each file it leaves out; --include-marketplace keeps "
+            ".lpkg products when their licence allows it.",
+        ),
+        (
+            "ldm quickstart works on a machine with no shared search yet",
+            "A restore now sets up shared search first instead of stopping "
+            "with exit code 3 on a fresh machine or CI runner.",
+        ),
+        (
+            "ldm wait and ldm db query report failures honestly",
+            "ldm wait on a stopped project exits 1 at once, and a rejected "
+            "db query exits 1 with the database's error instead of printing "
+            "nothing. An empty result prints (0 rows).",
+        ),
+    ],
     "2.26.12": [
         (
             "ldm wait survives a sleeping laptop or a paused Docker VM",

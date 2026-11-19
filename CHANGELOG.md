@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.13] - 2026-11-19
+
+### Added
+
+- **`ldm package --include-marketplace`** (LDM-#2443). Ships Marketplace products (`.lpkg`) in a package, which is now left out by default. Use it only when their licence allows redistribution.
+- **An exit-code reference** (LDM-#2428). `docs/reference/exit_codes.md` and a new EXIT STATUS section in `man ldm` give the codes scripts can branch on. They also note that code 5 is returned only with `-y`, and list the commands with notable codes.
+
+### Changed
+
+- **The routes contract is documented for client-extension developers** (LDM-#2152). The new `docs/explanation/routes-tree.md` covers which container mounts which part of `routes/`, the variables LDM sets, how each extension's directory is named, and when the tree is filled.
+- **Sharing configuration through `~/.ldm/common/` is documented** (Refs LDM-#2193). A new how-to, `docs/how-to/share_configuration.md`, and corrections to the reference on when the sync runs and which files it copies.
+
+### Fixed
+
+- **A package no longer hands out the publisher's licences, Marketplace products or client-extension credentials** (LDM-#2443, LDM-#2446). `ldm package` now leaves out the DXP and Marketplace activation keys, any `.lpkg` products, and `routes/` (the OAuth client IDs and secrets and the DXP host), and names each file it leaves out. A local snapshot still keeps everything. `ldm import` warns when an older package still contains any of it.
+- **`ldm quickstart` and package imports work on a machine that has never had shared search** (LDM-#2434). A local restore now provisions shared search first, the way `ldm run` does, instead of stopping with exit code 3.
+- **`ldm wait` on a project that is not running fails at once** (LDM-#2429), with exit code 1, instead of waiting about four minutes and printing "Liferay ready" from the stopped run's logs.
+- **`ldm db query` tells a failed query from an empty result** (LDM-#2431). A rejected query now exits with code 1 and shows the database's error; an empty result prints `(0 rows)`, or `[]` in JSON. `ldm db reset-admin` no longer reports success when the database rejects the reset.
+- **A command that stops with an error no longer crashes Python as it exits** (LDM-#2432), which showed as "Fatal Python error: _enter_buffered_busy", exit code 134, and on macOS a "Python quit unexpectedly" dialog.
+- **The trace log no longer records credentials** (LDM-#2437). Every line of `~/.ldm/last-command.log` is now redacted, and the recorded command line masks credential-shaped values.
+
+The verification scripts also gained a working `-Keep` on PowerShell (Refs LDM-#2262), and the reclaim matrix in the docs is now generated from the code (LDM-#2151). Neither ships in the binary.
+
 ## [v2.26.13-pre.2] - 2026-11-19
 
 This pre-release includes everything in v2.26.13-pre.1, which was not verified separately.
