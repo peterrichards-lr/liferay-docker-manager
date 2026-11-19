@@ -325,6 +325,29 @@ class DockerService:
         return None
 
     @staticmethod
+    def container_hostname(
+        container_name: str, target_name: str | None = None
+    ) -> str | None:
+        """The hostname the container actually has, or None if unreadable.
+
+        LDM-#2445: the compose `hostname:` key is a request; this is the
+        confirmation, read the same way as `container_mac_address`.
+        """
+        cmd = [
+            *DockerService.get_docker_cmd_prefix(target_name),
+            "inspect",
+            "-f",
+            "{{.Config.Hostname}}",
+            container_name,
+        ]
+        try:
+            out = run_command(cmd, check=False, capture_output=True)
+        except Exception:
+            return None
+        value = str(out).strip() if out else ""
+        return value or None
+
+    @staticmethod
     def container_was_oom_killed(
         container_name: str, target_name: str | None = None
     ) -> bool | None:
