@@ -181,6 +181,54 @@ _STACK_BRINGUP_TIMEOUT_DEFAULT = 1800
 _STACK_BRINGUP_TIMEOUT_ENV = "LDM_BRINGUP_TIMEOUT"
 
 
+#: Project meta key recording that the imported-licence warning was shown.
+LICENCE_HINT_SHOWN_KEY = "licence_hint_shown"
+
+
+def _warn_if_imported_without_licence(manager, paths, project_meta) -> None:
+    """Warn, once, that an imported DXP project has no licence yet.
+
+    LDM-#2443: `ldm package` leaves the publisher's licence out, so a project
+    imported from a package boots to DXP's activation page until the consumer
+    adds their own key. Only imported projects are warned (a project the user
+    built themselves is theirs to license), and CE needs no key.
+
+    Once only: a licence activated through the browser lives in the data
+    volume, where `find_license` cannot see it, so without a marker the
+    warning would repeat on every run of a licensed project. The marker
+    (`LICENCE_HINT_SHOWN_KEY`) is written to the project meta after the
+    warning is printed. `ldm doctor` keeps saying it; doctor is asked for.
+
+    Advisory only: nothing here may fail the run.
+    """
+    try:
+        from ldm_core.handlers.license import (
+            is_restored_from_package,
+            own_licence_locations,
+        )
+
+        if not is_restored_from_package(project_meta):
+            return
+        if str(project_meta.get(LICENCE_HINT_SHOWN_KEY, "false")).lower() == "true":
+            return
+        image = manager.composer._resolve_liferay_image(project_meta)
+        _status, is_ok, _details = manager.license.check_license_health(
+            paths, image_tag=image
+        )
+        if is_ok is True:
+            return
+        UI.warning(
+            "This project was imported from a package, which does not carry "
+            "its publisher's licence, so DXP will show its activation page. "
+            f"To activate it, {own_licence_locations(paths['root'])}."
+        )
+        project_meta[LICENCE_HINT_SHOWN_KEY] = "true"
+        manager.write_meta(paths["root"], project_meta)
+    except Exception:
+        # Advisory only; a failure here must never fail the run.
+        return
+
+
 def _stack_bringup_timeout() -> float | None:
     """Seconds to allow the stack bring-up, or None for no bound (LDM-#2064).
 
@@ -2792,6 +2840,9 @@ class ExecutionStage(PipelineStage):
 
         if getattr(manager.args, "command", "") != "quickstart":
             UI.phase(2, 3, "Starting Container Stack")
+
+        if not no_up:
+            _warn_if_imported_without_licence(manager, paths, project_meta)
 
         # LDM-#1264: portal patches must be copied in *after* the container
         # exists but *before* it boots -- OSGi resolves bundles at startup, so

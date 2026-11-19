@@ -217,6 +217,23 @@ Both ends are now fixed:
   (`LDM_RENDERED_ENV_KEYS`) serves both ends, and a test renders LDM's real
   output and fails if a generated key is missing from it.
 
+### After importing a package, add your licence
+
+A package does not carry its publisher's DXP licence (LDM-#2443; see
+[What a package leaves out](../reference/cli/core.md#what-a-package-leaves-out)),
+so an imported DXP project boots to the activation page until you add your own
+key. Put the licence XML in either:
+
+* `<project>/deploy/`, for this project only; or
+* `~/.ldm/common/`, which LDM copies into each project's `deploy/` when it runs
+  (see [Sharing Configuration Across Projects](share_configuration.md)).
+
+You do not have to remember this. If no key is found, the first `ldm run` warns
+before starting the stack. It warns only once, because a key you activate in the
+browser is stored in the data volume, where LDM cannot see it. `ldm doctor`'s
+licence hint names both absolute paths every time you run it. A Liferay Portal
+CE project needs no key, so it gets neither message.
+
 ---
 
 ## 2. Packaging Workspaces (`ldm package`)
@@ -319,4 +336,4 @@ This scaffolds a `.github/workflows/ldm-package-release.yml` file which:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-16* | *Last Reviewed: 2026-11-16*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*
