@@ -408,6 +408,11 @@ follow for anyone adding a stage:
 
 To support CI/CD pipelines and headless automation, all LDM commands MUST adhere to a standardized exit code contract:
 
+The user-facing statement of this contract is `docs/reference/exit_codes.md`,
+with an EXIT STATUS section in `ldm_core/resources/ldm.1` (LDM-#2428). Change
+a code here and update both in the same pull request: users' scripts branch on
+the page, not on this file. The triage notes below stay here, for agents.
+
 - `0`: Success.
 - `1`: Generic/Validation Error.
 - `2`: Authentication/Permission Error (e.g. LCP login required).
@@ -785,4 +790,4 @@ When LDM generates, deploys, or reasons about Client Extensions:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-13* | *Last Reviewed: 2026-11-13*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*
