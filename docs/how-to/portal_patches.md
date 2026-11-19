@@ -176,7 +176,22 @@ place.
   and `ldm restart` without `--force-recreate` keep them without re-copying —
   the layer survives stop/start.
 
-## 7. Related
+## 7. Snapshots and packages
+
+`ldm snapshot` archives `portal-patches/` with the rest of the project, JARs
+and sidecars alike, and `ldm restore` puts it back. Before archiving, a JAR
+with no sidecar gets one, as `ldm run` would give it, so the release it was
+introduced against travels with it (LDM-#2444).
+
+`ldm package` ships the patches, lists them, and records each one's
+`introduced_in` and `max_version` in the package manifest. `ldm import` grades
+that record against the tag it will boot, with the rules in section 4, and
+refuses a release-line mismatch before it creates the project, with the same
+message and the same `--force-portal-patches` override. A patch-level drift is
+not refused there; `ldm run` warns about it at boot, as it always has. See
+[Portal patches travel with the package](../reference/cli/core.md#portal-patches-travel-with-the-package).
+
+## 8. Related
 
 - [Liferay Version Upgrades](version_upgrades.md) — what else to check when
   changing the image tag.
@@ -185,4 +200,4 @@ place.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-22* | *Last Reviewed: 2026-08-22*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*

@@ -466,6 +466,33 @@ this.
 ldm package my-project --include-marketplace
 ```
 
+### Portal patches travel with the package
+
+A package is not filtered for `portal-patches/`: the patched core JARs and
+their `.jar.json` sidecars are part of what the project needs to behave as it
+did (LDM-#2444). `ldm snapshot` archives them, `ldm restore` and `ldm import`
+put them back, and the importer's `ldm run` copies them into the container on
+every boot, as it does for yours. See
+[Patching Core Portal JARs](../../how-to/portal_patches.md).
+
+`ldm package` lists each patch it ships, with the release recorded in its
+sidecar:
+
+```text
+Portal patches shipped in the package (1), applied over the stock JARs on every boot:
+  - com.liferay.site.initializer.impl.jar: introduced in 2026.q1.12-lts
+```
+
+The manifest records the same set (`portal_patches`: each JAR's name,
+`introduced_in` and `max_version`). `ldm import` checks it against the tag the
+project will run, with the rule `ldm run` uses, before it creates the project.
+A different quarter, or a tag beyond a patch's `max_version`, is refused with
+the message `ldm run` gives and exit code `1`. `--force-portal-patches` imports
+and boots it anyway. When `--tag-latest`, `--tag-prefix` or `--nightly` leave
+the tag to discovery, the check waits for `ldm run`, which makes it before the
+Liferay container is created. A package made before LDM-#2444 records no patch
+set and carries no patches.
+
 ### Declaring What Was Tested ![Added in v2.22.0](https://img.shields.io/badge/Added%20in-v2.22.0-blue)
 
 The manifest's `tag` says how the package was **built**. These three flags say
@@ -680,7 +707,7 @@ single non-Liferay service prints only `restarted.`
 - **`--clean-state`** (Only for `start` and `run`): Explicitly wipes the contents of the OSGi state volume before starting the container to remove any stale bundle locks. ![Added in v2.15.22](https://img.shields.io/badge/Added%20in-v2.15.22-blue)
 - **`--fix-permissions`** (Only for `start` and `run`): Forces root permission reclamation on bind-mounted host directories. Useful for resolving Liferay lock crashes when running macOS/Windows Docker Desktop against external drives or network shares. ![Added in v2.15.22](https://img.shields.io/badge/Added%20in-v2.15.22-blue)
 - **`--force-recreate`** (For `run`, `start`, and `restart`): Recreates containers even if their configuration and image haven't changed. **Note:** Since native Docker `start` doesn't support recreation, passing this to `ldm start` or `ldm restart` will smoothly intercept and route to `up -d --force-recreate` under the hood. ![Added in v2.15.23](https://img.shields.io/badge/Added%20in-v2.15.23-blue)
-- **`--force-portal-patches`** (For `run`, `start`, and `restart`): Applies JARs from the project's `portal-patches/` directory even when their recorded `introduced_in` release does not match the release being booted, or when the target JAR is absent from the image. Without it, a release-line mismatch aborts the boot. See [Patching Core Portal JARs](../../how-to/portal_patches.md). ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue)
+- **`--force-portal-patches`** (For `run`, `start`, `restart` and `import`): Applies JARs from the project's `portal-patches/` directory even when their recorded `introduced_in` release does not match the release being booted, or when the target JAR is absent from the image. Without it, a release-line mismatch aborts the boot. See [Patching Core Portal JARs](../../how-to/portal_patches.md). ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue)
 - **`--verify-mac`** (Only for `start` and `restart`): Also checks the pinned MAC against the node's own interfaces, over SSH. The MAC *comparison* -- container against configured value -- always runs on these commands and is free, being a local `docker inspect`; this adds the extra round trip that answers a different question: "is the configured address one this node actually has?" It is off by default because that round trip was measured turning a 2.9s restart into 4.3s, and because a wrong pin is already caught once at `ldm target add`, where a typo is cheapest to fix. Use it when a node's interfaces may have changed since it was registered. ![Added in v2.23.0](https://img.shields.io/badge/Added%20in-v2.23.0-blue)
 - **`-V`, `--volumes`** (Only for `down`/`rm`): Also removes the project's Docker Compose volumes. Implied automatically by `--delete`.
 - **`--infra`** (Only for `down`/`rm`): Also tears down the shared global infrastructure (Proxy, Search, etc.), independently of whatever project is targeted -- can be combined with a project target or passed alone. With `-y`, it refuses (exit 3) while any **other** LDM project is running, naming each one with an `ldm stop` command, and also when it cannot tell what is running; pass `--force` to tear down anyway. The project named in the same `ldm rm <project> --infra` call does not count as another project. Interactively, the existing confirmation still applies (LDM-#2371).

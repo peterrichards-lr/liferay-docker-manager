@@ -210,6 +210,11 @@ client-extension `routes/`; see [What a package leaves out](../reference/cli/cor
 Whoever imports it adds their own DXP key; see
 [After importing a package, add your licence](workspace_import.md#after-importing-a-package-add-your-licence).
 
+It does carry `portal-patches/`, and `ldm package` lists the patches it ships;
+`ldm import` refuses a package whose patches were built for a different
+Liferay quarter than the one it will run. See
+[Portal patches travel with the package](../reference/cli/core.md#portal-patches-travel-with-the-package).
+
 ### ⚠️ CI/CD Release Pipelines vs. Local DB Packaging
 
 When packaging an `.ldmp` release using automated CI/CD pipelines (e.g. GitHub Actions), it is important to note that the database containers are typically **offline/not running** in the headless CI environment.

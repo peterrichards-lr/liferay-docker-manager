@@ -306,6 +306,7 @@ class PackageVerificationStage(PipelineStage):
             return
 
         from ldm_core.workspace.importer import (
+            check_package_portal_patches,
             parse_package_manifest,
             reconcile_package_listings,
             warn_publisher_material,
@@ -316,6 +317,9 @@ class PackageVerificationStage(PipelineStage):
         reconcile_package_listings(Path(backup_dir), manifest, *scratch, refuse=False)
         warn_publisher_material(Path(backup_dir))
         _note_unverifiable_origin(manifest)
+        # LDM-#2444: refuse a release-line mismatch here, before
+        # ProjectSetupStage creates anything, not at the first boot.
+        check_package_portal_patches(context.manager, manifest)
 
 
 class ProjectSetupStage(PipelineStage):
