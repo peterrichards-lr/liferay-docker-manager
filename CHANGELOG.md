@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.14-pre.1] - 2026-11-19
+
+### Added
+
+- **A fixed container hostname: `ldm run --container-hostname <name>` and `ldm config container-hostname`** (LDM-#2445). Docker gives a container its ID as hostname, so it changed on every recreate, and host-locked Marketplace activation keys (such as Digital Sales Room) failed after any regeneration. The hostname is saved to the project, rendered into the compose file, and checked after start-up (exit 3 on a mismatch). One label only for now: lowercase letters, digits and hyphens, no dots. Packages do not carry it yet.
+- **`ldm system init-ci --setup-step` and `--verify-step`** (LDM-#2447). Run a demo's own setup and verification scripts between "Liferay is up" and "package", in order; a failing step publishes nothing.
+- **`ldm config common-config-policy`** (LDM-#2424), the per-project form of the new setting below.
+
+### Changed
+
+- **A project's edit to a shared `.config`/`.cfg` is now kept by default** (LDM-#2424). Files copied from `common/` used to be overwritten on every `ldm run`, silently discarding edits made in the project. The new cascading setting `common_config_policy` decides: `protect` (default) keeps the edited copy and warns when a newer `common/` version was not applied; `warn` replaces it and says so; `overwrite` restores the old silent behaviour. Set it with `ldm defaults common_config_policy <value>`, or per project with `ldm config common-config-policy <value> <project>`. Files copied by earlier versions are replaced once, with a warning if they differed. The Elasticsearch connection config follows the same setting, and a kept copy is checked for the keys shared search needs.
+- **`~/.ldm/common` is the only global settings folder** (LDM-#2451). On Linux, a workspace `common/` anywhere under `/home/` was treated as global and silently replaced `~/.ldm/common/portal-ext.properties`. After upgrading, settings there that were ignored start reaching existing projects, and its `# !important` keys start winning over workspace values. Keys earlier syncs already wrote into a project still count as project values.
+- **`ldm system init-ci` scaffolds `ldm link . --no-monitor --build`** (LDM-#2447), the documented workspace entry point, instead of `ldm import .`. It passes the project name to every command and always stops the environment at the end. Regenerate existing workflows to pick this up.
+- **`ldm init-common` always fills `~/.ldm/common`** (LDM-#2452). On a first run it used to create `./common` in whatever directory you were in. Doctor's "Global Config" row is now "Shared Config (common/)" and shows the path (LDM-#2193).
+
+### Fixed
+
+- **A package carries the project's portal patches** (LDM-#2444). `portal-patches/` was left out of snapshots and packages, so an import booted stock portal jars against a database built with the patched ones, with no warning. `ldm package` lists the patches it ships, and `ldm import` refuses a package built for a different Liferay quarter before anything is created (`--force-portal-patches` overrides).
+- **After importing a package, LDM tells you where your own DXP key goes** (LDM-#2443). `ldm doctor` and the first `ldm run` name the project's `deploy/` folder and `~/.ldm/common/`. CE projects no longer show the licence as "Missing".
+- **The project name `resources` is refused** (LDM-#2457). LDM's shared infrastructure stack uses that Compose project name, so starting a project called `resources` would have removed the Traefik proxy for every project.
+
 ## [v2.26.13] - 2026-11-19
 
 ### Added
