@@ -499,7 +499,7 @@ ldm monitor [project_name] --delay 2.0
 
 ## `wait`
 
-Blocks the terminal until the Liferay project has fully started, initialized, and is ready to accept HTTP traffic.
+Blocks the terminal until the Liferay project has fully started, initialized, and is ready to accept HTTP traffic. A project whose container is not running fails at once with exit code `1`; start it first with `ldm start` or `ldm run`.
 
 ```bash
 ldm wait [project]
@@ -853,4 +853,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-17* | *Last Reviewed: 2026-11-17*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*

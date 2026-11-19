@@ -1173,6 +1173,17 @@ class BaseHandler:
             pass
         return "unknown"
 
+    def get_container_state(self, container_name, target_name=None):
+        """Returns a container's state ('running', 'exited', ...), never its
+        health: an exited container can keep a stale 'healthy' (LDM-#2429).
+        'unknown' when the container does not exist."""
+        from ldm_core.docker_service import DockerService
+
+        try:
+            return DockerService.get_status(container_name, target_name=target_name)
+        except Exception:
+            return "unknown"
+
     def select_project_interactively(self, roots=None, heading="Select Project"):  # noqa: C901, PLR0912
         """Prompts the user to select a project from a list."""
         if self.non_interactive:
