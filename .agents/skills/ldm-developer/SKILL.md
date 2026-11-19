@@ -212,6 +212,7 @@ releases before anyone looked (LDM-#1482).
 | CLI reference | `docs/reference/cli/*.md`, `docs/reference/advanced_cli.md` | `check-cli-drift` (both directions) |
 | **Man page** | `ldm_core/resources/ldm.1` | `check-cli-drift` (stale flags), `check-version-sync` (`.TH` version), `check-docs-review` (roff review stamp) |
 | **CLI help text** | `help=` strings in `ldm_core/cli.py` | `check-cli-drift`, indirectly |
+| Reclaim matrix | between the `RECLAIM_TABLE` markers in `.agents/skills/ldm-architecture/SKILL.md` and `docs/explanation/permissions-and-reclaim.md` | `sync-reclaim-table` (generated from source by `scripts/sync_reclaim_table.py`; never edit the block) |
 
 The man page is **not** a mirror of the CLI reference. It documents well under
 a third of the parser's options **by design**, so an undocumented flag is not
@@ -245,4 +246,4 @@ up:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-22* | *Last Reviewed: 2026-09-22*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*

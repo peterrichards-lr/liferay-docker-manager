@@ -26,7 +26,7 @@ compose run, and the thing worth protecting is that the lists do not drift apart
 again -- which is a property of the lists, not of one execution.
 """
 
-import ast
+import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -34,44 +34,22 @@ from unittest.mock import MagicMock, patch
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-#: Every site that reclaims a set of project subdirectories.
-_RECLAIM_SITES = [
-    "ldm_core/pipelines/run.py",
-    "ldm_core/handlers/system.py",
-    "ldm_core/handlers/base.py",
-    # LDM-#2266: the node-side reclaim that runs before every remote sync.
-    "ldm_core/config.py",
-]
+# LDM-#2151: the parser lives in scripts/reclaim_sites.py, shared with
+# scripts/sync_reclaim_table.py, which generates the documented matrix from the
+# same reading of the lists. One parser, so the test and the docs cannot
+# disagree about what a reclaim loop is. It keys on the call, so the two
+# directory-CREATION lists in `handlers/base.py` (which drive `safe_mkdir`) are
+# kept out.
+sys.path.insert(0, str(_PROJECT_ROOT / "scripts"))
+from reclaim_sites import RECLAIM_SITES, reclaim_lists  # noqa: E402
 
-#: The call that makes a loop a RECLAIM loop. `handlers/base.py` also carries
-#: two directory-CREATION lists driving `safe_mkdir`, which disagree with each
-#: other and with this -- deliberately, and tracked separately. Keying on the
-#: call rather than on the entries keeps those out.
-_RECLAIM_CALL = "reclaim_volume_permissions"
+#: Every site that reclaims a set of project subdirectories.
+_RECLAIM_SITES = [rel for rel, _ in RECLAIM_SITES]
 
 
 def _reclaim_lists(rel_path: str) -> list[list[str]]:
     """Every `for <var> in [...]` whose BODY calls reclaim_volume_permissions."""
-    tree = ast.parse((_PROJECT_ROOT / rel_path).read_text(encoding="utf-8"))
-    found: list[list[str]] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.For) or not isinstance(node.iter, ast.List):
-            continue
-        calls = {
-            c.func.id if isinstance(c.func, ast.Name) else getattr(c.func, "attr", "")
-            for c in ast.walk(node)
-            if isinstance(c, ast.Call)
-        }
-        if _RECLAIM_CALL not in calls:
-            continue
-        found.append(
-            [
-                e.value
-                for e in node.iter.elts
-                if isinstance(e, ast.Constant) and isinstance(e.value, str)
-            ]
-        )
-    return found
+    return reclaim_lists(rel_path, _PROJECT_ROOT)
 
 
 class TheRepairPathReclaimsRoutes(unittest.TestCase):
