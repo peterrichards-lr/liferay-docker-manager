@@ -62,7 +62,9 @@ rewrite happened, and costs nothing when it did not.
 The directory is named from the extension's **`projectName`**, not the `id` in
 its `LCP.json`. The two differ for most extensions, and reading the id-named
 path finds a real, empty, readable directory rather than an error
-(LDM-#1944).
+(LDM-#1944). [The Routes Tree](../explanation/routes-tree.md) has the full
+contract: the mounts, the exact variable values, and when Liferay fills the
+tree.
 
 ### LDM rewrites `localhost` OAuth URLs as it imports your extension
 
@@ -332,4 +334,4 @@ optimistic.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-17* | *Last Reviewed: 2026-11-17*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*

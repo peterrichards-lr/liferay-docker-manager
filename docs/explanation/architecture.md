@@ -199,6 +199,12 @@ starts first reads an empty directory.
 > mount at `/etc/liferay/lxc/routes`, via `LIFERAY_ROUTES_DXP` and
 > `LIFERAY_ROUTES_CLIENT_EXTENSION`, both of which LDM sets for you.
 
+The full contract -- which container mounts which host path at which target,
+the exact values of those variables, why the extension mount stops at
+`routes/default`, how the per-extension directory is named, and when Liferay
+actually fills the tree -- is in [The Routes Tree](routes-tree.md). Read it
+before writing a client extension that consumes OAuth2 credentials.
+
 Because that tree is bind-mounted and written by a container running as a
 different uid than yours, LDM occasionally corrects its ownership with a
 short-lived helper container. See
@@ -396,4 +402,4 @@ sequenceDiagram
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-17* | *Last Reviewed: 2026-11-17*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*

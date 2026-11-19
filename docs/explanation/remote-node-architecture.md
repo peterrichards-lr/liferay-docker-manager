@@ -196,8 +196,7 @@ Commands like `ldm deploy`/`ldm monitor` may need continuous/incremental remote 
 
 ### Open question: scaffolding the routes tree on a remote node
 
-The routes tree (see *The Routes Tree* in
-`.agents/skills/ldm-architecture/SKILL.md`) is a set of host directories that
+The routes tree (see [The Routes Tree](routes-tree.md)) is a set of host directories that
 Liferay, every client extension and every custom service bind-mount subtrees
 of. Those directories must exist **before** the mount, because Docker creates a
 missing bind-mount source itself, as an empty root-owned directory — which is
@@ -576,4 +575,4 @@ remote add, and in the drift repair above `~/.ldmrc` was right all along:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-23* | *Last Reviewed: 2026-10-23*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*

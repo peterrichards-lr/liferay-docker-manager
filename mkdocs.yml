@@ -303,6 +303,7 @@ nav:
     - explanation/index.md
     - Architecture: explanation/architecture.md
     - Remote node architecture: explanation/remote-node-architecture.md
+    - The routes tree: explanation/routes-tree.md
     - Permissions and the reclaim helper: explanation/permissions-and-reclaim.md
     - Properties: explanation/properties.md
     - Key features: explanation/conventions.md
