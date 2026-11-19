@@ -1,4 +1,4 @@
-.TH LDM 1 "November 2026" "2.26.12" "Liferay Docker Manager Manual"
+.TH LDM 1 "November 2026" "2.26.13" "Liferay Docker Manager Manual"
 .SH NAME
 ldm \- Liferay Docker Manager orchestrator (Hardened Edition)
 .SH SYNOPSIS
@@ -73,6 +73,7 @@ Backup and recover exact project states.
 \fBpackage\fR [\fIPROJECT\fR] [\fB--output\fR \fIDIR\fR] [\fB--repo\fR \fIREPO\fR] [\fB--use-latest\fR]
 Package a project snapshot into a portable LDM package (\fB.ldmp\fR) with SHA-256 signature.
 Use \fB--verified\fR \fITAG\fR and \fB--refuted\fR \fITAG\fR, each with a mandatory \fB--evidence\fR \fIREF\fR, to record what the package has actually been tested on as opposed to what it was built with. A refutation declares a verified ceiling that \fBldm run\fR refuses to boot above.
+The project's \fIportal-patches/\fR JARs and their sidecars are shipped, listed, and recorded in the manifest.
 .TP
 \fBhydrate\fR \fIBACKUP_PATH\fR
 Create or restore a project from a local Liferay Cloud backup archive.
@@ -111,6 +112,7 @@ Clone a Git repository and initialize it as an LDM project workspace.
 .TP
 \fBimport\fR \fISOURCE\fR [\fINAME\fR]
 One-time static import of a Liferay workspace or data package archive from a Git remote, URL, or archive file. Pointing it at a local workspace \fIdirectory\fR is an error that redirects to \fBldm link\fR, which keeps the workspace in sync rather than copying it once.
+A package whose \fIportal-patches/\fR were recorded against a different Liferay release line than the one it will run is refused before the project is created; \fB--force-portal-patches\fR imports it anyway.
 .TP
 \fBquickstart\fR \fITEMPLATE\fR [\fB--name\fR \fINAME\fR] [\fB--host-name\fR \fIHOST\fR] [\fB--ssl\fR|\fB--no-ssl\fR] [\fB--no-seed\fR] [\fB--replace\fR] [\fB--share\fR] [\fB--share-subdomain\fR \fISUBDOMAIN\fR]
 Bootstrap and start an accelerator demo stack: \fBaica\fR, or a template defined in \fI~/.ldm_templates.json\fR.
@@ -228,6 +230,9 @@ Internal version management utility.
 .TP
 \fBldm system relocate\fR \fITARGET_DIR\fR
 Safely move LDM Docker data to an external drive.
+.TP
+\fBldm system init-ci\fR [\fIPROJECT\fR] [\fB--trigger\fR \fIrelease|tag|push|manual\fR] [\fB--setup-step\fR \fICMD\fR]... [\fB--verify-step\fR \fICMD\fR]...
+Write a GitHub Actions workflow that links and builds the workspace (\fBldm link . --no-monitor --build\fR), waits for its deployables, runs each setup step and then each verify step in order, packages an \fB.ldmp\fR only if they all pass, and always runs \fBldm down\fR. The workflow pins the LDM version that wrote it; re-run with the same flags to upgrade. (legacy: \fBldm init-ci\fR)
 
 .SH OPTIONS
 .TP

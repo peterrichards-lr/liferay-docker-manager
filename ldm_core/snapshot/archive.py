@@ -5,6 +5,7 @@ import tarfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from ldm_core.runtime.portal_patches import package_patch_set
 from ldm_core.runtime.portal_workarounds import is_ldm_bundle
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, safe_extract
@@ -124,8 +125,15 @@ _ARCHIVE_DIR_NAMES: tuple[str, ...] = (
     "routes",
     "client-extensions",
     "configs",
+    # LDM-#2444: patched portal JARs and their `.jar.json` sidecars. Without
+    # them a package of a patched project boots stock `osgi/portal` JARs
+    # against a database built with the patched ones, and nothing says so.
+    "portal-patches",
     ".ldm",
 )
+
+#: LDM-#2444: the patch JARs a payload ships, for `ldm package` to list.
+PORTAL_PATCH_SOURCES = (("portal-patches", "*.jar"),)
 
 
 def trees_to_reclaim(policy: str) -> tuple["ProjectTree", ...]:
@@ -276,6 +284,27 @@ def describe_publisher_material(found):
             lines.append(f"{labels[reason]}: routes/ ({len(names)} files)")
         else:
             lines.append(f"{labels[reason]}: {', '.join(names)}")
+    return lines
+
+
+def describe_shipped_portal_patches(payload, recorded):
+    """One line per patch JAR in files.tar.gz `payload`, for `ldm package`.
+
+    LDM-#2444. Read from the payload rather than the meta, so the list is what
+    the package actually ships; `recorded` (the meta's `portal_patches`)
+    supplies the release each was introduced against.
+    """
+    with tarfile.open(payload, "r:gz") as tar:
+        names = scan_member_names(tar.getnames(), PORTAL_PATCH_SOURCES)
+    by_name = {e.get("name"): e for e in recorded or [] if isinstance(e, dict)}
+    lines = []
+    for name in names:
+        entry = by_name.get(name) or {}
+        introduced = entry.get("introduced_in")
+        line = f"{name}: introduced in {introduced or 'an unrecorded release'}"
+        if entry.get("max_version"):
+            line += f", max_version {entry['max_version']}"
+        lines.append(line)
     return lines
 
 
@@ -867,5 +896,8 @@ class ArchiveSnapshotService:
             "client_extensions": ",".join(cx_list) if cx_list else "",
             "osgi_modules": ",".join(modules_list) if modules_list else "",
             "active_services": ",".join(active_services) if active_services else "",
+            # LDM-#2444: name, introduced_in and max_version per patch, so
+            # `ldm import` can refuse a release-line mismatch before boot.
+            "portal_patches": package_patch_set(paths["root"]),
         }
         self.manager.write_meta(snap_dir, meta)

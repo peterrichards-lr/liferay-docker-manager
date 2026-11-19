@@ -2319,6 +2319,15 @@ def get_actual_home():
     return Path.home()
 
 
+def global_common_dir():
+    """Returns the global common folder, `<home>/.ldm/common`.
+
+    `<home>` is `get_actual_home()`, so `LDM_HOME` redirects it. This is the
+    only folder the properties cascade treats as layer 3 (LDM-#2451).
+    """
+    return get_actual_home() / ".ldm" / "common"
+
+
 def safe_cwd():
     """Returns the current working directory safely, returning None if deleted."""
     try:
