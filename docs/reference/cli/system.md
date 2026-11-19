@@ -235,7 +235,7 @@ ldm renew-ssl demo
 
 ## `infra init-common` (legacy: `init-common`)
 
-Initialize or recreate the baseline global configuration (`common/` folder) from internal resources.
+Create `~/.ldm/common`, whose files reach every project, and fill in any missing baseline files. Existing files are never overwritten, and it always writes to `~/.ldm/common`: when another `common/` folder is active (`LDM_COMMON_DIR` or a workspace `common/`), it says so and leaves that folder unchanged. See [Share configuration across projects](../../how-to/share_configuration.md).
 
 ```bash
 ldm infra init-common

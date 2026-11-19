@@ -2093,7 +2093,7 @@ def get_parser():  # noqa: PLR0915
     infra_subparsers.add_parser(
         "init-common",
         parents=[base_sub_parent],
-        help="Recreate the baseline global configuration from internal resources",
+        help="Create ~/.ldm/common, whose files reach every project, and fill in missing baseline files",
     )
 
     renew_ssl = infra_subparsers.add_parser(

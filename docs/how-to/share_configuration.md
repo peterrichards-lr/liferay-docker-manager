@@ -26,24 +26,17 @@ Check which kind your setting is before you rely on `common/` for it. See
 ## 1. Create the folder
 
 ```bash
-mkdir -p ~/.ldm/common
-```
-
-Optionally fill it with LDM's baseline files (developer `portal-ext.properties`,
-`env-blacklist.txt`, and OSGi configurations for session timeout and search):
-
-```bash
 ldm init-common
 ```
 
-> [!NOTE]
-> **Create `~/.ldm/common/` first.** `ldm init-common` writes to the first of:
-> the folder in `LDM_COMMON_DIR`; a `common/` folder in the current directory;
-> `~/.ldm/common/` if it already exists. If none of these exists, it creates
-> `common/` **in the current directory** instead of in `~/.ldm/`. Run it from a
-> directory with no `common/` folder of its own, and with `LDM_COMMON_DIR`
-> unset, to be sure it fills `~/.ldm/common/`. It never overwrites a file that
-> is already there.
+This creates `~/.ldm/common/` and fills in LDM's baseline files (developer
+`portal-ext.properties`, `env-blacklist.txt`, and OSGi configurations for
+session timeout and search). It never overwrites a file that is already there,
+so it is safe to run again to restore a deleted baseline file.
+
+It always writes to `~/.ldm/common/`, wherever you run it. If another `common/`
+folder is active there -- one named by `LDM_COMMON_DIR`, or a `common/` folder
+in the current directory -- it names that folder and leaves it unchanged.
 
 ## 2. Add the file
 

@@ -650,15 +650,25 @@ class ConfigService:
             pass
 
     def cmd_init_common(self):
-        """Recreates the baseline common/ folder with standard development assets."""
-        # Ensure we create this in the CURRENT directory, not the script directory
-        common_dir = self.manager.get_common_dir()
+        """Creates ~/.ldm/common, whose files reach every project, and fills in
+        any missing baseline files. Existing files are never overwritten."""
+        from ldm_core.utils import global_common_dir, safe_write_text
+
+        # LDM-#2452: always the global folder. get_common_dir() falls back to
+        # ./common in the current directory when ~/.ldm/common does not exist
+        # yet, which put a first-run baseline wherever the user happened to be.
+        common_dir = global_common_dir()
         with contextlib.suppress(PermissionError, OSError):
             common_dir.mkdir(parents=True, exist_ok=True)
 
         UI.heading("Initializing Baseline Common Assets")
 
-        from ldm_core.utils import safe_write_text
+        active_dir = self.manager.get_common_dir()
+        with contextlib.suppress(OSError):
+            if active_dir.resolve() != common_dir.resolve():
+                UI.info(
+                    f"Another common folder is active here and was left unchanged: {active_dir}"
+                )
 
         try:
             import importlib.resources as pkg_resources
@@ -1151,7 +1161,6 @@ class ConfigService:
                     ]
 
                     if dest_name in sidecar_conflicts:
-                        paths["root"].name
                         use_sidecar = (
                             project_meta
                             and str(
@@ -1172,9 +1181,9 @@ class ConfigService:
                         ):
                             from ldm_core.utils import safe_write_text
 
+                            # Deliberately neither reads nor records .liferay-docker.deployed
+                            # history: these files must track common/ (LDM-#2453).
                             safe_write_text(dest, content)
-                            if not dest.exists():
-                                history.add(match.name)
                         continue
 
                     if pattern == "*.xml":

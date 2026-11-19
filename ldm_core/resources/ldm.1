@@ -138,7 +138,7 @@ Reset all global services in one go. (legacy: \fBldm infra-restart\fR)
 Restarts only the Traefik proxy container.
 .TP
 \fBldm infra init-common\fR
-Recreate the baseline global configuration from internal resources. (legacy: \fBldm init-common\fR)
+Create \fI~/.ldm/common\fR, whose files reach every project, and fill in any missing baseline files; existing files are never overwritten. (legacy: \fBldm init-common\fR)
 .TP
 \fBldm infra renew-ssl\fR [\fIPROJECT\fR] [\fB--all\fR]
 Refresh project-specific SSL certificates. (legacy: \fBldm renew-ssl\fR)

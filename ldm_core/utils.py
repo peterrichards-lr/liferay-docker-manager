@@ -2280,10 +2280,15 @@ def get_actual_home():
 
 
 def global_common_dir():
-    """Returns the global common folder, `<home>/.ldm/common`.
+    """Returns the global common folder, `<home>/.ldm/common`, whose files reach
+    every project.
 
     `<home>` is `get_actual_home()`, so `LDM_HOME` redirects it. This is the
-    only folder the properties cascade treats as layer 3 (LDM-#2451).
+    only folder the properties cascade treats as layer 3 (LDM-#2451), and the
+    one `ldm init-common` always targets (LDM-#2452). It deliberately does not
+    use `get_common_dir()`, whose last resort is `./common` in the current
+    directory when this folder does not exist yet -- the first-run case
+    `init-common` exists for.
     """
     return get_actual_home() / ".ldm" / "common"
 
