@@ -329,6 +329,16 @@ project's folder was removed without `ldm rm`: its database volume is left
 behind and is now orphaned. Answer No if you may still want that project. A
 DATA volume is never removed without an interactive Yes (LDM-#1267).
 
+**On a remote target** (`--node`, or a default set with `ldm target use`),
+"orphaned" can only mean "not registered on *this* machine", and on a shared
+node that includes every project started from another machine. So against a
+remote target `ldm system prune` skips the orphaned-container and
+orphaned-search-snapshot sweeps entirely, saying so, and `--all` no longer
+answers the OSGi-state volume question -- it still asks interactively, and `-y`
+skips it. Image and build-cache pruning (`--images`) work on a node exactly as
+they do locally, so `ldm -y system prune --images --node <target>` is safe on
+a shared node (LDM-#2459).
+
 Legacy volumes are matched by name pattern rather than by the owning-project
 label that Docker only applies at creation, which is weaker evidence of
 ownership. So every candidate is listed and grouped by project, volumes of a
@@ -838,4 +848,4 @@ ldm target migrate win-wsl node-a
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*
+*Last Updated: 2026-11-20* | *Last Reviewed: 2026-11-20*
