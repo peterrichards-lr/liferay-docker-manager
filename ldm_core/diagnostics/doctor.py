@@ -14,7 +14,6 @@ from typing import Any
 from ldm_core.constants import (
     BUILD_INFO,
     GITHUB_DOCS_URL,
-    GITHUB_REPO_URL,
     LCP_CLI_DOWNLOAD_URL,
     SCRIPT_DIR,
     VERSION,
@@ -464,7 +463,7 @@ class DoctorRunner:
             )
             self.add_hint(
                 f"Upgrade LDM from v{VERSION} to v{latest} by running '{UI.WHITE}ldm upgrade{UI.COLOR_OFF}'.",
-                f"{GITHUB_DOCS_URL}/INSTALLATION.md#troubleshooting-version-loop--integrity-issues",
+                f"{GITHUB_DOCS_URL}/tutorials/quick_start.md#-troubleshooting-version-loop--integrity-issues",
             )
         else:
             self.results.append(("LDM Version", f"{v_display} (Latest)", True))
@@ -497,7 +496,7 @@ class DoctorRunner:
             status = f"{status} {UI.WHITE}(Run 'ldm upgrade --repair'){UI.COLOR_OFF}"
             self.add_hint(
                 f"Repair your LDM installation by running '{UI.WHITE}ldm upgrade --repair{UI.COLOR_OFF}'.",
-                f"{GITHUB_DOCS_URL}/INSTALLATION.md#troubleshooting-version-loop--integrity-issues",
+                f"{GITHUB_DOCS_URL}/tutorials/quick_start.md#-troubleshooting-version-loop--integrity-issues",
             )
 
         self.results.append(("Executable Integrity", status, ok))
@@ -529,7 +528,7 @@ class DoctorRunner:
             self.results.append(("Virtual Environment", "Not Activated", "warn"))
             self.add_hint(
                 "Virtual Environment: Running Python globally. It is highly recommended to run inside the virtualenv.",
-                f"{GITHUB_REPO_URL}/blob/master/GEMINI.md#6-python-virtual-environment-venv",
+                f"{GITHUB_DOCS_URL}/how-to/development.md#1-run-from-source-live-development",
             )
             self.add_hint("Run: source .venv/bin/activate")
         else:
@@ -583,7 +582,7 @@ class DoctorRunner:
                 )
                 self.add_hint(
                     f"Virtual environment dependencies failed integrity verification: {first_failed_pkg} is {first_failed_reason.lower()}.",
-                    f"{GITHUB_DOCS_URL}/SECURITY.md",
+                    f"{GITHUB_DOCS_URL}/reference/security.md",
                 )
                 self.add_hint(
                     f"Re-install dependencies using: {UI.WHITE}pip install --force-reinstall -r requirements.txt{UI.COLOR_OFF}"
@@ -607,7 +606,7 @@ class DoctorRunner:
                 )
                 self.add_hint(
                     f"Enable tab-completion for {shell} by running '{UI.WHITE}ldm completion{UI.COLOR_OFF}'.",
-                    f"{GITHUB_DOCS_URL}/INSTALLATION.md#3-shell-autocompletion",
+                    f"{GITHUB_DOCS_URL}/tutorials/quick_start.md#3-shell-autocompletion",
                 )
             else:
                 self.results.append(
@@ -801,7 +800,7 @@ class DoctorRunner:
                 if getattr(self, "_colima_mount_not_writable", False):
                     self.add_hint(
                         "Colima: Your mount is not explicitly marked as 'writable'. With 'sshfs', this often causes permission errors.",
-                        f"{GITHUB_DOCS_URL}/INSTALLATION.md#colima-mount-permissions",
+                        f"{GITHUB_DOCS_URL}/tutorials/quick_start.md#3-the-ghost-mount-issue",
                     )
                     self.add_hint(
                         "Fix: 'colima stop' then 'colima start --mount [HOME]:w'"
@@ -817,7 +816,7 @@ class DoctorRunner:
                         )
                         self.add_hint(
                             "WSL: Your Docker socket is symlinked, likely by Docker Desktop 'WSL Integration'.",
-                            f"{GITHUB_DOCS_URL}/INSTALLATION.md#wsl2-mixed-environments",
+                            f"{GITHUB_DOCS_URL}/tutorials/quick_start.md#-linux--wsl-docker-permissions",
                         )
                         self.add_hint(
                             "To use 'Native' Docker in this distro, disable 'WSL Integration' in Docker Desktop settings and delete the symlink."
@@ -854,7 +853,7 @@ class DoctorRunner:
                         res_type = "CPU cores" if "CPU" in comp else "RAM"
                         self.add_hint(
                             f"Allocate more {res_type} in your Docker provider settings.",
-                            f"{GITHUB_DOCS_URL}/INSTALLATION.md#docker-resource-alignment-windowswsl2macos",
+                            f"{GITHUB_DOCS_URL}/tutorials/quick_start.md#docker-resource-alignment-windowswsl2macos",
                         )
         else:
             # Trigger the detailed error reporting from base.py
@@ -862,12 +861,12 @@ class DoctorRunner:
             self.results.append(("Docker Engine", "Not reachable", False))
             self.add_hint(
                 "If Docker is running but LDM cannot connect, ensure your user is in the 'docker' group.",
-                f"{GITHUB_DOCS_URL}/INSTALLATION.md#linux--wsl-docker-permissions",
+                f"{GITHUB_DOCS_URL}/tutorials/quick_start.md#-linux--wsl-docker-permissions",
             )
             if self.is_wsl:
                 self.add_hint(
                     "WSL: To use Native Docker, run: 'sudo service docker start'",
-                    f"{GITHUB_DOCS_URL}/INSTALLATION.md#wsl2-native-docker",
+                    f"{GITHUB_DOCS_URL}/tutorials/quick_start.md#-linux--wsl-docker-permissions",
                 )
                 self.add_hint(
                     "WSL: To use Docker Desktop, ensure 'WSL Integration' is enabled in the Docker Desktop dashboard."
@@ -972,7 +971,7 @@ class DoctorRunner:
                     self.results.append(("Volume Permissions", "❌ Read-Only", False))
                     self.add_hint(
                         "Your Docker volume mounts are read-only for the 'liferay' user (UID 1000).",
-                        f"{GITHUB_DOCS_URL}/INSTALLATION.md#troubleshooting-read-only-mounts",
+                        f"{GITHUB_DOCS_URL}/TROUBLESHOOTING.md#-permission--mount-issues",
                     )
                     if self.provider == "Colima":
                         # Check for custom LaunchAgent setup
@@ -1010,7 +1009,7 @@ class DoctorRunner:
                             else:
                                 self.add_hint(
                                     "Colima Fix (Advanced): 'colima stop' then 'colima start --mount [HOME]:w --vm-type=vz --mount-type=virtiofs'",
-                                    f"{GITHUB_DOCS_URL}/colima-performance-tuning",
+                                    f"{GITHUB_DOCS_URL}/tutorials/quick_start.md#1-recommended-start-command-apple-silicon",
                                 )
 
                         self.add_hint(
@@ -1032,7 +1031,7 @@ class DoctorRunner:
             if mkcert_status == "Not installed":
                 self.add_hint(
                     "Install 'mkcert' to enable local SSL (brew install mkcert / scoop install mkcert / apt install mkcert).",
-                    f"{GITHUB_DOCS_URL}/INSTALLATION.md#prerequisites",
+                    f"{GITHUB_DOCS_URL}/reference/third_party_tools.md#2-mkcert-local-https",
                 )
             elif "Permission Denied" in mkcert_status:
                 cert_dir = get_actual_home() / "liferay-docker-certs"
@@ -1042,7 +1041,7 @@ class DoctorRunner:
             else:
                 self.add_hint(
                     f"Run '{UI.WHITE}mkcert -install{UI.COLOR_OFF}' to initialize the local trust store.",
-                    f"{GITHUB_DOCS_URL}/INSTALLATION.md#fixing-ssl-trust-issues-mkcert",
+                    f"{GITHUB_DOCS_URL}/tutorials/quick_start.md#-fixing-ssl-trust-issues-mkcert",
                 )
         else:
             # Detect WSL
@@ -1061,12 +1060,12 @@ class DoctorRunner:
                 if not is_win_ca:
                     self.add_hint(
                         f"[WSL] Your browser won't trust WSL certificates. Run '{UI.WHITE}mkcert -install{UI.COLOR_OFF}' on Windows, then in WSL set: {UI.WHITE}export CAROOT=\"/mnt/c/Users/<user>/AppData/Local/mkcert\"{UI.COLOR_OFF}",
-                        f"{GITHUB_DOCS_URL}/INSTALLATION.md#wsl2-ssl-trust",
+                        f"{GITHUB_DOCS_URL}/TROUBLESHOOTING.md#windowswsl-mkcert-ssl-not-secure-in-chrome",
                     )
                 else:
                     self.add_hint(
                         f"[WSL] To avoid 'Insecure' browser warnings, you must ALSO run '{UI.WHITE}mkcert -install{UI.COLOR_OFF}' on your Windows host (via PowerShell or CMD).",
-                        f"{GITHUB_DOCS_URL}/INSTALLATION.md#wsl2-ssl-trust",
+                        f"{GITHUB_DOCS_URL}/TROUBLESHOOTING.md#windowswsl-mkcert-ssl-not-secure-in-chrome",
                     )
 
         # 4. OpenSSL Check
@@ -1075,7 +1074,7 @@ class DoctorRunner:
         if openssl_ok is not True:
             self.add_hint(
                 "Install OpenSSL (available via brew, macports, scoop, or apt).",
-                f"{GITHUB_DOCS_URL}/INSTALLATION.md#prerequisites",
+                f"{GITHUB_DOCS_URL}/reference/third_party_tools.md#3-openssl",
             )
 
         # 4.1 Core Orchestration Tools & Path Integrity
@@ -1361,7 +1360,7 @@ class DoctorRunner:
                 )
                 self.add_hint(
                     "Shared infrastructure network 'liferay-net' will be created during project startup.",
-                    f"{GITHUB_DOCS_URL}/README.md#infra-setup-infra-down-infra-restart",
+                    f"{GITHUB_DOCS_URL}/reference/cli/system.md#infra-setup--infra-down--infra-restart-legacy-infra-setup-infra-down-infra-restart",
                 )
 
             # 6. Global Services Check
@@ -1540,7 +1539,7 @@ class DoctorRunner:
                         )
                     self.add_hint(
                         f"Start shared infrastructure by running '{UI.WHITE}{cmd_hint}{UI.COLOR_OFF}'.",
-                        f"{GITHUB_DOCS_URL}/README.md#infra-setup-infra-down-infra-restart",
+                        f"{GITHUB_DOCS_URL}/reference/cli/system.md#infra-setup--infra-down--infra-restart-legacy-infra-setup-infra-down-infra-restart",
                     )
 
             # 6.9 Which Traefik routers did the proxy actually load?
@@ -1613,7 +1612,7 @@ class DoctorRunner:
                 )
                 self.add_hint(
                     f"[{p_path.name}] Clean legacy environment variables by running '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}'.",
-                    f"{GITHUB_DOCS_URL}/README.md#env",
+                    f"{GITHUB_DOCS_URL}/reference/cli/core.md#config-env-legacy-env",
                 )
             else:
                 self.results.append((f"[{p_path.name}] Metadata", "Healthy", True))
@@ -1655,7 +1654,7 @@ class DoctorRunner:
                 )
                 self.add_hint(
                     f"[{p_path.name}] Regenerate missing configuration by running '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}'.",
-                    f"{GITHUB_DOCS_URL}/README.md#run-alias-up",
+                    f"{GITHUB_DOCS_URL}/reference/cli/core.md#run-alias-up",
                 )
 
             pe_file = p_path / "files" / "portal-ext.properties"
@@ -1727,7 +1726,7 @@ class DoctorRunner:
                 if log_ok is not True:
                     self.add_hint(
                         f"[{p_path.name}] Check detailed Liferay logs by running '{UI.WHITE}ldm logs {p_path.name} liferay{UI.COLOR_OFF}'.",
-                        f"{GITHUB_DOCS_URL}/README.md#logs",
+                        f"{GITHUB_DOCS_URL}/reference/cli/core.md#logs",
                     )
 
             osgi_config_dir = p_path / "osgi" / "configs"
@@ -1796,7 +1795,7 @@ class DoctorRunner:
                 )
                 self.add_hint(
                     f"[{p_path.name}] Enable global search by running '{UI.WHITE}ldm migrate-search {p_path.name}{UI.COLOR_OFF}'.",
-                    f"{GITHUB_DOCS_URL}/README.md#migrate-search",
+                    f"{GITHUB_DOCS_URL}/reference/cli/system.md#infra-migrate-search-legacy-migrate-search",
                 )
 
             # 7.2.3 LCP.json Validation (Extensions)
@@ -1906,7 +1905,7 @@ class DoctorRunner:
                     )
                     self.add_hint(
                         f"[{p_path.name}] Regenerate SSL certificates by running '{UI.WHITE}ldm run {p_path.name} --force-ssl{UI.COLOR_OFF}'.",
-                        f"{GITHUB_DOCS_URL}/INSTALLATION.md#fixing-ssl-trust-issues-mkcert",
+                        f"{GITHUB_DOCS_URL}/tutorials/quick_start.md#-fixing-ssl-trust-issues-mkcert",
                     )
 
                 if traefik_conf.exists():
@@ -1924,7 +1923,7 @@ class DoctorRunner:
                         )
                         self.add_hint(
                             f"[{p_path.name}] Regenerate Traefik routing by running '{UI.WHITE}ldm run {p_path.name} --force-ssl{UI.COLOR_OFF}'.",
-                            f"{GITHUB_DOCS_URL}/README.md#ssl-defaults-new-projects",
+                            f"{GITHUB_DOCS_URL}/reference/cli/core.md#ssl-defaults-new-projects",
                         )
                 else:
                     self.results.append(
@@ -1932,7 +1931,7 @@ class DoctorRunner:
                     )
                     self.add_hint(
                         f"[{p_path.name}] Regenerate Traefik routing by running '{UI.WHITE}ldm run {p_path.name} --force-ssl{UI.COLOR_OFF}'.",
-                        f"{GITHUB_DOCS_URL}/README.md#ssl-defaults-new-projects",
+                        f"{GITHUB_DOCS_URL}/reference/cli/core.md#ssl-defaults-new-projects",
                     )
 
             compose_file = p_path / "docker-compose.yml"
@@ -1975,7 +1974,7 @@ class DoctorRunner:
                         )
                         self.add_hint(
                             f"[{p_path.name}] Fix Traefik labels by running '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}'.",
-                            f"{GITHUB_DOCS_URL}/INSTALLATION.md#dns--subdomain-configuration",
+                            f"{GITHUB_DOCS_URL}/tutorials/quick_start.md#-dns--subdomain-configuration",
                         )
                     elif double_prefixed:
                         self.results.append(
@@ -1989,7 +1988,7 @@ class DoctorRunner:
                             UI.raw(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {dp}")
                         self.add_hint(
                             f"[{p_path.name}] Standardize Traefik labels by running '{UI.WHITE}ldm run {p_path.name}{UI.COLOR_OFF}'.",
-                            f"{GITHUB_DOCS_URL}/README.md#command-reference",
+                            f"{GITHUB_DOCS_URL}/reference/cli/core.md",
                         )
                     else:
                         self.results.append(
@@ -2050,7 +2049,7 @@ class DoctorRunner:
                     )
                     self.add_hint(
                         f"[{p_path.name}] Hostname resolves to an external IP. Point it to 127.0.0.1 in your local hosts file or run '{UI.WHITE}ldm doctor --fix-hosts{UI.COLOR_OFF}'.",
-                        f"{GITHUB_DOCS_URL}/INSTALLATION.md#dns--subdomain-configuration",
+                        f"{GITHUB_DOCS_URL}/tutorials/quick_start.md#-dns--subdomain-configuration",
                     )
                 else:
                     self.results.append(
@@ -2062,7 +2061,7 @@ class DoctorRunner:
                     )
                     self.add_hint(
                         f"[{p_path.name}] Add missing hostnames to your local hosts file or run '{UI.WHITE}ldm doctor --fix-hosts{UI.COLOR_OFF}'.",
-                        f"{GITHUB_DOCS_URL}/INSTALLATION.md#dns--subdomain-configuration",
+                        f"{GITHUB_DOCS_URL}/tutorials/quick_start.md#-dns--subdomain-configuration",
                     )
                     for d in unresolved:
                         UI.raw(f"  {UI.RED}×{UI.COLOR_OFF} {d}")
@@ -2129,7 +2128,7 @@ class DoctorRunner:
                     self.add_hint(
                         f"[{p_path.name}] Using Windows-mounted paths (/mnt/c) in WSL2 causes severe permission and performance issues with Liferay. "
                         f"Move your project to the native Linux filesystem (e.g. ~/repos/{p_path.name}).",
-                        f"{GITHUB_DOCS_URL}/INSTALLATION.md#linux--wsl-docker-permissions",
+                        f"{GITHUB_DOCS_URL}/tutorials/quick_start.md#-linux--wsl-docker-permissions",
                     )
                 elif platform.system().lower() == "darwin" and not is_remote_project:
                     # LDM-#1090/#1133: this check writes a token to a LOCAL
@@ -2172,7 +2171,7 @@ class DoctorRunner:
                             )
                             self.add_hint(
                                 f"[{p_path.name}] Ensure Docker has permission to share your home directory.",
-                                f"{GITHUB_DOCS_URL}/INSTALLATION.md#the-ghost-mount-issue",
+                                f"{GITHUB_DOCS_URL}/tutorials/quick_start.md#3-the-ghost-mount-issue",
                             )
                     finally:
                         if token_file.exists():
@@ -3236,7 +3235,7 @@ def _check_elasticsearch_watermarks(self, add_hint, docker_prefix=None):
                     explanation = decider.get("explanation", "")
                     add_hint(
                         f"Elasticsearch: {explanation}",
-                        f"{GITHUB_DOCS_URL}/TROUBLESHOOTING.md#disk-space-issues-elasticsearch-flood-stage",
+                        f"{GITHUB_DOCS_URL}/TROUBLESHOOTING.md#-disk-space-issues-elasticsearch-flood-stage",
                     )
                     add_hint(
                         f"Run '{UI.WHITE}ldm prune --seeds --samples{UI.COLOR_OFF}' to reclaim space."
@@ -3258,7 +3257,7 @@ def _check_elasticsearch_watermarks(self, add_hint, docker_prefix=None):
         if settings_raw and "index.blocks.read_only_allow_delete" in settings_raw:
             add_hint(
                 "Elasticsearch indices are in READ-ONLY mode due to flood-stage disk pressure.",
-                f"{GITHUB_DOCS_URL}/TROUBLESHOOTING.md#disk-space-issues-elasticsearch-flood-stage",
+                f"{GITHUB_DOCS_URL}/TROUBLESHOOTING.md#-disk-space-issues-elasticsearch-flood-stage",
             )
             return "Read-Only (Flood Stage)"
 
