@@ -2,8 +2,8 @@ import os
 from pathlib import Path
 
 # --- Constants & Configuration ---
-# LDM_MAGIC_VERSION: 2.26.13
-VERSION = "2.26.13"
+# LDM_MAGIC_VERSION: 2.26.14
+VERSION = "2.26.14"
 
 # Release commit v2.11.30
 
@@ -103,6 +103,27 @@ RELEASE_ANNOUNCEMENTS = {
     # LDM-#1663: a patch needs its OWN key, or the banner shows no
     # announcements for it (LDM-#2412); `release.py --promote` refuses a
     # stable X.Y.Z (Z > 0) without one.
+    "2.26.14": [
+        (
+            "Your edits to a shared .config are now kept",
+            "LDM no longer overwrites a project's edited copy of a common/ "
+            ".config on every run; it warns when a newer version was held "
+            "back. To have common/ always win, as before: "
+            "ldm defaults common_config_policy overwrite",
+        ),
+        (
+            "Linux: ~/.ldm/common settings now reach your projects",
+            "A workspace common/ under /home/ was treated as global and hid "
+            "~/.ldm/common/portal-ext.properties. Its keys now apply, and its "
+            "!important keys win over workspace values.",
+        ),
+        (
+            "Packages carry portal patches; a fixed container hostname",
+            "An .ldmp now ships portal-patches/ and import refuses the wrong "
+            "Liferay quarter. ldm run --container-hostname gives host-locked "
+            "Marketplace keys a hostname that survives recreation.",
+        ),
+    ],
     "2.26.13": [
         (
             "ldm package leaves your licences and credentials out",
