@@ -298,7 +298,7 @@ def test_sidecar_project_is_not_under_the_policy(env):
         "ElasticsearchConfiguration.config"
     )
     edited = CONN_BASELINE.read_text().replace('active=B"true"\n', "")
-    root, common, _dest = _connection_project(env, edited)
+    root, common, dest = _connection_project(env, edited)
     (common / es_cfg).write_text('operationMode="REMOTE"\n')
     (root / "osgi" / "configs" / es_cfg).write_text('operationMode="REMOTE"\n')
     before = _checksums(root)
@@ -306,8 +306,41 @@ def test_sidecar_project_is_not_under_the_policy(env):
     warnings = env.sync(root, [common], {"use_shared_search": "false"})
 
     assert not (root / "osgi" / "configs" / es_cfg).exists()
+    # LDM-#2458: the edited connection config goes too, despite the policy.
+    assert not dest.exists()
     assert warnings == []
     assert _checksums(root) == before
+
+
+def test_sidecar_project_loses_the_stripped_connection_config(env):
+    """LDM-#2458: common/ ships the connection config as `...-REMOTE.config`
+    but the project holds it suffix-stripped. A sidecar project must lose the
+    stripped file, or it keeps pointing Liferay at liferay-search-global."""
+    configs_of = {}
+    for n in (7, 8):
+        prefix = f"com.liferay.portal.search.elasticsearch{n}.configuration."
+        configs_of[n] = (
+            f"{prefix}ElasticsearchConnectionConfiguration-REMOTE.config",
+            f"{prefix}ElasticsearchConnectionConfiguration.config",
+            f"{prefix}ElasticsearchConfiguration.config",
+        )
+    root = env.make_project()
+    common = env.make_common()
+    configs = root / "osgi" / "configs"
+    for conn_src, conn, es_cfg in configs_of.values():
+        (common / conn_src).write_text(CONN_BASELINE.read_text())
+        (common / es_cfg).write_text('operationMode="REMOTE"\n')
+        (configs / conn).write_text(CONN_BASELINE.read_text())
+        (configs / es_cfg).write_text('operationMode="REMOTE"\n')
+
+    warnings = env.sync(root, [common], {"use_shared_search": "false"})
+
+    for _conn_src, conn, es_cfg in configs_of.values():
+        assert not (configs / conn).exists(), conn
+        assert not (configs / es_cfg).exists(), es_cfg
+    assert warnings == []
+    # The sidecar probe never asks Docker about the shared container.
+    env.run_cmd.assert_not_called()
 
 
 def test_connection_config_from_before_checksums_is_rewritten(env):
