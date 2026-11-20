@@ -332,8 +332,10 @@ DATA volume is never removed without an interactive Yes (LDM-#1267).
 **On a remote target** (`--node`, or a default set with `ldm target use`),
 "orphaned" can only mean "not registered on *this* machine", and on a shared
 node that includes every project started from another machine. So against a
-remote target `ldm system prune` skips the orphaned-container and
-orphaned-search-snapshot sweeps entirely, saying so, and `--all` no longer
+remote target `ldm system prune` skips the orphaned-container,
+orphaned-search-snapshot and stray helper-container sweeps entirely, saying
+so -- a helper another user is about to start looks exactly like a stray, and
+removing it would break their operation mid-flight. `--all` no longer
 answers the OSGi-state volume question -- it still asks interactively, and `-y`
 skips it. Image and build-cache pruning (`--images`) work on a node exactly as
 they do locally, so `ldm -y system prune --images --node <target>` is safe on
