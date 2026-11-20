@@ -669,7 +669,9 @@ bash verify_e2e_refactor.sh
 > unlicensed, LDM only *warns*, and the suite still reports success: exactly the
 > degraded-run-reported-as-pass the bundle exists to prevent, surviving in the
 > one half that could not travel. Copy your own key into `common/` before
-> running. The bundle's `MANIFEST.txt` says which case it is.
+> running. Even a bundle built locally, from a checkout that has a key, leaves
+> out every XML in `common/` that is a Liferay licence, whatever it is named
+> (LDM-#2443), and its `MANIFEST.txt` says so.
 
 ```powershell
 $LdmVer = (ldm version 2>$null).Trim()
@@ -1082,4 +1084,4 @@ table above as the CI budget** — the workflow prints its own timings from
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*
+*Last Updated: 2026-11-20* | *Last Reviewed: 2026-11-20*

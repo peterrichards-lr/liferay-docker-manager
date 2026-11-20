@@ -375,4 +375,4 @@ after asking, or straight away with `-y`.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*
+*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-20*

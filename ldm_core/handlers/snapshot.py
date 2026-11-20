@@ -12,6 +12,7 @@ from ldm_core.snapshot.archive import (
     ArchiveSnapshotService,
     describe_publisher_material,
     describe_shipped_portal_patches,
+    describe_shipped_scripts,
     write_redistributable_payload,
 )
 from ldm_core.snapshot.custom_containers import CustomContainersSnapshotService
@@ -986,6 +987,7 @@ class SnapshotService(BaseHandler):
 
         omitted = []
         shipped_patches = []
+        shipped_scripts = []
         try:
             with (
                 tempfile.TemporaryDirectory() as scratch,
@@ -1007,6 +1009,7 @@ class SnapshotService(BaseHandler):
                     shipped_patches = describe_shipped_portal_patches(
                         payload, meta.get("portal_patches")
                     )
+                    shipped_scripts = describe_shipped_scripts(payload)
                     tar.add(payload, arcname="files.tar.gz")
                     sha_copy = Path(scratch) / "files.tar.gz.sha256"
                     sha_copy.write_text(calculate_sha256(payload))
@@ -1030,6 +1033,22 @@ class SnapshotService(BaseHandler):
             )
             for line in shipped_patches:
                 UI.info(f"  - {line}")
+
+        # LDM-#2443: scripts/ ships and is mounted in the importer's container.
+        if shipped_scripts:
+            UI.info(
+                f"Scripts shipped in the package ({len(shipped_scripts)}), "
+                "mounted at /mnt/liferay/scripts in whoever imports it:"
+            )
+            for name, _flagged in shipped_scripts:
+                UI.info(f"  - {name}")
+            for name, flagged in shipped_scripts:
+                if flagged:
+                    UI.warning(
+                        f"{name} mentions a licence or routes. Check it does not "
+                        "write this installation's licence key or client-extension "
+                        "credentials into the importer's container."
+                    )
 
         # 5. Generate checksum
         sha = calculate_sha256(package_file)

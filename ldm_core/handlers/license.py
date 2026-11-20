@@ -1,3 +1,16 @@
+def is_licence_xml(content) -> bool:
+    """Whether XML `content` (str or bytes) is a Liferay licence.
+
+    The one gate every licence check uses: `_parse_license_xml` below,
+    `ldm package`'s filter (LDM-#2443) and the release verification bundle
+    (`scripts/build_verification_bundle.py`). Detection is by content, so a key
+    is found whatever it is named. This module imports nothing at module level
+    so that the bundle builder, which runs on a bare `python3`, can load it.
+    """
+    marker = b"<license" if isinstance(content, bytes) else "<license"
+    return marker in content.lower()
+
+
 class LicenseService:
     """Service for Liferay license detection and parsing."""
 
@@ -51,7 +64,7 @@ class LicenseService:
         """
         try:
             content = file_path.read_text()
-            if "<license" not in content.lower():
+            if not is_licence_xml(content):
                 return None
 
             import re

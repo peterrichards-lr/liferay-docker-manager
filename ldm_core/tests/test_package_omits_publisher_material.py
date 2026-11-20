@@ -40,6 +40,16 @@ PROJECT = {
     "data/document_library/0/doc.bin": b"doc",
     "routes/default/my-cx/my-cx.client-extension-config.properties": b"secret",
     "routes/default/dxp/com.liferay.lxc.dxp.domains": b"publisher.example",
+    # files/ is copied over /opt/liferay at container start, so each of these
+    # delivers its material exactly as its top-level counterpart does.
+    "files/deploy/my-dxp-key.xml": LICENCE,
+    "files/deploy/not-a-licence.xml": b"<beans/>",
+    "files/deploy/Liferay Search.lpkg": b"lpkg",
+    "files/osgi/modules/app-key.xml": LICENCE,
+    "files/osgi/marketplace/Digital Sales Room.lpkg": b"lpkg",
+    "files/data/license/registered.li": b"registered",
+    "scripts/setup.sh": b"echo hello\n",
+    "scripts/install-key.sh": b"cp /keys/license.xml /opt/liferay/deploy/\n",
 }
 
 PUBLISHER_ONLY = {
@@ -51,6 +61,15 @@ PUBLISHER_ONLY = {
     "routes/default/my-cx/my-cx.client-extension-config.properties",
     "routes/default/dxp/com.liferay.lxc.dxp.domains",
 }
+
+PUBLISHER_ONLY_UNDER_FILES = {
+    "files/deploy/my-dxp-key.xml",
+    "files/deploy/Liferay Search.lpkg",
+    "files/osgi/modules/app-key.xml",
+    "files/osgi/marketplace/Digital Sales Room.lpkg",
+    "files/data/license/registered.li",
+}
+PUBLISHER_ONLY |= PUBLISHER_ONLY_UNDER_FILES
 
 
 def _write_payload(path, files):
@@ -150,6 +169,64 @@ class ThePackageLeavesItOut(_Harness):
         self.assertIn("osgi/marketplace/Liferay Commerce.lpkg", shipped)
         self.assertNotIn("deploy/activation-key-dxp.xml", shipped)
         self.assertNotIn("data/license/registered.li", shipped)
+
+
+class TheFilesTreeIsFilteredLikeTheTopLevel(_Harness):
+    """LDM-#2443: `files/` is copied over `/opt/liferay` at container start,
+    so `files/deploy/`, `files/osgi/...` and `files/data/license/` deliver
+    licences and Marketplace products just as the top-level trees do."""
+
+    def test_no_licence_or_marketplace_product_under_files_is_shipped(self):
+        unpacked, _ = self.package()
+        shipped = _names(unpacked / "files.tar.gz")
+        self.assertFalse(shipped & PUBLISHER_ONLY_UNDER_FILES)
+        self.assertIn("files/deploy/not-a-licence.xml", shipped)
+        self.assertIn("files/portal-ext.properties", shipped)
+
+    def test_it_names_what_it_left_out_of_files(self):
+        _, printed = self.package()
+        self.assertIn("files/deploy/my-dxp-key.xml", printed)
+        self.assertIn("files/osgi/modules/app-key.xml", printed)
+        self.assertIn("files/data/license/registered.li", printed)
+        self.assertIn("files/osgi/marketplace/Digital Sales Room.lpkg", printed)
+
+    def test_include_marketplace_ships_the_products_under_files(self):
+        unpacked, _ = self.package(include_marketplace=True)
+        shipped = _names(unpacked / "files.tar.gz")
+        self.assertIn("files/deploy/Liferay Search.lpkg", shipped)
+        self.assertIn("files/osgi/marketplace/Digital Sales Room.lpkg", shipped)
+        self.assertNotIn("files/deploy/my-dxp-key.xml", shipped)
+        self.assertNotIn("files/data/license/registered.li", shipped)
+
+    def test_import_warns_about_an_older_package_with_files_material(self):
+        found = dict(find_publisher_material(self.payload))
+        self.assertEqual(found["files/deploy/my-dxp-key.xml"], "licence")
+        self.assertEqual(found["files/deploy/Liferay Search.lpkg"], "marketplace")
+        self.assertNotIn("files/deploy/not-a-licence.xml", found)
+
+
+class ShippedScriptsAreListed(_Harness):
+    """LDM-#2443: `scripts/` ships, mounted at /mnt/liferay/scripts in the
+    importer's container. It is listed, and a script mentioning a licence or
+    routes is flagged, but nothing is left out."""
+
+    def package_with_warnings(self):
+        with patch("ldm_core.ui.UI.warning") as warned:
+            unpacked, printed = self.package()
+        said = "\n".join(str(c.args[0]) for c in warned.call_args_list)
+        return unpacked, printed, said
+
+    def test_every_script_is_listed_and_still_shipped(self):
+        unpacked, printed, _ = self.package_with_warnings()
+        self.assertIn("scripts/setup.sh", printed)
+        self.assertIn("scripts/install-key.sh", printed)
+        shipped = _names(unpacked / "files.tar.gz")
+        self.assertIn("scripts/install-key.sh", shipped)
+
+    def test_a_script_mentioning_a_licence_is_flagged(self):
+        _, _, said = self.package_with_warnings()
+        self.assertIn("scripts/install-key.sh", said)
+        self.assertNotIn("scripts/setup.sh", said)
 
 
 class TheLocalSnapshotIsUntouched(_Harness):
