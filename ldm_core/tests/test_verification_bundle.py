@@ -42,6 +42,10 @@ def _load():
     return module
 
 
+# What a Liferay activation key looks like to the detector: its root element.
+_LICENCE = "<?xml version='1.0'?><license><owner>Verifier</owner></license>\n"
+
+
 def _fake_repo(
     root: Path,
     *,
@@ -69,7 +73,7 @@ def _fake_repo(
     if with_common:
         common = root / "common"
         common.mkdir(exist_ok=True)
-        (common / "activation-key-dxpdevelopment.xml").write_text("<key/>\n")
+        (common / "activation-key-dxpdevelopment.xml").write_text(_LICENCE)
         (common / "elasticsearch8.config").write_text("a=b\n")
     return root
 
@@ -101,11 +105,30 @@ class WhatItContains(BundleTestCase):
             "common/ is absent -- the bundle reproduces the hole it exists to close",
         )
 
-    def test_the_activation_key_travels_when_there_is_one(self):
-        """Only ever true locally -- see the honesty test below."""
+    def test_a_local_activation_key_never_travels(self):
+        """LDM-#2443: a developer's checkout has its key in `common/`, and
+        `collect()` walks the filesystem, not git. A locally built bundle
+        must not publish it."""
         names = self._names(self._build())
 
-        self.assertTrue(any("activation-key" in n for n in names))
+        self.assertFalse(any("activation-key" in n for n in names))
+        self.assertIn("common/elasticsearch8.config", names)
+
+    def test_a_licence_is_left_out_whatever_it_is_named(self):
+        """`.gitignore` covers `activation-key-*.xml` only; detection is by
+        content, as `ldm package` does it."""
+        (self.repo / "common" / "my-dxp-key.xml").write_text(_LICENCE)
+        (self.repo / "common" / "not-a-licence.xml").write_text("<beans/>\n")
+
+        archive = self._build()
+        names = self._names(archive)
+        with zipfile.ZipFile(archive) as bundle:
+            text = bundle.read("MANIFEST.txt").decode()
+
+        self.assertNotIn("common/my-dxp-key.xml", names)
+        self.assertIn("common/not-a-licence.xml", names)
+        self.assertNotIn("my-dxp-key.xml", text)
+        self.assertIn("NOT INCLUDED: the DXP activation key", text)
 
     def test_an_absent_activation_key_is_declared_not_glossed_over(self):
         """LDM-#1733: the manifest used to claim the key was in the bundle.

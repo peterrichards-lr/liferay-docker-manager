@@ -494,6 +494,17 @@ whoever imports the package. `ldm package` leaves it out and names each file:
   for its client extensions (LDM-#2446). The importer's Liferay writes its own
   when it starts.
 
+Each rule applies under `files/` as well. `files/` is copied over
+`/opt/liferay` when the container starts, so `files/deploy/`,
+`files/osgi/modules/`, `files/osgi/marketplace/` and `files/data/license/`
+deliver the same material and are filtered the same way, by content for licence
+XML and with the same `--include-marketplace` opt-in.
+
+`scripts/` does ship: it is mounted at `/mnt/liferay/scripts` in the importer's
+container. `ldm package` lists every script it ships, and warns about any whose
+content mentions a licence or routes, so you can check it does not write your
+key or client-extension credentials. Nothing is left out on that account.
+
 Only the package is filtered. A local snapshot keeps everything, so
 `ldm restore` on the same machine brings a licensed project back licensed.
 `ldm import` warns when a package made before v2.26.13 still contains any of
@@ -988,4 +999,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*
+*Last Updated: 2026-11-20* | *Last Reviewed: 2026-11-20*

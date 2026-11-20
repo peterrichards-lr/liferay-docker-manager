@@ -1,10 +1,12 @@
 import errno
 import json
 import os
+import re
 import tarfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from ldm_core.handlers.license import is_licence_xml
 from ldm_core.runtime.portal_patches import package_patch_set
 from ldm_core.runtime.portal_workarounds import is_ldm_bundle
 from ldm_core.ui import UI
@@ -202,7 +204,7 @@ _LICENCE_XML_DIRS = (PurePosixPath("deploy"), PurePosixPath("osgi/modules"))
 
 def _is_licence_xml(data: bytes) -> bool:
     """The gate LicenseService._parse_license_xml applies before parsing."""
-    return b"<license" in data.lower()
+    return is_licence_xml(data)
 
 
 def publisher_only_reason(tar, member, include_marketplace=False):  # noqa: PLR0911
@@ -215,8 +217,15 @@ def publisher_only_reason(tar, member, include_marketplace=False):  # noqa: PLR0
       and Marketplace activation keys (LDM-#2443).
     - `*.lpkg` in `deploy/` or `osgi/marketplace/`: licensed Marketplace
       products, unless the publisher opts in with --include-marketplace.
+
+    Each applies under `files/` too. The project's `files/` is mounted at
+    `/mnt/liferay/files` and copied over `/opt/liferay` when the container
+    starts, so `files/deploy/key.xml` delivers the key exactly as
+    `deploy/key.xml` does (LDM-#2443).
     """
     rel = PurePosixPath(member.name.lstrip("./"))
+    if rel.parts[:1] == ("files",):
+        rel = PurePosixPath(*rel.parts[1:])
     if not rel.parts:
         return None
     if rel.parts[0] == "routes":
@@ -285,6 +294,29 @@ def describe_publisher_material(found):
         else:
             lines.append(f"{labels[reason]}: {', '.join(names)}")
     return lines
+
+
+# LDM-#2443: `scripts/` ships, deliberately -- it is part of how the project
+# behaves -- but it is mounted at `/mnt/liferay/scripts` in whoever imports the
+# package, so a script that writes a licence or routes would hand over what the
+# filter above leaves out. `ldm package` names every script and flags those.
+_SCRIPT_CONCERN = re.compile(rb"licen[cs]e|routes", re.IGNORECASE)
+
+
+def describe_shipped_scripts(payload):
+    """Every file under `scripts/` in files.tar.gz `payload`, as
+    (name, flagged) pairs. `flagged` is True when its content mentions a
+    licence or routes. Informational: nothing is left out."""
+    shipped = []
+    with tarfile.open(payload, "r:gz") as tar:
+        for member in tar.getmembers():
+            rel = PurePosixPath(member.name.lstrip("./"))
+            if not member.isfile() or rel.parts[:1] != ("scripts",):
+                continue
+            handle = tar.extractfile(member)
+            data = handle.read() if handle is not None else b""
+            shipped.append((rel.as_posix(), bool(_SCRIPT_CONCERN.search(data))))
+    return sorted(shipped)
 
 
 def describe_shipped_portal_patches(payload, recorded):

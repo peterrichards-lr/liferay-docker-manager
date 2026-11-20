@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import sys
 import zipfile
 from pathlib import Path
@@ -87,6 +88,24 @@ OPTIONAL_FILES = ("scripts/fragment_override_harness.py",)
 BUNDLE_NAME = "verification-bundle.zip"
 
 
+def _licence_detector():
+    """`is_licence_xml` from `ldm_core/handlers/license.py` -- the detector
+    `ldm package` filters with (LDM-#2443). Loaded by path because this runs on
+    a bare `python3` in the release job, where `ldm_core`'s dependencies are not
+    installed; that module imports nothing at module level."""
+    path = REPO_ROOT / "ldm_core" / "handlers" / "license.py"
+    spec = importlib.util.spec_from_file_location("_ldm_license", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load the licence detector from {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.is_licence_xml
+
+
+def _is_licence(path: Path) -> bool:
+    return path.suffix.lower() == ".xml" and _licence_detector()(path.read_bytes())
+
+
 def collect(root: Path) -> list[tuple[Path, str]]:
     """Every (source, archive-name) pair the bundle carries.
 
@@ -107,7 +126,14 @@ def collect(root: Path) -> list[tuple[Path, str]]:
         if not directory.is_dir():
             missing.append(f"{rel}/")
             continue
-        found = [p for p in sorted(directory.rglob("*")) if p.is_file()]
+        # LDM-#2443: a licence is never published, whatever it is named. The
+        # `.gitignore` pattern covers `activation-key-*.xml` only, and a local
+        # build walks the filesystem rather than git.
+        found = [
+            p
+            for p in sorted(directory.rglob("*"))
+            if p.is_file() and not _is_licence(p)
+        ]
         if not found:
             missing.append(f"{rel}/ (present but empty)")
             continue
@@ -152,22 +178,18 @@ def manifest(tag: str, members: list[tuple[Path, str]]) -> str:
         "",
     ]
     # LDM-#1733: the manifest used to assert that the activation key travelled
-    # in this bundle. It cannot: `.gitignore` excludes `common/activation-key-*.xml`,
-    # correctly -- it is licensed and must not be published -- so no CI
-    # checkout has one to package. Saying otherwise told a verifier the
-    # licensed half was covered when it was not, which is the same
-    # reported-better-than-reality failure the bundle exists to stop.
-    if any(arc.startswith("common/activation-key-") for _src, arc in members):
-        lines.append("The DXP activation key is included.")
-    else:
-        lines += [
-            "NOT INCLUDED: the DXP activation key. `common/activation-key-*.xml`",
-            "is gitignored -- it is licensed and cannot be published -- so no",
-            "release bundle can carry one. Liferay will run unlicensed and LDM",
-            "will only warn. Copy your own key into `common/` before running:",
-            "",
-            "    cp /path/to/activation-key-*.xml ./common/",
-        ]
+    # in this bundle. Saying so told a verifier the licensed half was covered
+    # when it was not. Since LDM-#2443 `collect()` leaves out every licence XML
+    # in `common/`, detected by content, so no bundle -- CI or local -- carries
+    # one, and the manifest says so unconditionally.
+    lines += [
+        "NOT INCLUDED: the DXP activation key. Licence files are never",
+        "published: the bundle leaves out any XML in `common/` that is a",
+        "Liferay licence, whatever it is named. Liferay will run unlicensed and",
+        "LDM will only warn. Copy your own key into `common/` before running:",
+        "",
+        "    cp /path/to/activation-key-*.xml ./common/",
+    ]
     lines += [
         "",
         "Contents:",
