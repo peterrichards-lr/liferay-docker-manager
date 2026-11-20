@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.15] - 2026-11-20
+
+### Fixed
+
+- **`ldm system prune` no longer removes other people's containers on a shared node** (LDM-#2459). On a remote target it judged "orphans" against this machine's project list, so every project started from another machine looked orphaned. `-y` or `--all` then force-removed its containers and deleted its search snapshots. On a remote target (`--node`, or a default set with `ldm target use`), the orphaned-container, search-snapshot and stray-helper sweeps are now skipped with a warning, and `--all` no longer agrees to removing OSGi-state volumes there. `ldm -y system prune --images --node <target>` is safe on a shared node. Local behaviour is unchanged.
+- **`ldm quickstart` works on a fresh machine** (LDM-#2471). v2.26.14 provisioned shared search before the `liferay-net` Docker network existed, so the first quickstart failed with exit 125. Shared search now creates the network itself.
+- **A package no longer carries licences placed under `files/`** (LDM-#2443). `files/` is copied over `/opt/liferay` when the container starts, so these files were delivered just like their top-level counterparts: keys in `files/deploy/` or `files/osgi/modules/`, `files/data/license/`, and `.lpkg` products in `files/deploy/` or `files/osgi/marketplace/`. They are now left out and listed the same way. `ldm package` also lists the `scripts/` it ships, which run in the importer's container, and warns about any that mention a licence or routes. The release verification bundle leaves out any licence in `common/`, whatever its name.
+- **A sidecar-search project loses the shared-search connection config** (LDM-#2458). The delete looked for the common file's `-REMOTE` name, not the project's copy, so `ElasticsearchConnectionConfiguration.config` stayed and kept pointing at `liferay-search-global`.
+- **`ldm doctor`'s help links work** (LDM-#2476). 34 links pointed at pages or headings that no longer exist; a test now checks every link LDM prints. `docs/how-to/e2e_testing.md` documented flags that do not exist and a teardown that destroys every project; its commands are corrected.
+
 ## [v2.26.15-pre.1] - 2026-11-20
 
 ### Fixed
