@@ -1129,15 +1129,19 @@ class ConfigService:
                     if match.name == "portal-log4j-ext.xml":
                         continue
 
+                    # Common's `-REMOTE` files land with the suffix stripped, so
+                    # every delete below targets the destination name, not
+                    # match.name (LDM-#2458).
+                    dest_name = match.name.replace("-REMOTE", "")
+                    dest = target / dest_name
+
                     if "elasticsearch" in match.name.lower():
                         if not search_running:
-                            dest = target / match.name
                             if dest.exists():
                                 dest.unlink()
                             continue
 
                         if "-REMOTE" not in match.name and "Connection" in match.name:
-                            dest = target / match.name
                             if dest.exists():
                                 dest.unlink()
                             continue
@@ -1153,13 +1157,9 @@ class ConfigService:
                                 should_copy = True
 
                         if not should_copy:
-                            dest = target / match.name
                             if dest.exists():
                                 dest.unlink()
                             continue
-
-                    dest_name = match.name.replace("-REMOTE", "")
-                    dest = target / dest_name
 
                     sidecar_conflicts = [
                         "com.liferay.portal.search.elasticsearch7.configuration.ElasticsearchConfiguration.config",
