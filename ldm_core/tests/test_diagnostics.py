@@ -880,9 +880,8 @@ class TestDiagnostics(unittest.TestCase):
         )
         self.manager.target = "node-a"
         self.manager.args.images = True
+        # LDM-#2459: no orphaned-container queries on a remote target.
         mock_run.side_effect = [
-            "",  # orphaned containers query -> none found
-            "",  # fallback all containers query -> none found
             "",  # LDM-#1266: docker volume prune (now captured to report honestly)
             "",  # LDM-#1266: docker volume ls --filter label= -> no LDM volumes
             "Total reclaimed space: 1.5GB",  # docker image prune
@@ -2335,6 +2334,185 @@ class TestPruneRespectsProjectUuid(unittest.TestCase):
         """The safeguard must not blind prune to real orphans."""
         out = self._run("gone-project", "some-other-uuid", self.UUID)
         self.assertIn("Found 1 orphaned containers", out)
+
+
+class TestRemotePruneSparesOtherMachinesProjects(unittest.TestCase):
+    """LDM-#2459: `ldm -y system prune --node <t>` judged ownership from THIS
+    machine's registry, so on a shared node every project started from another
+    machine looked orphaned -- and `-y` / `--all` force-removed its containers
+    and deleted its search snapshots. A remote target must never sweep those
+    on that evidence, while image and build-cache pruning keep working.
+    """
+
+    FOREIGN = "other-user-liferay"
+    FOREIGN_DB = "other-project-db"
+    FOREIGN_SNAPSHOT = "other-project-20261120-101010"
+    SEARCH_ALL = "_snapshot/liferay_backup/_all"
+
+    def setUp(self):
+        import os
+        import tempfile
+
+        tmp = tempfile.mkdtemp(dir=TEST_TMP_ROOT)
+        # Seeds, samples and certs resolve through LDM_HOME, .tmp files through
+        # SCRIPT_DIR. Neither may reach the developer's real state.
+        env = patch.dict(os.environ, {"LDM_HOME": tmp}, clear=False)
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop("LDM_DOCKER_TUNNEL", None)
+        script_dir = patch("ldm_core.diagnostics.prune.SCRIPT_DIR", Path(tmp))
+        script_dir.start()
+        self.addCleanup(script_dir.stop)
+
+    @staticmethod
+    def _handler(*, target, prune_all, images=True):
+        handler = MagicMock()
+        handler.manager.dry_run = False
+        handler.manager.non_interactive = True  # -y
+        handler.manager.verbose = False
+        handler.manager.args = MagicMock(
+            all=prune_all,
+            clean_hosts=False,
+            seeds=False,
+            samples=False,
+            images=images,
+            legacy_volumes=False,
+        )
+        handler.manager.target = "t" if target else None
+        # The local registry knows only this machine's own project.
+        handler.manager.find_dxp_roots.return_value = [{"path": Path("/tmp/mine")}]
+        handler.manager.read_meta.return_value = {
+            "container_name": "mine",
+            "uuid": "local-uuid",
+        }
+        handler.manager.run_command.return_value = ""
+        handler.manager._list_hosts_entries.return_value = []
+        return handler
+
+    @staticmethod
+    def _node(target):
+        from ldm_core.config import TargetNode
+
+        if target:
+            return TargetNode(name="t", host="10.20.30.40")
+        return TargetNode(name="local", host="localhost", is_default=True)
+
+    def _run(self, *, target, prune_all=False):
+        from ldm_core.diagnostics import prune as prune_mod
+
+        handler = self._handler(target=target, prune_all=prune_all)
+        commands = []
+
+        def fake_run(cmd, *_a, **_k):
+            commands.append([str(c) for c in cmd])
+            joined = " ".join(str(c) for c in cmd)
+            if "ps" in cmd and "label=com.liferay.ldm.project" in joined:
+                return f"{self.FOREIGN}|other-project|foreign-uuid"
+            if "ps" in cmd:
+                return f"{self.FOREIGN}\n{self.FOREIGN_DB}"
+            return ""
+
+        def fake_exec(_name, cmd, *_a, **_k):
+            if any(self.SEARCH_ALL in str(c) for c in cmd):
+                return json.dumps({"snapshots": [{"snapshot": self.FOREIGN_SNAPSHOT}]})
+            return ""
+
+        with (
+            patch(
+                "ldm_core.docker_service.get_active_target",
+                return_value=self._node(target),
+            ),
+            patch.object(prune_mod, "run_command", side_effect=fake_run),
+            patch("ldm_core.docker_service.run_command", return_value=""),
+            patch(
+                "ldm_core.docker_service.DockerService.is_running", return_value=True
+            ),
+            patch(
+                "ldm_core.docker_service.DockerService.exec", side_effect=fake_exec
+            ) as mock_exec,
+            patch("ldm_core.docker_service.DockerService.rm") as mock_rm,
+            patch.object(prune_mod, "_orphaned_ldm_volumes", return_value=[]),
+            patch("builtins.print"),
+            patch.object(prune_mod.UI, "detail"),
+            patch.object(prune_mod.UI, "raw"),
+            patch.object(prune_mod.UI, "success"),
+            patch.object(prune_mod.UI, "heading"),
+            patch.object(prune_mod.UI, "warning"),
+            patch.object(prune_mod.UI, "info"),
+        ):
+            prune_mod.run_prune(handler)
+
+        snapshot_deletes = [
+            [str(x) for x in c.args[1]]
+            for c in mock_exec.call_args_list
+            if "DELETE" in [str(x) for x in c.args[1]]
+        ]
+        return mock_rm, snapshot_deletes, commands
+
+    def _assert_images_still_pruned(self, commands):
+        self.assertIn(["docker", "--context", "t", "image", "prune", "-af"], commands)
+        self.assertIn(["docker", "--context", "t", "builder", "prune", "-af"], commands)
+
+    def test_yes_on_a_remote_target_removes_no_foreign_container(self):
+        mock_rm, _deletes, commands = self._run(target=True)
+        self.assertEqual(mock_rm.call_args_list, [])
+        self._assert_images_still_pruned(commands)
+
+    def test_all_on_a_remote_target_removes_no_foreign_container(self):
+        mock_rm, _deletes, commands = self._run(target=True, prune_all=True)
+        self.assertEqual(mock_rm.call_args_list, [])
+        self._assert_images_still_pruned(commands)
+
+    def test_yes_on_a_remote_target_deletes_no_foreign_snapshot(self):
+        _rm, deletes, _commands = self._run(target=True)
+        self.assertEqual(deletes, [])
+
+    def test_all_on_a_remote_target_deletes_no_foreign_snapshot(self):
+        _rm, deletes, _commands = self._run(target=True, prune_all=True)
+        self.assertEqual(deletes, [])
+
+    def test_local_orphans_are_still_removed(self):
+        """The guard must not blind local prune to genuine orphans."""
+        mock_rm, deletes, commands = self._run(target=False)
+        removed = [c.args[0] for c in mock_rm.call_args_list]
+        self.assertIn(self.FOREIGN, removed)
+        self.assertIn(self.FOREIGN_DB, removed)
+        self.assertTrue(
+            any(self.FOREIGN_SNAPSHOT in " ".join(d) for d in deletes),
+            f"a local orphan snapshot should still be deleted, got {deletes}",
+        )
+        self.assertIn(["docker", "image", "prune", "-af"], commands)
+
+    def _volume_consent(self, *, target):
+        from ldm_core.diagnostics import prune as prune_mod
+
+        handler = self._handler(target=target, prune_all=True, images=False)
+        orphan_state = [("other-project-osgi-state", "other-project", "state")]
+        with (
+            patch(
+                "ldm_core.docker_service.get_active_target",
+                return_value=self._node(target),
+            ),
+            patch.object(prune_mod, "run_command", return_value=""),
+            patch("ldm_core.docker_service.run_command", return_value=""),
+            patch.object(prune_mod, "_orphaned_ldm_volumes", return_value=orphan_state),
+            patch.object(prune_mod, "_remove_orphaned_volumes") as mock_remove,
+            patch("builtins.print"),
+            patch.object(prune_mod.UI, "detail"),
+            patch.object(prune_mod.UI, "success"),
+            patch.object(prune_mod.UI, "heading"),
+            patch.object(prune_mod.UI, "warning"),
+            patch.object(prune_mod.UI, "info"),
+        ):
+            prune_mod.run_prune(handler)
+        self.assertTrue(mock_remove.called)
+        return mock_remove.call_args.args[4]
+
+    def test_all_on_a_remote_target_does_not_imply_state_volume_consent(self):
+        self.assertFalse(self._volume_consent(target=True))
+
+    def test_all_locally_still_implies_state_volume_consent(self):
+        self.assertTrue(self._volume_consent(target=False))
 
 
 class TestInfoReportsTheProjectId(unittest.TestCase):

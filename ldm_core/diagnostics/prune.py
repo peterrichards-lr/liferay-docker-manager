@@ -404,99 +404,126 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
 
     # 1. Orphaned Containers
     # LDM-381: We look for containers with our project label as well as *-db containers
-    containers_raw = run_command(
-        [
-            *docker_prefix,
-            "ps",
-            "-a",
-            "--filter",
-            "label=com.liferay.ldm.project",
-            "--format",
-            '{{.Names}}|{{.Label "com.liferay.ldm.project"}}'
-            '|{{.Label "com.liferay.ldm.project.uuid"}}',
-        ],
-        check=False,
-    )
-
-    orphans = []
-    seen_orphan_names = set()
-    if containers_raw:
-        for line in containers_raw.splitlines():
-            line = line.strip()
-            if not line or "|" not in line:
-                continue
-
-            # Docker names can sometimes have a leading slash
-            parts = line.split("|")
-            name, project = parts[0], parts[1]
-            # Absent on resources created before LDM-#1395.
-            labelled_uuid = parts[2] if len(parts) > 2 else ""
-            name = name.lstrip("/")
-
-            if labelled_uuid and labelled_uuid in active_uuids:
-                # Owned by a live project, even if it has since been renamed.
-                seen_orphan_names.add(name)
-                continue
-
-            if not project or project not in active_projects:
-                if name not in seen_orphan_names:
-                    orphans.append(name)
-                    seen_orphan_names.add(name)
-
-    # Fallback scan: query all containers to find un-labeled *-db or tmp* database containers
-    all_containers_raw = run_command(
-        [
-            *docker_prefix,
-            "ps",
-            "-a",
-            "--format",
-            "{{.Names}}",
-        ],
-        check=False,
-    )
-    if all_containers_raw:
-        for name in all_containers_raw.splitlines():
-            name = name.strip().lstrip("/")
-            if not name or name in seen_orphan_names:
-                continue
-
-            # Match LDM database naming pattern: <project>-db or tmp*
-            if name.endswith("-db"):
-                project_name = name[:-3]
-                if project_name not in active_projects:
-                    orphans.append(name)
-                    seen_orphan_names.add(name)
-            elif name.startswith("tmp") and ("-db" in name or name.startswith("tmp_")):
-                orphans.append(name)
-                seen_orphan_names.add(name)
-
-    if orphans:
-        UI.detail(f"Found {len(orphans)} orphaned containers from deleted projects.")
-        if UI.INFO_MODE or UI.VERBOSE:
-            for o in orphans:
-                print(f"  - {o}")
-        if is_dry_run:
-            UI.detail(
-                f"{UI.BYELLOW}[Dry Run] Would remove orphaned containers: {', '.join(orphans)}{UI.COLOR_OFF}"
-            )
-        elif (
-            prune_all
-            or handler.manager.non_interactive
-            or UI.confirm("Remove them? (y/n/q)", "N")
-        ):
-            from ldm_core.docker_service import DockerService
-
-            for o in orphans:
-                DockerService.rm(o, force=True, target_name=target_name)
-            UI.success(f"{len(orphans)} orphaned containers removed.")
+    # LDM-#2459: on a remote target the sweep below cannot tell an orphan from
+    # a project started on ANOTHER machine -- ownership is judged from this
+    # machine's registry, and every other user's project is absent from it. On
+    # a shared node `-y` / `--all` then force-removed their running containers.
+    # LDM's labels (com.liferay.ldm.project / .project.uuid) record no
+    # originating machine, so there is nothing safe to sweep by; skip it. Image and build-cache pruning below
+    # remain available for a node (LDM-#2145 relies on them).
+    is_remote_target = docker_prefix != ["docker"]
+    if is_remote_target:
+        UI.warning(
+            "Skipped the orphaned-container sweep on a remote target: projects "
+            "started from other machines cannot be told apart from orphans. "
+            "Remove containers on the node explicitly with 'docker rm'."
+        )
     else:
-        UI.detail("No orphaned containers found.")
+        containers_raw = run_command(
+            [
+                *docker_prefix,
+                "ps",
+                "-a",
+                "--filter",
+                "label=com.liferay.ldm.project",
+                "--format",
+                '{{.Names}}|{{.Label "com.liferay.ldm.project"}}'
+                '|{{.Label "com.liferay.ldm.project.uuid"}}',
+            ],
+            check=False,
+        )
+
+        orphans = []
+        seen_orphan_names = set()
+        if containers_raw:
+            for line in containers_raw.splitlines():
+                line = line.strip()
+                if not line or "|" not in line:
+                    continue
+
+                # Docker names can sometimes have a leading slash
+                parts = line.split("|")
+                name, project = parts[0], parts[1]
+                # Absent on resources created before LDM-#1395.
+                labelled_uuid = parts[2] if len(parts) > 2 else ""
+                name = name.lstrip("/")
+
+                if labelled_uuid and labelled_uuid in active_uuids:
+                    # Owned by a live project, even if it has since been renamed.
+                    seen_orphan_names.add(name)
+                    continue
+
+                if not project or project not in active_projects:
+                    if name not in seen_orphan_names:
+                        orphans.append(name)
+                        seen_orphan_names.add(name)
+
+        # Fallback scan: query all containers to find un-labeled *-db or tmp* database containers
+        all_containers_raw = run_command(
+            [
+                *docker_prefix,
+                "ps",
+                "-a",
+                "--format",
+                "{{.Names}}",
+            ],
+            check=False,
+        )
+        if all_containers_raw:
+            for name in all_containers_raw.splitlines():
+                name = name.strip().lstrip("/")
+                if not name or name in seen_orphan_names:
+                    continue
+
+                # Match LDM database naming pattern: <project>-db or tmp*
+                if name.endswith("-db"):
+                    project_name = name[:-3]
+                    if project_name not in active_projects:
+                        orphans.append(name)
+                        seen_orphan_names.add(name)
+                elif name.startswith("tmp") and (
+                    "-db" in name or name.startswith("tmp_")
+                ):
+                    orphans.append(name)
+                    seen_orphan_names.add(name)
+
+        if orphans:
+            UI.detail(
+                f"Found {len(orphans)} orphaned containers from deleted projects."
+            )
+            if UI.INFO_MODE or UI.VERBOSE:
+                for o in orphans:
+                    print(f"  - {o}")
+            if is_dry_run:
+                UI.detail(
+                    f"{UI.BYELLOW}[Dry Run] Would remove orphaned containers: {', '.join(orphans)}{UI.COLOR_OFF}"
+                )
+            elif (
+                prune_all
+                or handler.manager.non_interactive
+                or UI.confirm("Remove them? (y/n/q)", "N")
+            ):
+                from ldm_core.docker_service import DockerService
+
+                for o in orphans:
+                    DockerService.rm(o, force=True, target_name=target_name)
+                UI.success(f"{len(orphans)} orphaned containers removed.")
+        else:
+            UI.detail("No orphaned containers found.")
 
     # 2. Orphaned Search Snapshots
     from ldm_core.docker_service import DockerService
 
     search_name = "liferay-search-global"
-    if DockerService.is_running(search_name, target_name=target_name):
+    if is_remote_target:
+        # LDM-#2459: snapshots are judged against this machine's registry too,
+        # so on a shared node every other machine's snapshot looks orphaned.
+        UI.warning(
+            "Skipped the orphaned search-snapshot sweep on a remote target: "
+            "snapshots of projects started from other machines cannot be told "
+            "apart from orphans."
+        )
+    elif DockerService.is_running(search_name, target_name=target_name):
         snaps_raw = DockerService.exec(
             search_name,
             [
@@ -744,8 +771,15 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
                     f"(project '{project}', role {role}).{UI.COLOR_OFF}"
                 )
         else:
+            # LDM-#2459: on a remote target `--all` must not imply consent
+            # either -- "no longer exists" there means only "not registered on
+            # this machine". Removal still works after an interactive confirm.
             _remove_orphaned_volumes(
-                handler, docker_prefix, disposable, destructive, prune_all
+                handler,
+                docker_prefix,
+                disposable,
+                destructive,
+                prune_all and not is_remote_target,
             )
     elif is_dry_run:
         UI.detail(f"{UI.BYELLOW}[Dry Run] No orphaned LDM volumes found.{UI.COLOR_OFF}")

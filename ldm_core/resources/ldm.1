@@ -215,7 +215,7 @@ value is applied when the container is recreated: \fBldm stop\fR, then
 Verify host health, Docker resources, and project dependencies. Use \fB--ssl\fR to check certificate routing, and \fB--fix\fR to automatically apply suggested solutions. (legacy: \fBldm doctor\fR)
 .TP
 \fBldm system prune\fR
-Reclaim disk space by removing orphaned containers, search snapshots, and caches. (legacy: \fBldm prune\fR)
+Reclaim disk space by removing orphaned containers, search snapshots, and caches. Against a remote target (\fB--node\fR) the orphaned-container and search-snapshot sweeps are skipped, because projects started from other machines cannot be told apart from orphans; image and build-cache pruning still run. (legacy: \fBldm prune\fR)
 .TP
 \fBldm system upgrade\fR [\fB--pre-release\fR]
 Automatically update \fBldm\fR to the latest stable or pre-release version. (legacy: \fBldm upgrade\fR)
@@ -421,4 +421,4 @@ Peter Richards <peter.richards@liferay.com>
 
 .SH SEE ALSO
 .B docker(1), docker-compose(1)
-.\" Last Updated: 2026-11-19 | Last Reviewed: 2026-11-19
+.\" Last Updated: 2026-11-20 | Last Reviewed: 2026-11-20
