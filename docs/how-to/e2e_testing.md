@@ -21,19 +21,25 @@ When developing Client Extensions locally (e.g., Liferay AI Commerce Accelerator
    ```
 
 2. **Wait for Health**
-   LDM will automatically block and tail logs until Liferay and its dependencies report as healthy.
+   Block until Liferay is ready and the workspace's modules and client extensions are deployed:
+
+   ```bash
+   ldm wait -y --wait-for-deployables
+   ```
 
 3. **Run Tests**
    You can now execute your E2E test suite (e.g., Playwright, Cypress, or pytest).
    - Liferay is accessible at `http://localhost:8080`.
-   - Microservices are accessible via their respective Traefik subdomains (e.g., `https://my-microservice.lfr.cloud` if you are using `--share` or using `--ssl`).
+   - Microservices are accessible via their respective Traefik subdomains (e.g., `https://my-microservice.lfr.cloud` when the project runs with `--ssl`).
 
 4. **Teardown**
-   Once tests complete, safely destroy the environment to reclaim resources.
+   Once tests complete, stop the project and remove its containers and volumes, so the next run starts from a clean state.
 
    ```bash
-   ldm nuke --force
+   ldm down -V -y
    ```
+
+   Do not use `ldm nuke` on a workstation: it tears down **every** LDM project, the global infrastructure and shared database volumes, LDM's hosts entries, certificates and `~/.ldmrc`. It is only appropriate on a throwaway CI runner.
 
 ## CI/CD Pipeline Integration
 
@@ -65,12 +71,15 @@ jobs:
       - name: Install LDM
         run: |
           pipx install liferay-docker-manager
-          ldm dev-setup -y
 
       - name: Link Workspace & Start Environment
         run: |
           # --no-monitor returns once the project is up instead of starting the file watcher
           ldm link . --no-monitor --build -y
+
+      - name: Wait for Liferay & Deployments
+        run: |
+          ldm wait -y --wait-for-deployables
 
       - name: Run Playwright Tests
         run: |
@@ -80,6 +89,7 @@ jobs:
       - name: Teardown Environment
         if: always()
         run: |
+          # --force skips nuke's confirmation prompt; acceptable only on a throwaway runner
           ldm nuke --force -y
 ```
 
@@ -88,20 +98,23 @@ jobs:
 If your tests require a specific database state (e.g., test users, pre-configured instances), you should create an `.ldmp` package locally containing your desired database state.
 
 1. **Create the Package Locally**:
+   A package is a fresh snapshot of the project -- code elements, database and volumes -- written as an `.ldmp` file plus its `.ldmp.sha256` checksum. Run it in the workspace with the project in the state your tests need:
 
    ```bash
-   ldm package --export-database --name "e2e-seed"
+   ldm package -y -o ./dist
    ```
 
+   Publish the `.ldmp` somewhere CI can reach it, such as a GitHub Release.
+
 2. **Hydrate in CI**:
-   You can then pass the package URL or file path during import.
+   In place of the `ldm link` step, import the package by URL or file path. `ldm import` creates the project from the package, restores its database and starts it:
 
    ```bash
-   ldm link . --no-monitor --build -y
+   ldm import "https://github.com/your-org/repo/releases/download/v1.0/e2e-seed.ldmp" -y
    ```
 
 This completely eliminates the need for expensive API-driven setup scripts before running your tests.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*
+*Last Updated: 2026-11-20* | *Last Reviewed: 2026-11-20*
