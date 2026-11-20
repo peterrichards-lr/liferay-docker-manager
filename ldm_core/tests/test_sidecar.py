@@ -247,6 +247,7 @@ class TestSidecarImplementation(unittest.TestCase):
             # 12. repo registration check
 
             mock_run.side_effect = [
+                "liferay-net",  # network ls: already present (LDM-#2471)
                 "",  # exists check (ps)
                 "",  # docker run
                 '{"cluster_name": "liferay-cluster"}',  # health check (curl)
@@ -277,6 +278,7 @@ class TestSidecarImplementation(unittest.TestCase):
             patch("ldm_core.utils.reclaim_volume_permissions"),
         ):
             mock_run.side_effect = [
+                "liferay-net",  # network ls: already present (LDM-#2471)
                 "",  # exists
                 "",  # run
                 '{"cluster_name": "liferay-cluster"}',  # health

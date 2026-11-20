@@ -418,6 +418,41 @@ class TestInfraService(unittest.TestCase):
     @patch("ldm_core.utils.reclaim_volume_permissions")
     @patch("ldm_core.ui.UI.info")
     @patch("ldm_core.ui.UI.detail")
+    def test_setup_global_search_creates_liferay_net_before_the_container(
+        self, _mock_detail, _mock_info, _mock_reclaim, _mock_home, _mock_exists
+    ):
+        """LDM-#2471: a fresh machine has no liferay-net, and the restore path
+        calls setup_global_search without setup_infrastructure, so `docker
+        run --network liferay-net` failed with exit 125."""
+        self.manager.defaults.get.side_effect = lambda _key, default=None: default
+
+        def fake_run(cmd, *_a, **_k):
+            if "network" in cmd and "ls" in cmd:
+                return "bridge\nhost\nnone"
+            return '{"cluster_name": "liferay-cluster"}'
+
+        with (
+            patch.object(self.manager, "run_command", side_effect=fake_run) as mock_run,
+            patch.object(self.manager, "get_container_status", return_value="running"),
+        ):
+            self.infra.setup_global_search(force=True)
+
+        cmds = [c[0][0] for c in mock_run.call_args_list]
+        create_at = next(
+            i
+            for i, c in enumerate(cmds)
+            if c[-3:] == ["network", "create", "liferay-net"]
+        )
+        run_at = next(
+            i for i, c in enumerate(cmds) if "run" in c and "liferay-search-global" in c
+        )
+        self.assertLess(create_at, run_at)
+
+    @patch("ldm_core.docker_service.DockerService.exists", return_value=False)
+    @patch("ldm_core.handlers.infra.get_actual_home", return_value=Path("/tmp"))
+    @patch("ldm_core.utils.reclaim_volume_permissions")
+    @patch("ldm_core.ui.UI.info")
+    @patch("ldm_core.ui.UI.detail")
     def test_setup_global_search_overrides(
         self, _mock_detail, _mock_info, _mock_reclaim, _mock_home, _mock_exists
     ):
