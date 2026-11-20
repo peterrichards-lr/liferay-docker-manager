@@ -1614,6 +1614,11 @@ tls:
                         f"'{active_target.name}' with this fixed, or set up the "
                         "container manually on that node first."
                     )
+            # LDM-#2471: the container joins liferay-net, which only
+            # setup_infrastructure used to create. The restore path (LDM-#2434)
+            # calls this directly, so on a fresh machine `docker run` failed
+            # with "network liferay-net not found" (exit 125).
+            self._ensure_network(target_name)
             UI.detail("Initializing Global Search (ES8) container...")
             home = get_actual_home()
             es_data = (home / ".ldm" / "infra" / "search" / "data").resolve()
