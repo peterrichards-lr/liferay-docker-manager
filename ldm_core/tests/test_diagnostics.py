@@ -2397,10 +2397,11 @@ class TestRemotePruneSparesOtherMachinesProjects(unittest.TestCase):
             return TargetNode(name="t", host="10.20.30.40")
         return TargetNode(name="local", host="localhost", is_default=True)
 
-    def _run(self, *, target, prune_all=False):
+    def _run(self, *, target, prune_all=False, handler=None):
         from ldm_core.diagnostics import prune as prune_mod
 
-        handler = self._handler(target=target, prune_all=prune_all)
+        if handler is None:
+            handler = self._handler(target=target, prune_all=prune_all)
         commands = []
 
         def fake_run(cmd, *_a, **_k):
@@ -2482,6 +2483,39 @@ class TestRemotePruneSparesOtherMachinesProjects(unittest.TestCase):
             f"a local orphan snapshot should still be deleted, got {deletes}",
         )
         self.assertIn(["docker", "image", "prune", "-af"], commands)
+
+    HELPER_ID = "abcdef1234567890"
+
+    def _helper_removals(self, *, target):
+        """`docker rm -f` calls issued for a non-running LDM helper container.
+
+        The helper is in `created` state: on a shared node that is exactly
+        another user's helper about to start.
+        """
+        handler = self._handler(target=target, prune_all=False)
+
+        def manager_run(cmd, *_a, **_k):
+            if "label=com.liferay.ldm.helper" in [str(c) for c in cmd]:
+                return f"{self.HELPER_ID}\tldm-helper-chown\tcreated"
+            return ""
+
+        handler.manager.run_command.side_effect = manager_run
+        self._run(target=target, handler=handler)
+        return [
+            [str(x) for x in c.args[0]]
+            for c in handler.manager.run_command.call_args_list
+            if "rm" in [str(x) for x in c.args[0]]
+            and self.HELPER_ID in [str(x) for x in c.args[0]]
+        ]
+
+    def test_yes_on_a_remote_target_removes_no_helper_container(self):
+        self.assertEqual(self._helper_removals(target=True), [])
+
+    def test_local_stray_helpers_are_still_removed(self):
+        self.assertEqual(
+            self._helper_removals(target=False),
+            [["docker", "rm", "-f", self.HELPER_ID]],
+        )
 
     def _volume_consent(self, *, target):
         from ldm_core.diagnostics import prune as prune_mod

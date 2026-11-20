@@ -723,7 +723,19 @@ def run_prune(handler):  # noqa: C901, PLR0912, PLR0915
     # that never started, and until they were labelled nothing could identify
     # one afterwards. Removing a stopped throwaway destroys nothing: it holds
     # no state, and its whole purpose was a one-shot chown or probe.
-    strays = _stray_helper_containers(handler, docker_prefix)
+    # LDM-#2459: on a shared node "not running" includes another user's helper
+    # in `created` state that is about to start, and removing it would break
+    # their operation mid-flight. Helpers record no originating machine, so
+    # skip the sweep on a remote target, as for orphaned containers above.
+    strays = []
+    if is_remote_target:
+        UI.warning(
+            "Skipped the stray helper-container sweep on a remote target: "
+            "helpers started from other machines cannot be told apart from "
+            "strays."
+        )
+    else:
+        strays = _stray_helper_containers(handler, docker_prefix)
     if strays:
         UI.info(f"Found {len(strays)} stray LDM helper container(s):")
         for cid, name, state in strays:
