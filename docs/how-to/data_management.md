@@ -207,6 +207,8 @@ ldm package my-project --output /tmp/packages --repo my-owner/my-repo
 
 A package does not carry your licence keys, Marketplace products or
 client-extension `routes/`; see [What a package leaves out](../reference/cli/core.md#what-a-package-leaves-out).
+It does carry the project's [container hostname](../reference/cli/core.md#container-hostname),
+which the import applies.
 Whoever imports it adds their own DXP key; see
 [After importing a package, add your licence](workspace_import.md#after-importing-a-package-add-your-licence).
 
@@ -336,4 +338,4 @@ ldm re-seed demo              # Total project reset to Day Zero (Seeded)
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-20*
+*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*

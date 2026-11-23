@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from ldm_core.handlers.license import is_licence_xml
+from ldm_core.runtime import container_hostname
 from ldm_core.runtime.portal_patches import package_patch_set
 from ldm_core.runtime.portal_workarounds import is_ldm_bundle
 from ldm_core.ui import UI
@@ -914,6 +915,9 @@ class ArchiveSnapshotService:
             "db_type": project_meta.get("db_type"),
             "host_name": getattr(self.manager.args, "host_name", None)
             or project_meta.get("host_name"),
+            # LDM-#2445: unlike `host_name`, part of what the package needs to
+            # work -- a host-locked activation key fails on any other name.
+            "container_hostname": container_hostname.configured(project_meta) or None,
             "ssl": str(
                 getattr(self.manager.args, "ssl", None)
                 if getattr(self.manager.args, "ssl", None) is not None
