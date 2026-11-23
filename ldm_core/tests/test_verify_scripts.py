@@ -5104,9 +5104,17 @@ class TestPowerShellWslVersionLine(unittest.TestCase):
             "$line = Get-WslVersionLine -ProcVersion $env:T_PROC -WslOutput $env:T_WSL\n"
             "if ($line) { Write-Output $line }\n"
         )
-        cases = ((_WSL_PROC, _WSL_EXE), (_WSL_PROC, ""), (_NATIVE_PROC, _WSL_EXE))
+        # The expected lines are the ones TestBashWslVersionLine pins for the
+        # bash half, so both halves are held to the same values. Comparing
+        # against a live bash run instead failed on Windows, where `bash` is
+        # WSL's launcher rather than a shell.
+        cases = (
+            (_WSL_PROC, _WSL_EXE, "WSL:       3.0.3.0"),
+            (_WSL_PROC, "", "WSL:       unknown"),
+            (_NATIVE_PROC, _WSL_EXE, ""),
+        )
         for name, binary in _powershell_binaries():
-            for proc, wsl in cases:
+            for proc, wsl, expected in cases:
                 with self.subTest(shell=name, proc=proc[:30], wsl=bool(wsl)):
                     res = subprocess.run(
                         [binary, "-NoProfile", "-NonInteractive", "-Command", script],
@@ -5116,7 +5124,7 @@ class TestPowerShellWslVersionLine(unittest.TestCase):
                         env={**os.environ, "T_PROC": proc, "T_WSL": wsl},
                     )
                     self.assertEqual(res.returncode, 0, res.stderr)
-                    self.assertEqual(res.stdout.strip(), _run_bash_wsl_line(proc, wsl))
+                    self.assertEqual(res.stdout.strip(), expected)
 
 
 # --- LDM-#2200: a populated pre_readiness_seconds after a plain `ldm run` ---
