@@ -644,6 +644,32 @@ def _verify_ldm_package_manifest(self, temp_extract_dir, temp_pkg_dir, owner, re
     return manifest
 
 
+def apply_package_container_hostname(manifest, project_meta) -> None:
+    """Carry the package's container hostname into the project (LDM-#2445).
+
+    The package wins over what the project already had, as `host_name` does;
+    `import` and `quickstart` take no `--container-hostname`, so the consumer
+    overrides it afterwards with `ldm config container-hostname` or
+    `ldm run --container-hostname`. A package is untrusted input, so a value
+    `ldm run` would refuse is reported and not written -- otherwise the first
+    `ldm run` after the import dies on it.
+    """
+    from ldm_core.runtime import container_hostname as ch
+    from ldm_core.utils import UI
+
+    packaged = manifest.get(ch.META_KEY)
+    if not packaged:
+        return
+    if not ch.validate(packaged):
+        UI.warning(
+            f"The package's container hostname '{packaged}' is not valid and "
+            "was not applied (LDM-#2445). Set one with "
+            "'ldm config container-hostname <name>' if the package needs it."
+        )
+        return
+    project_meta[ch.META_KEY] = packaged
+
+
 def _hydrate_ldm_package_to_project(
     self, project_path, project_name, manifest, temp_extract_dir
 ):
@@ -709,6 +735,7 @@ def _hydrate_ldm_package_to_project(
             ).lower(),
         }
     )
+    apply_package_container_hostname(manifest, project_meta)
     # LDM-#2275: `quickstart --replace` (or a confirmed prompt) over an
     # existing project. #2163's reason not to back-fill -- the data on disk is
     # isolated -- does not hold here: the restore below resets the project,
@@ -866,6 +893,13 @@ def _import_ldm_package(
                     ),
                     "The package was imported, but starting it",
                 )
+                # LDM-#2446: once booted, when the client IDs Liferay wrote
+                # exist.
+                from ldm_core.snapshot.oauth_clients import (
+                    warn_unresolved_oauth_clients,
+                )
+
+                warn_unresolved_oauth_clients(self.manager, project_name)
         finally:
             if temp_extract_dir.exists():
                 shutil.rmtree(temp_extract_dir)

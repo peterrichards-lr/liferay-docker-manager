@@ -231,4 +231,10 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
     # pipeline's own verdict, and this was the last statement in the function
     # -- so a quickstart whose stack never came up returned None and exited 0.
     # The CLI turns a False into exit 4 (`_exit_code_for_pipeline`).
-    return self.manager.runtime.cmd_run(project_name, browser=True)
+    started = self.manager.runtime.cmd_run(project_name, browser=True)
+    # LDM-#2446: once booted, when the client IDs Liferay wrote exist.
+    if started and restored_from_pkg:
+        from ldm_core.snapshot.oauth_clients import warn_unresolved_oauth_clients
+
+        warn_unresolved_oauth_clients(self.manager, project_name)
+    return started

@@ -458,6 +458,10 @@ class ProjectSetupStage(PipelineStage):
                 "last_run": datetime.now().isoformat(),
             }
         )
+        if is_ldmp:
+            from ldm_core.workspace.importer import apply_package_container_hostname
+
+            apply_package_container_hostname(manifest, project_meta)
 
         # LDM-#1695: dropped with the rest of the literal in PR #497. Only
         # `_handle_dry_run` has written it since, so a real imported project
@@ -1274,9 +1278,16 @@ class FinalizationStage(PipelineStage):
             no_run = getattr(manager.args, "no_run", False)
 
         if not no_run:
-            manager.runtime.cmd_run(
+            started = manager.runtime.cmd_run(
                 project_id=context.get("project_name"), is_restart=True
             )
+            # LDM-#2446: once booted, when the client IDs Liferay wrote exist.
+            if started and context.get("is_ldmp"):
+                from ldm_core.snapshot.oauth_clients import (
+                    warn_unresolved_oauth_clients,
+                )
+
+                warn_unresolved_oauth_clients(manager, context.get("project_name"))
 
 
 class ImportPipeline(Pipeline):

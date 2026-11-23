@@ -263,7 +263,7 @@ Docker names a container's host after its container ID, so the hostname changes 
 - **Shared hostnames.** Two projects may use the same hostname; LDM warns and names the other project(s).
 - **Confirmed after boot.** Once the container is up, `ldm run` reads its hostname with `docker inspect` and stops with exit code 3 if it does not match.
 
-Carrying the hostname inside an `.ldmp` package is not implemented yet: a package does not record it, so set it again after `ldm import`.
+**Packages carry it.** `ldm package` records the hostname in the package manifest as `container_hostname`, and `ldm import` and `ldm quickstart` apply it to the imported project, replacing any hostname that project already had. A value that is not a valid hostname is reported and not applied. To use a different hostname after importing, set it with [`config container-hostname`](#config-container-hostname) or `ldm run --container-hostname`.
 
 ### `--vanilla` Switch ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue)
 
@@ -498,6 +498,16 @@ whoever imports the package. `ldm package` leaves it out and names each file:
 - **`routes/`**: the OAuth client credentials and DXP host your Liferay wrote
   for its client extensions (LDM-#2446). The importer's Liferay writes its own
   when it starts.
+
+After an imported package has started, `ldm import` and `ldm quickstart` look
+up each OAuth client ID under `routes/default/` in the restored database. For
+each one that matches no OAuth application, they warn, naming the client
+extension and the fix: remove its `routes/default/<name>` tree and run
+`ldm restart`, so Liferay writes the tree again from this database. Without
+that fix, the extension's calls to Liferay are refused with 401. This check is
+a warning, not a failure. It is skipped when the import does not start the
+project (for example `ldm import --no-run`), when no client IDs are on disk,
+and when LDM does not run the database or cannot query it.
 
 Each rule applies under `files/` as well. `files/` is copied over
 `/opt/liferay` when the container starts, so `files/deploy/`,
