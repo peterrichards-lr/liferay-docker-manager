@@ -3367,6 +3367,10 @@ class ConfigService:
     def cmd_target_status(self, name: str = "") -> None:
         """Handler for 'ldm target status [name]'."""
         from ldm_core.config import TargetNode, load_targets
+        from ldm_core.diagnostics.doctor import (
+            LOW_DISK_THRESHOLD_BYTES,
+            measure_engine_free_bytes,
+        )
         from ldm_core.docker_service import DockerService
         from ldm_core.utils import is_local_host, run_command
 
@@ -3386,6 +3390,7 @@ class ConfigService:
             "ENGINE VERSION",
             "CPUs / MEMORY",
             "RUNNING CONTAINERS",
+            "DISK FREE",
         ]
         rows = []
         drifted: list[tuple[str, TargetNode, str]] = []
@@ -3409,6 +3414,22 @@ class ConfigService:
                 mem_gb = f"{mem_bytes / (1024**3):.1f} GB" if mem_bytes else "-"
                 running = parts[3] if len(parts) > 3 else "0"
                 status_str = f"{UI.GREEN}ONLINE{UI.COLOR_OFF}"
+                # LDM-#2145: `docker info` carries no free-space figure, so
+                # this is a second probe -- the same one doctor uses, bounded
+                # so one slow node cannot stall the table. A node that fills
+                # silently fails as anything but "disk full"; this column is
+                # where an operator can see it coming. "-" means unmeasured.
+                free = measure_engine_free_bytes(
+                    DockerService.get_docker_cmd_prefix(t_name),
+                    timeout=20,
+                    run=run_command,
+                )
+                if free is None:
+                    disk = "-"
+                elif free < LOW_DISK_THRESHOLD_BYTES:
+                    disk = f"{UI.YELLOW}{free / (1024**3):.1f} GB (LOW){UI.COLOR_OFF}"
+                else:
+                    disk = f"{free / (1024**3):.1f} GB"
                 rows.append(
                     [
                         t_name,
@@ -3417,11 +3438,12 @@ class ConfigService:
                         f"v{version}",
                         f"{cpus} CPUs / {mem_gb}",
                         running,
+                        disk,
                     ]
                 )
             else:
                 status_str = f"{UI.RED}OFFLINE{UI.COLOR_OFF}"
-                rows.append([t_name, host_display, status_str, "-", "-", "-"])
+                rows.append([t_name, host_display, status_str, "-", "-", "-", "-"])
 
             # LDM-#1346: the probe above dials `docker --context <name>`, whose
             # endpoint Docker stores separately from `~/.ldmrc`. When the two

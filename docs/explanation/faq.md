@@ -63,6 +63,7 @@ By default, each LDM project spins up its own isolated database container (Postg
   ```
 
 * **Discoverability**: LDM mentions this once, after your **first** project is created, naming the engine shared mode would use (LDM-#1510). It is deliberately not repeated: the completion banner is already dense, and a line added to it on every run gets skipped. The tip is also suppressed entirely once `database_mode` is set in `~/.ldmrc` or `/etc/ldmrc` -- to anything, `isolated` included -- because at that point you have decided.
+* **Projects that already exist**: setting a default does not move a project that already exists, because its data lives where its current mode put it. Projects created by `ldm init` or `ldm run` before LDM recorded the creating version stay on their own database and search sidecar whatever your defaults say. If you have set `database_mode` or `search_mode` explicitly and an existing project runs something else, LDM says so once, after that project next starts, and gives the command that moves it -- `ldm run <project> --search-mode shared --database-mode shared`, naming only the settings that differ. Moving does not migrate data: the project starts empty on the new infrastructure. Doing nothing keeps the project as it is. The notice is recorded in the project's `meta` and not repeated (LDM-#2256).
 
 #### 2. Local Database Connection Pool Throttling
 
@@ -246,4 +247,4 @@ This maps your local Liferay HTTP port (`8080`) to a free, secure Cloudflare tun
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-03* | *Last Reviewed: 2026-10-21*
+*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*

@@ -76,13 +76,18 @@ ldm run
 
 ### Reserved project name
 
-You cannot name a project `resources`. LDM's shared infrastructure (the
-Traefik proxy) runs as a Docker Compose project with that name, and a project
-of the same name would share it: starting the project would remove the proxy
-that routes every project. The check uses the project name as Docker sees it,
-so names that become `resources` once LDM makes them Docker-safe are refused
-too, such as `Resources` or `résources`. A project whose metadata sets
-`container_name` to `resources` is refused as well.
+You cannot name a project `ldm-infra` or `resources`. LDM's shared
+infrastructure (the Traefik proxy) runs as the Docker Compose project
+`ldm-infra`, and a project of the same name would share it: starting the
+project would remove the proxy that routes every project. Older LDM versions
+ran it as `resources`, so that name stays reserved too, while a proxy started
+by an older version may still carry it. LDM moves such a proxy to `ldm-infra`
+the next time it sets up or tears down the infrastructure, by recreating the
+proxy container. The proxy holds no data, so nothing is lost. The check uses
+the project name as Docker sees it, so names that become reserved once LDM
+makes them Docker-safe are refused too, such as `Resources` or `résources`. A
+project whose metadata sets `container_name` to a reserved name is refused as
+well.
 
 `run`, `init`, `import`, `link`, `clone`, `quickstart` and `fork` refuse such
 a name with exit code `1` before any Docker command runs. Choose another name,
@@ -999,4 +1004,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-20* | *Last Reviewed: 2026-11-20*
+*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*

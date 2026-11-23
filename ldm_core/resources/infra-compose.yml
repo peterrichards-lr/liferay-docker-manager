@@ -3,6 +3,12 @@ services:
     image: traefik:v3.6.1
     container_name: liferay-proxy-global
     restart: always
+    # LDM-#2244: ownership labels, matching the `docker run` infra containers
+    # (`infra_container_labels` in handlers/infra.py). The Compose project is
+    # set by `-p ldm-infra` on every call, not by a `name:` here.
+    labels:
+      - "com.liferay.ldm.managed=true"
+      - "com.liferay.ldm.infra=proxy"
     command:
       - "--api.insecure=true"
       - "--providers.docker=true"
