@@ -104,8 +104,12 @@ class LogsService(BaseHandler):
             if not infra_compose:
                 UI.die("Infrastructure compose file 'infra-compose.yml' not found.")
 
+            # LDM-#2244: the infra stack has an explicit project name; a
+            # stack an older LDM started is still addressed by its old one.
             cmd = [
                 *DockerService.get_compose_cmd_prefix(infra_target_name),
+                "-p",
+                self.manager.infra.infra_compose_project(infra_target_name),
                 "-f",
                 str(infra_compose),
                 "logs",
