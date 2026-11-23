@@ -404,12 +404,122 @@ def announce_creation(manager, context, db_mode, started):
         kept=pending and bool(context.get("creation_modes_kept")),
     )
     offer_shared_database_tip(manager, db_mode, is_creation)
+    # LDM-#2256: the existing-project counterpart. Only on a boot that
+    # actually started the stack, and never alongside the creation
+    # announcement -- a project made now resolved against today's defaults.
+    if started and not is_creation:
+        notice_mode_disagrees_with_default(
+            manager, context, context.get("search_mode"), db_mode
+        )
     if pending:
         project_meta = context.get("project_meta")
         paths = context.get("paths")
         if isinstance(project_meta, dict) and paths:
             project_meta.pop(CREATION_ANNOUNCEMENT_PENDING, None)
             manager.write_meta(paths["root"], project_meta)
+
+
+#: LDM-#2256: meta key recording that an existing project has been told, once,
+#: that its mode disagrees with the user's explicit default.
+MODE_DEFAULT_NOTICE_SHOWN = "mode_default_notice_shown"
+
+#: LDM-#2256: the modes `ldm run --search-mode/--database-mode` moves a project
+#: between with nothing more to supply. `remote`, `external` and `embedded` need
+#: more (a cluster, a JDBC URL, the Hypersonic engine), so a one-line command
+#: offered for them would not be an honest one.
+_MOVABLE_MODES = {
+    "search_mode": ("shared", "sidecar"),
+    "database_mode": ("shared", "isolated"),
+}
+
+
+def notice_mode_disagrees_with_default(manager, context, search_mode, db_mode):
+    """Tell the owner, once, that an existing project ignores their default.
+
+    LDM-#2256, item 3 of LDM-#2163's remediation. Projects created by
+    `init`/`run` between v2.14.0 and the LDM-#2163 fix carry no `ldm_version`,
+    so the legacy guard in `resolve_infrastructure_mode` kept them on
+    sidecar/isolated whatever the user's defaults say. That is correct -- their
+    on-disk state is isolated -- and `ldm_version` is deliberately NOT
+    back-filled, because writing it would flip them to shared on the next boot:
+    the hijack the guard exists to prevent. Nothing here changes the mode.
+
+    Speaks only when the user SET the default (`has_explicit`, the question
+    LDM-#1510 asks): a convention default is not a choice the project is
+    ignoring. An axis chosen with a flag on this run is the user deciding now,
+    so it is left alone.
+
+    Once per project, recorded in its meta, because a notice on every boot is
+    the banner noise LDM-#1508 and LDM-#1510 removed. It also self-extinguishes
+    when acted on: once the modes agree there is nothing to say.
+
+    There is no in-place migration, so the notice says the data does not move
+    -- offering the command without that sentence would invite data loss.
+    """
+    project_meta = context.get("project_meta")
+    paths = context.get("paths")
+    if not isinstance(project_meta, dict) or not paths:
+        return False
+    if str(project_meta.get(MODE_DEFAULT_NOTICE_SHOWN, "")).lower() == "true":
+        return False
+    defaults = getattr(manager, "defaults", None)
+    if defaults is None or not hasattr(defaults, "has_explicit"):
+        return False
+
+    args = manager.args
+    axes = (
+        (
+            "search_mode",
+            "Search",
+            "--search-mode",
+            "search index",
+            search_mode,
+            getattr(args, "search_mode", None) or getattr(args, "sidecar", False),
+        ),
+        (
+            "database_mode",
+            "Database",
+            "--database-mode",
+            "database",
+            db_mode,
+            getattr(args, "database_mode", None),
+        ),
+    )
+    mismatched = []
+    for key, label, flag, noun, resolved, flag_given in axes:
+        if flag_given:
+            continue
+        explicit = False
+        with contextlib.suppress(Exception):
+            explicit = bool(defaults.has_explicit(key))
+        if not explicit:
+            continue
+        wanted = defaults.get(key)
+        if not isinstance(wanted, str) or not isinstance(resolved, str):
+            continue
+        wanted, current = wanted.lower(), resolved.lower()
+        movable = _MOVABLE_MODES[key]
+        if current != wanted and current in movable and wanted in movable:
+            mismatched.append((label, flag, noun, current, wanted))
+    if not mismatched:
+        return False
+
+    name = context.get("project_id") or project_meta.get("project_name") or "<project>"
+    has = ", ".join(f"{label}: {current}" for label, _, _, current, _ in mismatched)
+    want = ", ".join(f"{label}: {wanted}" for label, _, _, _, wanted in mismatched)
+    nouns = " and ".join(noun for _, _, noun, _, _ in mismatched)
+    flags = " ".join(f"{flag} {wanted}" for _, flag, _, _, wanted in mismatched)
+    # UI.info, not UI.detail -- see `announce_resolved_infrastructure`.
+    UI.info(f"Project '{name}' runs {has}; your config default is {want}.")
+    UI.info(
+        f"  Moving it does not migrate its data: it starts empty on the new "
+        f"{nouns}. To move it: ldm run {name} {flags}"
+    )
+    UI.info("  To keep it as it is, do nothing. Shown once for this project.")
+
+    project_meta[MODE_DEFAULT_NOTICE_SHOWN] = "true"
+    manager.write_meta(paths["root"], project_meta)
+    return True
 
 
 def announce_resolved_infrastructure(
@@ -455,7 +565,7 @@ def announce_resolved_infrastructure(
         return how["kept" if kept and provenance != "flag" else provenance]
 
     search_how = _how("search_mode", getattr(manager.args, "search_mode", None))
-    db_how = _how("database_mode", getattr(manager.args, "db_mode", None))
+    db_how = _how("database_mode", getattr(manager.args, "database_mode", None))
 
     # UI.info, NOT UI.detail: detail is gated behind --info/--verbose
     # (LDM-#1036), so an announcement written with it would be invisible in
@@ -467,7 +577,7 @@ def announce_resolved_infrastructure(
         UI.info(
             "  Shared infrastructure lets several LDM projects run side by "
             "side. For a self-contained project with nothing to set up first: "
-            f"ldm run {name} --search-mode sidecar --db-mode isolated"
+            f"ldm run {name} --search-mode sidecar --database-mode isolated"
         )
     return True
 
@@ -2770,6 +2880,50 @@ def _patch_docker_prefix(manager, target_context):
     return DockerService.get_docker_cmd_prefix(getattr(manager, "target", None))
 
 
+#: LDM-#2145: bound on the pre-run disk probe. The probe is a `docker run` on
+#: the node, so a first use may pull alpine; past this, the run proceeds
+#: unmeasured rather than waiting on it.
+_REMOTE_DISK_PROBE_TIMEOUT = 30
+
+
+def _warn_if_remote_disk_low(target_context) -> None:
+    """Warns before a remote run when the node's Docker disk is nearly full.
+
+    LDM-#2145: `_check_host_disk_space` correctly skips a remote target --
+    this host's free space says nothing about the node -- and nothing took its
+    place, so a long-lived node filled to 98MB free while every `ldm run`
+    against it synced and started without asking. The failure then surfaced
+    as an intermittently hanging `yarn install`, not as a full disk.
+
+    Warns, never refuses: a hard stop on a shared node is its own hazard. A
+    probe that fails, times out or returns nothing parsable is silent, so
+    being unable to measure never blocks a run.
+    """
+    from ldm_core.diagnostics.doctor import (
+        LOW_DISK_THRESHOLD_BYTES,
+        measure_engine_free_bytes,
+    )
+
+    free = measure_engine_free_bytes(
+        target_context.docker_prefix, timeout=_REMOTE_DISK_PROBE_TIMEOUT
+    )
+    if free is None or free >= LOW_DISK_THRESHOLD_BYTES:
+        return
+
+    name = target_context.target.name
+    UI.warning(
+        f"Target node '{name}' has only {free / (1024**3):.1f}GB free on "
+        f"Docker's filesystem. Builds and the running stack can exhaust it "
+        f"mid-run, and that failure rarely looks like a full disk."
+    )
+    # `--images` is what reaches unused images and build cache, which held
+    # 18GB of the measured node's 28GB; plain `prune` leaves both alone.
+    UI.hint(
+        f"Reclaim unused images and build cache on the node (it may be shared "
+        f"with other projects): ldm prune --node {name} --images"
+    )
+
+
 class ExecutionStage(PipelineStage):
     """Boots dependencies, checks readiness, and starts Liferay."""
 
@@ -2824,6 +2978,12 @@ class ExecutionStage(PipelineStage):
         target_context = context.get("target_context")
         if target_context is not None:
             if target_context.is_remote:
+                # LDM-#2145: before the sync, which is the first thing to
+                # consume the node's disk. Not under --dry-run: the probe
+                # starts a container, and a dry run previews (LDM-#1704).
+                if not getattr(manager, "dry_run", False):
+                    _warn_if_remote_disk_low(target_context)
+
                 from ldm_core.config import sync_project_to_target
 
                 sync_project_to_target(

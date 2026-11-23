@@ -67,6 +67,57 @@ def _evaluate_marker(marker_str: str) -> bool:
 SHARED_CONFIG_LABEL = "Shared Config (common/)"
 
 
+#: LDM-#1095: below this much free space on Docker's own filesystem, a running
+#: stack can exhaust the remainder mid-run. LDM-#2145 shares it with the
+#: remote-run warning and `ldm target status`, so all three agree on "low".
+LOW_DISK_THRESHOLD_BYTES = 3 * 1024 * 1024 * 1024  # 3GB
+
+
+def measure_engine_free_bytes(docker_prefix=None, timeout=None, run=None):
+    """Free bytes on "/" as seen from a throwaway container, or None.
+
+    See `DoctorRunner._check_absolute_disk_space` for why this asks Docker
+    rather than the host. `docker_prefix` selects the engine, so a remote
+    target's prefix measures the node's disk.
+
+    LDM-#2145: extracted so callers outside doctor can reuse it. `timeout`
+    bounds the probe -- a remote engine reached over SSH can stall, and a
+    caller on the path of `ldm run` must not wait on it. `run` lets a caller
+    pass the `run_command` it resolved itself (handlers resolve it
+    function-locally; see LDM-#1409). Every failure -- no output, unparsable
+    output, timeout, exception -- returns None: being unable to measure is
+    never a reason to block anything.
+    """
+    run = run or run_command
+    docker_prefix = docker_prefix or ["docker"]
+    try:
+        df_out = run(
+            [
+                *docker_prefix,
+                "run",
+                *helper_container_flags("disk-probe"),
+                "alpine",
+                "df",
+                "-P",
+                "-k",
+                "/",
+            ],
+            check=False,
+            timeout=timeout,
+        )
+        if not df_out:
+            return None
+        lines = [line for line in df_out.strip().splitlines() if line.strip()]
+        if len(lines) < 2:
+            return None
+        fields = lines[-1].split()
+        if len(fields) < 4 or not fields[3].isdigit():
+            return None
+        return int(fields[3]) * 1024
+    except Exception:
+        return None
+
+
 class DoctorRunner:
     """Isolated context for running LDM Doctor checks."""
 
@@ -2421,36 +2472,15 @@ class DoctorRunner:
         whichever engine you're asking, so an explicit --node/--target
         should reflect that engine's disk, not always the local one.
         """
-        min_free_bytes = 3 * 1024 * 1024 * 1024  # 3GB
-        docker_prefix = docker_prefix or ["docker"]
-        try:
-            df_out = run_command(
-                [
-                    *docker_prefix,
-                    "run",
-                    *helper_container_flags("disk-probe"),
-                    "alpine",
-                    "df",
-                    "-P",
-                    "-k",
-                    "/",
-                ],
-                check=False,
-            )
-            if not df_out:
-                return
-            lines = [line for line in df_out.strip().splitlines() if line.strip()]
-            if len(lines) < 2:
-                return
-            fields = lines[-1].split()
-            if len(fields) < 4 or not fields[3].isdigit():
-                return
-            available_bytes = int(fields[3]) * 1024
-        except Exception:
+        # LDM-#2145: the measurement moved to `measure_engine_free_bytes` so
+        # the remote-run warning and `ldm target status` ask the same question
+        # the same way. This method keeps its reporting unchanged.
+        available_bytes = measure_engine_free_bytes(docker_prefix)
+        if available_bytes is None:
             return
 
         available_gb = available_bytes / (1024**3)
-        if available_bytes < min_free_bytes:
+        if available_bytes < LOW_DISK_THRESHOLD_BYTES:
             self.results.append(
                 (
                     "Disk Space (Available)",
