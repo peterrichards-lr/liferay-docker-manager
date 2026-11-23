@@ -5070,6 +5070,10 @@ def _run_bash_wsl_line(proc_version, wsl_out):
     return res.stdout.strip()
 
 
+# On a Windows runner `bash` resolves to WSL's launcher, which has no distro
+# installed: it prints an install hint in UTF-16 and exits 1. The other bash
+# harnesses in this file skip there for the same reason.
+@unittest.skipIf(os.name == "nt", "bash on Windows is WSL's launcher, not a shell")
 class TestBashWslVersionLine(unittest.TestCase):
     """LDM-#2142: sync_compatibility.py published a hardcoded WSL version
     because no report contained one."""
