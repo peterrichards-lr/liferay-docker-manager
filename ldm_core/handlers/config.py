@@ -575,6 +575,7 @@ class ConfigService:
 
         cache_versioned = cache_base / f"v{VERSION}"
         if cache_versioned.exists():
+            self._refresh_samples_once(VERSION, cache_versioned)
             return cache_versioned
 
         # Backwards compatibility for older caches
@@ -592,6 +593,8 @@ class ConfigService:
             return samples_root
 
         # 4. Prompt & Download
+        # LDM-#2491: one lookup for the whole command, not one per call.
+        self._samples_refresh_checked = True
         if self.manager.non_interactive:
             UI.detail(f"Auto-downloading sample pack for v{VERSION}...")
             if self.manager.assets.download_samples(VERSION, cache_versioned):
@@ -600,7 +603,12 @@ class ConfigService:
         else:
             UI.heading("On-Demand Sample Pack")
             UI.detail("Sample assets are not bundled with the standalone binary.")
-            if UI.confirm(f"Download sample pack for v{VERSION} (~50MB)?", "Y"):
+            # LDM-#2491: the pack is the latest ldm-cx-samples release, and its
+            # size is that release's -- "~50MB" was out of date by v1.3.3.
+            if UI.confirm(
+                "Download the latest sample pack from GitHub (a large download)?",
+                "Y",
+            ):
                 if self.manager.assets.download_samples(VERSION, cache_versioned):
                     UI.success("Sample pack ready.")
                     return cache_versioned
@@ -609,31 +617,56 @@ class ConfigService:
                 UI.die("Sample pack required for --samples mode.")
         return None
 
+    def _refresh_samples_once(self, version, cache_versioned):
+        """Refreshes an extracted sample pack when a newer release exists.
+
+        LDM-#2491: the cache used to be reused forever, so a new samples
+        release never reached anyone who had run `--samples` once. Checked at
+        most once per command -- `get_samples_root` is called for the tag, the
+        database and the sync -- and offline first: with no network, or when
+        the refresh fails, the cached pack is used as it is.
+        """
+        if getattr(self, "_samples_refresh_checked", False):
+            return
+        self._samples_refresh_checked = True
+
+        assets = self.manager.assets
+        newer = assets.samples_update_available(cache_versioned)
+        if not newer:
+            return
+        UI.info(f"A newer sample pack is available ({newer}); updating the cache...")
+        if not assets.download_samples(version, cache_versioned, release_tag=newer):
+            UI.warning("Could not update the sample pack; using the cached one.")
+
+    def get_samples_manifest(self):
+        """The samples pack's package manifest (LDM-#2492), or {}."""
+        from ldm_core.handlers.assets import read_samples_manifest
+
+        return read_samples_manifest(self.get_samples_root())
+
     def get_samples_tag(self):
-        """Extracts the reference Liferay tag from the samples metadata."""
-        root = self.get_samples_root()
-        meta_file = root / "meta"
-        if meta_file.exists():
-            try:
-                for line in meta_file.read_text(encoding="utf-8-sig").splitlines():
-                    if line.startswith("tag="):
-                        return line.split("=", 1)[1].strip()
-            except Exception:
-                pass
-        return None
+        """The Liferay tag the samples pack declares, or None.
+
+        LDM-#2492: read from the package manifest, which is JSON. This used to
+        look for `tag=` lines in a `meta` that the extracted samples never
+        contain, so it always returned None.
+        """
+        return self.get_samples_manifest().get("tag") or None
 
     def get_samples_db_type(self):
-        """Extracts the database type from the samples metadata."""
-        root = self.get_samples_root()
-        meta_file = root / "meta"
-        if meta_file.exists():
-            try:
-                for line in meta_file.read_text(encoding="utf-8-sig").splitlines():
-                    if line.startswith("db_type="):
-                        return line.split("=", 1)[1].strip()
-            except Exception:
-                pass
-        return None
+        """The database type the samples pack declares, or None (LDM-#2492)."""
+        return self.get_samples_manifest().get("db_type") or None
+
+    def samples_are_stateless(self):
+        """True when the samples pack declares itself stateless (LDM-#2493).
+
+        A stateless pack has no snapshot to restore, so `ldm run --samples`
+        deploys its assets onto a vanilla instance. A pack that does not say
+        so restores as it always has.
+        """
+        from ldm_core.snapshot.package_kind import is_stateless
+
+        return is_stateless(self.get_samples_manifest())
 
     def sync_samples(self, paths):
         """Sync global samples into the current project path with on-demand download support."""

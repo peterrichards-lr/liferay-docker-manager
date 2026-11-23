@@ -266,6 +266,7 @@ LDM handles project state surgically to ensure snapshots are portable and comple
   2. **Atomic Download**: If an asset is missing and a connection is available, LDM performs an atomic download and caches it for future use.
   3. **Graceful Fallback**: If the asset is missing and unreachable, LDM flags the offline state and reverts to the standard "Vanilla" (non-seeded) workflow.
   4. **Samples Exception**: The `--samples` workflow requires assets to be present. If missing and unreachable, LDM informs the user and stops gracefully to avoid broken environments.
+  5. **Samples Refresh**: A cached sample pack is checked, once per command, against the latest ldm-cx-samples release. It is downloaded again, and verified against the release's `.sha256`, only when that release has moved. With no network, the cache is used as it is.
 
 - **Zero-Race Atomic Deployment Strategy**: As of v2.7.6, LDM employs a **Staging, Fixup & Atomic Move** pattern for all file synchronizations targeting Liferay's watched directories (`deploy/`, `osgi/modules/`, `osgi/configs/`, `osgi/client-extensions/`).
   1. **Staging**: Files are first written to a hidden `.tmp` file (e.g., `.my-artifact.zip.tmp`) in the destination folder.

@@ -768,7 +768,14 @@ class DatabaseRestoreStage(PipelineStage):
 
         # If it's an LDMP package, cmd_restore handles DB and Volumes
         if context.get("is_ldmp"):
-            UI.detail("Restoring database and volume assets from LDM package...")
+            # LDM-#2493: cmd_restore deploys a stateless package's assets and
+            # restores nothing; it reads the kind from the same manifest.
+            from ldm_core.snapshot.package_kind import is_stateless
+
+            if is_stateless(manager.read_meta(context.get("backup_dir"))):
+                UI.detail("Deploying the assets of a stateless LDM package...")
+            else:
+                UI.detail("Restoring database and volume assets from LDM package...")
             try:
                 manager.snapshot.cmd_restore(
                     context.get("project_name"), backup_dir=context.get("backup_dir")

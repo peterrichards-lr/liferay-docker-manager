@@ -70,8 +70,9 @@ Connect to the OSGi Gogo shell.
 \fBsnapshot\fR / \fBrestore\fR
 Backup and recover exact project states.
 .TP
-\fBpackage\fR [\fIPROJECT\fR] [\fB--output\fR \fIDIR\fR] [\fB--repo\fR \fIREPO\fR] [\fB--use-latest\fR]
+\fBpackage\fR [\fIPROJECT\fR] [\fB--output\fR \fIDIR\fR] [\fB--repo\fR \fIREPO\fR] [\fB--use-latest\fR] [\fB--stateless\fR]
 Package a project snapshot into a portable LDM package (\fB.ldmp\fR) with SHA-256 signature.
+Use \fB--stateless\fR to take no snapshot and package only the project's assets (client extensions, \fIdeploy/\fR, configs, OSGi modules, fragment overrides); the manifest declares \fBpackage_kind: stateless\fR, and importing it gives a vanilla instance with the assets deployed and nothing restored. A package without \fBpackage_kind\fR is stateful and restores as before.
 Use \fB--verified\fR \fITAG\fR and \fB--refuted\fR \fITAG\fR, each with a mandatory \fB--evidence\fR \fIREF\fR, to record what the package has actually been tested on as opposed to what it was built with. A refutation declares a verified ceiling that \fBldm run\fR refuses to boot above.
 The project's \fIportal-patches/\fR JARs and their sidecars are shipped, listed, and recorded in the manifest.
 .TP
@@ -241,8 +242,8 @@ Internal version management utility.
 \fBldm system relocate\fR \fITARGET_DIR\fR
 Safely move LDM Docker data to an external drive.
 .TP
-\fBldm system init-ci\fR [\fIPROJECT\fR] [\fB--trigger\fR \fIrelease|tag|push|manual\fR] [\fB--setup-step\fR \fICMD\fR]... [\fB--verify-step\fR \fICMD\fR]...
-Write a GitHub Actions workflow that links and builds the workspace (\fBldm link . --no-monitor --build\fR), waits for its deployables, runs each setup step and then each verify step in order, packages an \fB.ldmp\fR only if they all pass, and always runs \fBldm down\fR. The workflow pins the LDM version that wrote it; re-run with the same flags to upgrade. (legacy: \fBldm init-ci\fR)
+\fBldm system init-ci\fR [\fIPROJECT\fR] [\fB--trigger\fR \fIrelease|tag|push|manual\fR] [\fB--setup-step\fR \fICMD\fR]... [\fB--verify-step\fR \fICMD\fR]... [\fB--stateless\fR]
+Write a GitHub Actions workflow that links and builds the workspace (\fBldm link . --no-monitor --build\fR), waits for its deployables, runs each setup step and then each verify step in order, packages an \fB.ldmp\fR only if they all pass, and always runs \fBldm down\fR. The workflow pins the LDM version that wrote it; re-run with the same flags to upgrade. \fB--stateless\fR packages with \fBldm package --stateless\fR. (legacy: \fBldm init-ci\fR)
 
 .SH OPTIONS
 .TP
@@ -421,4 +422,4 @@ Peter Richards <peter.richards@liferay.com>
 
 .SH SEE ALSO
 .B docker(1), docker-compose(1)
-.\" Last Updated: 2026-11-20 | Last Reviewed: 2026-11-20
+.\" Last Updated: 2026-11-23 | Last Reviewed: 2026-11-23

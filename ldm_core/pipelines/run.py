@@ -1422,7 +1422,10 @@ class ConfigResolutionStage(PipelineStage):
             and not getattr(manager.args, "db", None)
             and not project_meta.get("db_type")
         ):
-            db_type = manager.config.get_samples_db_type()
+            # LDM-#2492: a pack that declares no db_type must not erase the
+            # default resolved above -- None here fell through to postgresql
+            # whatever the user's ~/.ldmrc said.
+            db_type = manager.config.get_samples_db_type() or db_type
 
         from ldm_core.utils import LEGACY_EXTERNAL_DB_TYPE, resolve_database_config
 
@@ -3020,7 +3023,13 @@ class ExecutionStage(PipelineStage):
                 getattr(manager.args, "database_mode", None),
             )
 
-        if is_samples or external_snapshot:
+        # LDM-#2493: a stateless samples pack is assets only, already copied
+        # into the project by sync_samples; there is no snapshot to restore.
+        # A pack that does not declare itself stateless restores as before.
+        restore_samples = bool(is_samples) and (
+            manager.config.samples_are_stateless() is not True
+        )
+        if restore_samples or external_snapshot:
             db_svc = compose_db_service_name(paths, project_meta)
             db_args = ["up", "-d", db_svc] if not use_shared_db else ["up", "-d"]
             # Bounded for the same reason as the main bring-up below
@@ -3034,8 +3043,8 @@ class ExecutionStage(PipelineStage):
             time.sleep(5)
             manager.snapshot.cmd_restore(
                 project_id,
-                auto_index=1 if is_samples else None,
-                backup_dir=external_snapshot if not is_samples else None,
+                auto_index=1 if restore_samples else None,
+                backup_dir=external_snapshot if not restore_samples else None,
             )
 
         if getattr(manager.args, "command", "") != "quickstart":

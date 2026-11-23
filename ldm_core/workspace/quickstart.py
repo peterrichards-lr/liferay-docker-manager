@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     pass
+from ldm_core.snapshot.package_kind import is_stateless
 from ldm_core.ui import UI
 
 
@@ -198,6 +199,13 @@ def cmd_quickstart(self, template_name, share=False, share_subdomain=None):  # n
     elif restored_from_pkg and pkg_has_db:
         UI.detail(
             "Project was restored from LDM package snapshot. Skipping database seeding."
+        )
+    elif restored_from_pkg and is_stateless(project_meta):
+        # LDM-#2493: a stateless package is deployed onto a vanilla instance.
+        UI.detail(
+            "Stateless package: starting a vanilla instance, without a seed. "
+            "Liferay initializes the database schema on first boot (this may "
+            "take several minutes)."
         )
     else:
         UI.detail(f"Seeding database for {tag} ({db_type}/{search_mode})...")

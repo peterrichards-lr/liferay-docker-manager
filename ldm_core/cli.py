@@ -2003,6 +2003,12 @@ def get_parser():  # noqa: PLR0915
         "--snapshot",
         help="Target a specific snapshot name or directory to package",
     )
+    # LDM-#2493: assets only, deployed onto a vanilla instance on import.
+    package_cmd.add_argument(
+        "--stateless",
+        action="store_true",
+        help="Package only the project's assets (client extensions, deploy/, configs, modules); no database, data/ or OSGi state. Import boots a vanilla instance",
+    )
     # LDM-#2443: Marketplace products are licensed, so they are left out of a
     # package unless the publisher says their licence allows redistribution.
     package_cmd.add_argument(
@@ -3105,6 +3111,12 @@ def get_parser():  # noqa: PLR0915
         help="Optional specific project ID to package (defaults to current directory workspace)",
     )
     init_ci.add_argument("-p", "--project", dest="project_flag")
+    # LDM-#2493
+    init_ci.add_argument(
+        "--stateless",
+        action="store_true",
+        help="Package with 'ldm package --stateless': assets only, deployed onto a vanilla instance on import",
+    )
     init_ci.add_argument(
         "--setup-step",
         action="append",
@@ -3483,6 +3495,7 @@ def _build_command_map(args, manager):
             use_latest=getattr(args, "use_latest", False),
             snapshot=getattr(args, "snapshot", None),
             include_marketplace=getattr(args, "include_marketplace", False),
+            stateless=getattr(args, "stateless", False),
         ),
         ("import", None): lambda: manager.workspace.cmd_import(args.source),
         ("link", None): lambda: manager.workspace.cmd_link(args.source),
@@ -3835,6 +3848,7 @@ def _build_command_map(args, manager):
             or getattr(args, "project_flag", None),
             setup_steps=getattr(args, "setup_steps", None),
             verify_steps=getattr(args, "verify_steps", None),
+            stateless=getattr(args, "stateless", False),
         ),
         # target namespace:
         ("target", "add"): lambda: manager.config.cmd_target_add(

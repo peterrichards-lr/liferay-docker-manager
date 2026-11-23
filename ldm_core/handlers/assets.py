@@ -1,7 +1,10 @@
+import json
 import os
+import re
 import shutil
 import sys
 import time
+from pathlib import Path
 
 import requests
 
@@ -16,6 +19,53 @@ from ldm_core.utils import get_actual_home, safe_extract
 
 # Reference for reliable mocking in tests
 exists_fn = os.path.exists
+
+#: The release asset `--samples` downloads from ldm-cx-samples.
+SAMPLES_ASSET = "ldm-cx-samples.ldmp"
+#: LDM-#2491: which release `samples_latest.ldmp` came from, and its digest.
+SAMPLES_CACHE_STATE = "samples_latest.json"
+
+
+def _read_json(path):
+    """A JSON object from `path`, or {} when absent or unreadable."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_json(path, data):
+    Path(path).write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def samples_package_file(samples_root):
+    """Where the extracted pack at `samples_root` records its origin.
+
+    LDM-#2492: a sibling, not a child. `sync_samples` copies everything under
+    the samples root into the project, so the manifest cannot live there.
+    """
+    samples_root = Path(samples_root)
+    return samples_root.with_name(f"{samples_root.name}.package.json")
+
+
+def read_samples_package(samples_root):
+    """`{"release_tag": ..., "manifest": {...}}` for an extracted pack, or {}."""
+    return _read_json(samples_package_file(samples_root))
+
+
+def read_samples_manifest(samples_root):
+    """The package manifest of the samples at `samples_root`, or {}.
+
+    LDM-#2492. The manifest recorded beside an extracted pack. A samples root
+    with none -- `LDM_SAMPLES_PATH`, a source checkout, or a pack extracted
+    before LDM-#2492 -- falls back to a `meta` inside it, read as the JSON a
+    package manifest is.
+    """
+    recorded = read_samples_package(samples_root).get("manifest")
+    if isinstance(recorded, dict):
+        return recorded
+    return _read_json(Path(samples_root) / "meta")
 
 
 class AssetService:
@@ -344,97 +394,205 @@ class AssetService:
             return True
         return False
 
-    def download_samples(self, version, destination):
-        """Downloads and extracts the samples pack from GitHub with Offline-First logic."""
+    def latest_samples_release_tag(self):
+        """The tag `releases/latest` of ldm-cx-samples points at, or None.
+
+        LDM-#2491. Read from the redirect GitHub answers with -- the way
+        `utils.py` finds LDM's own latest release -- so it costs no API rate
+        limit. None means unknown: offline, or GitHub did not answer as
+        expected. Callers treat unknown as "keep what is cached".
+        """
+        try:
+            response = requests.head(
+                f"{CX_SAMPLES_REPO_URL}/releases/latest",
+                headers={"User-Agent": "ldm-cli"},
+                timeout=5,
+                allow_redirects=False,
+            )
+        except Exception as e:
+            UI.debug(f"Could not look up the latest samples release: {e}")
+            return None
+        location = str(response.headers.get("Location", "") or "")
+        if response.status_code in (301, 302, 303, 307, 308) and (
+            "/releases/tag/" in location
+        ):
+            return location.rsplit("/releases/tag/", maxsplit=1)[-1].strip("/") or None
+        return None
+
+    def samples_update_available(self, destination):
+        """The newer release tag to refresh `destination` to, or None.
+
+        LDM-#2491: None when the extracted pack is from the latest release,
+        and when the latest release cannot be learned -- offline first, so a
+        cache is never discarded for want of a network. An extraction that
+        recorded no release (made before LDM-#2491) counts as out of date.
+        """
+        latest = self.latest_samples_release_tag()
+        if not latest:
+            return None
+        recorded = read_samples_package(destination).get("release_tag")
+        return None if recorded == latest else latest
+
+    def _published_samples_sha256(self, base_url):
+        """The digest in the release's `.sha256`, or None if there is none.
+
+        Published checksum files may hold a bare digest with no filename, or
+        `sha256sum` output; either way the digest is the first 64 hex
+        characters.
+        """
+        try:
+            response = requests.get(
+                f"{base_url}/{SAMPLES_ASSET}.sha256",
+                headers={"User-Agent": "ldm-cli"},
+                timeout=15,
+            )
+            if response.status_code != 200:
+                return None
+            match = re.match(r"\s*([0-9a-fA-F]{64})", response.text or "")
+        except Exception as e:
+            UI.debug(f"Could not fetch the samples checksum: {e}")
+            return None
+        return match.group(1).lower() if match else None
+
+    def _download_samples_pack(self, release_tag, cache_dir, cached_zip):
+        """Downloads the pack into `cached_zip`, verified. True on success.
+
+        The pack is fetched from the release `release_tag` names, so the pack
+        and its checksum come from the same release even if `latest` moves
+        meanwhile; with no tag known it falls back to `releases/latest`. On
+        any failure `cached_zip` is left as it was.
+        """
+        if release_tag:
+            base_url = f"{CX_SAMPLES_REPO_URL}/releases/download/{release_tag}"
+        else:
+            base_url = f"{CX_SAMPLES_REPO_URL}/releases/latest/download"
+        url = f"{base_url}/{SAMPLES_ASSET}"
+        partial = cache_dir / "samples_latest.ldmp.download"
+
+        try:
+            UI.debug(f"Attempting to download samples from: {url}")
+            response = requests.get(
+                url, headers={"User-Agent": "ldm-cli"}, timeout=15, stream=True
+            )
+            if response.status_code != 200:
+                raise RuntimeError(f"HTTP {response.status_code}")
+
+            from ldm_core.utils import Benchmarker
+
+            with Benchmarker.measure_download():
+                with open(partial, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+        except Exception as e:
+            UI.warning(f"LDM is working offline or samples are unreachable ({e})")
+            partial.unlink(missing_ok=True)
+            return False
+
+        from ldm_core.utils import calculate_sha256
+
+        actual = calculate_sha256(partial)
+        expected = self._published_samples_sha256(base_url)
+        if expected is None:
+            UI.warning(
+                f"No published checksum ({SAMPLES_ASSET}.sha256) could be read, "
+                "so the sample pack was not verified."
+            )
+        elif actual != expected:
+            partial.unlink(missing_ok=True)
+            UI.error(
+                "Integrity check failed for the downloaded sample pack.\n"
+                f"Expected: {expected}\n"
+                f"Actual:   {actual}"
+            )
+            return False
+
+        shutil.move(str(partial), str(cached_zip))
+        _write_json(
+            cache_dir / SAMPLES_CACHE_STATE,
+            {"release_tag": release_tag, "sha256": actual},
+        )
+        UI.success(
+            f"Samples cached: {cached_zip.name}"
+            + (f" ({release_tag})" if release_tag else "")
+        )
+        return True
+
+    def download_samples(self, version, destination, release_tag=None):
+        """Downloads and extracts the samples pack, offline first.
+
+        LDM-#2491: the cached pack is reused only while it is from the latest
+        release; when `releases/latest` has moved it is downloaded again, and
+        verified against the release's `.sha256`. With no network the cached
+        pack is used as it is. `release_tag` is the latest tag when the caller
+        has already looked it up.
+
+        LDM-#2492: the package manifest (`meta`, JSON) is kept beside the
+        extracted files, never inside them -- `sync_samples` copies the whole
+        extracted tree into the project.
+        """
         import tarfile
 
-        repo_url = CX_SAMPLES_REPO_URL
-
-        actual_home = get_actual_home()
-        cache_dir = actual_home / ".ldm" / "references" / "samples"
+        cache_dir = get_actual_home() / ".ldm" / "references" / "samples"
         cache_dir.mkdir(parents=True, exist_ok=True)
-
         cached_zip = cache_dir / "samples_latest.ldmp"
 
-        if os.path.exists(cached_zip):
+        latest = release_tag or self.latest_samples_release_tag()
+        cached_tag = _read_json(cache_dir / SAMPLES_CACHE_STATE).get("release_tag")
+        has_cache = os.path.exists(cached_zip)
+
+        if has_cache and (not latest or cached_tag == latest):
             UI.detail(f"Using cached samples: {cached_zip.name}")
-            temp_zip = cached_zip
-        else:
-            urls = [
-                f"{repo_url}/releases/latest/download/ldm-cx-samples.ldmp",
-            ]
-
-            temp_zip = cache_dir / "samples_latest.ldmp.download"
-            success = False
-            last_error = None
-
-            for url in urls:
-                try:
-                    if success:
-                        break
-
-                    UI.debug(f"Attempting to download samples from: {url}")
-                    response = requests.get(
-                        url, headers={"User-Agent": "ldm-cli"}, timeout=15, stream=True
-                    )
-                    if response.status_code != 200:
-                        continue
-
-                    from ldm_core.utils import Benchmarker
-
-                    with Benchmarker.measure_download():
-                        with open(temp_zip, "wb") as f:
-                            for chunk in response.iter_content(chunk_size=8192):
-                                f.write(chunk)
-
-                    success = True
-                except Exception as e:
-                    last_error = e
-                    continue
-
-            if not success:
-                UI.warning(
-                    f"LDM is working offline or samples are unreachable ({last_error or '404'})"
-                )
+        elif not self._download_samples_pack(latest, cache_dir, cached_zip):
+            if not has_cache:
                 UI.error(
                     "The '--samples' workflow requires a download if assets are not cached."
                 )
-                if temp_zip.exists():
-                    temp_zip.unlink()
                 return False
+            UI.warning(f"Keeping the cached sample pack: {cached_zip.name}")
+        pack_tag = _read_json(cache_dir / SAMPLES_CACHE_STATE).get("release_tag")
 
-            shutil.move(str(temp_zip), str(cached_zip))
-            temp_zip = cached_zip
-            UI.success(f"Samples cached: {cached_zip.name}")
-
+        extract_temp = cache_dir / "temp_extract_samples"
+        staged = destination.with_name(f"{destination.name}.partial")
         try:
             UI.detail("Extracting samples...")
-            destination.mkdir(parents=True, exist_ok=True)
-
-            extract_temp = cache_dir / "temp_extract_samples"
-            if extract_temp.exists():
-                shutil.rmtree(extract_temp)
+            for scratch in (extract_temp, staged):
+                if scratch.exists():
+                    shutil.rmtree(scratch)
             extract_temp.mkdir(parents=True)
+            staged.mkdir(parents=True)
 
             # Step 1: Extract the outer .ldmp package
-            with tarfile.open(temp_zip, "r:gz") as tar_ref:
+            with tarfile.open(cached_zip, "r:gz") as tar_ref:
                 safe_extract(tar_ref, extract_temp)
 
             files_tar = extract_temp / "files.tar.gz"
             if not files_tar.exists():
                 raise FileNotFoundError("files.tar.gz not found inside .ldmp package")
 
-            # Step 2: Extract the inner volume assets directly to destination
+            # Step 2: Extract the inner assets. Into a fresh directory that
+            # then replaces the old one, so a refreshed pack leaves nothing of
+            # the previous release behind and a failure leaves it intact.
             with tarfile.open(files_tar, "r:gz") as inner_tar:
-                safe_extract(inner_tar, destination)
+                safe_extract(inner_tar, staged)
 
-            shutil.rmtree(extract_temp)
+            manifest = _read_json(extract_temp / "meta")
+            if destination.exists():
+                shutil.rmtree(destination)
+            staged.rename(destination)
+            _write_json(
+                samples_package_file(destination),
+                {"release_tag": pack_tag, "manifest": manifest},
+            )
 
             UI.success("Sample pack ready.")
             return True
         except Exception as e:
             UI.error(f"Failed to extract samples: {e}")
             return False
+        finally:
+            for scratch in (extract_temp, staged):
+                if scratch.exists():
+                    shutil.rmtree(scratch, ignore_errors=True)
 
     def prompt_for_tag(self):
         """Prompts the user to select or enter a Liferay tag."""
