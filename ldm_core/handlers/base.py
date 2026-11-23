@@ -125,7 +125,7 @@ class BaseHandler:
                 UI.detail(
                     f"Missing host entries detected: {', '.join(unresolved)}. Attempting non-interactive fix..."
                 )
-                if self._apply_hosts_fix(unresolved):
+                if self._apply_hosts_fix(unresolved, project=project_id):
                     # Give the OS a moment to refresh DNS cache
                     import time
 
@@ -302,7 +302,19 @@ class BaseHandler:
 
     LDM_HOST_TAG = "# [LDM]"
 
-    def _apply_hosts_fix(self, unresolved_domains):
+    @staticmethod
+    def _fix_hosts_commands(domains, project=None):
+        """The manual `ldm fix-hosts` commands that cover `domains` (LDM-#2496).
+
+        `fix-hosts` takes ONE positional: a project, whose every hostname it
+        fixes, or a single hostname. Suggesting all domains on one line gave a
+        command the parser rejects for any project with client extensions.
+        """
+        if project:
+            return [f"ldm fix-hosts {project}"]
+        return [f"ldm fix-hosts {d}" for d in domains]
+
+    def _apply_hosts_fix(self, unresolved_domains, project=None):
         """Attempts to append missing host entries to the system hosts file."""
         # 1. Filter out empty or already resolved (sanity check)
         domains = sorted({d for d in unresolved_domains if d and d != "localhost"})
@@ -369,8 +381,14 @@ class BaseHandler:
 
                 if process.returncode != 0:
                     if self.non_interactive:
+                        commands = self._fix_hosts_commands(domains, project)
                         UI.die(
-                            f"Elevation failed (sudo -n). Please run manually: ldm fix-hosts {' '.join(domains)}"
+                            "Elevation failed (sudo -n). Please run manually:"
+                            + (
+                                f" {commands[0]}"
+                                if len(commands) == 1
+                                else "".join(f"\n    {c}" for c in commands)
+                            )
                         )
                     return False
 
@@ -2399,7 +2417,7 @@ class BaseHandler:
                 return True
 
             UI.detail(f"Found {len(needs_fix)} domain(s) needing fix.")
-            return self._apply_hosts_fix(needs_fix)
+            return self._apply_hosts_fix(needs_fix, project=target)
 
         # 2. Otherwise treat as direct hostname
         return self._apply_hosts_fix([target])
