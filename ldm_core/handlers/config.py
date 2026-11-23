@@ -782,6 +782,56 @@ class ConfigService:
                 else:
                     host_updates[f"feature.flag.{f}"] = "true"
 
+    def _configure_fragment_override_flags(
+        self, paths, version, project_meta, host_updates
+    ):
+        """Enables the page-element PUT that fragment overrides rely on (LDM-#2427).
+
+        Before 2026.Q4 the admin-site per-element PUT is gated by two flags,
+        both off by default: LPD-35443 gates the whole page-specification API,
+        and LPD-74328 is checked inside the PUT itself. With either off every
+        call answers 400 `UnsupportedOperationException`, which is why the
+        Headless route always fell through to the SQL patcher (LDM-#1618).
+        Measured live on 2026.q1.14-lts and 2026.q3.0; on Q4.0 the bytecode
+        checks neither, so nothing is set there. See custom-osgi-modules#57.
+
+        LPD-74328 is a `dev` flag. Using it for LDM's local and demo
+        environments is a maintainer decision (2026-11-20), on condition that
+        it is flagged as unsupported -- hence the warning.
+        """
+        root = paths.get("root") if isinstance(paths, dict) else None
+        if not root:
+            return
+        root = Path(root)
+        if not any(
+            (root / sub / "fragment-overrides.json").exists()
+            for sub in ("configs", ".ldm")
+        ):
+            return
+
+        meta = project_meta or {}
+        tag = (
+            version
+            or meta.get("tag")
+            or meta.get("version")
+            or meta.get("liferay_version")
+            or meta.get("last_run_liferay_version")
+        )
+        dxp_version = self.manager.parse_version(tag)
+        # Below 2025.Q1 the page-specification API does not exist, and the
+        # fragment patcher skips Headless entirely.
+        if not ((2025, 1) <= dxp_version[:2] < (2026, 4)):
+            return
+
+        host_updates["feature.flag.LPD-35443"] = "true"
+        host_updates["feature.flag.LPD-74328"] = "true"
+        UI.warning(
+            "fragment-overrides.json: enabling feature.flag.LPD-35443 and "
+            "feature.flag.LPD-74328 so the Headless page-element update works on "
+            f"{tag}. LPD-74328 is an unsupported dev flag; use this only for "
+            "local and demo environments (LDM-#2427)."
+        )
+
     def _configure_admin_user(self, global_config, host_updates):
         """Maps global configuration admin user details into portal properties."""
         admin_mappings = {
@@ -1424,6 +1474,9 @@ class ConfigService:
         self._configure_captcha(project_meta, host_updates, paths)
         self._configure_fast_login(project_meta, host_updates)
         self._configure_feature_flags(project_meta, global_config, host_updates)
+        self._configure_fragment_override_flags(
+            paths, version, project_meta, host_updates
+        )
         self._configure_admin_user(global_config, host_updates)
 
         is_dry_run = (

@@ -1119,6 +1119,183 @@ class TestFragments(unittest.TestCase):
         self.assertFalse(any("other-site" in p for p in called_urls))
         self.assertTrue(any("my-site" in p for p in called_urls))
 
+    def _run_specs_patch(self, put_response):
+        """Drives the page-specification route with a draft and a published
+        spec carrying the same element, as q1 LTS and q3.0 return them
+        (custom-osgi-modules#57). Returns (calls, UI.warning mock)."""
+        project_meta = {"tag": "2026.q3.0", "force_specs": True}
+        paths = {"root": self.tmp_dir, "deploy": self.tmp_dir / "deploy"}
+        configs_dir = self.tmp_dir / "configs"
+        configs_dir.mkdir(parents=True, exist_ok=True)
+        (configs_dir / "fragment-overrides.json").write_text(
+            _json.dumps({"my-frag": {"myField": "myValue"}})
+        )
+
+        def spec(erc):
+            return {
+                "externalReferenceCode": erc,
+                "pageExperiences": [
+                    {
+                        "externalReferenceCode": f"{erc}-default",
+                        "pageElements": [
+                            {
+                                "externalReferenceCode": "elem-1",
+                                "definition": {"fragment": {"key": "my-frag"}},
+                            }
+                        ],
+                    }
+                ],
+            }
+
+        responses = {
+            "/page-specifications": {"items": [spec("spec-1-draft"), spec("spec-1")]},
+            "/site-pages": {"items": [{"externalReferenceCode": "p1", "name": "Home"}]},
+            "/sites": {"items": [{"id": 3, "externalReferenceCode": "my-site"}]},
+        }
+        calls = []
+
+        def fake_urlopen(req, **kwargs):
+            calls.append((req.get_method(), req.full_url))
+            if "/page-elements/" in req.full_url:
+                return put_response(req)
+            m = MagicMock()
+            body: dict = next(
+                (v for k, v in responses.items() if k in req.full_url), {"items": []}
+            )
+            m.read.return_value = _json.dumps(body).encode()
+            m.__enter__.return_value = m
+            return m
+
+        self.handler.handler.fragments._patch_database_fragmententrylink = MagicMock(  # type: ignore[method-assign]
+            return_value=0
+        )
+        with (
+            patch("urllib.request.urlopen", side_effect=fake_urlopen),
+            patch("time.sleep"),
+            patch("ldm_core.runtime.fragments.UI.warning") as warning,
+        ):
+            self.handler.handler.fragments._patch_fragment_overrides(
+                project_meta, paths, timeout=5
+            )
+        return calls, warning
+
+    @staticmethod
+    def _ok(req):
+        m = MagicMock()
+        m.read.return_value = b'{"externalReferenceCode": "elem-1"}'
+        m.__enter__.return_value = m
+        return m
+
+    def test_only_the_published_spec_is_written(self):
+        """LDM-#2427: a PUT on the `-draft` spec changes nothing visible and
+        `/publish` is a stub, so only the published spec may be written."""
+        calls, _ = self._run_specs_patch(self._ok)
+        puts = [url for method, url in calls if method == "PUT"]
+        self.assertEqual(len(puts), 1, puts)
+        self.assertIn("/page-specifications/spec-1/", puts[0])
+        self.assertIn("/page-experiences/spec-1-default/", puts[0])
+        self.assertFalse(any("/publish" in url for _, url in calls))
+
+    def test_a_successful_put_says_the_page_may_need_a_restart(self):
+        """LDM-#2427: the PUT writes the database but the rendered page stayed
+        stale until a restart on q1 LTS and q3.0."""
+        _, warning = self._run_specs_patch(self._ok)
+        messages = " ".join(str(c.args[0]) for c in warning.call_args_list)
+        self.assertIn("ldm restart", messages)
+
+    def test_a_refused_put_is_a_visible_warning(self):
+        """LDM-#2427: the 400 from a disabled feature flag was logged at debug
+        level, so the route failed silently and fell through to SQL."""
+        import io
+        import urllib.error
+
+        def refuse(req):
+            raise urllib.error.HTTPError(
+                req.full_url,
+                400,
+                "Bad Request",
+                {},  # type: ignore[arg-type]
+                io.BytesIO(b'{"title": "Feature flag LPD-35443 is disabled"}'),
+            )
+
+        _, warning = self._run_specs_patch(refuse)
+        messages = [str(c.args[0]) for c in warning.call_args_list]
+        refused = [m for m in messages if "was refused: 400" in m]
+        self.assertTrue(refused, messages)
+        self.assertIn("Feature flag LPD-35443 is disabled", refused[0])
+        self.assertFalse(any("ldm restart" in m for m in messages))
+
+
+class TestFragmentOverrideFeatureFlags(unittest.TestCase):
+    """LDM-#2427: before 2026.Q4 the Headless page-element PUT needs
+    LPD-35443 and LPD-74328; LDM sets them only where they are needed."""
+
+    def setUp(self):
+        from types import SimpleNamespace
+
+        self.tmp_dir_obj = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp_dir_obj.name)
+        self.fake = SimpleNamespace(
+            manager=SimpleNamespace(
+                parse_version=BaseHandler.parse_version.__get__(MockRuntime())
+            )
+        )
+
+    def tearDown(self):
+        self.tmp_dir_obj.cleanup()
+
+    def _flags(self, version, with_overrides=True, subdir="configs"):
+        from ldm_core.handlers.config import ConfigService
+
+        if with_overrides:
+            (self.root / subdir).mkdir(parents=True, exist_ok=True)
+            (self.root / subdir / "fragment-overrides.json").write_text("{}")
+        updates: dict = {}
+        with patch("ldm_core.handlers.config.UI.warning") as warning:
+            ConfigService._configure_fragment_override_flags(
+                self.fake,  # type: ignore[arg-type]
+                {"root": self.root},
+                version,
+                {},
+                updates,
+            )
+        return updates, warning
+
+    def test_q1_lts_and_q3_get_both_flags_and_a_warning(self):
+        for version in ("2026.q1.14-lts", "2026.q3.0", "2025.q1.0"):
+            with self.subTest(version=version):
+                updates, warning = self._flags(version)
+                self.assertEqual(
+                    updates,
+                    {
+                        "feature.flag.LPD-35443": "true",
+                        "feature.flag.LPD-74328": "true",
+                    },
+                )
+                self.assertIn("unsupported dev flag", warning.call_args.args[0])
+
+    def test_overrides_under_dot_ldm_count_too(self):
+        updates, _ = self._flags("2026.q3.0", subdir=".ldm")
+        self.assertIn("feature.flag.LPD-74328", updates)
+
+    def test_q4_and_later_get_no_flags(self):
+        for version in ("2026.q4.0", "2027.q1.0"):
+            with self.subTest(version=version):
+                updates, warning = self._flags(version)
+                self.assertEqual(updates, {})
+                warning.assert_not_called()
+
+    def test_no_flags_without_fragment_overrides(self):
+        updates, warning = self._flags("2026.q3.0", with_overrides=False)
+        self.assertEqual(updates, {})
+        warning.assert_not_called()
+
+    def test_no_flags_before_the_page_specification_api(self):
+        for version in ("2024.q4.7", "7.4.13-u100"):
+            with self.subTest(version=version):
+                updates, _ = self._flags(version)
+                self.assertEqual(updates, {})
+
 
 class TestPatchDatabaseFragmentEntryLink(unittest.TestCase):
     """LDM-#1083: _patch_database_fragmententrylink() must count a patch as

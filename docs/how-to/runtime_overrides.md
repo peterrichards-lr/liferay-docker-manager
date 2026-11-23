@@ -56,14 +56,46 @@ LDM tries three routes in order, stopping at the first that works.
 
 ### 1. Headless API
 
-`PATCH /o/headless-delivery/v1.0/page-elements/{id}` — the supported path, and
-the only one needing no extra setup. It works on ordinary pages.
+LDM reads each page's **published** page specification and `PUT`s the matching
+page element back with your values merged in:
 
-It fails on **published site initializer pages**, which reject specification
-updates with HTTP 400 `UnsupportedOperationException` (upstream
-[LPD-99955](https://liferay.atlassian.net/browse/LPD-99955)). Packages built
-from a site initializer — the AI Commerce Accelerator among them — hit this
-every time, which is why the routes below exist.
+```text
+PUT /o/headless-admin-site/v1.0/sites/{site}/page-specifications/{spec}/page-experiences/{spec}-default/page-elements/{element}
+```
+
+It never writes the `-draft` specification: a draft change does not reach the
+live page, and `.../publish` does nothing on any DXP line, so a draft can never
+be promoted through Headless
+([custom-osgi-modules#57](https://github.com/peterrichards-lr/liferay-custom-osgi-modules/issues/57)).
+
+**Before 2026.Q4 this needs two feature flags**, both off by default.
+`LPD-35443` gates the page-specification API and `LPD-74328` is checked inside
+the `PUT`; with either off, Liferay answers 400 `UnsupportedOperationException`.
+When a project on 2025.Q1 to 2026.Q3 has a `fragment-overrides.json`, LDM sets
+both in `portal-ext.properties` and warns as it does so:
+
+```properties
+feature.flag.LPD-35443=true
+feature.flag.LPD-74328=true
+```
+
+> [!WARNING]
+> **`LPD-74328` is an unsupported `dev` flag.** LDM enables it for local and
+> demo environments only. Do not carry it into a production configuration.
+> 2026.Q4 and later need neither flag, and LDM sets neither there.
+
+A refused `PUT` is reported as a warning with Liferay's reason, then LDM tries
+the routes below.
+
+**The page may need a restart.** The `PUT` writes the database, but on
+2026.q1 LTS and 2026.q3.0 the rendered page kept the old value until Liferay
+restarted. LDM says so after a successful update. Whether 2026.Q4 renders the
+change at once has not been measured.
+
+If the page-specification API is not available at all, LDM falls back to
+`PATCH /o/headless-delivery/v1.0/page-elements/{id}`, which works on ordinary
+pages but not on published site initializer pages (upstream
+[LPD-47524](https://liferay.atlassian.net/browse/LPD-47524)).
 
 ### 2. The `fragment-override` OSGi module *(recommended, opt-in)*
 
@@ -71,6 +103,13 @@ Runs inside the portal, so the update goes through
 `FragmentEntryLinkLocalService` and Liferay invalidates its own cache. **No
 restart.** It merges your overrides over the existing values, leaving every key
 you did not mention untouched.
+
+> [!NOTE]
+> **LDM cannot call the module yet.** Its endpoint takes a numeric
+> `fragmentEntryLinkId`, and the Headless page elements LDM reads carry a
+> layout-structure item id instead, so LDM skips this route
+> ([#2427](https://github.com/peterrichards-lr/liferay-docker-manager/issues/2427)).
+> The module still works when you call it yourself with a numeric id.
 
 Two one-time steps, both deliberate — LDM does not do either for you:
 
@@ -159,7 +198,7 @@ When LDM imports this `.ldmp` package, it will dynamically calculate these value
 
 ## When the Headless API Refuses: the Database Fallback
 
-On **published Site Initializer pages**, Liferay rejects `PUT` on page specifications with `UnsupportedOperationException` — an upstream limitation tracked in [#883](https://github.com/peterrichards-lr/liferay-docker-manager/issues/883) ([LPD-99955](https://liferay.atlassian.net/browse/LPD-99955)).
+On **published Site Initializer pages**, Liferay rejects `PUT` on page specifications with `UnsupportedOperationException` — an upstream limitation tracked in [#883](https://github.com/peterrichards-lr/liferay-docker-manager/issues/883) ([LPD-47524](https://liferay.atlassian.net/browse/LPD-47524)). On 2025.Q1 to 2026.Q3 the page-element `PUT` described above avoids this, using the feature flags LDM sets.
 
 When the headless attempt patches nothing, LDM falls back to updating `fragmententrylink.editablevalues` directly in PostgreSQL/MySQL.
 
@@ -235,4 +274,4 @@ is not landing, check these before anything else:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-17* | *Last Reviewed: 2026-11-16*
+*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*
