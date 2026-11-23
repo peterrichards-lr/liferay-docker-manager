@@ -384,6 +384,53 @@ if [ -n "$_installed_for_gate" ] \
     exit 1
 fi
 
+# LDM-#2142: record the WSL version when this run is inside WSL.
+#
+# The native-WSL2 compatibility-matrix row published a WSL version that no
+# report contained: sync_compatibility.py had nowhere to read it from, so it
+# came from a hardcoded constant -- correct only until the lab machine
+# upgraded, which it did mid-cycle (2.4.4 -> 3.0.3.0) with nothing to notice.
+#
+# Pure, so it can be exercised in a test without WSL: $1 is the text of
+# /proc/version, $2 the output of `wsl.exe --version`. Emits nothing outside
+# WSL, so every other platform's report is unchanged. Inside WSL it always
+# emits the line, with `unknown` when the version cannot be read (interop
+# disabled, or an inbox WSL whose wsl.exe has no --version), so a report that
+# could not tell is distinguishable from one that predates this line.
+#
+# `wsl.exe --version` puts the WSL version on its FIRST line. The label is
+# localised, so the version is taken as the first dotted number on that line
+# rather than by matching "WSL version:". Its output is UTF-16LE; the caller
+# strips the NULs and carriage returns before it reaches here.
+print_wsl_version_line() {
+    local proc_version="${1:-}" wsl_out="${2:-}"
+    case "$proc_version" in
+        *[Mm]icrosoft*) ;;
+        *) return 0 ;;
+    esac
+    local first ver
+    first=$(printf '%s\n' "$wsl_out" | tr -d '\r' | grep -v '^[[:space:]]*$' | head -1)
+    ver=$(printf '%s\n' "$first" | grep -oE '[0-9]+(\.[0-9]+)+' | head -1)
+    echo "WSL:       ${ver:-unknown}"
+}
+
+# Gathered here rather than inside the function so the function stays pure.
+# `wsl.exe` is reached through interop; it is bounded where `timeout` exists,
+# because a wedged interop call must not stall the report header.
+WSL_PROC_VERSION=$(cat /proc/version 2>/dev/null || true)
+WSL_EXE_OUTPUT=""
+case "$WSL_PROC_VERSION" in
+    *[Mm]icrosoft*)
+        if command -v wsl.exe >/dev/null 2>&1; then
+            if command -v timeout >/dev/null 2>&1; then
+                WSL_EXE_OUTPUT=$(timeout 15 wsl.exe --version 2>/dev/null | tr -d '\000\r' || true)
+            else
+                WSL_EXE_OUTPUT=$(wsl.exe --version 2>/dev/null | tr -d '\000\r' || true)
+            fi
+        fi
+        ;;
+esac
+
 {
     if command -v docker &>/dev/null; then
         echo "Docker:    $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo "running")"
@@ -391,6 +438,7 @@ fi
             echo "Compose:   $(docker compose version --short 2>/dev/null || echo "detected")"
         fi
     fi
+    print_wsl_version_line "$WSL_PROC_VERSION" "$WSL_EXE_OUTPUT"
     echo ""
 } >>"$RESULTS_FILE_TMP"
 
@@ -1279,11 +1327,15 @@ check_docker_disk() {
         exit 1
     fi
 
+    # LDM-#2240: a PASSING check reaches the report too, not just the console.
+    # Only the failure branches used to, so "how much room did this run start
+    # with" could not be read off a report -- and these figures are what ruled
+    # disk out as the cause of the OrbStack round-trip failure.
     if [ "$free_gb" -ge "$need" ]; then
         if [ -n "$host_free_gb" ]; then
-            echo "✅ Docker has ${free_gb} GB free (host: ${host_free_gb} GB)."
+            echo "✅ Docker has room ${label}: ${free_gb} GB free, need ${need} GB (host: ${host_free_gb} GB)." | tee -a "$RESULTS_FILE_TMP"
         else
-            echo "✅ Docker has ${free_gb} GB free."
+            echo "✅ Docker has room ${label}: ${free_gb} GB free, need ${need} GB." | tee -a "$RESULTS_FILE_TMP"
         fi
         return 0
     fi
@@ -1998,6 +2050,101 @@ META
     return 0
 }
 
+# LDM-#2138: the offline slice of `ldm ai`. The conversation itself needs a
+# third-party API, a 60-second timeout and a secret, so it is deliberately NOT
+# asserted -- a gate that goes red for a Google outage trains everyone to ignore
+# red. What is asserted needs nothing outside this script's control:
+#
+#   1. `ldm ai --help` exits 0.
+#   2. bare `ldm -y ai` is not an argparse error (the LDM-#1505 regression: a
+#      required positional made the bare form the one that could not work). It
+#      is refused by cmd_ai with "needs a question", exit 1.
+#   3. `ldm -y ai <question>` with no key fails cleanly and RETURNS: -y makes
+#      UI.ask return its default, so _get_gemini_val reaches UI.die before any
+#      network call. The aistudio URL must be printed first (LDM-#1971).
+#
+# Isolated LDM_HOME, like the config guards below: an operator with a real
+# gemini_api_key in ~/.ldmrc would otherwise sail past the key prompt and call
+# Google, turning a deterministic check into a network one on exactly the
+# machines most likely to have a key. stdin is /dev/null and the call is
+# bounded, so a regression that prompts fails the check instead of hanging the
+# suite. Output shapes observed from source with an empty LDM_HOME.
+verify_ai_offline() {
+    local ldm_cmd="$1"
+    local work_dir="$2"
+    local limit="${3:-60}"
+
+    local iso_home="${work_dir}/ai-offline-home"
+    rm -rf "$iso_home"
+    mkdir -p "$iso_home" || return 1
+
+    local help_code
+    LDM_HOME="$iso_home" "$ldm_cmd" ai --help </dev/null >/dev/null 2>&1 \
+        && help_code=0 || help_code=$?
+    if [ "$help_code" -ne 0 ]; then
+        rm -rf "$iso_home"
+        echo "❌ ERROR: 'ldm ai --help' exited ${help_code}, expected 0."
+        return 1
+    fi
+
+    local bare_out bare_code
+    bare_out=$(LDM_HOME="$iso_home" "$ldm_cmd" -y ai </dev/null 2>&1) \
+        && bare_code=0 || bare_code=$?
+    if [ "$bare_code" -eq 2 ] || echo "$bare_out" | grep -qF "arguments are required"; then
+        rm -rf "$iso_home"
+        echo "❌ ERROR: bare 'ldm -y ai' is an argparse error (exit ${bare_code}); the query positional must be optional (LDM-#1505)."
+        echo "   Output was: ${bare_out}"
+        return 1
+    fi
+    if [ "$bare_code" -ne 1 ] || ! echo "$bare_out" | grep -qF "needs a question"; then
+        rm -rf "$iso_home"
+        echo "❌ ERROR: bare 'ldm -y ai' should refuse with 'needs a question' and exit 1; got exit ${bare_code}."
+        echo "   Output was: ${bare_out}"
+        return 1
+    fi
+
+    # Bounded: run in the background and give up after $limit seconds.
+    local key_log="${iso_home}/ai-no-key.log"
+    LDM_HOME="$iso_home" "$ldm_cmd" -y ai status </dev/null >"$key_log" 2>&1 &
+    local pid=$! waited=0
+    while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt "$limit" ]; do
+        sleep 1
+        waited=$((waited + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+        echo "❌ ERROR: 'ldm -y ai <question>' with no key did not return within ${limit}s -- it is prompting or calling the network (LDM-#2138)."
+        echo "   Output was: $(cat "$key_log" 2>/dev/null)"
+        rm -rf "$iso_home"
+        return 1
+    fi
+    local key_code
+    wait "$pid" && key_code=0 || key_code=$?
+    local key_out
+    key_out=$(cat "$key_log" 2>/dev/null)
+    rm -rf "$iso_home"
+
+    if [ "$key_code" -eq 0 ]; then
+        echo "❌ ERROR: 'ldm -y ai <question>' with no key exited 0; it must fail when no key is configured."
+        echo "   Output was: ${key_out}"
+        return 1
+    fi
+    if ! echo "$key_out" | grep -qF "aistudio.google.com/app/apikey"; then
+        echo "❌ ERROR: 'ldm -y ai <question>' with no key did not print where to get one (aistudio.google.com/app/apikey, LDM-#1971)."
+        echo "   Output was: ${key_out}"
+        return 1
+    fi
+    if ! echo "$key_out" | grep -qF "API Key is required"; then
+        echo "❌ ERROR: 'ldm -y ai <question>' with no key failed (exit ${key_code}) but not at the key check."
+        echo "   Output was: ${key_out}"
+        return 1
+    fi
+
+    echo "✅ 'ldm ai' offline slice verified: --help exits 0, bare form refuses without an argparse error, no-key run returns with the key URL (LDM-#2138)."
+    return 0
+}
+
 verify_cascading_default_guard() {
     local ldm_cmd="$1"
     local work_dir="$2"
@@ -2194,6 +2341,14 @@ if CONFIG_STORE_OUT=$(verify_config_answers_from_the_deciding_store "$LDM_CMD" "
     report_ok "$CONFIG_STORE_OUT"
 else
     echo "$CONFIG_STORE_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
+echo ">> Verifying the offline slice of 'ldm ai' (LDM-#2138)..."
+if AI_OFFLINE_OUT=$(verify_ai_offline "$LDM_CMD" "$LDM_WORKSPACE"); then
+    report_ok "$AI_OFFLINE_OUT"
+else
+    echo "$AI_OFFLINE_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
 
@@ -3279,6 +3434,132 @@ verify_bringup_timeout_is_read_by_the_binary() {
     return 0
 }
 
+# --- LDM-#2109: the search-wipe guard (LDM-#2083) ---------------------------
+verify_search_wipe_guard() {
+    # LDM-#2083 guards the automatic search volume repair, which deletes the
+    # SHARED search data directory: it refuses while other projects run,
+    # `--force` overrides that, and the failing container's logs are saved
+    # before `docker rm -f` takes them. The repair is reached only when a
+    # NEWLY CREATED Elasticsearch misses its readiness window, so this needs
+    # three things it controls:
+    #
+    #   * LDM_SEARCH_READY_TIMEOUT (LDM-#2109). `0` probes nothing, so the
+    #     window is missed on every machine -- the refusal needs nothing more.
+    #     The `--force` run uses `5`: one probe the instant the container
+    #     starts, then one 5s sleep. The log capture needs that sleep, because
+    #     at `0` it runs before Elasticsearch has written a line.
+    #   * an isolated LDM_HOME, so the data being wiped is this check's own
+    #     (`~/.ldm/infra/search/data`) and never the machine's real index;
+    #   * a "running project" it owns: a hand-written meta whose
+    #     container_name is a running alpine container, which is all
+    #     scan_running_projects asks of one. The suite cannot use its own
+    #     project for this -- it refuses to start while one runs (LDM-#2085).
+    #
+    # The repair is only on the creation path, hence the `docker rm -f` of the
+    # global search container before each run. The real one is put back at the
+    # end, on its real data, which this check never touches.
+    local ldm_cmd="$1"
+    local work_dir="$2"
+
+    local iso_home="${work_dir}/searchwipe-home"
+    local proj="ldmsearchwipe"
+    local proj_dir="${work_dir}/${proj}"
+    local search_dir="${iso_home}/.ldm/infra/search"
+    local canary="${search_dir}/data/ldm-e2e-2109-canary"
+
+    _searchwipe_teardown() {
+        docker rm -f "$proj" liferay-search-global >/dev/null 2>&1
+        rm -rf "$proj_dir"
+        remove_workspace_dir "$iso_home" >&2
+        # Back on the real LDM_HOME, the real data, and the default window.
+        # Only after the stand-in is gone, so nothing here can be refused.
+        if ! "$ldm_cmd" -y infra setup --search >/dev/null 2>&1; then
+            echo "❌ ERROR: could not restore the global search container after the LDM-#2083 check; run 'ldm infra setup --search' by hand."
+            return 1
+        fi
+    }
+
+    docker rm -f "$proj" liferay-search-global >/dev/null 2>&1
+    rm -rf "$proj_dir"
+    # A leftover home could hold an earlier run's failure log, which would
+    # satisfy the capture check below without this run capturing anything.
+    if ! remove_workspace_dir "$iso_home" >&2; then
+        echo "❌ ERROR: could not clear ${iso_home}; the LDM-#2083 guard was NOT evaluated and this is not a skip."
+        return 1
+    fi
+    mkdir -p "$proj_dir" "${search_dir}/data" || return 1
+    printf '{"project_name": "%s", "container_name": "%s"}\n' "$proj" "$proj" > "${proj_dir}/meta"
+    echo "canary" > "$canary"
+    if ! docker run -d --name "$proj" alpine sleep 600 >/dev/null 2>&1; then
+        _searchwipe_teardown
+        echo "❌ ERROR: could not start the stand-in running project '${proj}'; the LDM-#2083 guard was NOT evaluated and this is not a skip."
+        return 1
+    fi
+
+    # 1. A project is running, so the wipe is refused: exit 3, the project
+    #    named with how to stop it, and nothing deleted or captured.
+    local out code
+    out=$(LDM_HOME="$iso_home" LDM_SEARCH_READY_TIMEOUT=0 \
+        "$ldm_cmd" -y infra setup --search 2>&1) && code=0 || code=$?
+    if [ "$code" -ne 3 ] \
+        || ! echo "$out" | grep -qF "Refusing to wipe the shared search data while other LDM projects are running" \
+        || ! echo "$out" | grep -qF "ldm stop ${proj}"; then
+        _searchwipe_teardown
+        echo "❌ ERROR: the search repair was not refused while '${proj}' ran (exit ${code}, expected 3) (LDM-#2083)."
+        echo "   Output was: $(echo "$out" | tail -15)"
+        return 1
+    fi
+    if [ ! -f "$canary" ] || echo "$out" | grep -qF "Attempting automatic search volume repair"; then
+        _searchwipe_teardown
+        echo "❌ ERROR: the refusal was printed, but the search data was wiped anyway (LDM-#2083)."
+        return 1
+    fi
+    # The refusal comes before the capture, so a log here would mean the
+    # capture check below cannot tell this run's from it.
+    if [ -n "$(find "$search_dir" -maxdepth 1 -name 'search-failure-*.log' 2>/dev/null)" ]; then
+        _searchwipe_teardown
+        echo "❌ ERROR: a search failure log exists after a refused repair; the refusal must precede the capture (LDM-#2083)."
+        return 1
+    fi
+
+    # 2. --force proceeds. Exit 3 is still expected: the window applies to
+    #    every restart too, so the repair runs at each of its two attempts and
+    #    then gives up with "failed to start after 2 restart attempts".
+    docker rm -f liferay-search-global >/dev/null 2>&1
+    out=$(LDM_HOME="$iso_home" LDM_SEARCH_READY_TIMEOUT=5 \
+        "$ldm_cmd" -y --force infra setup --search 2>&1) && code=0 || code=$?
+    if [ "$code" -ne 3 ] || ! echo "$out" | grep -qF -- "--force given: deleting the SHARED search data at"; then
+        _searchwipe_teardown
+        echo "❌ ERROR: --force did not take the repair past the refusal (exit ${code}, expected 3) (LDM-#2083)."
+        echo "   Output was: $(echo "$out" | tail -15)"
+        return 1
+    fi
+    if [ -f "$canary" ]; then
+        _searchwipe_teardown
+        echo "❌ ERROR: --force announced the wipe but the search data is still there (LDM-#2083)."
+        return 1
+    fi
+
+    # 3. The evidence is kept: a non-empty log beside the data directory, and
+    #    saved BEFORE the repair is announced -- the removal follows that line.
+    local saved_at repair_at log_file
+    saved_at=$(echo "$out" | grep -nF "Saved the failing container's logs to" | head -n 1 | cut -d: -f1)
+    repair_at=$(echo "$out" | grep -nF "Attempting automatic search volume repair" | head -n 1 | cut -d: -f1)
+    log_file=$(find "$search_dir" -maxdepth 1 -name 'search-failure-*.log' -size +0c 2>/dev/null | head -n 1)
+    if [ -z "$log_file" ] || [ -z "$saved_at" ] || [ -z "$repair_at" ] || [ "$saved_at" -ge "$repair_at" ]; then
+        _searchwipe_teardown
+        echo "❌ ERROR: the failing search container's logs were not captured before its removal (LDM-#2083)."
+        echo "   log file: '${log_file}', saved at line '${saved_at}', repair at line '${repair_at}'."
+        echo "   Output was: $(echo "$out" | tail -15)"
+        return 1
+    fi
+
+    _searchwipe_teardown || return 1
+    echo "✅ The search wipe is refused while a project runs, --force overrides it, and the failing container's logs are saved first (LDM-#2083/#2109)."
+    return 0
+}
+# --- end LDM-#2109 ----------------------------------------------------------
+
 verify_ssl_renewal_reissues() {
     # The certificate directory and the renewal command, both asserted because
     # `docs/TROUBLESHOOTING.md` told Windows/WSL users to
@@ -3428,6 +3709,16 @@ else
     echo "$BRINGUP_TMO_OUT" | tee -a "$RESULTS_FILE_TMP"
     exit 1
 fi
+
+# --- LDM-#2109: the search-wipe guard (LDM-#2083) ---------------------------
+echo ">> Verifying the search wipe is guarded (LDM-#2083/#2109)..."
+if SEARCHWIPE_OUT=$(verify_search_wipe_guard "$LDM_CMD" "$LDM_WORKSPACE"); then
+    report_ok "$SEARCHWIPE_OUT"
+else
+    echo "$SEARCHWIPE_OUT" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+# --- end LDM-#2109 ----------------------------------------------------------
 
 echo ">> Verifying --force is not an always-firing positional (LDM-#1835)..."
 if FORCE_POS_OUT=$(verify_force_is_not_a_positional "$LDM_CMD"); then
@@ -7272,6 +7563,11 @@ ROUNDTRIP_OK=true
 # which ROUNDTRIP_OK gates and which is a separate assertion about the product.
 ROUNDTRIP_ENV_OK=true
 ROUNDTRIP_BOOTED=false
+# LDM-#2200: the populated pre_readiness_seconds verdict, kept apart from
+# ROUNDTRIP_OK for the same reason as ROUNDTRIP_ENV_OK -- it must fail the run
+# without skipping the reset check that ROUNDTRIP_OK gates.
+ROUNDTRIP_TIMING_OK=true
+ROUNDTRIP_BOOT_WALL=""
 
 # LDM-#2372: run the shared env-leak checker and record its verdict in
 # ROUNDTRIP_ENV_OK, never in ROUNDTRIP_OK. $1 names what was checked; the rest
@@ -7294,6 +7590,22 @@ roundtrip_env_check() {
         ROUNDTRIP_ENV_OK=false
     fi
 }
+
+# LDM-#2240: re-check the disk before the round trip, as LDM-#1430 does before
+# the snapshot. The round trip runs late, writes a ~1 GB package, extracts it
+# again on import and boots a second stack's database and search data -- the
+# second most disk-hungry phase in the script, and the up-front pre-flight says
+# little about headroom this far into a run. 5 GB is the snapshot's figure,
+# because the package IS a snapshot plus its tar; it is not a measured peak.
+# Warn mode, then refuse here, for the snapshot's reason: a named check beats a
+# boot that dies of ENOSPC and reads as a product defect.
+if ! check_docker_disk 5 "for the .ldmp round trip" warn; then
+    echo "❌ ERROR: refusing to start the .ldmp round trip without room to finish it (LDM-#2240)." | tee -a "$RESULTS_FILE_TMP"
+    echo "   It packs, imports and boots a second copy of the project; a failure" | tee -a "$RESULTS_FILE_TMP"
+    echo "   part-way through would read as an LDM defect rather than a full disk." | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+
 rm -rf "$ROUNDTRIP_PKG_DIR"
 mkdir -p "$ROUNDTRIP_PKG_DIR"
 
@@ -7413,12 +7725,15 @@ if [ "$ROUNDTRIP_OK" = true ]; then
 fi
 
 if [ "$ROUNDTRIP_OK" = true ]; then
+    # LDM-#2200: timed, so the span LDM records can be reconciled with it.
+    ROUNDTRIP_BOOT_T0=$(date +%s)
     if ! ROUNDTRIP_BOOT_OUT=$("$LDM_CMD" -y run "$ROUNDTRIP_PROJECT" --port "$ROUNDTRIP_PORT" 2>&1); then
         echo "❌ ERROR: the imported project did not boot (LDM-#2131)." | tee -a "$RESULTS_FILE_TMP"
         printf '%s\n' "--- what 'ldm run' said ---" "$ROUNDTRIP_BOOT_OUT" "--- end ---" | tee -a "$RESULTS_FILE_TMP"
         ROUNDTRIP_OK=false
     else
         ROUNDTRIP_BOOTED=true
+        ROUNDTRIP_BOOT_WALL=$(( $(date +%s) - ROUNDTRIP_BOOT_T0 ))
     fi
 fi
 
@@ -7476,6 +7791,79 @@ print(next((r.get("path") or "" for r in rows if r.get("project") == want), ""))
     fi
 fi
 
+# LDM-#2200: a POPULATED pre_readiness_seconds, asserted end to end.
+#
+# Every other boot in this suite is `ldm run --no-wait` followed by `ldm wait`,
+# and `cmd_wait` passes no total_start, so the span it records is null --
+# correctly (LDM-#2199). The branch that computes a real span,
+# `start_time - float(total_start)` in runtime/readiness.py, is reached only by
+# a plain `ldm run`, which passes the pipeline context's total_start. This is
+# the suite's one such boot, so it is the only place that branch can be seen
+# producing a figure from a real Liferay.
+#
+# Asserted: the boot recorded status "ready", pre_readiness_seconds is a
+# positive number, and pre_readiness_seconds + elapsed_seconds (the readiness
+# wait) does not exceed the wall-clock time this script measured around the
+# command. It may be well UNDER it -- work after readiness (headless patches,
+# held-back site initializers) and interpreter start are outside both figures
+# -- so no lower bound is asserted. The 2 s of slack covers whole-second
+# `date` readings; elapsed_seconds is truncated, so it never adds to the sum.
+#
+# Only in a full verification: the round trip is not in the boundary slice, so
+# this runs once per release cycle rather than once per pull request.
+# Named so it can be exercised without a full E2E run.
+check_roundtrip_pre_readiness() {
+    local status_file="$1" wall="$2"
+    "$VENV_PYTHON" -c '
+import json, sys
+path, wall = sys.argv[1], int(sys.argv[2])
+try:
+    with open(path, encoding="utf-8") as fh:
+        st = json.load(fh)
+except (OSError, ValueError) as exc:
+    print("ERROR: could not read %s (%s); LDM writes it on every boot that waits for readiness." % (path, exc))
+    sys.exit(1)
+status = st.get("status")
+pre = st.get("pre_readiness_seconds")
+elapsed = st.get("elapsed_seconds")
+print("   recorded: status=%r pre_readiness_seconds=%r elapsed_seconds=%r; measured wall clock %ss" % (status, pre, elapsed, wall))
+if status != "ready":
+    print("ERROR: the boot recorded status %r, expected ready." % (status,))
+    sys.exit(1)
+def is_num(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+if not is_num(pre) or pre <= 0:
+    print("ERROR: a plain ldm run recorded pre_readiness_seconds as %r; it passes total_start, so it must be a positive number (LDM-#2181/#2200)." % (pre,))
+    sys.exit(1)
+if not is_num(elapsed) or elapsed < 0:
+    print("ERROR: elapsed_seconds is %r, not a duration." % (elapsed,))
+    sys.exit(1)
+if pre + elapsed > wall + 2:
+    print("ERROR: pre_readiness_seconds + elapsed_seconds = %.1fs, more than the %ss the command took; the figures do not reconcile with the wall clock (LDM-#2181)." % (pre + elapsed, wall))
+    sys.exit(1)
+' "$status_file" "$wall"
+}
+
+if [ "$ROUNDTRIP_OK" = true ]; then
+    echo ">> Verifying the round trip's plain 'ldm run' recorded the span before readiness (LDM-#2200)..."
+    if [ -z "${ROUNDTRIP_COPY_DIR:-}" ] || [ -z "$ROUNDTRIP_BOOT_WALL" ]; then
+        echo "❌ ERROR: the imported copy's directory or boot time is unknown, so pre_readiness_seconds could not be checked. LDM-#2200 was NOT evaluated and this is not a skip." | tee -a "$RESULTS_FILE_TMP"
+        ROUNDTRIP_TIMING_OK=false
+    else
+        PRE_READINESS_RC=0
+        PRE_READINESS_OUT=$(check_roundtrip_pre_readiness \
+            "${ROUNDTRIP_COPY_DIR}/.liferay-docker/startup-status.json" "$ROUNDTRIP_BOOT_WALL" 2>&1) \
+            || PRE_READINESS_RC=$?
+        printf '%s\n' "$PRE_READINESS_OUT" | tee -a "$RESULTS_FILE_TMP"
+        if [ "$PRE_READINESS_RC" -eq 0 ]; then
+            report_ok "✅ A plain 'ldm run' recorded a positive pre_readiness_seconds that reconciles with the wall clock (LDM-#2200)."
+        else
+            echo "❌ ERROR: the round trip's 'ldm run' did not record a usable pre_readiness_seconds (LDM-#2200)." | tee -a "$RESULTS_FILE_TMP"
+            ROUNDTRIP_TIMING_OK=false
+        fi
+    fi
+fi
+
 # LDM-#2221: captured BEFORE the removal below, which is the whole point.
 # A failed boot, or a portal that never answers, leaves containers whose STATE
 # says why -- oom-killed, the health status, the failing streak and the
@@ -7523,7 +7911,8 @@ rm -rf "${LDM_WORKSPACE:?}/${ROUNDTRIP_PROJECT}" "$ROUNDTRIP_PKG_DIR"
 
 # LDM-#2372: an env leak fails the run too, but only here, after the reset
 # check has had its turn. So does an LDM-#2359 bundle in the package.
-if [ "$ROUNDTRIP_OK" != true ] || [ "$ROUNDTRIP_ENV_OK" != true ]; then
+if [ "$ROUNDTRIP_OK" != true ] || [ "$ROUNDTRIP_ENV_OK" != true ] \
+   || [ "$ROUNDTRIP_TIMING_OK" != true ]; then
     exit 1
 fi
 

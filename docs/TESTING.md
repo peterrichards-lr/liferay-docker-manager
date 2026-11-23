@@ -91,6 +91,7 @@ ever grow and that warning is the only advance notice anyone gets (LDM-#1650).
 | 2.2 | **Shared DB Mode** | `ldm init <Name> --no-up --no-seed --database-mode shared --db postgresql` | Valid compose (no `depends_on` on an undefined service), JDBC URL targets `liferay-db-global`, derived database name is lowercase, `database_mode` persisted to `meta`. |
 | 2.3 | **Shared DB Mode (MySQL)** | `ldm init <Name> --no-up --no-seed --database-mode shared --db mysql` | Succeeds. JDBC URL targets `liferay-db-mysql-global:3306` -- **not** `liferay-db-global`, which would aim a MariaDB driver at the PostgreSQL container -- derived database name is lowercase, no `depends_on` on an undefined service. |
 | 2.4 | **Shared Search Mode** | `ldm init <Name> --no-up --no-seed --search-mode shared` | `search_mode` persisted to `meta`; an `ElasticsearchConfiguration.config` written under `osgi/configs` with `productionModeEnabled`, the global cluster address and a **lowercase** `indexNamePrefix`; that directory mounted into the container. |
+| 2.5 | **Search-wipe guard** (LDM-#2083/#2109) | With an isolated `LDM_HOME` and a stand-in running project, `LDM_SEARCH_READY_TIMEOUT=0 ldm infra setup --search`, then `LDM_SEARCH_READY_TIMEOUT=5 ldm --force infra setup --search` | The first refuses the automatic search volume repair (exit `3`), names the project with `ldm stop <name>`, and leaves the data untouched. With `--force` the data is wiped, and the failing container's logs are saved as `search-failure-*.log` before the repair is announced. The override is what makes the path reachable on every machine. The suite cannot use its own project as the running one, because it refuses to start while one runs (LDM-#2085). |
 
 ### 🛠️ Manual
 
@@ -472,6 +473,20 @@ database dump plus a tar of every payload directory — and needs 5 GB of
 remaining headroom. Failing at a named check beats failing inside `tar`, and a
 snapshot that cannot write its payload is not a snapshot (LDM-#1429).
 
+**A third check runs before the `.ldmp` round trip** (LDM-#2240). The round
+trip runs late, writes a ~1 GB package, extracts it again on import and boots a
+second copy of the project, which makes it the second most disk-hungry phase. It
+needs the same 5 GB as the snapshot and refuses the same way. That figure is
+borrowed from the snapshot, because the package is a snapshot plus its tar; it
+has not been measured on its own.
+
+**A passing check is written to the report**, not just to the console
+(LDM-#2240). It used to be the other way round: only the failure branches
+reached the report, so a report could not say how much room the run started
+with. Each check now records a line such as
+`Docker has room to finish: 20 GB free, need 15 GB (host: 21 GB)`. Those
+figures are what ruled disk out as the cause of an OrbStack round-trip failure.
+
 The run refuses **before pulling anything**, so a machine that cannot finish
 never produces a half-written report. That matters because a report which failed
 for lack of disk still reads as a defect finding, and these reports are the
@@ -812,6 +827,39 @@ before moving anything**, naming each report and its platform — the same
 approach LDM-#1390 took to a version mismatch. Repeat runs of the *same*
 environment continue to supersede one another as before.
 
+### **The WSL version comes from the report**
+
+The **Native WSL2** row shows a WSL version, and until LDM-#2142 no report held
+one. It came from a constant in `sync_compatibility.py`, and that constant was
+only right until the lab machine upgraded. It did upgrade, mid-cycle, from
+2.4.4 to 3.0.3.0, and nothing could notice.
+
+When the bash script runs inside WSL, which it detects from `microsoft` in
+`/proc/version`, it now writes a header line:
+
+```text
+WSL:       3.0.3.0
+```
+
+The version is the first dotted number on the first line of `wsl.exe
+--version`. That command is reached through interop, and the script stops
+waiting after 15 seconds where `timeout` exists. If the command is unavailable
+(interop is disabled, or an inbox WSL has no `--version`), the line reads
+`WSL:       unknown`. Outside WSL no line is written, so every other platform's
+report is unchanged. The PowerShell script does the same when `pwsh` runs inside
+a distro. On Windows itself there is no `/proc/version`, so it writes nothing.
+
+`sync_compatibility.py` reads the line only for the Native WSL2 row:
+
+| Report | Published version |
+|---|---|
+| `WSL:` carries a version | that version |
+| `WSL:       unknown` | none |
+| no `WSL:` line (it predates LDM-#2142) | the legacy constant |
+
+The `unknown` case publishes nothing rather than falling back to the constant,
+because the constant is exactly the unsourced value this change removed.
+
 ### **A blank header field reads as `Unknown`, not as the next line**
 
 Every header field is parsed with a pattern bounded to its own line. That is
@@ -1084,4 +1132,4 @@ table above as the CI budget** — the workflow prints its own timings from
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-20* | *Last Reviewed: 2026-11-20*
+*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*

@@ -4813,6 +4813,55 @@ _DOCTOR_CASES = (
     ("always-warns", _say(f"{_ERC_ROW}\n{_ERC_HINT}", 1), False, "not specific"),
 )
 
+
+def _ai_stub(help_code=0, bare=None, query=None):
+    """`ldm ai` per invocation shape. The texts are the ones observed from the
+    source with an empty LDM_HOME (LDM-#2138)."""
+    bare = bare or _say(
+        "'ldm ai' needs a question when it cannot prompt.\n"
+        'Tip: Pass one directly, e.g. ldm ai "why will my project not start".',
+        1,
+    )
+    query = query or _say(
+        "To use 'ldm ai', you need a free Google Gemini API Key.\n"
+        "Get one here: https://aistudio.google.com/app/apikey\n"
+        "API Key is required to proceed.",
+        1,
+    )
+    return (
+        'case "$*" in\n'
+        f"  *--help*) exit {help_code} ;;\n"
+        f'  "-y ai") {bare} ;;\n'
+        f"  *) {query} ;;\n"
+        "esac\n"
+    )
+
+
+_AI_CASES = (
+    ("fixed", _ai_stub(), True, "offline slice verified"),
+    ("help-broken", _ai_stub(help_code=2), False, "--help' exited 2"),
+    (
+        "positional-required",
+        _ai_stub(
+            bare=_say("ldm ai: error: the following arguments are required: query", 2)
+        ),
+        False,
+        "argparse error",
+    ),
+    (
+        "url-suppressed",
+        _ai_stub(query=_say("API Key is required to proceed.", 1)),
+        False,
+        "did not print where to get one",
+    ),
+    (
+        "key-not-required",
+        _ai_stub(query=_say("Get one here: https://aistudio.google.com/app/apikey", 0)),
+        False,
+        "exited 0",
+    ),
+)
+
 #: name -> (bash function, PowerShell function, takes a work dir, cases)
 _GUARDRAILS = {
     "init --tag-prefix": (
@@ -4832,6 +4881,12 @@ _GUARDRAILS = {
         "Test-DoctorWarnsMissingOAuthErcList",
         True,
         _DOCTOR_CASES,
+    ),
+    "ldm ai offline": (
+        "verify_ai_offline",
+        "Test-AiOffline",
+        True,
+        _AI_CASES,
     ),
 }
 
@@ -4980,3 +5035,207 @@ class BothHalvesCallTheGuardrailChecks(unittest.TestCase):
                 section = text[begin : text.index(closer, begin)]
                 with self.subTest(check=label, script=script.name):
                     self.assertIn(call, section, f"{script.name} never calls it there")
+
+
+# --- LDM-#2142: the WSL version reaches the report header -------------------
+
+_WSL_PROC = "Linux version 6.6.87.2-microsoft-standard-WSL2 (root@host) #1 SMP"
+_NATIVE_PROC = "Linux version 6.11.0-29-generic (buildd@lcy02) #29 SMP"
+# The WSL version is on the first line and its label is localised, so the
+# parser must not depend on the label. The kernel line follows and must NOT be
+# the one taken. This shape is NOT observed in this repository -- no report
+# carries `wsl.exe --version` output -- so it is the documented one.
+_WSL_EXE = "WSL-Version: 3.0.3.0\nKernelversion: 6.6.87.2-1\nWSLg-Version: 1.0.66\n"
+
+
+def _run_bash_wsl_line(proc_version, wsl_out):
+    func_text = _extract_function(
+        BASH_SCRIPT,
+        re.compile(r"^print_wsl_version_line\s*\(\)\s*\{.*?^\}", re.M | re.S),
+    )
+    res = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'{func_text}\nprint_wsl_version_line "$1" "$2"\n',
+            "_",
+            proc_version,
+            wsl_out,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0, f"bash exited {res.returncode}: {res.stderr}"
+    return res.stdout.strip()
+
+
+# On a Windows runner `bash` resolves to WSL's launcher, which has no distro
+# installed: it prints an install hint in UTF-16 and exits 1. The other bash
+# harnesses in this file skip there for the same reason.
+@unittest.skipIf(os.name == "nt", "bash on Windows is WSL's launcher, not a shell")
+class TestBashWslVersionLine(unittest.TestCase):
+    """LDM-#2142: sync_compatibility.py published a hardcoded WSL version
+    because no report contained one."""
+
+    def test_inside_wsl_the_version_is_recorded(self):
+        self.assertEqual(_run_bash_wsl_line(_WSL_PROC, _WSL_EXE), "WSL:       3.0.3.0")
+
+    def test_an_unreadable_version_says_unknown(self):
+        """Interop disabled, or an inbox wsl.exe with no --version."""
+        self.assertEqual(_run_bash_wsl_line(_WSL_PROC, ""), "WSL:       unknown")
+
+    def test_outside_wsl_nothing_is_emitted(self):
+        self.assertEqual(_run_bash_wsl_line(_NATIVE_PROC, _WSL_EXE), "")
+        self.assertEqual(_run_bash_wsl_line("", ""), "")
+
+
+@unittest.skipUnless(_powershell_binaries(), "no PowerShell available")
+class TestPowerShellWslVersionLine(unittest.TestCase):
+    """LDM-#2142 parity: the same inputs give the same line."""
+
+    def test_parity_with_the_bash_half(self):
+        func_text = _extract_function(
+            PS1_SCRIPT,
+            re.compile(r"^function Get-WslVersionLine\s*\{.*?^\}", re.M | re.S),
+        )
+        script = (
+            f"{func_text}\n"
+            "$line = Get-WslVersionLine -ProcVersion $env:T_PROC -WslOutput $env:T_WSL\n"
+            "if ($line) { Write-Output $line }\n"
+        )
+        # The expected lines are the ones TestBashWslVersionLine pins for the
+        # bash half, so both halves are held to the same values. Comparing
+        # against a live bash run instead failed on Windows, where `bash` is
+        # WSL's launcher rather than a shell.
+        cases = (
+            (_WSL_PROC, _WSL_EXE, "WSL:       3.0.3.0"),
+            (_WSL_PROC, "", "WSL:       unknown"),
+            (_NATIVE_PROC, _WSL_EXE, ""),
+        )
+        for name, binary in _powershell_binaries():
+            for proc, wsl, expected in cases:
+                with self.subTest(shell=name, proc=proc[:30], wsl=bool(wsl)):
+                    res = subprocess.run(
+                        [binary, "-NoProfile", "-NonInteractive", "-Command", script],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        env={**os.environ, "T_PROC": proc, "T_WSL": wsl},
+                    )
+                    self.assertEqual(res.returncode, 0, res.stderr)
+                    self.assertEqual(res.stdout.strip(), expected)
+
+
+# --- LDM-#2200: a populated pre_readiness_seconds after a plain `ldm run` ---
+
+
+def _write_status(directory, **fields):
+    """A startup-status.json in the shape write_startup_status emits."""
+    import json
+
+    payload = {
+        "status": "ready",
+        "milestone_seconds": {"Tomcat Server Ready": 40.0},
+        "elapsed_seconds": 120,
+        "pre_readiness_seconds": 35.3,
+    }
+    payload.update(fields)
+    path = Path(directory) / "startup-status.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+#: label -> (fields overriding the populated boot, wall seconds, expected ok)
+_PRE_READINESS_CASES: dict[str, tuple[dict, int, bool]] = {
+    "populated": ({}, 170, True),
+    "null, as after ldm wait": ({"pre_readiness_seconds": None}, 170, False),
+    "zero": ({"pre_readiness_seconds": 0.0}, 170, False),
+    "not ready": ({"status": "timeout"}, 1000, False),
+    "longer than the command": ({"elapsed_seconds": 150}, 170, False),
+    "within the slack": ({"elapsed_seconds": 136}, 170, True),
+}
+
+
+def _run_bash_pre_readiness(status_file, wall):
+    func_text = _extract_function(
+        BASH_SCRIPT,
+        re.compile(r"^check_roundtrip_pre_readiness\s*\(\)\s*\{.*?^\}", re.M | re.S),
+    )
+    res = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'{func_text}\ncheck_roundtrip_pre_readiness "$1" "$2"\n',
+            "_",
+            str(status_file),
+            str(wall),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "VENV_PYTHON": sys.executable},
+    )
+    return res.returncode == 0, res.stdout + res.stderr
+
+
+class TestBashRoundTripPreReadiness(unittest.TestCase):
+    """LDM-#2200: the round trip's plain `ldm run` is the suite's only boot
+    that passes total_start, so the only place a populated span is seen."""
+
+    def test_each_case(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for label, (fields, wall, want) in _PRE_READINESS_CASES.items():
+                with self.subTest(case=label):
+                    ok, out = _run_bash_pre_readiness(
+                        _write_status(tmp, **fields), wall
+                    )
+                    self.assertEqual(ok, want, out)
+
+    def test_a_missing_file_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ok, out = _run_bash_pre_readiness(Path(tmp) / "absent.json", 170)
+            self.assertFalse(ok, out)
+
+
+@unittest.skipUnless(_powershell_binaries(), "no PowerShell available")
+class TestPowerShellRoundTripPreReadiness(unittest.TestCase):
+    """LDM-#2200 parity: every case gives the bash half's verdict."""
+
+    def test_each_case_matches_the_bash_half(self):
+        func_text = _extract_function(
+            PS1_SCRIPT,
+            re.compile(r"^function Test-RoundTripPreReadiness\s*\{.*?^\}", re.M | re.S),
+        )
+        script = (
+            f"{func_text}\n"
+            "$r = Test-RoundTripPreReadiness -StatusFile $env:T_FILE"
+            " -WallSeconds ([int]$env:T_WALL)\n"
+            "$r.Lines | ForEach-Object { Write-Output $_ }\n"
+            "if ($r.Ok) { exit 0 } else { exit 1 }\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, binary in _powershell_binaries():
+                for label, (fields, wall, want) in _PRE_READINESS_CASES.items():
+                    with self.subTest(shell=name, case=label):
+                        path = _write_status(tmp, **fields)
+                        res = subprocess.run(
+                            [
+                                binary,
+                                "-NoProfile",
+                                "-NonInteractive",
+                                "-Command",
+                                script,
+                            ],
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                            env={
+                                **os.environ,
+                                "T_FILE": str(path),
+                                "T_WALL": str(wall),
+                            },
+                        )
+                        self.assertEqual(
+                            res.returncode == 0, want, res.stdout + res.stderr
+                        )

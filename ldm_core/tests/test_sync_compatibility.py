@@ -1569,3 +1569,82 @@ class TestArchivedReportsAreAnonymized:
         assert f"Version:      ldm {sync_compatibility.VERSION}" in (
             archived[0].read_text()
         )
+
+
+def _wsl_report(directory, wsl_line=None):
+    """A report shaped like the committed native-WSL2 one.
+
+    Its header records Platform, Docker and Compose -- what the bash half
+    collects from inside the distro -- and, since LDM-#2142, a `WSL:` line.
+    `wsl_line=None` is the pre-#2142 shape: no line at all.
+    """
+    lines = [
+        "=== LDM BINARY VERIFICATION REPORT ===",
+        "Timestamp:    Fri Nov 20 17:30:06 GMT 2026",
+        "Hostname:     lab",
+        "Platform:     Ubuntu 24.04.4 LTS",
+        "Run Context:  workstation",
+        "Binary:       /usr/local/bin/ldm",
+        f"Version:      ldm {sync_compatibility.VERSION}",
+        f"Script Ver:   {sync_compatibility.VERSION}",
+        "Docker:    29.3.0",
+        "Compose:   5.1.1",
+    ]
+    if wsl_line is not None:
+        lines.append(wsl_line)
+    lines += ["", "ALL E2E VERIFICATIONS PASSED!"]
+    path = directory / "verify-windows-pc-windows-11-native-wsl2-pass.txt"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+class TestWslVersionComesFromTheReport:
+    """LDM-#2142: the native-WSL2 row published a WSL version no report
+    contained. It came from a constant in `legacy_map`, correct only until the
+    lab machine upgraded -- which it did mid-cycle, 2.4.4 -> 3.0.3.0, with
+    nothing able to notice. The verify script now records the version in the
+    header, and the constant is a fallback for reports that predate it."""
+
+    def test_the_row_is_the_native_wsl2_one(self, tmp_path):
+        meta = sync_compatibility.get_report_metadata(_wsl_report(tmp_path))
+        assert meta["internal_slug"] == "windows-pc-windows-11-native-wsl2"
+
+    def test_a_stated_version_is_published(self, tmp_path):
+        """A version that differs from the constant, so the two cannot agree
+        by coincidence."""
+        meta = sync_compatibility.get_report_metadata(
+            _wsl_report(tmp_path, "WSL:       3.1.7.0")
+        )
+        assert meta["provider_v"] == "WSL 3.1.7.0"
+
+    def test_an_old_report_falls_back_to_the_legacy_value(self, tmp_path):
+        meta = sync_compatibility.get_report_metadata(_wsl_report(tmp_path))
+        assert meta["provider_v"] == "WSL 3.0.3.0"
+
+    def test_an_unreadable_version_does_not_borrow_the_constant(self, tmp_path):
+        """A run that could not read the version must publish nothing rather
+        than the constant -- the constant is exactly the unsourced fact this
+        issue removed."""
+        meta = sync_compatibility.get_report_metadata(
+            _wsl_report(tmp_path, "WSL:       unknown")
+        )
+        assert meta["provider_v"] == ""
+
+    def test_a_wsl_line_does_not_leak_into_another_row(self, tmp_path):
+        """Only the Native WSL2 provider reads it."""
+        report = _linux_report(
+            tmp_path,
+            "verify-raw-20260906-000000-pass.txt",
+            "Ubuntu 24.04.4 LTS",
+            sync_compatibility.VERSION,
+        )
+        report.write_text(
+            report.read_text().replace(
+                "Docker:       28.0.4\n", "Docker:       28.0.4\nWSL:       3.1.7.0\n"
+            ),
+            encoding="utf-8",
+        )
+        assert "WSL:       3.1.7.0" in report.read_text()
+        meta = sync_compatibility.get_report_metadata(report)
+        assert meta["provider"] != "Native WSL2"
+        assert "WSL" not in meta["provider_v"]
