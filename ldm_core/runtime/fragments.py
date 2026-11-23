@@ -444,6 +444,13 @@ class FragmentsService(BaseHandler):
                         spec_erc = spec.get("externalReferenceCode")
                         if not spec_erc:
                             continue
+                        # LDM-#2427: only the published spec reaches the
+                        # live page. A PUT on the `-draft` spec succeeds and
+                        # changes nothing visible, and `.../publish` is a
+                        # stub on every line (custom-osgi-modules#57), so a
+                        # draft can never be promoted through Headless.
+                        if spec_erc.endswith("-draft"):
+                            continue
 
                         for experience in spec.get("pageExperiences", []):
                             experience_erc = experience.get("externalReferenceCode")
@@ -466,6 +473,19 @@ class FragmentsService(BaseHandler):
 
             if patched_count > 0:
                 patched_via_specs = True
+                # LDM-#2427: the PUT writes the database, but on q1 LTS and
+                # q3.0 the rendered page kept the old value until a restart
+                # (measured, custom-osgi-modules#57). Unmeasured on Q4.0, so
+                # say it everywhere rather than guess.
+                project_id = project_meta.get("project_name") or project_meta.get(
+                    "container_name"
+                )
+                UI.warning(
+                    "Fragment configuration was updated through the Headless API, "
+                    "but Liferay may keep serving the old value until it restarts. "
+                    "If a page still shows it, restart the project: "
+                    f"ldm restart {project_id or '<project>'}"
+                )
                 break
 
             UI.detail(
@@ -613,7 +633,9 @@ class FragmentsService(BaseHandler):
             debug_path.write_text(json.dumps(debug_page_tree, indent=2))
             UI.detail(f"  Raw page tree written to: {debug_path}")
 
-    def _api_request(self, method, path, base_url, headers, payload=None):
+    def _api_request(
+        self, method, path, base_url, headers, payload=None, warn_on_refusal=False
+    ):
         url = f"{base_url}{path}"
         req = urllib.request.Request(url, headers=headers, method=method)
         if payload:
@@ -627,6 +649,22 @@ class FragmentsService(BaseHandler):
             with urllib.request.urlopen(req, context=ctx) as response:  # nosec B310
                 return json.loads(response.read().decode())
         except urllib.error.HTTPError as e:
+            if warn_on_refusal and e.code in (400, 404):
+                # LDM-#2427: a refused write is not an expected status. The
+                # 400 from a disabled feature flag was logged at debug level,
+                # so the Headless route failed silently for every project and
+                # nobody could see why it fell through to SQL.
+                detail = ""
+                try:
+                    body = json.loads(e.read().decode() or "{}")
+                    detail = body.get("title") or body.get("type") or ""
+                except Exception:
+                    pass
+                UI.warning(
+                    f"Headless API {method} {path} was refused: {e.code} {e.reason}"
+                    + (f" ({detail})" if detail else "")
+                )
+                return None
             if e.code in (400, 404):
                 UI.debug(
                     f"Headless API {method} {path} returned expected status: {e.code} {e.reason}"
@@ -642,7 +680,7 @@ class FragmentsService(BaseHandler):
         """Second rung of the fragment-override chain (LDM-#1602).
 
         The Headless API refuses specification updates on published site
-        initializer pages (LDM-#883, upstream LPD-99955), so the rung above
+        initializer pages (LDM-#883, upstream LPD-47524), so the rung above
         this one fails on exactly the packages that need it most. The
         `fragment-override` OSGi module answers the same need from inside the
         portal, where `FragmentEntryLinkLocalService` handles cache
@@ -907,7 +945,12 @@ class FragmentsService(BaseHandler):
 
                             put_path = f"/o/headless-admin-site/v1.0/sites/{site_erc}/page-specifications/{spec_erc}/page-experiences/{experience_erc}/page-elements/{element_erc}"
                             res = self._api_request(
-                                "PUT", put_path, ext_base_url, headers, payload=element
+                                "PUT",
+                                put_path,
+                                ext_base_url,
+                                headers,
+                                payload=element,
+                                warn_on_refusal=True,
                             )
                             if res:
                                 UI.success(
