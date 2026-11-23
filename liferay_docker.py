@@ -15,7 +15,13 @@ signal.signal(signal.SIGINT, _graceful_exit)
 # --- Dev Environment Bootstrap Interceptor ---
 # Allow `python liferay_docker.py dev-setup` to run even if third-party
 # dependencies (like requests) or generated files (like ui_colors) are missing.
-if len(sys.argv) > 1 and sys.argv[1] == "dev-setup":
+# LDM-#2477: `--help` falls through to argparse. It is assumed read-only, and
+# intercepting it ran pip in whatever .venv sat in the current directory.
+if (
+    len(sys.argv) > 1
+    and sys.argv[1] == "dev-setup"
+    and not {"-h", "--help"} & set(sys.argv[2:])
+):
     import subprocess
     from pathlib import Path
 
