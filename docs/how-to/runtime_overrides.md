@@ -84,8 +84,18 @@ feature.flag.LPD-74328=true
 > demo environments only. Do not carry it into a production configuration.
 > 2026.Q4 and later need neither flag, and LDM sets neither there.
 
-A refused `PUT` is reported as a warning with Liferay's reason, then LDM tries
-the routes below.
+A refused `PUT` is reported as a warning with Liferay's reason, once per
+element, then LDM tries the routes below. A refusal is treated as final: once
+LDM has found the elements your overrides name, a 4xx on every write means
+asking again will get the same answer, so it stops at once, makes one pass
+with the legacy patcher, and goes to the database fallback. It keeps waiting,
+up to `--fragment-patch-timeout`, only while no matching element has appeared,
+because the site initializer may still be populating the pages.
+
+On 2026.q4.0 the page-element route does not exist at all: that instance's
+`headless-admin-site` OpenAPI has no `page-experiences` or `page-elements`
+path, so the `PUT` answers 404 and the overrides are applied by the database
+fallback.
 
 **The page may need a restart.** The `PUT` writes the database, but on
 2026.q1 LTS and 2026.q3.0 the rendered page kept the old value until Liferay

@@ -337,6 +337,11 @@ class FragmentsService(BaseHandler):
             project_meta.get("force_specs", False)
         )
         patched_via_specs = False
+        # LDM-#2497: a refused PUT is warned about once per element path, not
+        # once per retry -- on 2026.q4.0 the route does not exist, and the
+        # retry loop printed the same two 404s 82 times.
+        self._refusal_warned: set[tuple[str, str]] = set()
+        specs_refused = False
 
         # Resolve target site scopes from project_meta or ZIP manifests
         target_site_scopes: set[str] = set()
@@ -404,6 +409,8 @@ class FragmentsService(BaseHandler):
                 continue
 
             connection_successful = True
+            self._spec_puts_sent = 0
+            self._spec_puts_refused = 0
             for site in sites_data["items"]:
                 site_erc = site.get("externalReferenceCode")
                 site_key = site.get("key")
@@ -488,6 +495,22 @@ class FragmentsService(BaseHandler):
                 )
                 break
 
+            # LDM-#2497: matching elements were found, so the site initializer
+            # has run; if Liferay then refused every write with a 4xx, asking
+            # again in five seconds gets the same answer. On 2026.q4.0 the
+            # route is absent (404) and this loop used to spend its whole
+            # budget proving it. A refusal is definitive -- stop here.
+            if self._spec_puts_sent and (
+                self._spec_puts_refused == self._spec_puts_sent
+            ):
+                specs_refused = True
+                UI.info(
+                    "Liferay refused every page-element update through the "
+                    "Headless API; not retrying. Trying the legacy patcher "
+                    "once, then the database."
+                )
+                break
+
             UI.detail(
                 f"Waiting for Site Initializer to populate page specifications (attempt {attempt + 1}/{max_retries})..."
             )
@@ -501,7 +524,11 @@ class FragmentsService(BaseHandler):
             specs_supported = False
 
         if not specs_supported:
-            for attempt in range(max_retries):
+            # LDM-#2497: after a definitive refusal the pages are known to be
+            # populated, so one legacy pass answers the question; waiting for
+            # the site initializer again would spend the rest of the budget.
+            legacy_attempts = 1 if specs_refused else max_retries
+            for attempt in range(legacy_attempts):
                 if budget_spent("legacy page elements"):
                     break
                 sites_data = (
@@ -522,6 +549,8 @@ class FragmentsService(BaseHandler):
                     )
                 )
                 if not sites_data or "items" not in sites_data:
+                    if specs_refused:
+                        break
                     time.sleep(5)
                     continue
 
@@ -578,7 +607,7 @@ class FragmentsService(BaseHandler):
                             all_discovered_keys,
                         )
 
-                if patched_count > 0:
+                if patched_count > 0 or specs_refused:
                     break
 
                 UI.detail(
@@ -645,11 +674,24 @@ class FragmentsService(BaseHandler):
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
 
+        self._last_http_status = None
         try:
             with urllib.request.urlopen(req, context=ctx) as response:  # nosec B310
                 return json.loads(response.read().decode())
         except urllib.error.HTTPError as e:
+            self._last_http_status = e.code
             if warn_on_refusal and e.code in (400, 404):
+                # LDM-#2497: once per path per run. The first warning carries
+                # Liferay's reason; repeating it on every retry only buried it.
+                warned = getattr(self, "_refusal_warned", None)
+                if warned is not None:
+                    if (method, path) in warned:
+                        UI.debug(
+                            f"Headless API {method} {path} was refused again: "
+                            f"{e.code} {e.reason}"
+                        )
+                        return None
+                    warned.add((method, path))
                 # LDM-#2427: a refused write is not an expected status. The
                 # 400 from a disabled feature flag was logged at debug level,
                 # so the Headless route failed silently for every project and
@@ -952,6 +994,16 @@ class FragmentsService(BaseHandler):
                                 payload=element,
                                 warn_on_refusal=True,
                             )
+                            # LDM-#2497: tally for the caller's "was every
+                            # write refused?" decision.
+                            self._spec_puts_sent = (
+                                getattr(self, "_spec_puts_sent", 0) + 1
+                            )
+                            status = getattr(self, "_last_http_status", None)
+                            if not res and status and 400 <= status < 500:
+                                self._spec_puts_refused = (
+                                    getattr(self, "_spec_puts_refused", 0) + 1
+                                )
                             if res:
                                 UI.success(
                                     f"  -> Patched configuration for fragment '{matched_key}' on page '{page_name}' (spec: {spec_erc})"

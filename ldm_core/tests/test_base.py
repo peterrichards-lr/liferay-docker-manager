@@ -1299,6 +1299,58 @@ class TestBaseFixHosts(unittest.TestCase):
         self.handler.cmd_fix_hosts()
         mock_doctor.assert_called_once_with(fix_hosts=True)
 
+    def _suggested(self, domains, project=None):
+        """Fail `sudo -n` and return the `ldm ...` commands the user is told
+        to run, as argv lists (LDM-#2496)."""
+        failed = MagicMock(returncode=1)
+        with (
+            patch("ldm_core.handlers.base.platform.system", return_value="Darwin"),
+            patch.object(self.handler, "is_wsl", return_value=False),
+            patch("ldm_core.handlers.base.subprocess.Popen", return_value=failed),
+            patch("ldm_core.handlers.base.UI.detail"),
+            patch("ldm_core.handlers.base.UI.die", side_effect=SystemExit) as die,
+            self.assertRaises(SystemExit),
+        ):
+            self.handler._apply_hosts_fix(domains, project=project)
+        said = die.call_args.args[0]
+        tail = said.split("Please run manually:", 1)[1]
+        return [line.split() for line in tail.splitlines() if line.strip()]
+
+    def _parse(self, command):
+        """Parse a suggested command exactly as `ldm` would."""
+        from ldm_core.cli import get_parser, preprocess_args
+
+        self.assertEqual(command[0], "ldm", command)
+        argv = preprocess_args(["ldm", *command[1:]])[1:]
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            try:
+                return get_parser()[0].parse_args(argv)
+            except SystemExit:
+                self.fail(f"the parser rejects {command}: {err.getvalue()}")
+
+    def test_elevation_failure_names_the_project_when_known(self):
+        domains = [
+            "aica-lt.demo",
+            "aicommerceacceleratorconfiguration.aica-lt.demo",
+            "aicommerceacceleratorfrontend.aica-lt.demo",
+        ]
+        commands = self._suggested(domains, project="aica-lt")
+        self.assertEqual(len(commands), 1, commands)
+        args = self._parse(commands[0])
+        self.assertEqual((args.command, args.host_name), ("system", "aica-lt"))
+
+    def test_elevation_failure_with_one_domain_names_it(self):
+        commands = self._suggested(["demo.test"])
+        self.assertEqual(len(commands), 1, commands)
+        self.assertEqual(self._parse(commands[0]).host_name, "demo.test")
+
+    def test_elevation_failure_without_a_project_gives_one_command_per_domain(self):
+        domains = ["a.demo.test", "demo.test"]
+        commands = self._suggested(domains)
+        self.assertEqual(
+            sorted(self._parse(c).host_name for c in commands), sorted(domains)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

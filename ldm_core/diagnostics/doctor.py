@@ -2072,7 +2072,9 @@ class DoctorRunner:
                         )
                     )
                 elif fix_hosts and needs_fix:
-                    if self.handler.manager._apply_hosts_fix(needs_fix):
+                    if self.handler.manager._apply_hosts_fix(
+                        needs_fix, project=p_path.name
+                    ):
                         self.results.append(
                             (
                                 f"[{p_path.name}] DNS ({host_name})",

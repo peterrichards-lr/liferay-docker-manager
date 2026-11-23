@@ -1119,10 +1119,12 @@ class TestFragments(unittest.TestCase):
         self.assertFalse(any("other-site" in p for p in called_urls))
         self.assertTrue(any("my-site" in p for p in called_urls))
 
-    def _run_specs_patch(self, put_response):
+    def _run_specs_patch(self, put_response, timeout=5, elements_present=True):
         """Drives the page-specification route with a draft and a published
         spec carrying the same element, as q1 LTS and q3.0 return them
-        (custom-osgi-modules#57). Returns (calls, UI.warning mock)."""
+        (custom-osgi-modules#57). Returns (calls, UI.warning mock); the
+        `time.sleep` and SQL-fallback mocks are left on `self.sleep` and
+        `self.db_fallback`."""
         project_meta = {"tag": "2026.q3.0", "force_specs": True}
         paths = {"root": self.tmp_dir, "deploy": self.tmp_dir / "deploy"}
         configs_dir = self.tmp_dir / "configs"
@@ -1142,7 +1144,9 @@ class TestFragments(unittest.TestCase):
                                 "externalReferenceCode": "elem-1",
                                 "definition": {"fragment": {"key": "my-frag"}},
                             }
-                        ],
+                        ]
+                        if elements_present
+                        else [],
                     }
                 ],
             }
@@ -1166,16 +1170,18 @@ class TestFragments(unittest.TestCase):
             m.__enter__.return_value = m
             return m
 
-        self.handler.handler.fragments._patch_database_fragmententrylink = MagicMock(  # type: ignore[method-assign]
-            return_value=0
+        self.db_fallback = MagicMock(return_value=0)
+        self.handler.handler.fragments._patch_database_fragmententrylink = (  # type: ignore[method-assign]
+            self.db_fallback
         )
         with (
             patch("urllib.request.urlopen", side_effect=fake_urlopen),
-            patch("time.sleep"),
+            patch("time.sleep") as sleep,
             patch("ldm_core.runtime.fragments.UI.warning") as warning,
         ):
+            self.sleep = sleep
             self.handler.handler.fragments._patch_fragment_overrides(
-                project_meta, paths, timeout=5
+                project_meta, paths, timeout=timeout
             )
         return calls, warning
 
@@ -1224,6 +1230,60 @@ class TestFragments(unittest.TestCase):
         self.assertTrue(refused, messages)
         self.assertIn("Feature flag LPD-35443 is disabled", refused[0])
         self.assertFalse(any("ldm restart" in m for m in messages))
+
+    @staticmethod
+    def _absent(req):
+        """LDM-#2497: 2026.q4.0 exposes no page-element route at all."""
+        import io
+        import urllib.error
+
+        raise urllib.error.HTTPError(
+            req.full_url,
+            404,
+            "Not Found",
+            {},  # type: ignore[arg-type]
+            io.BytesIO(b'{"title": "No route"}'),
+        )
+
+    def test_a_refused_put_warns_once_per_element(self):
+        """LDM-#2497: the retry loop printed the same refusal 82 times."""
+        _, warning = self._run_specs_patch(self._absent, timeout=300)
+        refused = [
+            str(c.args[0])
+            for c in warning.call_args_list
+            if "was refused" in str(c.args[0])
+        ]
+        self.assertEqual(len(refused), 1, refused)
+        self.assertIn("404 Not Found (No route)", refused[0])
+
+    def test_a_refused_put_stops_the_loop_without_spending_the_budget(self):
+        """LDM-#2497: a refusal is definitive. 300s used to buy 60 sleeps in
+        the specs loop and 60 more in the legacy loop before SQL ran."""
+        calls, _ = self._run_specs_patch(self._absent, timeout=300)
+        self.assertEqual(self.sleep.call_count, 0, self.sleep.call_args_list)
+        puts = [url for method, url in calls if method == "PUT"]
+        self.assertEqual(len(puts), 1, puts)
+        # Exactly one legacy pass: one headless-delivery site-pages listing.
+        legacy = [
+            url
+            for _, url in calls
+            if "/headless-delivery/v1.0/sites/" in url and "/site-pages" in url
+        ]
+        self.assertEqual(len(legacy), 1, legacy)
+
+    def test_a_refused_put_still_reaches_the_sql_fallback(self):
+        """LDM-#2497: stopping early must not skip the rung that works."""
+        self._run_specs_patch(self._absent, timeout=300)
+        self.db_fallback.assert_called_once()
+
+    def test_no_matching_elements_yet_still_retries(self):
+        """LDM-#2497: with nothing matched the site initializer may still be
+        populating, so the wait is right and must be kept."""
+        calls, _ = self._run_specs_patch(
+            self._absent, timeout=300, elements_present=False
+        )
+        self.assertGreater(self.sleep.call_count, 1)
+        self.assertFalse(any(method == "PUT" for method, _ in calls))
 
 
 class TestFragmentOverrideFeatureFlags(unittest.TestCase):
