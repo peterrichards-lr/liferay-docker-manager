@@ -103,6 +103,24 @@ RELEASE_ANNOUNCEMENTS = {
     # LDM-#1663: a patch needs its OWN key, or the banner shows no
     # announcements for it (LDM-#2412); `release.py --promote` refuses a
     # stable X.Y.Z (Z > 0) without one.
+    "2.26.15": [
+        (
+            "ldm system prune is safe on a shared remote node",
+            "Against a remote target, prune no longer treats projects started "
+            "from other machines as orphans; it skips the container, search "
+            "snapshot and helper sweeps there with a warning.",
+        ),
+        (
+            "ldm quickstart works on a fresh machine again",
+            "Shared search now creates the liferay-net network itself, so the "
+            "first quickstart no longer fails with exit code 125.",
+        ),
+        (
+            "Licences under files/ stay out of a package",
+            "ldm package now also leaves out keys and .lpkg products placed "
+            "under files/, and lists the scripts/ it ships.",
+        ),
+    ],
     "2.26.14": [
         (
             "Your edits to a shared .config are now kept",
