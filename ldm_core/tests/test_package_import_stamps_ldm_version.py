@@ -106,7 +106,7 @@ class TheAnnouncementReachesTheFirstBoot(unittest.TestCase):
 
         manager = MagicMock()
         manager.args.search_mode = None
-        manager.args.db_mode = None
+        manager.args.database_mode = None
         said: list[str] = []
         with (
             patch("ldm_core.pipelines.run.UI.info", side_effect=said.append),

@@ -786,6 +786,25 @@ An update that moves nothing reports `stored settings unchanged` rather than a
 bare success -- and still names the Docker context it rebuilt, since a remote
 `target add` always rebuilds one.
 
+### A node's disk (`target status` and remote runs)
+
+`target status` shows a **DISK FREE** column: the space left on the node's
+Docker filesystem, measured the same way `ldm doctor` measures it -- from a
+throwaway container's view of `/`, so it reports the engine's disk rather than
+this machine's. Below 3GB it is marked `(LOW)`. A `-` means the node was
+offline or the probe did not answer within 20 seconds (LDM-#2145).
+
+Before a run on a remote target, `ldm run` takes the same measurement and
+**warns** when the node is below 3GB, with a hint to reclaim images and build
+cache via `ldm prune --node <name> --images`. It never refuses: a node may be
+shared, and stopping one project's run over another's usage is its own hazard.
+A probe that fails or takes longer than 30 seconds is skipped silently, and
+`--dry-run` does not probe at all.
+
+A nearly full node rarely fails as "disk full". The case behind this check was
+a BuildKit `yarn install` that intermittently errored or hung on a node with
+98MB free; nothing on the node had ever been pruned.
+
 ### `--mac-address` (licence activation on remote nodes)
 
 Liferay's licence binds to a MAC address. On a remote node the container takes
@@ -850,4 +869,4 @@ ldm target migrate win-wsl node-a
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-20* | *Last Reviewed: 2026-11-20*
+*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*

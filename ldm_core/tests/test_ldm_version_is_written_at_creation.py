@@ -115,7 +115,7 @@ class TheCreationAnnouncementTellsTheUserWhatTheyGot(unittest.TestCase):
     def setUp(self):
         self.manager = MagicMock()
         self.manager.args.search_mode = None
-        self.manager.args.db_mode = None
+        self.manager.args.database_mode = None
         self.manager.defaults.has_explicit.return_value = False
 
     def _announce(self, **kw):
@@ -164,7 +164,23 @@ class TheCreationAnnouncementTellsTheUserWhatTheyGot(unittest.TestCase):
 
     def test_the_counter_offer_names_the_project(self):
         _, said, _ = self._announce()
-        self.assertIn("ldm run demo --search-mode sidecar --db-mode isolated", said)
+        self.assertIn(
+            "ldm run demo --search-mode sidecar --database-mode isolated", said
+        )
+
+    def test_the_counter_offer_parses_with_the_real_parser(self):
+        # LDM-#2488: the offer shipped as `--db-mode`, which `ldm run` rejects
+        # (`unrecognized arguments`), and the assertion above repeated the
+        # same string. Parse what is offered, so the two cannot drift again.
+        from ldm_core.cli import get_parser
+
+        _, said, _ = self._announce()
+        command = said.split("ldm run ", 1)[1].split()
+        args = get_parser()[0].parse_args(["run", *command])
+        self.assertEqual(
+            (args.project, args.search_mode, args.database_mode),
+            ("demo", "sidecar", "isolated"),
+        )
 
     def test_no_counter_offer_when_nothing_is_shared(self):
         _, said, _ = self._announce(search_mode="sidecar", db_mode="isolated")
