@@ -321,6 +321,7 @@ When a service is scaled via `ldm scale [project] liferay=N`:
 
 3. **Shared Infrastructure (Global Tier):**
     - **Traefik (`liferay-proxy-global`)**: A singleton container that handles all SSL termination and namespaced routing. It works natively on **Linux, WSL2, and Colima** by detecting the standard Docker socket. **Traefik v3** requires explicit backend network labels (`traefik.docker.network=liferay-net`) which LDM manages automatically.
+    - **Identifying the global tier**: Traefik runs from `infra-compose.yml` as the Docker Compose project `ldm-infra`, passed with `-p` on every `up`, `down` and `logs` call (LDM-#2244). Older versions passed no `-p`, so Compose named it `resources`, after the package directory holding the file; LDM recreates a proxy still in that project the next time it sets up or tears down the infrastructure. Search and the macOS socket bridge are started with `docker run` and belong to no Compose project. All three carry `com.liferay.ldm.managed=true` and `com.liferay.ldm.infra=<proxy|search|docker-proxy>`, so `docker ps --filter label=com.liferay.ldm.infra` lists the set. Containers created before LDM-#2244 gain the labels only when they are next recreated.
     - **Elasticsearch (`liferay-search-global`)**: A shared ES8 instance that uses project-specific index prefixes, allowing multiple projects to share one search cluster efficiently.
         - **Self-Healing Setup**: LDM installs the Liferay analysis plugins (`analysis-icu`, `analysis-kuromoji`, `analysis-smartcn`, `analysis-stempel`) into `~/.ldm/infra/search/plugins-<version>`, mounted into the container, before Elasticsearch first opens the data. A recreated container therefore starts with them, and a boot failure caused by a missing plugin is never "repaired" by deleting the shared data (LDM-#2284).
         - **Performance Tuning**: Automatically configures `indices.query.bool.max_clause_count=10000` for optimal Liferay compatibility.
@@ -402,4 +403,4 @@ sequenceDiagram
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*
+*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*

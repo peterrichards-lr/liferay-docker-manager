@@ -22,6 +22,36 @@ _INFRA_CREATE_TIMEOUT = 600  # `docker run` for a global service -- may pull
 _INFRA_PROBE_TIMEOUT = 30  # readiness probes and inspection
 _INFRA_LIFECYCLE_TIMEOUT = 120  # start/stop/rm/network operations
 
+#: LDM-#2244: the Compose project the global infra stack runs as. Without an
+#: explicit `-p`, Compose named it after the directory holding
+#: `infra-compose.yml` -- `ldm_core/resources/` -- so every Docker UI listed
+#: LDM's proxy as a project called `resources`. Every call that runs the file
+#: MUST pass this name: a `down` that disagrees with the `up` orphans the stack
+#: rather than stopping it. Both names are in RESERVED_COMPOSE_PROJECT_NAMES.
+INFRA_COMPOSE_PROJECT = "ldm-infra"
+#: The name stacks started before LDM-#2244 still carry until migrated.
+LEGACY_INFRA_COMPOSE_PROJECT = "resources"
+_PROXY_CONTAINER = "liferay-proxy-global"
+
+
+def infra_container_labels(service):
+    """`docker run` flags marking a global infra container as LDM's (LDM-#2244).
+
+    Same vocabulary as `helper_container_flags` and the compose services:
+    `com.liferay.ldm.managed=true`, plus `com.liferay.ldm.infra=<service>` so
+    the global stack is identifiable as a set however each piece is started.
+    `infra-compose.yml` declares the same two labels on Traefik. Deliberately
+    NOT `com.liferay.ldm.project` (the orphan sweep in `ldm prune` selects on
+    it) and NOT `com.liferay.ldm.helper` (swept as a stray when not running).
+    """
+    return [
+        "--label",
+        "com.liferay.ldm.managed=true",
+        "--label",
+        f"com.liferay.ldm.infra={service}",
+    ]
+
+
 #: The analysis plugins Liferay's search mappings need. `analysis-icu` is the
 #: one a missing install kills a boot over: Liferay's dynamic templates use its
 #: `icu_collation_keyword` type, so Elasticsearch refuses to load an index
@@ -841,8 +871,15 @@ class InfraService:
         target_name = getattr(self.manager, "target", None)
         compose_prefix = DockerService.get_compose_cmd_prefix(target_name)
 
+        # LDM-#2244: a proxy still in the pre-#2244 `resources` project would
+        # make the `up` below fail on the fixed container name. It is
+        # stateless, and its ports were read above, so replace it.
+        self._migrate_legacy_infra_project(target_name)
+
         cmd = [
             *compose_prefix,
+            "-p",
+            INFRA_COMPOSE_PROJECT,
             "-f",
             str(infra_compose),
             "up",
@@ -877,6 +914,75 @@ class InfraService:
         env["LDM_ADMIN_PORT"] = str(admin_port)
         env["LDM_RESOLVED_IP"] = resolved_ip
         return env
+
+    def _proxy_compose_project(self, target_name=None):
+        """The Compose project `liferay-proxy-global` belongs to, or None.
+
+        Read from the container's own `com.docker.compose.project` label, by
+        container name -- the same way every other infra path finds it.
+        """
+        from ldm_core.docker_service import DockerService
+
+        docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+        out = self.manager.run_command(
+            [
+                *docker_prefix,
+                "ps",
+                "-a",
+                "--filter",
+                f"name=^{_PROXY_CONTAINER}$",
+                "--format",
+                '{{.Label "com.docker.compose.project"}}',
+            ],
+            check=False,
+            capture_output=True,
+            timeout=_INFRA_PROBE_TIMEOUT,
+        )
+        project = str(out or "").strip().splitlines()
+        return project[0].strip() if project and project[0].strip() else None
+
+    def infra_compose_project(self, target_name=None):
+        """The project name to address the running infra stack by (LDM-#2244).
+
+        `INFRA_COMPOSE_PROJECT`, unless the proxy is still in the legacy
+        `resources` project -- so a read-only command such as `ldm logs
+        --infra` keeps working on a stack started by an older LDM before
+        the next `infra setup` migrates it.
+        """
+        if self._proxy_compose_project(target_name) == LEGACY_INFRA_COMPOSE_PROJECT:
+            return LEGACY_INFRA_COMPOSE_PROJECT
+        return INFRA_COMPOSE_PROJECT
+
+    def _migrate_legacy_infra_project(self, target_name=None):
+        """Replace a proxy still in the pre-LDM-#2244 `resources` project.
+
+        Compose will not adopt a container from another project: with the
+        fixed `container_name`, `up -p ldm-infra` fails on the name conflict
+        and `down -p ldm-infra` leaves the old one running. Traefik holds no
+        state -- its certs are a bind mount and it declares no volumes -- so
+        removing it loses nothing and the caller's `up` recreates it.
+
+        Only the proxy is touched, and only when its own label says
+        `resources`. `compose -p resources down` is never run: a user's own
+        stack in a directory named `resources` would share that project.
+
+        Returns True when a legacy proxy was removed.
+        """
+        if self._proxy_compose_project(target_name) != LEGACY_INFRA_COMPOSE_PROJECT:
+            return False
+
+        from ldm_core.docker_service import DockerService
+
+        UI.info(
+            f"Migrating the global proxy from Compose project "
+            f"'{LEGACY_INFRA_COMPOSE_PROJECT}' to '{INFRA_COMPOSE_PROJECT}'..."
+        )
+        released = self.get_proxy_ports(target_name)
+        DockerService.stop(_PROXY_CONTAINER, target_name=target_name)
+        DockerService.rm(_PROXY_CONTAINER, force=True, target_name=target_name)
+        # LDM-#2101: the `up` that follows must find its own ports free.
+        self._await_released_ports(list(released.values()) if released else [])
+        return True
 
     def _fix_cert_permissions(self, path):
         """Attempts to fix directory permissions using sudo if authorized by the user."""
@@ -1177,10 +1283,22 @@ tls:
         target_name = getattr(self.manager, "target", None)
         compose_prefix = DockerService.get_compose_cmd_prefix(target_name)
 
+        # LDM-#2244: a pre-#2244 proxy is in the `resources` project, which the
+        # `-p` down below would not see -- it would be orphaned, not stopped.
+        self._migrate_legacy_infra_project(target_name)
+
         env = self._get_infra_env()
         capture = not (UI.INFO_MODE or UI.VERBOSE)
         self.manager.run_command(
-            [*compose_prefix, "-f", str(infra_compose), "down", "-v"],
+            [
+                *compose_prefix,
+                "-p",
+                INFRA_COMPOSE_PROJECT,
+                "-f",
+                str(infra_compose),
+                "down",
+                "-v",
+            ],
             env=env,
             capture_output=capture,
         )
@@ -1296,6 +1414,7 @@ tls:
                     *docker_prefix,
                     "run",
                     "-d",
+                    *infra_container_labels("docker-proxy"),
                     "--name",
                     container_name,
                     "--network",
@@ -1673,6 +1792,7 @@ tls:
                     *docker_prefix,
                     "run",
                     "-d",
+                    *infra_container_labels("search"),
                     "--name",
                     search_name,
                     "--network",

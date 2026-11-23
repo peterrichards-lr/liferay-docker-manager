@@ -25,6 +25,9 @@ class MockRuntime(BaseHandler):
 
         self.assets = MagicMock()
         self.infra = MagicMock()
+        # LDM-#2244: the infra logs argv carries `-p <this>`; a real
+        # InfraService returns a str, and the export path joins the argv.
+        self.infra.infra_compose_project.return_value = "ldm-infra"
         self.snapshot = MagicMock()
         self.share = MagicMock()
         self.license = MagicMock()

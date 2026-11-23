@@ -772,16 +772,18 @@ INFRA_SERVICES = [
     ("liferay-docker-proxy", "macOS Socket Bridge"),
 ]
 
-# LDM-#2457: Docker Compose project names no LDM project may take. The infra
-# stack (`infra-compose.yml`) is run with no `-p`, so Compose names it after
-# the directory holding the file -- `ldm_core/resources/` (or `resources/` in
-# a source checkout), i.e. `resources`. A project's compose file sets `name:`
-# to its sanitized name, so a project called `resources` would SHARE that
-# Compose project: its `up --remove-orphans` removes Traefik, and the next
-# infra `up --remove-orphans` removes the project. Keep this until LDM-#2244
-# gives the infra stack an explicit project name; then reserve that name, and
-# `resources` only while stacks started under the old name must be migrated.
-RESERVED_COMPOSE_PROJECT_NAMES = frozenset({"resources"})
+# LDM-#2457: Docker Compose project names no LDM project may take. A
+# project's compose file sets `name:` to its sanitized name, so a project with
+# the infra stack's name would SHARE that Compose project: its `up
+# --remove-orphans` removes Traefik, and the next infra `up --remove-orphans`
+# removes the project.
+#
+# LDM-#2244: the infra stack runs as `-p ldm-infra` (`INFRA_COMPOSE_PROJECT`
+# in handlers/infra.py). `resources` -- the name Compose derived from
+# `ldm_core/resources/` before any `-p` was passed -- stays reserved while
+# stacks started by an older LDM may still carry it; LDM migrates such a stack
+# on the next `infra setup` or `infra down`.
+RESERVED_COMPOSE_PROJECT_NAMES = frozenset({"ldm-infra", "resources"})
 
 # --- Orchestration Configuration ---
 RUN_ATTRS = [
