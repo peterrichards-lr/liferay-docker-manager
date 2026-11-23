@@ -406,9 +406,6 @@ ldm import https://example.com/assets/my-project.ldmp
 # Import from a GitHub Release (auto-detects .ldmp asset)
 ldm import https://github.com/my-org/my-repo
 
-# Import using a specific release type filter
-ldm import https://github.com/my-org/my-repo --tag-latest --release-type qr
-
 # Manually bind a Liferay Cloud project ID
 ldm import ~/Downloads/my-project.ldmp --cloud-project lctintranet
 ```
@@ -875,7 +872,7 @@ Manage persistent environment variables in project metadata.
 
 ```bash
 ldm config env [project] KEY=VALUE
-ldm config env [project] --remove KEY
+ldm config env [project] KEY --remove
 ldm config env [project] --import              # Import variables from a local .env file
 ldm config env                                 # Interactive manager (view and edit all)
 
@@ -999,4 +996,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-20* | *Last Reviewed: 2026-11-20*
+*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*

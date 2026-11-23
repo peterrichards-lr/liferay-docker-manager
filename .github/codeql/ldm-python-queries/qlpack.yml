@@ -1,0 +1,14 @@
+# LDM-#2438: a local CodeQL query pack, run by .github/workflows/codeql.yml
+# through .github/codeql/codeql-config-python.yml.
+#
+# It exists only to teach the two cleartext rules that LDM's own redaction
+# functions are sanitizers. Default setup cannot do that: its sole extension
+# point is a models-as-data pack, and the cleartext queries' `Sanitizer`
+# classes are abstract with no MaD hook. See RedactionSanitizers.qll.
+#
+# The dependency is resolved from the CodeQL bundle the action downloads, so
+# the library always matches the CLI that compiles these queries.
+name: ldm/python-queries
+version: 0.0.1
+dependencies:
+  codeql/python-all: "*"

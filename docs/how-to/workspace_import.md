@@ -278,7 +278,7 @@ If you want to package a specific snapshot directory from your historical backup
 1. List all available snapshots to find the target name:
 
    ```bash
-   ldm snapshots
+   ldm restore --list
    ```
 
    *(e.g., output shows `20260626_114522`)*
@@ -375,4 +375,4 @@ after asking, or straight away with `-y`.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-20*
+*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*

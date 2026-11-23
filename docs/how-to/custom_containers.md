@@ -199,11 +199,11 @@ ldm run -y
 Export the entire workspace and custom service binaries into a portable package:
 
 ```bash
-ldm snapshot --export
+ldm package
 ```
 
 LDM will save the Postgres, MySQL, WordPress, and custom crawler container image binaries, packaging them into the output archive. A developer on another machine can then recreate the exact multi-compose architecture out-of-the-box by running `ldm import`.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-27*
+*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*
