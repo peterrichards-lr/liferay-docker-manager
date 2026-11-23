@@ -9,7 +9,7 @@ Commands for managing deployment and operations on Liferay Cloud PaaS environmen
 Deploys a workspace project to a Liferay Cloud PaaS environment.
 
 ```bash
-ldm cloud deploy <project> -e <env> [--apply] [--commit <sha>] [--force]
+ldm cloud deploy <project> -e <env> [--force]
 ```
 
 Options:
@@ -28,7 +28,7 @@ Options:
 Updates service image tag references in `LCP.json`.
 
 ```bash
-ldm cloud update-tags <project> -e <env>
+ldm cloud update-tags <project>
 ```
 
 ### `ldm cloud sql`
@@ -36,7 +36,7 @@ ldm cloud update-tags <project> -e <env>
 Executes a SQL script against a Liferay Cloud database.
 
 ```bash
-ldm cloud sql <project> -e <env> -f <file.sql> [--force]
+ldm cloud sql <project> -f <file.sql> [--force]
 ```
 
 ### `ldm cloud db-reset`
@@ -69,4 +69,4 @@ ldm cloud logs <project> -s <service> [-f]
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-19* | *Last Reviewed: 2026-08-19*
+*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*

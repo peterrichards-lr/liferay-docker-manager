@@ -714,7 +714,7 @@ If the database and search index are completely desynchronized (often resulting 
 
 ```bash
 ldm stop <project>
-ldm reseed <project>
+ldm re-seed <project>
 ```
 
 ---
@@ -981,4 +981,4 @@ Projects are discovered from the current folder, its parent, `~/ldm`, the LDM in
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-18* | *Last Reviewed: 2026-11-18*
+*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*

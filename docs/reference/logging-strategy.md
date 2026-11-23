@@ -340,6 +340,8 @@ Commands that do NOT need phase headers (single-purpose):
 
 Any command that involves a Liferay boot wait (`_wait_for_ready`) must emit a completion banner:
 
+<!-- ldm-check: skip -- program output, not a command -->
+
 ```text
 Liferay is ready  (3m 42s)
 
@@ -422,4 +424,4 @@ tier system above and has nothing to do with the `logging` module.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-18* | *Last Reviewed: 2026-11-18*
+*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*

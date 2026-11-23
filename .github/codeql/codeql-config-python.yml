@@ -1,0 +1,24 @@
+# LDM-#2438: CodeQL configuration for the PYTHON analysis only.
+#
+# .github/workflows/codeql.yml passes this file to the python matrix leg; the
+# actions leg runs with no config file. It is python-only because the query
+# pack below is a python pack, and the init action applies a config file to
+# every language in the job.
+#
+# The default query suite still runs (no `disable-default-queries`). This
+# file ADDS the redaction-aware copies of the two cleartext rules and REMOVES
+# the stock versions, so each rule is reported exactly once.
+name: LDM CodeQL (python)
+
+queries:
+  - uses: ./.github/codeql/ldm-python-queries
+
+# Query filters match on metadata, and apply to every query that runs. The
+# copies carry their own ids (py/ldm-clear-text-*), so excluding the stock ids
+# removes only the stock queries -- had the copies kept the stock ids, this
+# filter would have removed them too and the rules would silently not run.
+query-filters:
+  - exclude:
+      id:
+        - py/clear-text-storage-sensitive-data
+        - py/clear-text-logging-sensitive-data

@@ -71,6 +71,22 @@ When documenting CLI commands, flags, or configuration options, always specify t
 
 Place the badge immediately below the heading or next to the flag definition (e.g., in a table or list).
 
+### 5. Documented Commands Must Parse
+
+The `check-doc-commands` pre-commit hook (`scripts/check_doc_commands.py`) runs every `ldm ...` line inside a fenced code block, in every tracked Markdown file, through the real CLI parser. It only parses -- nothing is executed. An unknown subcommand, an unknown option, an option used on a subcommand that does not take it, or a surplus positional fails the commit, naming `file:line` and the parser's error.
+
+Write examples the way a reader would type them. The check strips a leading prompt (`$`, `%`, `>`, `PS>`), `sudo` and `VAR=value` assignments; joins `\` continuations; reads `<project>` placeholders and `$VAR` / `$(...)` as ordinary values; and stops at a pipe, `&&`, `;`, redirection or `#` comment. A usage synopsis is checked as the fullest command it describes: `[--flag <value>]` groups are kept, the first of `a|b` alternatives is used, and `...` is dropped.
+
+It also refuses, anywhere in a document, a write statement (`UPDATE`, `INSERT`, `DELETE`, `DROP` and the like) passed to `ldm db query --sql`: the command is read-only and refuses a write at runtime, which the parser cannot see. Show a write via `docker exec <container> psql|mysql ...` instead.
+
+An example that is **meant** to fail -- an error demonstration, or program output that happens to start with `ldm` -- must say so explicitly. Nothing is skipped silently, and the number of skipped commands is printed on every run:
+
+```markdown
+<!-- ldm-check: skip -- reason -->
+```
+
+on the line immediately before the opening fence skips that whole block, and a trailing `# ldm-check: skip` comment skips a single command line. `CHANGELOG.md` is excluded by name, because it records commands as they were when each release shipped.
+
 ---
 
 ## 🛠️ Codebase Conventions & Command Execution
@@ -101,4 +117,4 @@ When executing external binaries or shell commands (e.g. docker, git, mkcert, lc
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-10*
+*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*

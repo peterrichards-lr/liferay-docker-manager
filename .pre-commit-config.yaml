@@ -107,6 +107,21 @@ repos:
         pass_filenames: false
         always_run: true
 
+      # LDM-#2149: check-cli-drift compares option TOKENS in five files; it
+      # cannot see a command with no flags, a flag on the wrong subcommand, or
+      # any other document. This parses every fenced `ldm ...` line in every
+      # tracked Markdown file with the real parser (parse only, nothing runs),
+      # and refuses a write statement shown as `ldm db query --sql`. Opt-out
+      # for a deliberately invalid example is the `ldm-check: skip` marker,
+      # documented in the script's docstring and docs/how-to/development.md.
+      - id: check-doc-commands
+        name: Check documented ldm commands parse
+        entry: scripts/run_python.sh scripts/check_doc_commands.py
+        language: system
+        files: ^ldm_core/cli\.py$|\.md$
+        pass_filenames: false
+        always_run: true
+
       # LDM-#2151: the reclaim matrix in the architecture skill and in
       # docs/explanation/permissions-and-reclaim.md is generated from the
       # reclaim loops in source. --check changes nothing and exits 1 on drift,

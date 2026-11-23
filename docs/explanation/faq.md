@@ -116,7 +116,7 @@ You can export any customized environment (database dump + document library asse
 3. Capture a snapshot:
 
    ```bash
-   ldm snapshot create custom-demo-template --name "Baked Custom Demo Data"
+   ldm snapshot custom-demo-template --name "Baked Custom Demo Data"
    ```
 
 4. Package the workspace:
@@ -182,7 +182,7 @@ To facilitate collaboration, LDM includes a dedicated `ldm share` command which 
 Run the sharing command:
 
 ```bash
-ldm share [project_id] --provider lfr-tunnel --subdomain my-awesome-demo
+ldm share start [project_id] --provider lfr-tunnel --subdomain my-awesome-demo
 ```
 
 This will output a public HTTPS URL (e.g., `https://my-awesome-demo.lfr.direct`) that anyone on the internet can use to view your demo.

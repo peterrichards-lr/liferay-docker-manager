@@ -32,10 +32,34 @@ The LDM CI pipeline runs Bandit security scans. We explicitly ignore the followi
 
 ### CodeQL Disclosures (GitHub code scanning)
 
-CodeQL runs on GitHub's **default setup**, so there is no workflow or config
-file in this repository to carry path exclusions. Alerts that are correct as
-rules but wrong in context are dismissed with a reason, and recorded here so
-the dismissal is reviewable rather than invisible.
+CodeQL runs on **advanced setup** (LDM-#2438):
+`.github/workflows/codeql.yml` analyses `python` and `actions` with the
+default query suite, on pushes and pull requests to `master` and weekly.
+
+The python analysis adds a small local query pack,
+`.github/codeql/ldm-python-queries/`, configured by
+`.github/codeql/codeql-config-python.yml`. Its job is to teach the two
+clear-text rules that `UI.redact` and `UI._redact_command_line` sanitize what
+they return. Default setup could not do that, because the rules' `Sanitizer`
+classes have no models-as-data hook. Without the pack, every trace-log write
+was reported as sensitive data in clear text and had to be dismissed by hand.
+
+- The stock `py/clear-text-storage-sensitive-data` and
+  `py/clear-text-logging-sensitive-data` queries are excluded. They are
+  replaced by copies with the ids `py/ldm-clear-text-storage-sensitive-data`
+  and `py/ldm-clear-text-logging-sensitive-data`. The copies carry their own
+  ids because a query filter matching the stock ids would also remove them.
+- Only the **return value** of a redaction call is trusted. The argument stays
+  tainted, so writing the unredacted value is still reported.
+- The sanitizer is tied to class `UI` in `ldm_core/ui.py`. If either method is
+  renamed or moved, it matches nothing and the alerts come back.
+- The logging copy skips sinks under `ldm_core/tests/`.
+  `test_trace_log_redaction.py` logs a fake secret on purpose to prove it is
+  masked, so an alert there would only report the test working.
+
+Alerts that are correct as rules but wrong in context are dismissed with a
+reason, and recorded here so the dismissal is reviewable rather than
+invisible.
 
 | Alert | Rule | Location | Disclosure |
 | :--- | :--- | :--- | :--- |
@@ -202,4 +226,4 @@ f7e5b56e5e4e6e94fe5de5424e66fef84be863f385
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-25* | *Last Reviewed: 2026-09-25*
+*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*

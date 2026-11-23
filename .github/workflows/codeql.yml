@@ -1,0 +1,68 @@
+name: CodeQL
+
+# LDM-#2438: CodeQL ADVANCED setup, replacing default setup.
+#
+# Default setup could not be taught that `UI.redact` and
+# `UI._redact_command_line` sanitize what they return: its only extension
+# point is a models-as-data pack, and the cleartext rules' sanitizers have no
+# MaD hook. So every trace-log write was re-reported as clear-text storage or
+# logging of sensitive data, and dismissed by hand on each PR.
+#
+# This keeps what default setup ran -- python and actions, the default suite,
+# a weekly schedule, push and pull_request on master -- and adds only the
+# redaction-aware cleartext queries in .github/codeql/ for python.
+#
+# Default and advanced setup cannot both be enabled: GitHub refuses advanced
+# uploads while default setup is configured. Default setup must be switched
+# off in Settings -> Code security before this workflow's results are accepted.
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+  schedule:
+    - cron: "27 4 * * 1" # Weekly, Monday 04:27 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            config-file: ""
+          - language: python
+            config-file: ./.github/codeql/codeql-config-python.yml
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # An empty config-file input is treated as unset, so the actions leg
+      # runs the default suite with no configuration.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          config-file: ${{ matrix.config-file }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
