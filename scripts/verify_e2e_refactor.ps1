@@ -295,6 +295,24 @@ function Get-RunContextLine {
     return "Run Context: $RunContext"
 }
 
+# LDM-#2142: parity with print_wsl_version_line in the bash twin. The
+# native-WSL2 matrix row published a hardcoded WSL version no report contained.
+# Pure: $ProcVersion is the text of /proc/version, $WslOutput the output of
+# 'wsl.exe --version'. Emits nothing outside WSL -- which includes every
+# Windows-native run, where /proc/version does not exist -- so those reports are
+# unchanged. Inside WSL (pwsh in a distro) it always emits the line, with
+# 'unknown' when the version cannot be read. The version is the first dotted
+# number on the first non-blank line, because the label is localised.
+function Get-WslVersionLine {
+    param([string]$ProcVersion, [string]$WslOutput)
+    if ([string]::IsNullOrEmpty($ProcVersion) -or $ProcVersion -cnotmatch '[Mm]icrosoft') { return $null }
+    $ver = "unknown"
+    $clean = ([string]$WslOutput) -replace "`0", "" -replace "`r", ""
+    $first = ($clean -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 1)
+    if ($first -and $first -match '(\d+(\.\d+)+)') { $ver = $Matches[1] }
+    return "WSL:       $ver"
+}
+
 # LDM-#1907: the edition is knowable only to the shell, so the script supplies
 # it rather than having the CLI guess its parent process. PowerShell 5.1 and 7
 # on one host otherwise produce the same slug.
@@ -426,6 +444,19 @@ function Get-SlugOsSuffix {
         $dockerVer = "Not Running (Exception: $($_.Exception.Message))"
     }
     Write-Output "Docker:    $dockerVer"
+
+    # LDM-#2142: only reachable when pwsh runs inside a WSL distro; on Windows
+    # /proc/version does not exist and nothing is emitted.
+    $wslProc = ""
+    $wslOut = ""
+    if (Test-Path "/proc/version") {
+        $wslProc = Get-Content -Raw "/proc/version" -ErrorAction SilentlyContinue
+        if ($wslProc -cmatch '[Mm]icrosoft' -and (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
+            try { $wslOut = (& wsl.exe --version 2>$null) -join "`n" } catch { $wslOut = "" }
+        }
+    }
+    $wslLine = Get-WslVersionLine -ProcVersion $wslProc -WslOutput $wslOut
+    if ($wslLine) { Write-Output $wslLine }
 } | Out-File -FilePath $RESULTS_FILE_TMP -Encoding utf8
 
 function Invoke-Cleanup {
@@ -1184,7 +1215,8 @@ function Test-DockerDiskSpace {
         if ($fields.Count -ge 4) { $freeKb = [int64]$fields[3] }
     }
     if (-not $freeKb) {
-        Write-Host "[WARN]  Could not determine Docker's free space; continuing without the check." -ForegroundColor Yellow
+        # Reaches the report, as the bash twin's tee does.
+        Write-Verdict "[WARN]  Could not determine Docker's free space; continuing without the check."
         return $true
     }
 
@@ -1210,11 +1242,15 @@ function Test-DockerDiskSpace {
         return $false
     }
 
+    # LDM-#2240: a PASSING check reaches the report too, not just the console.
+    # Only the failure branches used to (Write-Verdict), so "how much room did
+    # this run start with" could not be read off a report. Parity with
+    # check_docker_disk in the bash twin.
     if ($freeGb -ge $NeedGb) {
         if ($null -ne $hostFreeGb) {
-            Write-Host "[SUCCESS] Docker has $freeGb GB free (host: $hostFreeGb GB)."
+            Write-Verdict "[SUCCESS] Docker has room ${Label}: $freeGb GB free, need $NeedGb GB (host: $hostFreeGb GB)."
         } else {
-            Write-Host "[SUCCESS] Docker has $freeGb GB free."
+            Write-Verdict "[SUCCESS] Docker has room ${Label}: $freeGb GB free, need $NeedGb GB."
         }
         return $true
     }
@@ -1411,6 +1447,145 @@ function Test-ConfigResetAndRevert {
     }
 
     return @{ Ok = $true; Message = "[SUCCESS] Config reset-all and revert verified, including the state-bearing refusal (LDM-#1853/#1854)." }
+}
+
+function Test-AiOffline {
+    # LDM-#2138: the offline slice of 'ldm ai'. The conversation itself needs
+    # a third-party API, a 60-second timeout and a secret, so it is
+    # deliberately NOT asserted. What is asserted needs nothing outside this
+    # script's control:
+    #
+    #   1. 'ldm ai --help' exits 0.
+    #   2. bare 'ldm -y ai' is not an argparse error (LDM-#1505); cmd_ai
+    #      refuses it with "needs a question", exit 1.
+    #   3. 'ldm -y ai <question>' with no key fails cleanly and RETURNS: -y
+    #      makes UI.ask return its default, so UI.die fires before any network
+    #      call. The aistudio URL must be printed first (LDM-#1971).
+    #
+    # Isolated LDM_HOME: an operator with a real gemini_api_key would
+    # otherwise call Google. The third call is bounded with WaitForExit, so a
+    # regression that prompts fails the check instead of hanging the suite.
+    # Comparisons are -cmatch / .Contains (case-SENSITIVE), matching grep -F in
+    # the shell half.
+    #
+    # Parity with verify_ai_offline in verify_e2e_refactor.sh.
+    param($LdmCmd, $WorkDir, [int]$LimitSeconds = 60)
+
+    $isoHome = Join-Path $WorkDir "ai-offline-home"
+    if (Test-Path $isoHome) { Remove-Item -Recurse -Force $isoHome -ErrorAction SilentlyContinue }
+    New-Item -ItemType Directory -Path $isoHome -Force | Out-Null
+
+    $prevHome = $env:LDM_HOME
+    $env:LDM_HOME = $isoHome
+    try {
+        $null = & $LdmCmd ai --help 2>&1 | ConvertTo-LdmText
+        $helpCode = $LASTEXITCODE
+        if ($helpCode -ne 0) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm ai --help' exited ${helpCode}, expected 0." }
+        }
+
+        $bareOut = & $LdmCmd -y ai 2>&1 | ConvertTo-LdmText
+        $bareCode = $LASTEXITCODE
+        if ($bareCode -eq 2 -or $bareOut.Contains("arguments are required")) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: bare 'ldm -y ai' is an argparse error (exit ${bareCode}); the query positional must be optional (LDM-#1505).`n   Output was: ${bareOut}" }
+        }
+        if ($bareCode -ne 1 -or -not $bareOut.Contains("needs a question")) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: bare 'ldm -y ai' should refuse with 'needs a question' and exit 1; got exit ${bareCode}.`n   Output was: ${bareOut}" }
+        }
+
+        # Bounded: Start-Process so the wait can be given up on.
+        $exe = $LdmCmd
+        $cmdInfo = Get-Command $LdmCmd -ErrorAction SilentlyContinue
+        if ($null -ne $cmdInfo -and $cmdInfo.Source) { $exe = $cmdInfo.Source }
+        $outLog = Join-Path $isoHome "ai-no-key.out.log"
+        $errLog = Join-Path $isoHome "ai-no-key.err.log"
+        $proc = Start-Process -FilePath $exe -ArgumentList @("-y", "ai", "status") -NoNewWindow -PassThru -RedirectStandardOutput $outLog -RedirectStandardError $errLog
+        # Touching Handle caches it, so ExitCode is still readable after exit.
+        $null = $proc.Handle
+        if (-not $proc.WaitForExit($LimitSeconds * 1000)) {
+            # LDM-#2389: ldm.exe is a PyInstaller one-file build; /T stops the
+            # child as well as the bootloader.
+            if (Get-Command taskkill.exe -ErrorAction SilentlyContinue) {
+                & taskkill.exe /T /F /PID $proc.Id 2>$null | Out-Null
+            } else {
+                Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            }
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm -y ai <question>' with no key did not return within ${LimitSeconds}s -- it is prompting or calling the network (LDM-#2138)." }
+        }
+        $proc.WaitForExit()
+        $keyCode = $proc.ExitCode
+        $keyOut = ""
+        foreach ($log in @($outLog, $errLog)) {
+            if (Test-Path $log) { $keyOut += (Get-Content -Raw $log -ErrorAction SilentlyContinue) }
+        }
+        if ($null -eq $keyOut) { $keyOut = "" }
+
+        if ($keyCode -eq 0) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm -y ai <question>' with no key exited 0; it must fail when no key is configured.`n   Output was: ${keyOut}" }
+        }
+        if (-not $keyOut.Contains("aistudio.google.com/app/apikey")) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm -y ai <question>' with no key did not print where to get one (aistudio.google.com/app/apikey, LDM-#1971).`n   Output was: ${keyOut}" }
+        }
+        if (-not $keyOut.Contains("API Key is required")) {
+            return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm -y ai <question>' with no key failed (exit ${keyCode}) but not at the key check.`n   Output was: ${keyOut}" }
+        }
+    } finally {
+        if ($null -eq $prevHome) {
+            Remove-Item Env:LDM_HOME -ErrorAction SilentlyContinue
+        } else {
+            $env:LDM_HOME = $prevHome
+        }
+        if (Test-Path $isoHome) { Remove-Item -Recurse -Force $isoHome -ErrorAction SilentlyContinue }
+    }
+
+    return @{ Ok = $true; Message = "[SUCCESS] 'ldm ai' offline slice verified: --help exits 0, bare form refuses without an argparse error, no-key run returns with the key URL (LDM-#2138)." }
+}
+
+function Test-RoundTripPreReadiness {
+    # LDM-#2200: a POPULATED pre_readiness_seconds, asserted end to end. Every
+    # other boot in this suite is 'ldm run --no-wait' then 'ldm wait', and
+    # cmd_wait passes no total_start, so its span is null -- correctly
+    # (LDM-#2199). Only a plain 'ldm run' reaches the branch that computes a
+    # real one, and the .ldmp round trip is the suite's one such boot.
+    #
+    # Asserted: status "ready", pre_readiness_seconds a positive number, and
+    # pre_readiness_seconds + elapsed_seconds no more than the measured wall
+    # clock plus 2 s. No lower bound: work after readiness is outside both.
+    #
+    # Parity with check_roundtrip_pre_readiness in verify_e2e_refactor.sh.
+    # Named so it can be exercised without a full E2E run.
+    param([string]$StatusFile, [int]$WallSeconds)
+
+    $lines = @()
+    try {
+        $st = Get-Content -Raw -Encoding UTF8 -Path $StatusFile -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        return @{ Ok = $false; Lines = @("ERROR: could not read $StatusFile ($($_.Exception.Message)); LDM writes it on every boot that waits for readiness.") }
+    }
+    $status = $st.status
+    $pre = $st.pre_readiness_seconds
+    $elapsed = $st.elapsed_seconds
+    $lines += "   recorded: status=$status pre_readiness_seconds=$pre elapsed_seconds=$elapsed; measured wall clock ${WallSeconds}s"
+
+    $isNum = {
+        param($v)
+        ($null -ne $v) -and -not ($v -is [bool]) -and (
+            ($v -is [int]) -or ($v -is [long]) -or ($v -is [double]) -or ($v -is [decimal]))
+    }
+    if ($status -cne "ready") {
+        return @{ Ok = $false; Lines = $lines + "ERROR: the boot recorded status '$status', expected ready." }
+    }
+    if (-not (& $isNum $pre) -or $pre -le 0) {
+        return @{ Ok = $false; Lines = $lines + "ERROR: a plain ldm run recorded pre_readiness_seconds as '$pre'; it passes total_start, so it must be a positive number (LDM-#2181/#2200)." }
+    }
+    if (-not (& $isNum $elapsed) -or $elapsed -lt 0) {
+        return @{ Ok = $false; Lines = $lines + "ERROR: elapsed_seconds is '$elapsed', not a duration." }
+    }
+    $sum = [double]$pre + [double]$elapsed
+    if ($sum -gt ($WallSeconds + 2)) {
+        return @{ Ok = $false; Lines = $lines + ("ERROR: pre_readiness_seconds + elapsed_seconds = {0:N1}s, more than the {1}s the command took; the figures do not reconcile with the wall clock (LDM-#2181)." -f $sum, $WallSeconds) }
+    }
+    return @{ Ok = $true; Lines = $lines }
 }
 
 function Test-CascadingDefaultGuard {
@@ -2323,6 +2498,140 @@ function Test-BringupTimeoutIsReadByTheBinary {
 
     return @{ Ok = $true; Message = "[SUCCESS] LDM_BRINGUP_TIMEOUT is read by the binary: a malformed value warns and falls back." }
 }
+
+# --- LDM-#2109: the search-wipe guard (LDM-#2083) ---------------------------
+function Test-SearchWipeGuard {
+    # LDM-#2109: parity with verify_search_wipe_guard in verify_e2e_refactor.sh,
+    # which carries the full reasoning. In short: LDM_SEARCH_READY_TIMEOUT
+    # makes a newly created Elasticsearch miss its window on every machine
+    # ('0' for the refusal; '5' for --force, so the log capture has a 5s sleep
+    # of output to read), an isolated LDM_HOME makes the wiped data this
+    # check's own, and a hand-written meta naming a running alpine container
+    # is the "running project" -- the suite refuses to start while a real one
+    # runs (LDM-#2085). The repair is only on the creation path, hence the
+    # 'docker rm -f' of the global search container before each run; the real
+    # one is put back at the end, on its real data.
+    param($LdmCmd, $WorkDir)
+
+    $isoHome = Join-Path $WorkDir "searchwipe-home"
+    $proj = "ldmsearchwipe"
+    $projDir = Join-Path $WorkDir $proj
+    # One segment per Join-Path: a literal backslash is not a separator to
+    # .NET on macOS/Linux, where pwsh runs this half too.
+    $searchDir = Join-Path (Join-Path (Join-Path $isoHome ".ldm") "infra") "search"
+    $dataDir = Join-Path $searchDir "data"
+    $canary = Join-Path $dataDir "ldm-e2e-2109-canary"
+    $refusalText = "Refusing to wipe the shared search data while other LDM projects are running"
+    $forceText = "--force given: deleting the SHARED search data at"
+    $savedText = "Saved the failing container's logs to"
+    $repairText = "Attempting automatic search volume repair"
+
+    & docker rm -f $proj liferay-search-global 2>&1 | Out-Null
+    foreach ($d in @($projDir, $isoHome)) {
+        if (Test-Path $d) { Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue }
+    }
+    # A leftover home could hold an earlier run's failure log, which would
+    # satisfy the capture check below without this run capturing anything.
+    if (Test-Path $isoHome) {
+        return @{ Ok = $false; Message = "[ERROR] ERROR: could not clear ${isoHome}; the LDM-#2083 guard was NOT evaluated and this is not a skip." }
+    }
+    New-Item -ItemType Directory -Path $projDir -Force | Out-Null
+    New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
+    # UTF8Encoding($false): a BOM makes the meta unparseable as JSON.
+    $noBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText((Join-Path $projDir "meta"), "{`"project_name`": `"$proj`", `"container_name`": `"$proj`"}", $noBom)
+    [System.IO.File]::WriteAllText($canary, "canary", $noBom)
+
+    $prevHome = $env:LDM_HOME
+    $prevWindow = $env:LDM_SEARCH_READY_TIMEOUT
+    $result = $null
+    try {
+        & docker run -d --name $proj alpine sleep 600 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            $result = @{ Ok = $false; Message = "[ERROR] ERROR: could not start the stand-in running project '${proj}'; the LDM-#2083 guard was NOT evaluated and this is not a skip." }
+            return $result
+        }
+        $env:LDM_HOME = $isoHome
+
+        # 1. A project is running, so the wipe is refused: exit 3, the project
+        #    named with how to stop it, and nothing deleted or captured.
+        $env:LDM_SEARCH_READY_TIMEOUT = "0"
+        $out = & $LdmCmd -y infra setup --search 2>&1 | ConvertTo-LdmText
+        $code = $LASTEXITCODE
+        # .Contains is ordinal and case-sensitive, matching grep -F in the .sh.
+        if ($code -ne 3 -or -not $out.Contains($refusalText) -or -not $out.Contains("ldm stop $proj")) {
+            $result = @{ Ok = $false; Message = "[ERROR] ERROR: the search repair was not refused while '${proj}' ran (exit ${code}, expected 3) (LDM-#2083).`n   Output was: ${out}" }
+            return $result
+        }
+        if (-not (Test-Path $canary) -or $out.Contains($repairText)) {
+            $result = @{ Ok = $false; Message = "[ERROR] ERROR: the refusal was printed, but the search data was wiped anyway (LDM-#2083)." }
+            return $result
+        }
+        # The refusal comes before the capture, so a log here would mean the
+        # capture check below cannot tell this run's from it.
+        if (@(Get-ChildItem -Path $searchDir -Filter 'search-failure-*.log' -ErrorAction SilentlyContinue).Count -gt 0) {
+            $result = @{ Ok = $false; Message = "[ERROR] ERROR: a search failure log exists after a refused repair; the refusal must precede the capture (LDM-#2083)." }
+            return $result
+        }
+
+        # 2. --force proceeds. Exit 3 is still expected: the window applies to
+        #    every restart too, so the repair runs at each of its two attempts
+        #    and then gives up with "failed to start after 2 restart attempts".
+        & docker rm -f liferay-search-global 2>&1 | Out-Null
+        $env:LDM_SEARCH_READY_TIMEOUT = "5"
+        $out = & $LdmCmd -y --force infra setup --search 2>&1 | ConvertTo-LdmText
+        $code = $LASTEXITCODE
+        if ($code -ne 3 -or -not $out.Contains($forceText)) {
+            $result = @{ Ok = $false; Message = "[ERROR] ERROR: --force did not take the repair past the refusal (exit ${code}, expected 3) (LDM-#2083).`n   Output was: ${out}" }
+            return $result
+        }
+        if (Test-Path $canary) {
+            $result = @{ Ok = $false; Message = "[ERROR] ERROR: --force announced the wipe but the search data is still there (LDM-#2083)." }
+            return $result
+        }
+
+        # 3. The evidence is kept: a non-empty log beside the data directory,
+        #    saved BEFORE the repair is announced -- the removal follows it.
+        $lines = $out -split "`r?`n"
+        $savedAt = -1
+        $repairAt = -1
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($savedAt -lt 0 -and $lines[$i].Contains($savedText)) { $savedAt = $i }
+            if ($repairAt -lt 0 -and $lines[$i].Contains($repairText)) { $repairAt = $i }
+        }
+        $logFile = @(Get-ChildItem -Path $searchDir -Filter 'search-failure-*.log' -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 0 }) | Select-Object -First 1
+        if ($null -eq $logFile -or $savedAt -lt 0 -or $repairAt -lt 0 -or $savedAt -ge $repairAt) {
+            $result = @{ Ok = $false; Message = "[ERROR] ERROR: the failing search container's logs were not captured before its removal (LDM-#2083).`n   log file: '${logFile}', saved at line '${savedAt}', repair at line '${repairAt}'.`n   Output was: ${out}" }
+            return $result
+        }
+
+        $result = @{ Ok = $true; Message = "[SUCCESS] The search wipe is refused while a project runs, --force overrides it, and the failing container's logs are saved first (LDM-#2083/#2109)." }
+    } finally {
+        if ($null -eq $prevHome) {
+            Remove-Item Env:LDM_HOME -ErrorAction SilentlyContinue
+        } else {
+            $env:LDM_HOME = $prevHome
+        }
+        if ($null -eq $prevWindow) {
+            Remove-Item Env:LDM_SEARCH_READY_TIMEOUT -ErrorAction SilentlyContinue
+        } else {
+            $env:LDM_SEARCH_READY_TIMEOUT = $prevWindow
+        }
+        & docker rm -f $proj liferay-search-global 2>&1 | Out-Null
+        foreach ($d in @($projDir, $isoHome)) {
+            if (Test-Path $d) { Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue }
+        }
+        # Back on the real LDM_HOME, the real data, and the default window.
+        # Only after the stand-in is gone, so nothing here can be refused.
+        & $LdmCmd -y infra setup --search 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0 -and $result -and $result.Ok) {
+            $result = @{ Ok = $false; Message = "[ERROR] ERROR: could not restore the global search container after the LDM-#2083 check; run 'ldm infra setup --search' by hand." }
+        }
+    }
+
+    return $result
+}
+# --- end LDM-#2109 ----------------------------------------------------------
 
 function Test-StopHintAndStartConfirmation {
     # LDM-#1937: the complement of Test-ContainersRemovedVolumesIntact above.
@@ -3331,6 +3640,15 @@ try {
         exit 1
     }
 
+    Write-Host ">> Verifying the offline slice of 'ldm ai' (LDM-#2138)..."
+    $aiOffline = Test-AiOffline -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE
+    if ($aiOffline.Ok) {
+        Write-Verdict $aiOffline.Message
+    } else {
+        Write-TrapNote $aiOffline.Message -Color Red
+        exit 1
+    }
+
     Write-Host ">> Verifying SSL renewal re-issues into the documented directory (LDM-#1958)..."
     $sslRenew = Test-SslRenewalReissues -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE
     if ($sslRenew.Ok) {
@@ -3402,6 +3720,17 @@ try {
         Write-TrapNote $bringupTmo.Message -Color Red
         exit 1
     }
+
+    # --- LDM-#2109: the search-wipe guard (LDM-#2083) -----------------------
+    Write-Host ">> Verifying the search wipe is guarded (LDM-#2083/#2109)..."
+    $searchWipe = Test-SearchWipeGuard -LdmCmd $LDM_CMD -WorkDir $LDM_WORKSPACE
+    if ($searchWipe.Ok) {
+        Write-Verdict $searchWipe.Message
+    } else {
+        Write-TrapNote $searchWipe.Message -Color Red
+        exit 1
+    }
+    # --- end LDM-#2109 ------------------------------------------------------
 
     Write-Host ">> Verifying --force is not an always-firing positional (LDM-#1835)..."
     $forcePos = Test-ForceIsNotAPositional -LdmCmd $LDM_CMD
@@ -7307,6 +7636,11 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     # (LDM-#2118), which $roundTripOk gates. Parity with the bash half.
     $script:roundTripEnvOk = $true
     $roundTripBooted = $false
+    # LDM-#2200: the populated pre_readiness_seconds verdict, kept apart from
+    # $roundTripOk for the same reason as the env-leak one.
+    $roundTripTimingOk = $true
+    $roundTripBootWall = $null
+    $roundTripCopyDir = ""
 
     # LDM-#2372: run the shared env-leak checker and record its verdict in
     # $script:roundTripEnvOk, never in $roundTripOk. $LASTEXITCODE is the
@@ -7333,6 +7667,20 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
             $script:roundTripEnvOk = $false
         }
     }
+
+    # LDM-#2240: re-check the disk before the round trip, as LDM-#1430 does
+    # before the snapshot. The round trip runs late, writes a ~1 GB package,
+    # extracts it again on import and boots a second stack's database and
+    # search data. 5 GB is the snapshot's figure, because the package IS a
+    # snapshot plus its tar; it is not a measured peak. Parity with the bash
+    # half.
+    if (-not (Test-DockerDiskSpace -NeedGb 5 -Label "for the .ldmp round trip")) {
+        Write-Verdict "[ERROR] Refusing to start the .ldmp round trip without room to finish it (LDM-#2240)."
+        Write-Verdict "        It packs, imports and boots a second copy of the project; a failure"
+        Write-Verdict "        part-way through would read as an LDM defect rather than a full disk."
+        throw "Insufficient Docker disk space for the .ldmp round trip."
+    }
+
     if (Test-Path $ROUNDTRIP_PKG_DIR) { Remove-Item -Recurse -Force $ROUNDTRIP_PKG_DIR -ErrorAction SilentlyContinue }
     New-Item -ItemType Directory -Path $ROUNDTRIP_PKG_DIR -Force | Out-Null
 
@@ -7457,14 +7805,19 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     }
 
     if ($roundTripOk) {
+        # LDM-#2200: timed, so the span LDM records can be reconciled with it.
+        $rtBootClock = [System.Diagnostics.Stopwatch]::StartNew()
         $rtBootRaw = & $LDM_CMD -y run $ROUNDTRIP_PROJECT --port $roundTripPort 2>&1
-        if ($LASTEXITCODE -ne 0) {
+        $rtBootExit = $LASTEXITCODE
+        $rtBootClock.Stop()
+        if ($rtBootExit -ne 0) {
             Write-Verdict "[ERROR] The imported project did not boot (LDM-#2131)."
             Write-RoundTripOutput -Label "ldm run" -Raw $rtBootRaw
             $roundTripOk = $false
         }
         else {
             $roundTripBooted = $true
+            $roundTripBootWall = [int][math]::Ceiling($rtBootClock.Elapsed.TotalSeconds)
         }
     }
 
@@ -7522,6 +7875,30 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
             $script:roundTripEnvOk = $false
         } else {
             Invoke-RoundTripEnvCheck -What "The imported copy '$ROUNDTRIP_PROJECT'" -CheckerArgs @($roundTripCopyDir)
+        }
+    }
+
+    # LDM-#2200: the round trip's plain 'ldm run' is the suite's only boot that
+    # passes total_start, so it is the only place a POPULATED
+    # pre_readiness_seconds can be seen. Kept apart from $roundTripOk, like the
+    # env-leak verdict, so it cannot skip the reset check below. Parity with
+    # the bash half, where the rationale is recorded.
+    if ($roundTripOk) {
+        Write-Host ">> Verifying the round trip's plain 'ldm run' recorded the span before readiness (LDM-#2200)..."
+        if (-not $roundTripCopyDir -or $null -eq $roundTripBootWall) {
+            Write-Verdict "[ERROR] The imported copy's directory or boot time is unknown, so pre_readiness_seconds could not be checked. LDM-#2200 was NOT evaluated and this is not a skip."
+            $roundTripTimingOk = $false
+        } else {
+            $preReadiness = Test-RoundTripPreReadiness `
+                -StatusFile (Join-Path (Join-Path $roundTripCopyDir ".liferay-docker") "startup-status.json") `
+                -WallSeconds $roundTripBootWall
+            foreach ($preLine in $preReadiness.Lines) { Write-Verdict $preLine }
+            if ($preReadiness.Ok) {
+                Write-Verdict "[SUCCESS] A plain 'ldm run' recorded a positive pre_readiness_seconds that reconciles with the wall clock (LDM-#2200)."
+            } else {
+                Write-Verdict "[ERROR] The round trip's 'ldm run' did not record a usable pre_readiness_seconds (LDM-#2200)."
+                $roundTripTimingOk = $false
+            }
         }
     }
 
@@ -7585,6 +7962,9 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     # check has had its turn.
     if (-not $script:roundTripEnvOk) {
         throw "The .ldmp round-trip env-leak or bundle check failed or could not run (LDM-#2370/#2372/#2359). The reason is recorded above."
+    }
+    if (-not $roundTripTimingOk) {
+        throw "The .ldmp round trip's pre_readiness_seconds check failed or could not run (LDM-#2200). The reason is recorded above."
     }
 
     } # LDM-#1975 end section: extras

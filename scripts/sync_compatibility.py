@@ -796,16 +796,31 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
                 if dd_match:
                     provider_v = f"v{dd_match.group(1)}"
 
+    # 6.5 LDM-#2142: the WSL version, which the verify script records in the
+    # header when it runs inside WSL (`WSL:       3.0.3.0`). Applied to the
+    # Native WSL2 row only, further down, once the provider is known. Three
+    # states, kept distinct on purpose:
+    #   a version   -> published as `WSL <version>`
+    #   `unknown`   -> the run could not read it; published as nothing, NOT the
+    #                  legacy constant, which would be the very wrong fact
+    #                  LDM-#2142 removed
+    #   no line     -> the report predates the header; the legacy map applies
+    wsl_header = _header_value(r"^WSL:[ \t]*([^\n]*)", content, re.M)
+    wsl_v = None
+    if wsl_header and re.fullmatch(r"[0-9]+(?:\.[0-9]+)+", wsl_header):
+        wsl_v = wsl_header
+
     # --- LEGACY MAPPINGS (Manual Overrides for existing lab reports) ---
     legacy_map = {
         "apple-silicon-macos-16-tahoe-colima": "v0.10.1",
         "apple-silicon-macos-16-tahoe-orbstack": "v2.1.1",
         "apple-intel-macos-12-monterey-orbstack": "v1.5.1",
         "windows-pc-windows-11-docker-desktop": "v4.35.0",
+        # Fallback ONLY for reports predating the `WSL:` header line
+        # (LDM-#2142); a report carrying one is read from it instead.
         # Updated 2026-10-13: the lab machine took a WSL upgrade that
         # morning, mid-run, and the v2.26.5-pre.5 verification that
-        # followed ran on 3.0.3.0. The reports carry no WSL version of
-        # their own, so this table is the only place it can come from.
+        # followed ran on 3.0.3.0.
         "windows-pc-windows-11-native-wsl2": "WSL 3.0.3.0",
     }
 
@@ -1028,8 +1043,15 @@ def get_report_metadata(report_path):  # noqa: C901, PLR0912, PLR0915
     clean_provider = provider.lower().replace(" ", "-")
     internal_slug = f"{clean_arch}-{clean_os}-{clean_provider}"
 
+    # LDM-#2142: a WSL version the report states wins over the legacy constant.
+    # A header that is present but unreadable (`unknown`) suppresses the
+    # fallback rather than inviting it.
+    wsl_stated = wsl_header is not None and provider == "Native WSL2"
+    if not provider_v and wsl_stated and wsl_v:
+        provider_v = f"WSL {wsl_v}"
+
     # Apply legacy version overrides if still unknown
-    if not provider_v and internal_slug in legacy_map:
+    if not provider_v and not wsl_stated and internal_slug in legacy_map:
         provider_v = legacy_map[internal_slug]
 
     # Explicitly ignore unsupported or erroneous environments

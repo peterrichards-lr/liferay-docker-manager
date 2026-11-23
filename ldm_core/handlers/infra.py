@@ -22,6 +22,42 @@ _INFRA_CREATE_TIMEOUT = 600  # `docker run` for a global service -- may pull
 _INFRA_PROBE_TIMEOUT = 30  # readiness probes and inspection
 _INFRA_LIFECYCLE_TIMEOUT = 120  # start/stop/rm/network operations
 
+# LDM-#2109: the Elasticsearch readiness window, overridable so the E2E suite
+# can reach the automatic search volume repair -- and its LDM-#2083 guard --
+# deterministically instead of by breaking Elasticsearch and waiting five
+# minutes. The default is unchanged: 60 probes, 5 seconds apart.
+_SEARCH_READY_INTERVAL = 5
+_SEARCH_READY_TIMEOUT_DEFAULT = 300
+_SEARCH_READY_TIMEOUT_ENV = "LDM_SEARCH_READY_TIMEOUT"
+
+
+def _search_ready_attempts() -> int:
+    """How many readiness probes Global Search gets (LDM-#2109).
+
+    `LDM_SEARCH_READY_TIMEOUT` is in seconds, probed every
+    `_SEARCH_READY_INTERVAL`, rounded up. `0` means no probe at all, so the
+    failure path runs at once. Read per call, like LDM_BRINGUP_TIMEOUT. A
+    malformed or negative value warns and keeps the default.
+    """
+    import math
+
+    default = _SEARCH_READY_TIMEOUT_DEFAULT // _SEARCH_READY_INTERVAL
+    raw = os.environ.get(_SEARCH_READY_TIMEOUT_ENV, "").strip()
+    if not raw:
+        return default
+    try:
+        seconds = float(raw)
+    except ValueError:
+        seconds = -1.0
+    if seconds < 0 or not math.isfinite(seconds):
+        UI.warning(
+            f"Malformed {_SEARCH_READY_TIMEOUT_ENV} ('{raw}'); "
+            f"using {_SEARCH_READY_TIMEOUT_DEFAULT}s."
+        )
+        return default
+    return math.ceil(seconds / _SEARCH_READY_INTERVAL)
+
+
 #: The analysis plugins Liferay's search mappings need. `analysis-icu` is the
 #: one a missing install kills a boot over: Liferay's dynamic templates use its
 #: `icu_collation_keyword` type, so Elasticsearch refuses to load an index
@@ -1705,7 +1741,8 @@ tls:
 
             # Robust health check loop
             ready = False
-            for _ in range(60):  # 5 minute timeout (60 * 5s)
+            # 5 minutes by default (60 * 5s); LDM-#2109 LDM_SEARCH_READY_TIMEOUT.
+            for _ in range(_search_ready_attempts()):
                 # Fail fast if container exited
                 status = self.manager.get_container_status(
                     search_name, target_name=target_name
@@ -1737,7 +1774,7 @@ tls:
                 if res and '"cluster_name"' in res:
                     ready = True
                     break
-                time.sleep(5)
+                time.sleep(_SEARCH_READY_INTERVAL)
 
             if not ready:
                 if _depth >= 2:

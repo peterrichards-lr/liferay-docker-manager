@@ -285,6 +285,7 @@ itself behaves.
 | `LDM_REPO_OWNER` | `peterrichards-lr` | Owner of that repository. |
 | `LDM_RUN_CONTEXT` | unset | `ci` marks the run as automated. |
 | `LDM_SAMPLES_PATH` | — | Overrides the sample-extension cache location. |
+| `LDM_SEARCH_READY_TIMEOUT` | `300` | Seconds `ldm infra setup` (and any run that creates the shared search node) waits for a newly created Global Search container to answer, probed every 5 seconds and rounded up to whole probes. When it does not answer in time, the automatic search volume repair runs, which refuses while other projects are running unless `--force` is given. `0` skips the wait and goes straight to that repair; it exists so the E2E suite can reach the guard deterministically, not as a tuning knob. A malformed or negative value warns and keeps `300`. |
 | `LDM_SLUG_OS_SUFFIX` | unset | Suffix added to the OS component of a verification report slug. Unset on an ordinary run. |
 | `LDM_SSH_READY_TIMEOUT` | — | Remote node readiness. See [above](#remote-node-readiness-ldm_ssh_ready_timeout). |
 | `LDM_SSL_PORT` | `443` | Host HTTPS port for the global proxy. |
@@ -417,4 +418,4 @@ LDM mounts.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-20*
+*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*
