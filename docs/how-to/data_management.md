@@ -192,7 +192,7 @@ tar -xzf ~/.ldm/removed/demo-20260914-071500.tar.gz -C ~/ldm/demo
 
 ## `package` (Portable Package Export)
 
-Bundles a project snapshot (code elements, database backup, document library, and Elasticsearch indices) into a single portable `.ldmp` package (tarball) alongside a `.ldmp.sha256` checksum file. This package is ideal for sharing local environments with other developers or releasing template stacks via GitHub Releases.
+Bundles a project snapshot (code elements, database backup, document library, and Elasticsearch indices), or with `--stateless` only the project's assets, into a single portable `.ldmp` package (tarball) alongside a `.ldmp.sha256` checksum file. This package is ideal for sharing local environments with other developers or releasing template stacks via GitHub Releases.
 
 ```bash
 # Create a fresh snapshot and package the environment
@@ -216,6 +216,51 @@ It does carry `portal-patches/`, and `ldm package` lists the patches it ships;
 `ldm import` refuses a package whose patches were built for a different
 Liferay quarter than the one it will run. See
 [Portal patches travel with the package](../reference/cli/core.md#portal-patches-travel-with-the-package).
+
+### Stateful and stateless packages
+
+An `.ldmp` can be one of two kinds. The manifest's `package_kind` field says
+which.
+
+- **Stateful (snapshot).** This is what `ldm package` makes by default: the
+  database dump, `data/`, OSGi state and search snapshot. `ldm import` and
+  `ldm quickstart` restore them, so the importer gets the publisher's content.
+- **Stateless (assets only).** `ldm package --stateless` takes no snapshot.
+  Importing it gives a vanilla instance with the package's assets deployed.
+  Nothing is restored, and `ldm quickstart` does not apply a pre-warmed seed.
+
+A stateless package holds only what a fresh Liferay needs to behave like the
+project:
+
+- client extensions: the archives in `osgi/client-extensions/`, and the whole
+  `client-extensions/` tree, as a stateful package ships it. A container
+  extension's `Dockerfile` and `LCP.json` are there, so the importer's
+  `ldm run` builds its microservice;
+- `deploy/`, `osgi/modules/`, `osgi/configs/` and `configs/`;
+- `files/portal-ext.properties`, `scripts/` and `portal-patches/`;
+- `.ldm/fragment-overrides.json`.
+
+It has no database dump, `data/`, `osgi/state`, `snapshots/` or search
+snapshot.
+
+```bash
+# Build an assets-only package. No container needs to be running.
+ldm package my-project --stateless --repo my-owner/my-repo
+```
+
+Both kinds leave out the same publisher material and write the same manifest
+fields (`tag`, `db_type`, `host_name`, `container_hostname` and the rest).
+Both keep the payload in a top-level `files.tar.gz` with the same layout, so a
+stateless pack also works as an `ldm run --samples` pack on LDM v2.26.x.
+`--stateless` cannot be combined with `--snapshot` or `--use-latest`.
+
+A package without `package_kind` is stateful. Every package made before the
+field existed therefore imports exactly as it did.
+
+Use a stateless package when the content lives in the assets rather than the
+database, for example a site initializer that builds its site on first boot.
+A stateless package can be built on a CI runner with nothing running, which
+sidesteps the problem described in the next section.
 
 ### ⚠️ CI/CD Release Pipelines vs. Local DB Packaging
 

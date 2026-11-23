@@ -23,9 +23,12 @@ class TestAssetService(unittest.TestCase):
         self.manager = MockAssetManager()
         self.assets = AssetService(self.manager)
 
+    # LDM-#2491: the latest-release lookup is a HEAD; offline here, so the
+    # test never reaches the network.
+    @patch("requests.head", side_effect=ConnectionError("offline"))
     @patch("ldm_core.handlers.assets.get_actual_home")
     @patch("requests.get")
-    def test_download_samples_success(self, mock_get, mock_home):
+    def test_download_samples_success(self, mock_get, mock_home, _mock_head):
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -54,8 +57,9 @@ class TestAssetService(unittest.TestCase):
                 self.assertTrue(res)
                 self.assertTrue(mock_get.called)
 
+    @patch("requests.head", side_effect=ConnectionError("offline"))
     @patch("ldm_core.handlers.assets.get_actual_home")
-    def test_download_samples_cached(self, mock_home):
+    def test_download_samples_cached(self, mock_home, _mock_head):
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp_dir:

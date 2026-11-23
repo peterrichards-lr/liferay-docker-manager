@@ -36,6 +36,8 @@ RENDER_CASES: dict[str, dict[str, Any]] = {
         "setup_steps": SETUP,
         "verify_steps": VERIFY,
     },
+    # LDM-#2493
+    "stateless": {"stateless": True},
 }
 
 
@@ -229,6 +231,30 @@ def test_dispatch_passes_hooks_to_cmd_init_ci():
     assert kwargs["project_id"] == "demo"
     assert kwargs["setup_steps"] == ["a.sh"]
     assert kwargs["verify_steps"] == ["v.sh"]
+
+
+@pytest.mark.parametrize("case", sorted(RENDER_CASES))
+def test_only_a_stateless_scaffold_packages_stateless(case):
+    """LDM-#2493: `--stateless` reaches the emitted `ldm package`, and parses."""
+    command = _command_for(_render(**RENDER_CASES[case]), "package")
+    args = get_parser()[0].parse_args(shlex.split(command)[1:])
+    assert args.stateless is bool(RENDER_CASES[case].get("stateless")), command
+
+
+def test_dispatch_passes_stateless_to_init_ci_and_package():
+    parser, _ = get_parser()
+    manager = MagicMock()
+    args = parser.parse_args(["system", "init-ci", "--stateless"])
+    _build_command_map(args, manager)[("system", "init-ci")]()
+    assert manager.system.cmd_init_ci.call_args.kwargs["stateless"] is True
+
+    args = parser.parse_args(["package", "demo", "--stateless"])
+    _build_command_map(args, manager)[("package", None)]()
+    assert manager.snapshot.cmd_package.call_args.kwargs["stateless"] is True
+
+    args = parser.parse_args(["package", "demo"])
+    _build_command_map(args, manager)[("package", None)]()
+    assert manager.snapshot.cmd_package.call_args.kwargs["stateless"] is False
 
 
 # --- 4. actionlint ---------------------------------------------------------

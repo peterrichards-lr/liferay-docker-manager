@@ -17,6 +17,7 @@ from ldm_core.snapshot.archive import (
 )
 from ldm_core.snapshot.custom_containers import CustomContainersSnapshotService
 from ldm_core.snapshot.database import DatabaseSnapshotService
+from ldm_core.snapshot.package_kind import is_stateless
 from ldm_core.snapshot.search import SearchSnapshotService
 from ldm_core.snapshot.utils import UtilsSnapshotService
 from ldm_core.snapshot.volumes import VolumesSnapshotService
@@ -744,24 +745,43 @@ class SnapshotService(BaseHandler):
                 project_meta=project_meta,
             )
 
-        UI.phase(4, 4, "Restoring Database Components")
-        self.database._restore_database(
-            paths, choice_path, project_meta, container_name
-        )
+        # LDM-#2493: a stateless package carries no database, search snapshot
+        # or images, and is meant for a vanilla instance. The reset above has
+        # already cleared any previous state, so Liferay creates a fresh
+        # database on first boot. A manifest without `package_kind` is
+        # stateful and restores exactly as before.
+        stateless = is_stateless(snap_meta)
+        unsearchable: list = []
+        if stateless:
+            UI.phase(4, 4, "Deploying Package Assets")
+            UI.detail(
+                "Stateless package: nothing to restore. Liferay starts as a "
+                "vanilla instance and deploys the package's assets."
+            )
+        else:
+            UI.phase(4, 4, "Restoring Database Components")
+            self.database._restore_database(
+                paths, choice_path, project_meta, container_name
+            )
 
-        unsearchable = (
-            self.search._restore_search(choice_path, snap_meta, container_name) or []
-        )
+            unsearchable = (
+                self.search._restore_search(choice_path, snap_meta, container_name)
+                or []
+            )
 
-        self.custom_containers._restore_custom_images(choice_path, project_meta)
+            self.custom_containers._restore_custom_images(choice_path, project_meta)
 
         if not unsearchable:
             UI.success("Restore complete.")
 
-        if self.flag_reindex(paths["root"]):
-            UI.detail("  + Scheduled automatic search reindex for next boot.")
-        else:
-            UI.warning("  ! Could not schedule automatic reindex (metadata missing).")
+        # A vanilla instance indexes as it starts: nothing restored to reindex.
+        if not stateless:
+            if self.flag_reindex(paths["root"]):
+                UI.detail("  + Scheduled automatic search reindex for next boot.")
+            else:
+                UI.warning(
+                    "  ! Could not schedule automatic reindex (metadata missing)."
+                )
 
         # LDM-#2316: a restored index that cannot answer a search used to be a
         # warning above "Restore complete." and exit 0, so automation booted a
@@ -874,6 +894,44 @@ class SnapshotService(BaseHandler):
                     f"({evidence})."
                 )
 
+    def _stage_stateless_package(self, root, paths, staging):
+        """Lays out a stateless package in `staging`: meta + files.tar.gz.
+
+        LDM-#2493. The same two members a snapshot directory holds, so the
+        packaging in `cmd_package` -- the publisher-material filter, the
+        payload checksum -- runs on it unchanged. Nothing is snapshotted: no
+        database dump, no `data/`, no `osgi/state`, no search snapshot, and no
+        container is started or asked.
+        """
+        from ldm_core.runtime.portal_patches import discover_patches
+        from ldm_core.snapshot.archive import write_stateless_payload
+
+        project_meta = self.manager.read_meta(root) or {}
+        # As `cmd_snapshot` does: give each patch JAR its sidecar first.
+        discover_patches(paths["root"], project_meta.get("tag"))
+
+        UI.detail("Building a stateless package from the project's assets...")
+        added = write_stateless_payload(paths["root"], staging / "files.tar.gz")
+        if not added:
+            UI.warning(
+                "The project has no assets to package (client extensions, "
+                "deploy/, configs, OSGi modules, fragment overrides), so the "
+                "package will boot a plain vanilla instance."
+            )
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.archive._generate_snapshot_metadata(
+            f"Stateless package {timestamp}",
+            timestamp,
+            project_meta,
+            root,
+            paths,
+            staging,
+            None,
+            None,
+            stateless=True,
+        )
+        return staging
+
     def cmd_package(  # noqa: C901, PLR0912, PLR0915
         self,
         project_id=None,
@@ -882,12 +940,30 @@ class SnapshotService(BaseHandler):
         use_latest=False,
         snapshot=None,
         include_marketplace=False,
+        stateless=False,
     ):
-        """Bundles a project snapshot into a .ldmp package for GitHub release."""
+        """Bundles a project snapshot into a .ldmp package for GitHub release.
+
+        With `stateless` (LDM-#2493) no snapshot is taken: the package holds
+        the project's assets only and declares `package_kind: stateless`, so
+        import deploys it onto a vanilla instance instead of restoring it.
+        """
         # LDM-#1791: before anything is created. A claim with no evidence is
         # refused, and paying for a full snapshot first would be the wrong
         # order for an argument check.
         self._compatibility_claim_args()
+
+        # LDM-#2493: a stateless package is built from the project's files, so
+        # a snapshot to package contradicts it. Refused rather than ignored.
+        if stateless and (snapshot or use_latest):
+            UI.die(
+                "--stateless cannot be combined with "
+                f"{'--snapshot' if snapshot else '--use-latest'}: a stateless "
+                "package is built from the project's assets and takes no "
+                "snapshot. Drop one of them.",
+                exit_code=1,
+            )
+            return
 
         is_dry_run = os.environ.get("LDM_DRY_RUN", "").lower() == "true"
         if is_dry_run:
@@ -902,8 +978,15 @@ class SnapshotService(BaseHandler):
         project_name = root.name
         paths = self.manager.setup_paths(root)
 
+        # LDM-#2493: removed after the package is written, below.
+        stateless_staging = tempfile.TemporaryDirectory() if stateless else None
+
         # 1. Obtain or create the snapshot
-        if snapshot:
+        if stateless_staging is not None:
+            latest_snap_dir = self._stage_stateless_package(
+                root, paths, Path(stateless_staging.name)
+            )
+        elif snapshot:
             # Resolve specific snapshot path
             latest_snap_dir = paths["backups"] / snapshot
             if not latest_snap_dir.exists():
@@ -1049,6 +1132,9 @@ class SnapshotService(BaseHandler):
                         "write this installation's licence key or client-extension "
                         "credentials into the importer's container."
                     )
+
+        if stateless_staging is not None:
+            stateless_staging.cleanup()
 
         # 5. Generate checksum
         sha = calculate_sha256(package_file)

@@ -17,6 +17,7 @@ from ldm_core.snapshot.archive import (
     find_publisher_material,
     scan_member_names,
 )
+from ldm_core.snapshot.package_kind import PACKAGE_KIND_KEY, STATELESS, is_stateless
 from ldm_core.utils import (
     calculate_sha256,
     is_within_root,
@@ -670,6 +671,19 @@ def apply_package_container_hostname(manifest, project_meta) -> None:
     project_meta[ch.META_KEY] = packaged
 
 
+def apply_package_kind(manifest, project_meta) -> None:
+    """Record a stateless package in the project (LDM-#2493).
+
+    Quickstart reads it to boot the project vanilla, without a seed. Nothing
+    is written for a stateful package, as before; a project replaced by one
+    loses the marker a previous stateless import left.
+    """
+    if is_stateless(manifest):
+        project_meta[PACKAGE_KIND_KEY] = STATELESS
+    else:
+        project_meta.pop(PACKAGE_KIND_KEY, None)
+
+
 def _hydrate_ldm_package_to_project(
     self, project_path, project_name, manifest, temp_extract_dir
 ):
@@ -736,6 +750,7 @@ def _hydrate_ldm_package_to_project(
         }
     )
     apply_package_container_hostname(manifest, project_meta)
+    apply_package_kind(manifest, project_meta)
     # LDM-#2275: `quickstart --replace` (or a confirmed prompt) over an
     # existing project. #2163's reason not to back-fill -- the data on disk is
     # isolated -- does not hold here: the restore below resets the project,
@@ -768,7 +783,11 @@ def _hydrate_ldm_package_to_project(
         )
     self.manager.write_meta(project_path, project_meta)
 
-    UI.detail("Restoring database and volume assets from LDM package...")
+    UI.detail(
+        "Deploying the assets of a stateless LDM package..."
+        if is_stateless(manifest)
+        else "Restoring database and volume assets from LDM package..."
+    )
     self.manager._skip_git_check = True
     try:
         self.manager.snapshot.cmd_restore(

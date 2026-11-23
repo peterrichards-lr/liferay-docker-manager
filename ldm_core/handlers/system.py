@@ -57,6 +57,7 @@ def render_ci_workflow(
     setup_steps=None,
     verify_steps=None,
     version=None,
+    stateless=False,
 ):
     """Render the GitHub Actions workflow scaffolded by ``ldm system init-ci``.
 
@@ -84,6 +85,8 @@ def render_ci_workflow(
 
     trigger_block = CI_TRIGGERS.get(trigger, CI_TRIGGERS["release"])
     project_arg = f"{project_id} " if project_id else ""
+    # LDM-#2493: an assets-only package, deployed onto a vanilla instance.
+    package_kind_arg = "--stateless " if stateless else ""
 
     hook_blocks = [
         block
@@ -150,7 +153,7 @@ jobs:
 {hooks}      - name: Create LDM Package
         run: |
           mkdir -p ./dist
-          ldm package {project_arg}--non-interactive --repo "{repo}" --output ./dist
+          ldm package {project_arg}{package_kind_arg}--non-interactive --repo "{repo}" --output ./dist
 
       - name: Stop Liferay Environment
         if: always()
@@ -655,6 +658,7 @@ class SystemService(BaseHandler):
         project_id=None,
         setup_steps=None,
         verify_steps=None,
+        stateless=False,
     ):
         """Scaffolds a GitHub Actions workflow to build and package LDM releases."""
         from pathlib import Path
@@ -722,6 +726,7 @@ class SystemService(BaseHandler):
                 setup_steps=setup_steps,
                 verify_steps=verify_steps,
                 version=VERSION,
+                stateless=stateless,
             )
         except ValueError as e:
             UI.die(str(e))

@@ -10,6 +10,7 @@ from ldm_core.handlers.license import is_licence_xml
 from ldm_core.runtime import container_hostname
 from ldm_core.runtime.portal_patches import package_patch_set
 from ldm_core.runtime.portal_workarounds import is_ldm_bundle
+from ldm_core.snapshot.package_kind import PACKAGE_KIND_KEY, STATELESS
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, safe_extract
 
@@ -137,6 +138,67 @@ _ARCHIVE_DIR_NAMES: tuple[str, ...] = (
 
 #: LDM-#2444: the patch JARs a payload ships, for `ldm package` to list.
 PORTAL_PATCH_SOURCES = (("portal-patches", "*.jar"),)
+
+# LDM-#2493: what `ldm package --stateless` puts in files.tar.gz. Assets only --
+# what a vanilla instance needs to behave like the project -- and nothing the
+# project's Liferay wrote at runtime: no `data/`, no `osgi/state`, no `logs/`,
+# no generated `files/`, no `snapshots/`, no search backup. Paths are relative
+# to the project root and stored at the same path, which is the layout every
+# files.tar.gz has, so LDM v2.26.x `--samples` (which copies the extracted
+# member over the project) still reads a stateless pack correctly.
+#
+# Whole trees. `osgi/modules` goes through `_omit_ldm_bundles` like the
+# snapshot's `osgi` entry. Publisher material is filtered afterwards by
+# `write_redistributable_payload`, exactly as for a stateful package.
+STATELESS_TREES: tuple[str, ...] = (
+    "deploy",
+    "configs",
+    "osgi/configs",
+    "osgi/client-extensions",
+    "osgi/modules",
+    "scripts",
+    "portal-patches",
+    # The expanded client extensions -- each `<name>/` with its Dockerfile,
+    # LCP.json and config -- are what `ldm run` builds microservice sidecars
+    # from; the zips alone start nothing outside Liferay. Added whole and
+    # unfiltered, as the snapshot adds it (`_ARCHIVE_DIR_NAMES` through
+    # `_add_to_archive`), so both kinds of package ship the same tree.
+    "client-extensions",
+)
+
+# Single files.
+STATELESS_GLOBS: tuple[tuple[str, str], ...] = (
+    ("files", "portal-ext.properties"),
+    (".ldm", "fragment-overrides.json"),
+)
+
+
+def write_stateless_payload(root, dst):
+    """Writes files.tar.gz `dst` holding only the project's assets. LDM-#2493.
+
+    Returns the archive names added, sorted. An absent tree is skipped; an
+    unreadable one raises, because a package silently missing a tree it was
+    meant to carry is the LDM-#1429 failure in another form.
+    """
+    root = Path(root)
+    added: list[str] = []
+    with tarfile.open(dst, "w:gz") as tar:
+        for rel in STATELESS_TREES:
+            src = root / rel
+            if src.is_dir():
+                UI.detail(f"Adding {rel} to package...")
+                tar.add(src, arcname=rel, filter=_omit_ldm_bundles)
+                added.append(rel)
+        for directory, pattern in STATELESS_GLOBS:
+            base = root / directory
+            if not base.is_dir():
+                continue
+            for f in sorted(base.glob(pattern)):
+                if f.is_file():
+                    arcname = f.relative_to(root).as_posix()
+                    tar.add(f, arcname=arcname)
+                    added.append(arcname)
+    return sorted(added)
 
 
 def trees_to_reclaim(policy: str) -> tuple["ProjectTree", ...]:
@@ -800,7 +862,39 @@ class ArchiveSnapshotService:
         kept, _ = strip_ldm_rendered_env(declared)
         return kept
 
-    def _generate_snapshot_metadata(  # noqa: C901, PLR0912
+    def _running_services(self, project_meta, root):
+        """Compose services of this project that are running now, sorted."""
+        try:
+            from ldm_core.utils import sanitize_id
+
+            safe_name = sanitize_id(project_meta.get("container_name") or root.name)
+            target_name = getattr(self.manager, "target", None) or (
+                project_meta.get("target") if isinstance(project_meta, dict) else None
+            )
+            from ldm_core.docker_service import DockerService
+
+            docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
+
+            cmd = [
+                *docker_prefix,
+                "ps",
+                "--filter",
+                f"label=com.liferay.ldm.project={safe_name}",
+                "--filter",
+                "status=running",
+                "--format",
+                '{{.Label "com.docker.compose.service"}}',
+            ]
+            res = self.manager.run_command(cmd, check=False)
+            if res and res.strip():
+                return sorted(
+                    {line.strip() for line in res.strip().splitlines() if line.strip()}
+                )
+        except Exception:
+            pass
+        return []
+
+    def _generate_snapshot_metadata(  # noqa: C901, PLR0912, PLR0913
         self,
         name,
         timestamp,
@@ -810,6 +904,7 @@ class ArchiveSnapshotService:
         snap_dir,
         db_snapshot_file,
         search_snapshot_name,
+        stateless=False,
     ):
         custom_env_dict = self._declared_custom_env(project_meta)
 
@@ -817,7 +912,8 @@ class ArchiveSnapshotService:
 
         has_data = False
         data_dir = paths.get("data")
-        if data_dir and data_dir.exists() and data_dir.is_dir():
+        # LDM-#2493: a stateless package ships no `data/`, whatever is on disk.
+        if not stateless and data_dir and data_dir.exists() and data_dir.is_dir():
             try:
                 has_data = any(data_dir.iterdir())
             except Exception:
@@ -878,35 +974,11 @@ class ArchiveSnapshotService:
                     pass
         modules_list = sorted(set(modules_list))
 
-        active_services = []
-        try:
-            from ldm_core.utils import sanitize_id
-
-            safe_name = sanitize_id(project_meta.get("container_name") or root.name)
-            target_name = getattr(self.manager, "target", None) or (
-                project_meta.get("target") if isinstance(project_meta, dict) else None
-            )
-            from ldm_core.docker_service import DockerService
-
-            docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
-
-            cmd = [
-                *docker_prefix,
-                "ps",
-                "--filter",
-                f"label=com.liferay.ldm.project={safe_name}",
-                "--filter",
-                "status=running",
-                "--format",
-                '{{.Label "com.docker.compose.service"}}',
-            ]
-            res = self.manager.run_command(cmd, check=False)
-            if res and res.strip():
-                active_services = sorted(
-                    {line.strip() for line in res.strip().splitlines() if line.strip()}
-                )
-        except Exception:
-            pass
+        # LDM-#2493: a stateless package is built from files on disk, often on
+        # a CI runner with nothing running; there are no services to ask.
+        active_services = (
+            [] if stateless else self._running_services(project_meta, root)
+        )
 
         meta = {
             "name": name,
@@ -936,4 +1008,8 @@ class ArchiveSnapshotService:
             # `ldm import` can refuse a release-line mismatch before boot.
             "portal_patches": package_patch_set(paths["root"]),
         }
+        # LDM-#2493: written only for a stateless package. Its absence means
+        # stateful, so a stateful manifest is byte-for-byte what it was.
+        if stateless:
+            meta[PACKAGE_KIND_KEY] = STATELESS
         self.manager.write_meta(snap_dir, meta)

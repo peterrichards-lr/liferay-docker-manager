@@ -265,6 +265,33 @@ Docker names a container's host after its container ID, so the hostname changes 
 
 **Packages carry it.** `ldm package` records the hostname in the package manifest as `container_hostname`, and `ldm import` and `ldm quickstart` apply it to the imported project, replacing any hostname that project already had. A value that is not a valid hostname is reported and not applied. To use a different hostname after importing, set it with [`config container-hostname`](#config-container-hostname) or `ldm run --container-hostname`.
 
+### `--samples` Pack
+
+`--samples` copies the sample assets into the project. They come from the
+latest release of
+[ldm-cx-samples](https://github.com/peterrichards-lr/ldm-cx-samples), which
+LDM downloads to `~/.ldm/references/samples/` the first time.
+
+- **The cache follows the latest release.** Each `--samples` command checks,
+  once, which release is the latest. When it has moved since the cache was
+  made, LDM downloads it again and replaces the extracted samples. With no
+  network, LDM uses the cached pack as it is.
+- **Downloads are verified.** A downloaded pack is checked against the
+  release's `ldm-cx-samples.ldmp.sha256`. A pack that does not match is
+  refused, and LDM keeps the previous cache if there is one. A release without
+  a checksum file is used with a warning that it was not verified.
+- **The pack's manifest is honoured.** When you do not give a tag, the pack's
+  declared Liferay `tag` is used. When neither the project nor `--db` sets one,
+  its `db_type` is used. A pack that declares no `db_type` leaves your
+  `~/.ldmrc` default in place.
+- **A stateless pack is not restored.** A pack that declares
+  `package_kind: stateless` (see
+  [Stateful and stateless packages](#stateful-and-stateless-packages)) is
+  deployed onto a fresh instance. A pack that does not declare it restores
+  as it always has.
+
+`ldm prune --samples` deletes the cache.
+
 ### `--vanilla` Switch ![Added in v2.16.0](https://img.shields.io/badge/Added%20in-v2.16.0-blue)
 
 Bypasses downloading the pre-warmed database seed from GitHub releases. Spawns the Liferay project stack with a pristine, empty database.
@@ -415,6 +442,16 @@ ldm import https://github.com/my-org/my-repo
 ldm import ~/Downloads/my-project.ldmp --cloud-project lctintranet
 ```
 
+A stateful package (the default) restores its database, `data/`, OSGi state
+and search snapshot. A stateless package restores nothing: the project starts
+as a vanilla instance with the package's assets deployed. This applies to a
+local file, a URL and a GitHub release alike, and `ldm quickstart` follows the
+same rule. A stateless package still applies its manifest fields, such as
+`tag`, `db_type`, `host_name` and `container_hostname`. Importing a stateless
+package over an existing project resets that project's database and volumes,
+as a stateful import does. See
+[Stateful and stateless packages](#stateful-and-stateless-packages).
+
 ## `quickstart`
 
 Bootstrap and start a predefined accelerator demo stack in one command. Downloads target repositories, configures metadata, and automatically starts the environment.
@@ -479,7 +516,38 @@ ldm package my-project --repo my-owner/my-repo --use-latest
 # Override target host-name and SSL defaults in the package manifest
 ldm package my-project --host-name custom.demo --ssl
 ldm package my-project --host-name custom.demo --no-ssl
+
+# Package only the project's assets, for deployment onto a vanilla instance
+ldm package my-project --stateless
 ```
+
+### Stateful and stateless packages
+
+By default `ldm package` takes a fresh snapshot and packages it: a **stateful**
+package. With `--stateless` it takes no snapshot, and nothing needs to be
+running. It packages the project's assets and declares
+`"package_kind": "stateless"` in the manifest. The assets are
+`osgi/client-extensions/`, the whole `client-extensions/` tree (so container
+extensions keep the `Dockerfile` and `LCP.json` their microservice is built
+from), `deploy/`, `osgi/modules/`, `osgi/configs/`,
+`configs/`, `files/portal-ext.properties`, `scripts/`, `portal-patches/` and
+`.ldm/fragment-overrides.json`. The package has no database dump, `data/`,
+`osgi/state`, `snapshots/` or search snapshot. Importing it gives a vanilla
+instance with those assets deployed.
+
+| | Stateful (default) | Stateless (`--stateless`) |
+| --- | --- | --- |
+| Snapshot taken | Yes (or `--use-latest` / `--snapshot`) | No; refused with either flag |
+| Database, `data/`, OSGi state, search | Included and restored | Not included; Liferay starts fresh |
+| Publisher material left out | Yes | Yes |
+| Manifest fields (`tag`, `db_type`, ...) | Written | Written |
+| `ldm quickstart` seed | Skipped when the package has a database | Skipped |
+
+A manifest without `package_kind` is stateful, so every existing package
+imports exactly as before. Both kinds keep the payload in a top-level
+`files.tar.gz`, laid out relative to the project root. That is the member
+LDM v2.26.x `--samples` reads, so a samples pack built with `--stateless`
+works there too.
 
 ### What a package leaves out
 
