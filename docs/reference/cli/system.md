@@ -377,7 +377,7 @@ guide is in [Workspace Import](../../how-to/workspace_import.md).
 - **`--workflow-name`**: File name to write (default: `ldm-package-release.yml`).
 - **`--setup-step`** `CMD`: A command to run once Liferay and the deployables are up. Repeatable; the commands run in the order given, one workflow step each, and a non-zero exit fails the job.
 - **`--verify-step`** `CMD`: A command to run after every setup step. Repeatable, in order. The package is built only if every verify step exits `0`.
-- **`--stateless`**: Package with `ldm package --stateless`: the project's assets only, with no database or OSGi state, deployed onto a vanilla instance on import. See [Stateful and stateless packages](core.md#stateful-and-stateless-packages).
+- **`--stateless`**: Package with `ldm package --stateless`: the project's assets only, with no database or OSGi state, deployed onto a vanilla instance on import. The workflow never boots Liferay: it links with `ldm link . --no-monitor --build --no-run --non-interactive`, runs your setup and verify steps, and packages. There is no wait and no `ldm down`, and no licence is needed. A boot would let Liferay's auto-deploy consume `deploy/`, which the package then could not carry. Setup and verify steps therefore run against the files, not a running portal. See [Stateful and stateless packages](core.md#stateful-and-stateless-packages).
 
 ```bash
 ldm system init-ci --trigger tag \

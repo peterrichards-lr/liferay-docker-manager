@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.16-pre.2] - 2026-11-24
+
+### Fixed
+
+- **A stateless package can no longer silently lose `deploy/`** (LDM-#2493). Liferay's auto-deploy consumes `deploy/` at boot, so packaging a linked project after `ldm run` shipped without its fragment collections. `ldm package --stateless` now refuses and names the missing files; package before booting (`ldm link --no-run`, then `ldm package --stateless`).
+- **`ldm system init-ci --stateless` never boots Liferay** (LDM-#2493). The generated workflow links with `--no-run --build` and packages straight away, so it needs no licence and no wait. The stateful workflow is unchanged.
+- **`ldm link --build` builds before it links.** The workspace was synced before the build, so on a clean checkout nothing built was linked. This was a regression in both kinds of workflow.
+- **`ldm link` no longer copies build intermediates and fragments into `client-extensions/`.** A recursive glob picked up every `build/` zip, such as each site initializer's `site-initializer.zip`, which collide on that name, and copied fragment collections where nothing deploys them. Fragments still go to `deploy/`, and extensions to `osgi/client-extensions/`. Projects linked with pre.1 keep the stray zips until they are re-linked.
+- **`ldm link --db` is recorded without a run.** A project linked with `--no-run` had no database engine in its metadata, so its package declared `db_type: null`.
+- **A workspace's `scripts/` is called out** (LDM-#2533). Liferay's entrypoint executes the project's `scripts/` inside the container. `ldm link` and `ldm import` now warn and name each file copied there, and `ldm package` warns about every script it ships.
+
 ## [v2.26.16-pre.1] - 2026-11-24
 
 ### Added

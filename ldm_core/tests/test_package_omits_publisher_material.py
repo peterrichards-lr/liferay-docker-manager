@@ -217,16 +217,24 @@ class ShippedScriptsAreListed(_Harness):
         return unpacked, printed, said
 
     def test_every_script_is_listed_and_still_shipped(self):
-        unpacked, printed, _ = self.package_with_warnings()
-        self.assertIn("scripts/setup.sh", printed)
-        self.assertIn("scripts/install-key.sh", printed)
+        unpacked, _, said = self.package_with_warnings()
+        self.assertIn("scripts/setup.sh", said)
+        self.assertIn("scripts/install-key.sh", said)
         shipped = _names(unpacked / "files.tar.gz")
         self.assertIn("scripts/install-key.sh", shipped)
 
+    def test_the_listing_is_a_warning_that_says_they_execute(self):
+        """LDM-#2533: the entrypoint runs them; information was too quiet."""
+        _, _, said = self.package_with_warnings()
+        listing = next(line for line in said.splitlines() if "EXECUTE" in line)
+        self.assertIn("scripts/setup.sh", listing)
+        self.assertIn("scripts/install-key.sh", listing)
+
     def test_a_script_mentioning_a_licence_is_flagged(self):
         _, _, said = self.package_with_warnings()
-        self.assertIn("scripts/install-key.sh", said)
-        self.assertNotIn("scripts/setup.sh", said)
+        flagged = [line for line in said.splitlines() if "mentions a licence" in line]
+        self.assertTrue(any("scripts/install-key.sh" in f for f in flagged))
+        self.assertFalse(any("scripts/setup.sh" in f for f in flagged))
 
 
 class TheLocalSnapshotIsUntouched(_Harness):

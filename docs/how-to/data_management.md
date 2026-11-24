@@ -252,6 +252,24 @@ snapshot.
 ldm package my-project --stateless --repo my-owner/my-repo
 ```
 
+**Package before the project boots.** `ldm link` puts fragment collections
+and the workspace's `deploy/` files in the project's `deploy/`, and Liferay's
+auto-deploy consumes that directory once the portal starts. A stateless
+package has no database to carry what was imported, so `ldm package
+--stateless` refuses a linked project whose `deploy/` has lost any of those
+files, naming them. Link with `--no-run`, then package:
+
+```bash
+ldm link ./my-workspace my-project --no-run --no-monitor --db postgresql
+ldm package my-project --stateless --repo my-owner/my-repo
+```
+
+**`scripts/` is executed, not just shipped.** The project's `scripts/` is
+mounted at `/mnt/liferay/scripts`, and Liferay's entrypoint runs every script
+there inside the container before the portal starts, on every importer's
+machine too. `ldm package` lists them in a warning. Keep build and release
+tooling out of it.
+
 Both kinds leave out the same publisher material and write the same manifest
 fields (`tag`, `db_type`, `host_name`, `container_hostname` and the rest).
 Both keep the payload in a top-level `files.tar.gz` with the same layout, so a
