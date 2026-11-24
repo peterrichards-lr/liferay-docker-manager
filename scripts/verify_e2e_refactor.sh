@@ -1456,6 +1456,35 @@ docker pull postgres:16.2 --quiet
 
 log_and_run "Initializing Infrastructure" "$LDM_CMD" -y infra setup --search
 
+# LDM-#2244: the global infra containers are labelled as LDM's. `infra setup
+# --search` has just succeeded, so liferay-search-global is running here and
+# must carry `infra_container_labels("search")` (handlers/infra.py). The proxy
+# is the infra Compose stack, which must run as project `ldm-infra`, not
+# `resources` (the directory holding infra-compose.yml). PRE_RUN_INFRA_RESET
+# above removed both containers, so these were created by the binary under
+# test, not adopted from an older LDM. Labels are read as JSON and matched with
+# their quotes, so a key or value cannot match a prefix.
+echo ">> Verifying the global infra containers carry LDM's labels (LDM-#2244)..."
+INFRA_SEARCH_LABELS=$(docker inspect --format '{{json .Config.Labels}}' liferay-search-global 2>&1) || true
+if printf '%s' "$INFRA_SEARCH_LABELS" | grep -qF '"com.liferay.ldm.managed":"true"' \
+        && printf '%s' "$INFRA_SEARCH_LABELS" | grep -qF '"com.liferay.ldm.infra":"search"'; then
+    report_ok "✅ liferay-search-global carries com.liferay.ldm.managed=true and com.liferay.ldm.infra=search (LDM-#2244)."
+else
+    echo "❌ ERROR: liferay-search-global lacks LDM's infra labels (LDM-#2244). Its labels: ${INFRA_SEARCH_LABELS}" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
+fi
+if [ "$(docker inspect --format '{{.State.Running}}' liferay-proxy-global 2>/dev/null)" = "true" ]; then
+    INFRA_PROXY_LABELS=$(docker inspect --format '{{json .Config.Labels}}' liferay-proxy-global 2>&1) || true
+    if printf '%s' "$INFRA_PROXY_LABELS" | grep -qF '"com.docker.compose.project":"ldm-infra"'; then
+        report_ok "✅ liferay-proxy-global runs as Compose project 'ldm-infra' (LDM-#2244)."
+    else
+        echo "❌ ERROR: liferay-proxy-global is not Compose project 'ldm-infra' -- 'resources' is the pre-#2244 name (LDM-#2244). Its labels: ${INFRA_PROXY_LABELS}" | tee -a "$RESULTS_FILE_TMP"
+        exit 1
+    fi
+else
+    echo "⚠️  SKIPPED (not run): liferay-proxy-global is not running, so its Compose project label was NOT evaluated (LDM-#2244). This is not a pass." | tee -a "$RESULTS_FILE_TMP"
+fi
+
 # LDM-#1975 section: guardrails -- CLI refusals, compute targets, port
 # diagnosis. None of it needs a booted portal and none of it observes the
 # Liferay/Docker boundary, so a change to mount or compose generation gains
@@ -1513,6 +1542,23 @@ if echo "$DEV_GUARD_OUT" | grep -qE "Error: Developer utility requires LDM_DEV_M
     report_ok "✅ Dev Guardrails verified."
 else
     echo "❌ ERROR: Dev Guardrails failed. Output was: $DEV_GUARD_OUT" && exit 1
+fi
+
+# LDM-#2477: `ldm dev-setup --help` must print usage and exit 0 -- help, not a
+# setup run. Run from an empty temp dir, which must still be empty afterwards.
+echo ">> Verifying 'ldm dev-setup --help' prints usage (LDM-#2477)..."
+DEV_SETUP_HELP_DIR=$(mktemp -d)
+DEV_SETUP_HELP_RC=0
+DEV_SETUP_HELP_OUT=$(cd "$DEV_SETUP_HELP_DIR" && "$LDM_CMD" dev-setup --help </dev/null 2>&1) || DEV_SETUP_HELP_RC=$?
+DEV_SETUP_HELP_LEFT=$(ls -A "$DEV_SETUP_HELP_DIR")
+rm -rf "$DEV_SETUP_HELP_DIR"
+if [ "$DEV_SETUP_HELP_RC" -eq 0 ] && printf '%s\n' "$DEV_SETUP_HELP_OUT" | grep -qF "usage:" \
+        && [ -z "$DEV_SETUP_HELP_LEFT" ]; then
+    report_ok "✅ 'ldm dev-setup --help' exits 0 with usage and creates nothing (LDM-#2477)."
+else
+    echo "❌ ERROR: 'ldm dev-setup --help' exited ${DEV_SETUP_HELP_RC}, or printed no 'usage:', or created files: '${DEV_SETUP_HELP_LEFT}' (LDM-#2477)." | tee -a "$RESULTS_FILE_TMP"
+    printf '%s\n' "--- what it said ---" "$DEV_SETUP_HELP_OUT" "--- end ---" | tee -a "$RESULTS_FILE_TMP"
+    exit 1
 fi
 
 # LDM-#1621: a local .ldmp whose manifest cannot be parsed must be refused.
@@ -7674,6 +7720,52 @@ if [ "$ROUNDTRIP_OK" = true ] && [ ! -f "${ROUNDTRIP_PKG}.sha256" ]; then
     echo "❌ ERROR: the package carries no .sha256, so its integrity cannot be verified on import." | tee -a "$RESULTS_FILE_TMP"
     ROUNDTRIP_OK=false
 fi
+
+# LDM-#2493 / LDM-#2445: package KINDS. `ldm package --stateless` builds an
+# assets-only package -- no database dump, no data/, no osgi/state, no search
+# backup -- that declares `package_kind: stateless`. Packed here, while the
+# source still exists (it is stopped below), into a directory INSIDE
+# ROUNDTRIP_PKG_DIR so the trap cleanup removes it on a killed run too. The
+# stateful package above is read as well: a regression that made EVERY package
+# stateless would otherwise pass. The stateful read also asserts the manifest
+# carries the `container_hostname` KEY (LDM-#2445) -- config-level and
+# deliberately presence-only: the value is null for this project, and applying
+# it on import is unit-tested. Verdicts go in ROUNDTRIP_ENV_OK, never
+# ROUNDTRIP_OK, so none of this stops the round trip below from proceeding.
+roundtrip_kind_check() {
+    local what="$1"
+    shift
+    local rc=0 out
+    out=$("$VENV_PYTHON" "${E2E_SCRIPT_DIR}/check_roundtrip_env_leak.py" "$@" 2>&1) || rc=$?
+    printf '%s\n' "$out" | tee -a "$RESULTS_FILE_TMP"
+    if [ "$rc" -eq 0 ]; then
+        report_ok "✅ ${what} is the package kind it should be (LDM-#2493/#2445)."
+    elif [ "$rc" -eq 1 ]; then
+        echo "❌ ERROR: ${what} is not the package kind it should be -- the reason is above (LDM-#2493/#2445)." | tee -a "$RESULTS_FILE_TMP"
+        ROUNDTRIP_ENV_OK=false
+    else
+        echo "❌ ERROR: the package-kind check of ${what} could not run (exit ${rc}). LDM-#2493 was NOT evaluated and this is not a skip." | tee -a "$RESULTS_FILE_TMP"
+        ROUNDTRIP_ENV_OK=false
+    fi
+}
+if [ "$ROUNDTRIP_OK" = true ]; then
+    roundtrip_kind_check "The stateful package ${PROJECT_NAME}.ldmp" --stateful-manifest "$ROUNDTRIP_PKG"
+fi
+ROUNDTRIP_STATELESS_DIR="${ROUNDTRIP_PKG_DIR}/stateless"
+mkdir -p "$ROUNDTRIP_STATELESS_DIR"
+if ! ROUNDTRIP_STATELESS_OUT=$("$LDM_CMD" -y package "$PROJECT_NAME" --stateless \
+        -o "$ROUNDTRIP_STATELESS_DIR" --repo ldm-e2e/roundtrip 2>&1); then
+    echo "❌ ERROR: 'ldm package --stateless' failed (LDM-#2493)." | tee -a "$RESULTS_FILE_TMP"
+    printf '%s\n' "--- what 'ldm package --stateless' said ---" "$ROUNDTRIP_STATELESS_OUT" "--- end ---" | tee -a "$RESULTS_FILE_TMP"
+    ROUNDTRIP_ENV_OK=false
+elif [ ! -f "${ROUNDTRIP_STATELESS_DIR}/${PROJECT_NAME}.ldmp" ]; then
+    echo "❌ ERROR: 'ldm package --stateless' reported success but produced no ${PROJECT_NAME}.ldmp (LDM-#2493)." | tee -a "$RESULTS_FILE_TMP"
+    ROUNDTRIP_ENV_OK=false
+else
+    roundtrip_kind_check "The --stateless package ${PROJECT_NAME}.ldmp" \
+        --stateless-package "${ROUNDTRIP_STATELESS_DIR}/${PROJECT_NAME}.ldmp"
+fi
+rm -rf "$ROUNDTRIP_STATELESS_DIR"
 
 # `--no-run` and an explicit port: the package carries the SOURCE project's
 # port, and that project is still running here -- it is stopped further down,

@@ -62,11 +62,36 @@ Shared by `verify_e2e_refactor.sh` and `verify_e2e_refactor.ps1`, following
    and this reports SKIPPED (exit 3) rather than a pass. A bundle found in the
    package is a failure either way.
 
+5. **A stateless package is stateless, and a stateful one is not**
+   (`--stateless-package`, `--stateful-manifest`, LDM-#2493). `ldm package
+   --stateless` declares `package_kind: stateless` in `meta` and carries the
+   project's assets only. Asserted on the stateless `.ldmp`, in one streamed
+   pass that extracts nothing to disk:
+
+   * `meta` declares `package_kind` exactly `stateless`, and does not claim a
+     database, volume assets or a search snapshot;
+   * the top level holds only `meta`, `files.tar.gz` and its `.sha256` -- no
+     `database.sql`, which is what a stateful package's database dump is;
+   * every member of the nested `files.tar.gz` lies inside `STATELESS_TREES`
+     or is one of the `STATELESS_GLOBS` files (`ldm_core/snapshot/archive.py`),
+     so no `data/`, `osgi/state`, `routes/`, `logs/`, `search_backup` or
+     generated `files/` -- the trees a snapshot's payload adds.
+
+   The stateful package from the same run is read too, so a regression that
+   makes EVERY package stateless fails rather than passing check 5 vacuously:
+   its `package_kind` must not be `stateless`. That mode also asserts the
+   manifest carries the `container_hostname` KEY (LDM-#2445). Presence only:
+   the value is null for a project with none configured, and applying it on
+   import is unit-tested.
+
 Usage:
     check_roundtrip_env_leak.py <project_dir>          # checks 1 and 2
     check_roundtrip_env_leak.py --package <file.ldmp>   # check 3
     check_roundtrip_env_leak.py --package-bundles <file.ldmp> <source_project_dir>
                                                         # check 4
+    check_roundtrip_env_leak.py --stateless-package <stateless.ldmp>
+    check_roundtrip_env_leak.py --stateful-manifest <stateful.ldmp>
+                                                        # check 5
 
 Exit codes:
     0  neither defect present
@@ -127,6 +152,31 @@ LDM_RENDERED_PREFIXES = (
 #: Kept in step by hand for the same reason as the lists above -- this script
 #: ships in the verification bundle and runs against a binary.
 LDM_BUNDLE_PREFIXES = ("com.liferay.custom.dxp.routes.domain",)
+
+#: LDM-#2493: `STATELESS_TREES` and `STATELESS_GLOBS` in
+#: `ldm_core/snapshot/archive.py` -- everything `write_stateless_payload` may
+#: put in a stateless package's `files.tar.gz`. Kept in step by hand (this
+#: script ships in the verification bundle and cannot import ldm_core); a unit
+#: test compares them.
+STATELESS_PAYLOAD_TREES = (
+    "deploy",
+    "configs",
+    "osgi/configs",
+    "osgi/client-extensions",
+    "osgi/modules",
+    "scripts",
+    "portal-patches",
+    "client-extensions",
+)
+STATELESS_PAYLOAD_FILES = (
+    "files/portal-ext.properties",
+    ".ldm/fragment-overrides.json",
+)
+
+#: The top-level members a stateless `.ldmp` holds: the staging directory's
+#: `meta` and `files.tar.gz`, plus the checksum `cmd_package` adds. A stateful
+#: package also carries `database.sql`, the database dump.
+STATELESS_TOP_LEVEL = ("meta", "files.tar.gz", "files.tar.gz.sha256")
 
 CHECK_FAILED, SKIPPED, CANNOT_READ = 1, 3, 4
 
@@ -406,9 +456,166 @@ def main_package_bundles(package: Path, source: Path) -> int:
     return code
 
 
-def main(argv: list[str]) -> int:
+def _read_meta_member(handle, where: str) -> dict:
+    """A streamed `meta` member parsed into a dict."""
+    try:
+        meta = json.loads(handle.read().decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as e:
+        raise ArtefactError(f"cannot parse {where}: {e}") from e
+    if not isinstance(meta, dict):
+        raise ArtefactError(f"{where} is not a JSON object")
+    return meta
+
+
+def package_meta(package: Path) -> dict:
+    """The package's top-level `meta`, streamed; nothing is extracted."""
+    try:
+        with tarfile.open(package, mode="r|gz") as tar:
+            for member in tar:
+                if member.name.removeprefix("./") != "meta" or not member.isfile():
+                    continue
+                handle = tar.extractfile(member)
+                if handle is None:
+                    break
+                return _read_meta_member(handle, f"{package}!meta")
+    except (OSError, tarfile.TarError, EOFError) as e:
+        raise ArtefactError(f"cannot read {package}: {e}") from e
+    raise ArtefactError(f"{package} has no top-level 'meta' member")
+
+
+def _is_kind_stateless(meta: dict) -> bool:
+    """As `ldm_core/snapshot/package_kind.py` reads it: only `stateless`."""
+    return str(meta.get("package_kind") or "").strip().lower() == "stateless"
+
+
+def _in_stateless_payload(name: str) -> bool:
+    """Whether a payload member belongs to what a stateless package ships.
+
+    A parent directory of an allowed tree or file (`osgi`, `files`, `.ldm`)
+    counts, since `tar.add` may write one; anything below it does not.
+    """
+    allowed = (*STATELESS_PAYLOAD_TREES, *STATELESS_PAYLOAD_FILES)
+    if any(a.startswith(f"{name}/") for a in allowed):
+        return True
+    if name in STATELESS_PAYLOAD_FILES:
+        return True
+    return any(name == t or name.startswith(f"{t}/") for t in STATELESS_PAYLOAD_TREES)
+
+
+def stateless_package_contents(package: Path) -> tuple[list[str], dict, list[str]]:
+    """Top-level names, `meta`, and payload member names of a whole `.ldmp`.
+
+    One streamed pass, read to the end: a stateless package is small, and
+    every top-level member must be seen to assert none is a database dump.
+    Nothing is extracted to disk.
+    """
+    top: list[str] = []
+    meta: dict | None = None
+    payload: list[str] | None = None
+    try:
+        with tarfile.open(package, mode="r|gz") as tar:
+            for member in tar:
+                name = member.name.removeprefix("./")
+                top.append(name)
+                if not member.isfile() or name not in ("meta", "files.tar.gz"):
+                    continue
+                handle = tar.extractfile(member)
+                if handle is None:
+                    continue
+                if name == "meta":
+                    meta = _read_meta_member(handle, f"{package}!meta")
+                else:
+                    with tarfile.open(fileobj=handle, mode="r|gz") as inner:
+                        payload = [m.name.removeprefix("./") for m in inner]
+    except (OSError, tarfile.TarError, EOFError) as e:
+        raise ArtefactError(f"cannot read {package}: {e}") from e
+    if meta is None:
+        raise ArtefactError(f"{package} has no top-level 'meta' member")
+    if payload is None:
+        raise ArtefactError(f"{package} has no top-level 'files.tar.gz' payload")
+    return top, meta, payload
+
+
+def judge_stateless(
+    top: list[str], meta: dict, payload: list[str]
+) -> tuple[int, list[str]]:
+    """Check 5 on the stateless package: 0 asserted, 1 a defect."""
+    errors = []
+    if meta.get("package_kind") != "stateless":
+        errors.append(
+            f"meta package_kind is {meta.get('package_kind')!r}, not 'stateless'"
+        )
+    for key in ("includes_database", "includes_volume_assets"):
+        if str(meta.get(key) or "").lower() == "true":
+            errors.append(f"meta claims {key}: true")
+    if meta.get("search_snapshot"):
+        errors.append("meta names a search_snapshot")
+    errors.extend(
+        f"top-level member {n!r} is not one a stateless package holds"
+        + (" -- it is a database dump" if n.endswith(".sql") else "")
+        for n in sorted(set(top) - set(STATELESS_TOP_LEVEL))
+    )
+    errors.extend(
+        f"files.tar.gz!{n} is outside the stateless trees (snapshot state)"
+        for n in sorted({n for n in payload if not _in_stateless_payload(n)})
+    )
+    if errors:
+        return CHECK_FAILED, [
+            "ERROR: the --stateless package is not stateless (LDM-#2493):",
+            *(f"     {e}" for e in errors),
+        ]
+    return 0, [
+        "ASSERTED: the --stateless package declares package_kind 'stateless' "
+        "and carries no database dump, data/, osgi/state or search backup "
+        f"({len(top)} top-level members, {len(payload)} payload members)."
+    ]
+
+
+def judge_stateful_manifest(meta: dict) -> tuple[int, list[str]]:
+    """Check 5 on the stateful package's manifest, plus LDM-#2445's key."""
+    errors = []
+    if _is_kind_stateless(meta):
+        errors.append(
+            "the stateful package declares package_kind 'stateless', so it "
+            "would import as assets only and restore nothing (LDM-#2493)"
+        )
+    # LDM-#2445: presence of the KEY only. The value is null for a project
+    # with no container hostname; applying it on import is unit-tested.
+    if "container_hostname" not in meta:
+        errors.append("meta has no container_hostname key (LDM-#2445)")
+    if errors:
+        return CHECK_FAILED, [
+            "ERROR: the stateful package's manifest is wrong:",
+            *(f"     {e}" for e in errors),
+        ]
+    return 0, [
+        "ASSERTED: the stateful package is not stateless (package_kind "
+        f"{meta.get('package_kind')!r}) and its manifest carries the "
+        "container_hostname key."
+    ]
+
+
+def main_package_kind(mode: str, package: Path) -> int:
+    """Check 5: `--stateless-package` or `--stateful-manifest`."""
+    try:
+        if mode == "--stateless-package":
+            code, lines = judge_stateless(*stateless_package_contents(package))
+        else:
+            code, lines = judge_stateful_manifest(package_meta(package))
+    except ArtefactError as e:
+        print(f"ERROR: nothing was asserted -- {e}")
+        return CANNOT_READ
+    for line in lines:
+        print(line)
+    return code
+
+
+def main(argv: list[str]) -> int:  # noqa: PLR0911 -- one return per mode
     if len(argv) == 4 and argv[1] == "--package-bundles":
         return main_package_bundles(Path(argv[2]), Path(argv[3]))
+
+    if len(argv) == 3 and argv[1] in ("--stateless-package", "--stateful-manifest"):
+        return main_package_kind(argv[1], Path(argv[2]))
 
     if len(argv) == 3 and argv[1] == "--package":
         try:
@@ -424,7 +631,8 @@ def main(argv: list[str]) -> int:
     if len(argv) != 2:
         print(
             "usage: check_roundtrip_env_leak.py <project_dir> | --package "
-            "<file.ldmp> | --package-bundles <file.ldmp> <source_project_dir>"
+            "<file.ldmp> | --package-bundles <file.ldmp> <source_project_dir> | "
+            "--stateless-package <file.ldmp> | --stateful-manifest <file.ldmp>"
         )
         return 2
     project_dir = Path(argv[1])

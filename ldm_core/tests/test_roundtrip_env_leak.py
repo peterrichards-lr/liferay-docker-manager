@@ -22,6 +22,7 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from typing import ClassVar
 
 import yaml
 
@@ -336,6 +337,161 @@ class ThePackageCarriesNoLdmBundle(unittest.TestCase):
         )
 
 
+def _run_checker(*args):
+    result = subprocess.run(
+        [sys.executable, str(CHECKER), *map(str, args)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode, result.stdout + result.stderr
+
+
+class ThePackageKindIsAsserted(unittest.TestCase):
+    """`--stateless-package` / `--stateful-manifest` (LDM-#2493, LDM-#2445).
+
+    The archives are the shape `cmd_package` writes: a w:gz tar of the staging
+    or snapshot directory, holding `meta`, the nested `files.tar.gz` payload
+    and its checksum -- plus `database.sql` for a stateful package."""
+
+    STATELESS_META: ClassVar[dict] = {
+        "package_kind": "stateless",
+        "container_hostname": None,
+    }
+    STATELESS_PAYLOAD = (
+        ("client-extensions", None),
+        ("client-extensions/my-cx/LCP.json", b"{}"),
+        ("osgi", None),
+        ("osgi/client-extensions", None),
+        ("osgi/client-extensions/my-cx.zip", b"PK"),
+        ("osgi/modules/my.module.jar", b"PK"),
+        ("files/portal-ext.properties", b"x=1"),
+        (".ldm/fragment-overrides.json", b"{}"),
+    )
+
+    def _package(self, tmp, meta, payload, extra=()):
+        package = Path(tmp) / "p.ldmp"
+        members = [
+            ("meta", json.dumps(meta).encode()),
+            ("files.tar.gz", _gz_tar(payload)),
+            ("files.tar.gz.sha256", b"0" * 64),
+            *extra,
+        ]
+        package.write_bytes(_gz_tar(members))
+        return package
+
+    def _stateless(self, meta=None, payload=None, extra=()):
+        with tempfile.TemporaryDirectory() as tmp:
+            package = self._package(
+                tmp,
+                self.STATELESS_META if meta is None else meta,
+                self.STATELESS_PAYLOAD if payload is None else payload,
+                extra,
+            )
+            code, out = _run_checker("--stateless-package", package)
+            # Streamed: nothing is extracted beside the package.
+            self.assertEqual([p.name for p in Path(tmp).iterdir()], ["p.ldmp"])
+            return code, out
+
+    def _stateful(self, meta):
+        with tempfile.TemporaryDirectory() as tmp:
+            package = self._package(
+                tmp, meta, [("data", None)], extra=[("database.sql", b"--")]
+            )
+            return _run_checker("--stateful-manifest", package)
+
+    def test_a_stateless_package_passes(self):
+        code, out = self._stateless()
+        self.assertEqual(code, CLEAN, out)
+        self.assertIn("ASSERTED", out)
+
+    def test_a_database_dump_is_named(self):
+        code, out = self._stateless(extra=[("database.sql", b"-- dump")])
+        self.assertEqual(code, DEFECT, out)
+        self.assertIn("'database.sql'", out)
+
+    def test_snapshot_state_in_the_payload_is_named(self):
+        for member in (
+            "data/document_library/blob",
+            "osgi/state/org.eclipse.osgi/x",
+            "search_backup/index-0",
+            "routes/default/x",
+            "logs/liferay.log",
+            "files/tomcat/x",
+        ):
+            with self.subTest(member=member):
+                code, out = self._stateless(
+                    payload=[*self.STATELESS_PAYLOAD, (member, b"x")]
+                )
+                self.assertEqual(code, DEFECT, out)
+                self.assertIn(f"files.tar.gz!{member}", out)
+
+    def test_a_manifest_not_declaring_stateless_fails(self):
+        for kind in (None, "stateful", "Stateless "):
+            with self.subTest(kind=kind):
+                meta = {**self.STATELESS_META, "package_kind": kind}
+                code, out = self._stateless(meta=meta)
+                self.assertEqual(code, DEFECT, out)
+
+    def test_a_manifest_claiming_a_database_fails(self):
+        meta = {**self.STATELESS_META, "includes_database": "true"}
+        code, out = self._stateless(meta=meta)
+        self.assertEqual(code, DEFECT, out)
+        self.assertIn("includes_database", out)
+
+    def test_a_stateful_manifest_passes_with_a_null_hostname(self):
+        # LDM-#2445: the key must be present; null is the test project's value.
+        code, out = self._stateful({"container_hostname": None})
+        self.assertEqual(code, CLEAN, out)
+
+    def test_a_stateful_package_declaring_stateless_fails(self):
+        # The regression the stateful read exists for: every package stateless.
+        code, out = self._stateful(
+            {"container_hostname": None, "package_kind": "stateless"}
+        )
+        self.assertEqual(code, DEFECT, out)
+        self.assertIn("package_kind", out)
+
+    def test_a_stateful_manifest_without_the_hostname_key_fails(self):
+        code, out = self._stateful({"package_kind": None})
+        self.assertEqual(code, DEFECT, out)
+        self.assertIn("container_hostname", out)
+
+    def test_an_unreadable_package_is_never_a_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            no_meta = Path(tmp) / "a.ldmp"
+            no_meta.write_bytes(_gz_tar([("files.tar.gz", _gz_tar([]))]))
+            no_payload = Path(tmp) / "b.ldmp"
+            no_payload.write_bytes(_gz_tar([("meta", b"{}")]))
+            garbage = Path(tmp) / "c.ldmp"
+            garbage.write_bytes(b"not a tar")
+            for mode, package in (
+                ("--stateful-manifest", no_meta),
+                ("--stateless-package", no_meta),
+                ("--stateless-package", no_payload),
+                ("--stateless-package", garbage),
+                ("--stateful-manifest", garbage),
+            ):
+                with self.subTest(mode=mode, package=package.name):
+                    code, out = _run_checker(mode, package)
+                    self.assertEqual(code, CANNOT_READ, out)
+
+    def test_the_allowed_payload_matches_what_archive_writes(self):
+        """The checker cannot import ldm_core; a new stateless tree must reach it."""
+        from ldm_core.snapshot.archive import STATELESS_GLOBS, STATELESS_TREES
+
+        spec = importlib.util.spec_from_file_location("checker", CHECKER)
+        assert spec is not None, f"could not load {CHECKER}"
+        assert spec.loader is not None, f"no loader for {CHECKER}"
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertEqual(set(module.STATELESS_PAYLOAD_TREES), set(STATELESS_TREES))
+        self.assertEqual(
+            set(module.STATELESS_PAYLOAD_FILES),
+            {f"{d}/{pattern}" for d, pattern in STATELESS_GLOBS},
+        )
+
+
 #: Per half: the text each structural assertion locates.
 HALVES = {
     "verify_e2e_refactor.sh": {
@@ -352,6 +508,11 @@ HALVES = {
         "reset": 'reset "$ROUNDTRIP_PROJECT" all',
         "bundle_call": '--package-bundles "$ROUNDTRIP_PKG" "${LDM_WORKSPACE}/${PROJECT_NAME}"',
         "bundle_skip": '"$ROUNDTRIP_BUNDLE_RC" -eq 3',
+        "stateful_kind_call": '--stateful-manifest "$ROUNDTRIP_PKG"',
+        "stateless_pack": 'package "$PROJECT_NAME" --stateless',
+        "stateless_kind_call": "--stateless-package",
+        "stateless_cleanup": 'rm -rf "$ROUNDTRIP_STATELESS_DIR"',
+        "stop": 'stop "$PROJECT_NAME"',
     },
     "verify_e2e_refactor.ps1": {
         "package_call": '-CheckerArgs @("--package", $roundTripPkg)',
@@ -367,6 +528,11 @@ HALVES = {
         "reset": "reset $ROUNDTRIP_PROJECT all",
         "bundle_call": "--package-bundles $roundTripPkg (Join-Path $LDM_WORKSPACE $PROJECT_NAME)",
         "bundle_skip": "$bundleRc -eq 3",
+        "stateful_kind_call": '@("--stateful-manifest", $roundTripPkg)',
+        "stateless_pack": "package $PROJECT_NAME --stateless",
+        "stateless_kind_call": "--stateless-package",
+        "stateless_cleanup": "Remove-Item -Recurse -Force $roundTripStatelessDir",
+        "stop": "stop $PROJECT_NAME",
     },
 }
 
@@ -431,6 +597,35 @@ class BothHalvesRunItInTheRoundTrip(unittest.TestCase):
                     )
                 ]
                 self.assertIn(marks["bundle_skip"], block)
+                self.assertNotIn(marks["round_trip_flag_cleared"], block)
+
+    def test_both_halves_check_the_package_kinds(self):
+        """LDM-#2493/#2445: the stateful package's manifest is read, and a
+        --stateless package is packed and read, while the source still exists
+        (before the stop) and before import; neither clears the round-trip
+        flag, so the round trip proceeds; the stateless package is removed."""
+        for name, marks in HALVES.items():
+            with self.subTest(script=name):
+                section = self._section(name)
+                at = section.index
+                for key in (
+                    "stateful_kind_call",
+                    "stateless_pack",
+                    "stateless_kind_call",
+                    "stateless_cleanup",
+                ):
+                    self.assertIn(marks[key], section, f"{name}: no {key}")
+                self.assertLess(at(marks["stateless_pack"]), at(marks["import"]))
+                self.assertLess(at(marks["stateless_pack"]), at(marks["stop"]))
+                self.assertLess(
+                    at(marks["stateless_pack"]), at(marks["stateless_kind_call"])
+                )
+                self.assertLess(
+                    at(marks["stateless_kind_call"]), at(marks["stateless_cleanup"])
+                )
+                block = section[
+                    at(marks["stateful_kind_call"]) : at(marks["stateless_cleanup"])
+                ]
                 self.assertNotIn(marks["round_trip_flag_cleared"], block)
 
     def test_a_leak_never_clears_the_round_trip_flag(self):

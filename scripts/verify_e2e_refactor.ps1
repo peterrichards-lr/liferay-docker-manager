@@ -3564,6 +3564,40 @@ try {
 
     Log-AndRun "Initializing Infrastructure" $LDM_CMD "-y infra setup --search"
 
+    # LDM-#2244: the global infra containers are labelled as LDM's. 'infra
+    # setup --search' has just succeeded, so liferay-search-global is running
+    # here and must carry infra_container_labels("search") (handlers/infra.py).
+    # The proxy is the infra Compose stack, which must run as project
+    # 'ldm-infra', not 'resources'. PRE_RUN_INFRA_RESET above removed both
+    # containers, so these were created by the binary under test. Labels are
+    # read as JSON -- a Go template naming a key would need embedded double
+    # quotes, which Windows PowerShell 5.1 strips from native arguments.
+    # Parity with the bash half.
+    Write-Host ">> Verifying the global infra containers carry LDM's labels (LDM-#2244)..."
+    $infraSearchRaw = (& docker inspect --format '{{json .Config.Labels}}' liferay-search-global 2>&1 | ConvertTo-LdmText).Trim()
+    $infraSearchLabels = $null
+    try { $infraSearchLabels = $infraSearchRaw | ConvertFrom-Json } catch { $infraSearchLabels = $null }
+    if ($infraSearchLabels -and ($infraSearchLabels.'com.liferay.ldm.managed' -ceq "true") -and ($infraSearchLabels.'com.liferay.ldm.infra' -ceq "search")) {
+        Write-Verdict "[SUCCESS] liferay-search-global carries com.liferay.ldm.managed=true and com.liferay.ldm.infra=search (LDM-#2244)."
+    } else {
+        Write-Verdict "[ERROR] liferay-search-global lacks LDM's infra labels (LDM-#2244). Its labels: $infraSearchRaw"
+        exit 1
+    }
+    $infraProxyRunning = (& docker inspect --format '{{.State.Running}}' liferay-proxy-global 2>$null | ConvertTo-LdmText).Trim()
+    if ($infraProxyRunning -ceq "true") {
+        $infraProxyRaw = (& docker inspect --format '{{json .Config.Labels}}' liferay-proxy-global 2>&1 | ConvertTo-LdmText).Trim()
+        $infraProxyLabels = $null
+        try { $infraProxyLabels = $infraProxyRaw | ConvertFrom-Json } catch { $infraProxyLabels = $null }
+        if ($infraProxyLabels -and ($infraProxyLabels.'com.docker.compose.project' -ceq "ldm-infra")) {
+            Write-Verdict "[SUCCESS] liferay-proxy-global runs as Compose project 'ldm-infra' (LDM-#2244)."
+        } else {
+            Write-Verdict "[ERROR] liferay-proxy-global is not Compose project 'ldm-infra' -- 'resources' is the pre-#2244 name (LDM-#2244). Its labels: $infraProxyRaw"
+            exit 1
+        }
+    } else {
+        Write-Verdict "[WARNING] SKIPPED (not run): liferay-proxy-global is not running, so its Compose project label was NOT evaluated (LDM-#2244). This is not a pass."
+    }
+
     # LDM-#1975 section: guardrails -- CLI refusals, compute targets, port
     # diagnosis. None of it needs a booted portal and none of it observes the
     # Liferay/Docker boundary. Body deliberately not re-indented.
@@ -3610,6 +3644,33 @@ try {
         Write-Verdict "[SUCCESS] Dev Guardrails verified."
     } else { 
         Write-Host "[ERROR] ERROR: Dev Guardrails failed! Output was: $res" -ForegroundColor Red
+        exit 1
+    }
+
+    # LDM-#2477: 'ldm dev-setup --help' must print usage and exit 0 -- help,
+    # not a setup run. Run from an empty temp dir, which must still be empty
+    # afterwards. Parity with the bash half.
+    Write-Host ">> Verifying 'ldm dev-setup --help' prints usage (LDM-#2477)..."
+    $devSetupHelpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("ldm-dev-setup-help-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $devSetupHelpDir -Force | Out-Null
+    Push-Location $devSetupHelpDir
+    try {
+        $devSetupHelpRaw = & $LDM_CMD dev-setup --help 2>&1
+        $devSetupHelpRc = $LASTEXITCODE
+    }
+    finally {
+        Pop-Location
+    }
+    $devSetupHelpText = [string]($devSetupHelpRaw | ConvertTo-LdmText)
+    $devSetupHelpLeft = (@(Get-ChildItem -Force -LiteralPath $devSetupHelpDir | ForEach-Object { $_.Name }) -join ", ")
+    Remove-Item -Recurse -Force $devSetupHelpDir -ErrorAction SilentlyContinue
+    if ($devSetupHelpRc -eq 0 -and $devSetupHelpText.Contains("usage:") -and -not $devSetupHelpLeft) {
+        Write-Verdict "[SUCCESS] 'ldm dev-setup --help' exits 0 with usage and creates nothing (LDM-#2477)."
+    } else {
+        Write-Verdict "[ERROR] 'ldm dev-setup --help' exited $devSetupHelpRc, or printed no 'usage:', or created files: '$devSetupHelpLeft' (LDM-#2477)."
+        Write-Verdict "--- what it said ---"
+        foreach ($devSetupHelpLine in ($devSetupHelpText -split "`n")) { Write-Verdict $devSetupHelpLine.TrimEnd() }
+        Write-Verdict "--- end ---"
         exit 1
     }
 
@@ -7754,6 +7815,59 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
         Write-Verdict "[ERROR] The package carries no .sha256, so its integrity cannot be verified on import."
         $roundTripOk = $false
     }
+
+    # LDM-#2493 / LDM-#2445: package KINDS. 'ldm package --stateless' builds
+    # an assets-only package -- no database dump, no data/, no osgi/state, no
+    # search backup -- that declares 'package_kind: stateless'. Packed here,
+    # while the source still exists (it is stopped below), into a directory
+    # INSIDE $ROUNDTRIP_PKG_DIR so the cleanup removes it on a killed run too.
+    # The stateful package above is read as well: a regression that made EVERY
+    # package stateless would otherwise pass. The stateful read also asserts
+    # the manifest carries the 'container_hostname' KEY (LDM-#2445) --
+    # config-level and deliberately presence-only: the value is null for this
+    # project, and applying it on import is unit-tested. Verdicts go in
+    # $script:roundTripEnvOk, never $roundTripOk, so none of this stops the
+    # round trip below from proceeding. Parity with the bash half.
+    function Invoke-RoundTripKindCheck {
+        param([string]$What, [string[]]$CheckerArgs)
+        $kindRaw = & $VENV_PYTHON (Join-Path $PSScriptRoot "check_roundtrip_env_leak.py") @CheckerArgs 2>&1
+        $kindRc = $LASTEXITCODE
+        $kindText = $kindRaw | ConvertTo-LdmText
+        foreach ($kindLine in ($kindText -split "`n")) {
+            if ($kindLine.Trim()) { Write-Verdict $kindLine.TrimEnd() }
+        }
+        if ($kindRc -eq 0) {
+            Write-Verdict "[SUCCESS] $What is the package kind it should be (LDM-#2493/#2445)."
+        }
+        elseif ($kindRc -eq 1) {
+            Write-Verdict "[ERROR] $What is not the package kind it should be -- the reason is above (LDM-#2493/#2445)."
+            $script:roundTripEnvOk = $false
+        }
+        else {
+            Write-Verdict "[ERROR] The package-kind check of $What could not run (exit $kindRc). LDM-#2493 was NOT evaluated and this is not a skip."
+            $script:roundTripEnvOk = $false
+        }
+    }
+    if ($roundTripOk) {
+        Invoke-RoundTripKindCheck -What "The stateful package $PROJECT_NAME.ldmp" -CheckerArgs @("--stateful-manifest", $roundTripPkg)
+    }
+    $roundTripStatelessDir = Join-Path $ROUNDTRIP_PKG_DIR "stateless"
+    New-Item -ItemType Directory -Path $roundTripStatelessDir -Force | Out-Null
+    $roundTripStatelessPkg = Join-Path $roundTripStatelessDir "$PROJECT_NAME.ldmp"
+    $rtStatelessRaw = & $LDM_CMD -y package $PROJECT_NAME --stateless -o $roundTripStatelessDir --repo ldm-e2e/roundtrip 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Verdict "[ERROR] 'ldm package --stateless' failed (LDM-#2493)."
+        Write-RoundTripOutput -Label "ldm package --stateless" -Raw $rtStatelessRaw
+        $script:roundTripEnvOk = $false
+    }
+    elseif (-not (Test-Path $roundTripStatelessPkg)) {
+        Write-Verdict "[ERROR] 'ldm package --stateless' reported success but produced no $PROJECT_NAME.ldmp (LDM-#2493)."
+        $script:roundTripEnvOk = $false
+    }
+    else {
+        Invoke-RoundTripKindCheck -What "The --stateless package $PROJECT_NAME.ldmp" -CheckerArgs @("--stateless-package", $roundTripStatelessPkg)
+    }
+    if (Test-Path $roundTripStatelessDir) { Remove-Item -Recurse -Force $roundTripStatelessDir -ErrorAction SilentlyContinue }
 
     # `--no-run` and an explicit port: the package carries the SOURCE
     # project's port and that project is still running on it, so an import
