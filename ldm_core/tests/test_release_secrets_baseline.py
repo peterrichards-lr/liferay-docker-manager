@@ -53,7 +53,7 @@ def _shifted(by=7):
     return data
 
 
-def _with_new_secret():
+def _with_new_finding():
     data = _shifted()
     data["results"]["ldm_core/new.py"] = [
         {
@@ -122,15 +122,15 @@ class TheDecision(unittest.TestCase):
 
     def test_line_number_and_timestamp_drift_is_allowed(self):
         self.assertTrue(
-            self.release.secrets_baseline_drift_only(
+            self.release.baseline_drift_only(
                 json.dumps(BASELINE), json.dumps(_shifted())
             )
         )
 
     def test_a_new_finding_is_refused(self):
         self.assertFalse(
-            self.release.secrets_baseline_drift_only(
-                json.dumps(BASELINE), json.dumps(_with_new_secret())
+            self.release.baseline_drift_only(
+                json.dumps(BASELINE), json.dumps(_with_new_finding())
             )
         )
 
@@ -140,23 +140,19 @@ class TheDecision(unittest.TestCase):
             "zzz"  # pragma: allowlist secret
         )
         self.assertFalse(
-            self.release.secrets_baseline_drift_only(
-                json.dumps(BASELINE), json.dumps(data)
-            )
+            self.release.baseline_drift_only(json.dumps(BASELINE), json.dumps(data))
         )
 
     def test_a_removed_finding_is_refused(self):
         data = _shifted()
         data["results"]["ldm_core/constants.py"].pop()
         self.assertFalse(
-            self.release.secrets_baseline_drift_only(
-                json.dumps(BASELINE), json.dumps(data)
-            )
+            self.release.baseline_drift_only(json.dumps(BASELINE), json.dumps(data))
         )
 
     def test_an_unparsable_baseline_is_refused(self):
         self.assertFalse(
-            self.release.secrets_baseline_drift_only(json.dumps(BASELINE), "{oops")
+            self.release.baseline_drift_only(json.dumps(BASELINE), "{oops")
         )
 
 
@@ -197,8 +193,8 @@ class TheWorkspaceCheck(unittest.TestCase):
         outcome, _out = self._main(_shifted())
         self.assertEqual(outcome, "reached")
 
-    def test_a_new_secret_refuses_with_a_clear_message(self):
-        outcome, out = self._main(_with_new_secret())
+    def test_a_new_finding_refuses_with_a_clear_message(self):
+        outcome, out = self._main(_with_new_finding())
         self.assertEqual(outcome, "exit 1")
         self.assertIn(".secrets.baseline has changes beyond line-number drift", out)
         self.assertIn("must never ride a release commit", out)
@@ -296,9 +292,9 @@ class ThePromoteCommitCarriesIt(unittest.TestCase):
     def test_drift_is_staged_with_the_promotion(self):
         self.assertIn(".secrets.baseline", self._staged_by_promote(_shifted()))
 
-    def test_a_new_secret_stops_the_promotion(self):
+    def test_a_new_finding_stops_the_promotion(self):
         with self.assertRaises(SystemExit):
-            self._staged_by_promote(_with_new_secret())
+            self._staged_by_promote(_with_new_finding())
 
 
 class TheStagingDecision(unittest.TestCase):
@@ -318,7 +314,7 @@ class TheStagingDecision(unittest.TestCase):
             patch.object(self.release, "project_root", self.root),
             patch("builtins.print"),
         ):
-            return self.release.check_secrets_baseline()
+            return self.release.check_detector_baseline()
 
     def test_unchanged_is_not_staged(self):
         self.assertFalse(self._check([], BASELINE))
@@ -326,9 +322,9 @@ class TheStagingDecision(unittest.TestCase):
     def test_drift_is_staged(self):
         self.assertTrue(self._check([" M .secrets.baseline"], _shifted()))
 
-    def test_a_new_secret_stops_the_release(self):
+    def test_a_new_finding_stops_the_release(self):
         with self.assertRaises(SystemExit):
-            self._check([" M .secrets.baseline"], _with_new_secret())
+            self._check([" M .secrets.baseline"], _with_new_finding())
 
 
 if __name__ == "__main__":

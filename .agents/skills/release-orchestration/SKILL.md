@@ -224,7 +224,7 @@ To prevent "version fatigue" and ensure the stability of the main release channe
 
      `release.py --promote` now refuses, before bumping, to promote a stable `X.Y.Z` with `Z > 0` that has no `"X.Y.Z"` key (`check_patch_announcement_for_promotion`, LDM-#2412). Because the suffix is stripped, a patch entry also displays during its own `-pre.N` cycle, so it can be checked in pre-release manual E2E. `ldm_core/tests/test_patch_release_announcements.py` and `test_release_announcement_lookup.py` drive the real banner and the gate.
 
-     Adding that entry shifts the line numbers `.secrets.baseline` records for `constants.py`. Refresh the baseline before cutting; `release.py` then accepts and stages it with the bump or promote commit, **but only when its diff vs `HEAD` changes nothing except `line_number`/`generated_at`** (`check_secrets_baseline`, LDM-#2512). Any other baseline change refuses the release -- land it in its own PR first.
+     Adding that entry shifts the line numbers `.secrets.baseline` records for `constants.py`. Refresh the baseline before cutting; `release.py` then accepts and stages it with the bump or promote commit, **but only when its diff vs `HEAD` changes nothing except `line_number`/`generated_at`** (`check_detector_baseline`, LDM-#2512). Any other baseline change refuses the release -- land it in its own PR first.
 
   The CHANGELOG entry is not covered by CI, and the patch-key refusal checks only that an entry exists, not what it says. Until that changes, this gate is the only thing standing between a release and a silent, undocumented upgrade -- so answer it explicitly rather than assuming the orchestrator handled it. The orchestrator writes the stub; it has never written the content.
 

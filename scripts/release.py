@@ -338,8 +338,8 @@ def run_release_contract_checks(branch_name, delete_branch_on_failure=True):
 # release metadata like any other -- but a baseline can also record a NEW
 # secret, and one of those must never ride a release commit. So it is allowed
 # only when nothing changed except these two keys.
-SECRETS_BASELINE = ".secrets.baseline"
-SECRETS_BASELINE_VOLATILE_KEYS = frozenset({"line_number", "generated_at"})
+DETECTOR_BASELINE = ".secrets.baseline"
+DETECTOR_BASELINE_VOLATILE_KEYS = frozenset({"line_number", "generated_at"})
 
 
 def _without_volatile_keys(node):
@@ -348,7 +348,7 @@ def _without_volatile_keys(node):
         return {
             key: _without_volatile_keys(value)
             for key, value in node.items()
-            if key not in SECRETS_BASELINE_VOLATILE_KEYS
+            if key not in DETECTOR_BASELINE_VOLATILE_KEYS
         }
     if isinstance(node, list):
         # A line shift can reorder a file's entries, which is not a change.
@@ -359,7 +359,7 @@ def _without_volatile_keys(node):
     return node
 
 
-def secrets_baseline_drift_only(head_text, work_text):
+def baseline_drift_only(head_text, work_text):
     """True when two baselines differ in nothing but line_number/generated_at."""
     try:
         head, work = json.loads(head_text), json.loads(work_text)
@@ -368,7 +368,7 @@ def secrets_baseline_drift_only(head_text, work_text):
     return _without_volatile_keys(head) == _without_volatile_keys(work)
 
 
-def check_secrets_baseline():
+def check_detector_baseline():
     """Whether `.secrets.baseline` should be staged with the release commit.
 
     False when it is unchanged. True when its only changes are line-number
@@ -376,29 +376,29 @@ def check_secrets_baseline():
     baseline -- refuses the release.
     """
     status = run_cmd(
-        ["git", "status", "--porcelain", "--", SECRETS_BASELINE], capture=True
+        ["git", "status", "--porcelain", "--", DETECTOR_BASELINE], capture=True
     ).stdout.strip()
     if not status:
         return False
 
     head = run_cmd(
-        ["git", "show", f"HEAD:{SECRETS_BASELINE}"], capture=True, check=False
+        ["git", "show", f"HEAD:{DETECTOR_BASELINE}"], capture=True, check=False
     )
-    work_path = project_root / SECRETS_BASELINE
+    work_path = project_root / DETECTOR_BASELINE
     work_text = work_path.read_text(encoding="utf-8") if work_path.exists() else ""
-    if head.returncode == 0 and secrets_baseline_drift_only(head.stdout, work_text):
+    if head.returncode == 0 and baseline_drift_only(head.stdout, work_text):
         print(
-            f"✅ {SECRETS_BASELINE} changed only in line_number/generated_at; "
+            f"✅ {DETECTOR_BASELINE} changed only in line_number/generated_at; "
             "it will be committed with the release."
         )
         return True
 
     print(
-        f"\n❌ Error: {SECRETS_BASELINE} has changes beyond line-number drift.\n"
+        f"\n❌ Error: {DETECTOR_BASELINE} has changes beyond line-number drift.\n"
         "   A release commit may carry the baseline only when nothing but its\n"
         "   line_number and generated_at values moved -- anything else could be a\n"
         "   newly recorded secret, which must never ride a release commit.\n"
-        f"   Review it with `git diff {SECRETS_BASELINE}`, land it in its own PR,\n"
+        f"   Review it with `git diff {DETECTOR_BASELINE}`, land it in its own PR,\n"
         "   then retry the release."
     )
     sys.exit(1)
@@ -1110,8 +1110,8 @@ def main():  # noqa: C901, PLR0912, PLR0915
         )
         # LDM-#2512: staged only when its diff is line-number drift; refuses
         # otherwise.
-        if check_secrets_baseline():
-            run_cmd(["git", "add", SECRETS_BASELINE])
+        if check_detector_baseline():
+            run_cmd(["git", "add", DETECTOR_BASELINE])
         commit_msg = f"chore(release): promote version to v{new_version} [release]"
         run_cmd(["git", "commit", "-m", commit_msg, "--no-verify"])
 
@@ -1156,9 +1156,9 @@ def main():  # noqa: C901, PLR0912, PLR0915
         if not line.strip():
             continue
         path_part = line[3:].strip().strip('"')
-        if path_part == SECRETS_BASELINE:
+        if path_part == DETECTOR_BASELINE:
             # LDM-#2512: allowed only as line-number drift; exits otherwise.
-            check_secrets_baseline()
+            check_detector_baseline()
             continue
         allowed = False
         for pattern in allowed_patterns:
@@ -1349,8 +1349,8 @@ def main():  # noqa: C901, PLR0912, PLR0915
     )
     # LDM-#2512: re-checked here, after the quality gate, so the content
     # committed is the content that was judged.
-    if check_secrets_baseline():
-        run_cmd(["git", "add", SECRETS_BASELINE])
+    if check_detector_baseline():
+        run_cmd(["git", "add", DETECTOR_BASELINE])
 
     status_res2 = run_cmd(["git", "status", "--porcelain"], capture=True)
     for line in status_res2.stdout.splitlines():
