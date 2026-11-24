@@ -1905,9 +1905,6 @@ class ComposerService:
                 # below.
                 share_service = self.manager.share
                 pinned_url = share_service.sidecar_gateway_pin()
-                # LDM-#2503: a vanity domain must be requested, not merely
-                # announced.
-                custom_domain = share_service.requested_custom_domain(share_domain)
 
                 self._update_tunnel_env_file(
                     project_name, meta, subdomain, share_domain
@@ -1945,8 +1942,6 @@ class ComposerService:
                     share_domain
                 )
                 lfr_env.append(f"LFT_CLIENT_SERVER={gateway_url}")
-                if custom_domain:
-                    lfr_env.append(f"LFT_CLIENT_CUSTOM_DOMAIN={custom_domain}")
 
                 image = (
                     getattr(self.manager.args, "share_image", None)

@@ -171,18 +171,21 @@ class TheFailureOutputReadsTheCurrentClientLog(_NativeStart):
         self.assertIn("Subdomain Conflict", reason)
 
 
-# --- LDM-#2503: a vanity domain must be requested ---------------------------
+# --- LDM-#2503: a vanity domain is NOT requested (yet) -----------------------
+#
+# lfr-tunnel serves a custom domain as the whole hostname, one tunnel at a
+# time; passing a global vanity `share_domain` as `-domain` broke every such
+# share in v2.26.16-pre.1. Until #2503 makes it per project, it is not passed.
 
 
-class AVanityDomainIsRequested(_NativeStart):
+class AVanityDomainIsNotRequested(_NativeStart):
     @patch.dict(os.environ, {}, clear=True)
     @patch("subprocess.run")
-    def test_native_passes_domain_for_a_vanity_share_domain(self, mock_run):
+    def test_native_does_not_pass_domain_for_a_vanity_share_domain(self, mock_run):
         cmd, _env = self._run_start(
             mock_run, subdomain="demo", ports="8080", domain="dev.solaramoto.com"
         )
-        self.assertIn("-domain", cmd)
-        self.assertEqual(cmd[cmd.index("-domain") + 1], "dev.solaramoto.com")
+        self.assertNotIn("-domain", cmd)
 
     @patch.dict(os.environ, {}, clear=True)
     @patch("subprocess.run")
@@ -389,9 +392,11 @@ class TheSidecarIsNotPinnedAndKeepsNoToken(unittest.TestCase):
         self.assertIn("LFT_CLIENT_SERVER=https://tunnel.example", svc["environment"])
 
     @patch.dict(os.environ, {}, clear=True)
-    def test_a_vanity_domain_is_requested_from_the_sidecar(self):
+    def test_a_vanity_domain_is_not_requested_from_the_sidecar(self):
         svc, _ui = self._build({"share_domain": "dev.solaramoto.com"})
-        self.assertIn("LFT_CLIENT_CUSTOM_DOMAIN=dev.solaramoto.com", svc["environment"])
+        self.assertFalse(
+            [e for e in svc["environment"] if e.startswith("LFT_CLIENT_CUSTOM_DOMAIN")]
+        )
 
     @patch.dict(os.environ, {}, clear=True)
     def test_the_default_image_is_the_published_one(self):

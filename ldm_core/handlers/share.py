@@ -525,23 +525,6 @@ class ShareService:
                     return label, base
         return None, host
 
-    def requested_custom_domain(self, share_domain):
-        """The vanity domain to ask the gateway for, or None (LDM-#2503).
-
-        A `share_domain` that is not one of the gateway's base domains is a
-        custom domain the user registered in the portal. LDM announced it and
-        pinned Liferay's `web.server.host` to it, but never asked the tunnel
-        for it -- so the tunnel came up on `<sub>.<default gateway>` while
-        Liferay generated links to a host nothing served. The client takes it
-        as `-domain`, or `LFT_CLIENT_CUSTOM_DOMAIN` in the sidecar.
-        """
-        if not isinstance(share_domain, str) or not share_domain.strip():
-            return None
-        _, base = self.split_share_host(share_domain)
-        if not base or base in self.get_known_tunnel_base_domains():
-            return None
-        return base
-
     def get_default_tunnel_domain(self):
         """The domain to fall back to when nothing else is configured --
         always the first of the known base domains (see
@@ -1548,9 +1531,11 @@ class ShareService:
                 cmd += ["-ports", str(ports)]
             if subdomain:
                 cmd += ["-subdomain", subdomain]
-            custom_domain = self.requested_custom_domain(share_domain)
-            if custom_domain:
-                cmd += ["-domain", custom_domain]
+            # LDM-#2503: no `-domain`. lfr-tunnel takes a custom domain as the
+            # WHOLE hostname (one live tunnel per domain, registered per
+            # hostname), so a vanity `share_domain` -- global in ~/.ldmrc --
+            # cannot be requested per project yet. Passing it in v2.26.16-pre.1
+            # made every such share fail its health check.
 
             # Pass custom target host if configured
             host_name = project_meta.get("host_name", "localhost")

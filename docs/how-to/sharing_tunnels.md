@@ -159,14 +159,16 @@ rather than requiring you to know which is which:
 | :--- | :--- | :--- |
 | `lfr-demo.se` | a known gateway base domain | `<subdomain>.lfr-demo.se`, gateway pinned |
 | `peters.lfr-demo.se` | a host **on** a known base domain | subdomain `peters` on `lfr-demo.se`, gateway pinned |
-| `dev.example.com` | a custom vanity domain | `<subdomain>.dev.example.com`, no pin |
+| `dev.example.com` | a custom vanity domain | not supported yet -- see below |
 | `default` | the standard gateway | `<subdomain>.lfr-demo.online`, ignoring any stored domain |
 
-For a custom vanity domain the client still dials a real Liferay gateway,
-and LDM asks that gateway for your domain: the native client is started with
-`-domain dev.example.com`, the `lfr-tunnel-docker` sidecar is given
-`LFT_CLIENT_CUSTOM_DOMAIN`. The domain must be registered and approved in the
-Liferay Tunnel portal before the gateway will serve it (LDM-#2503).
+**Custom vanity domains are not supported yet** (LDM-#2503). Liferay Tunnel
+serves a custom domain as the *whole* hostname -- nothing is prepended -- with
+one live tunnel per domain, and each hostname must be registered to you in the
+portal. A single `share_domain` stored in `~/.ldmrc` therefore cannot serve
+every project, so LDM does not request it: the tunnel comes up on
+`<subdomain>.<default gateway>`. Use a gateway base domain until per-project
+custom domains land.
 
 ### Asking for the standard gateway
 
