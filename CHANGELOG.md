@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.16-pre.3] - 2026-11-24
+
+### Fixed
+
+- **Sharing with a custom vanity `share_domain` works again** (LDM-#2503). pre.1 began passing the vanity domain to the tunnel with `-domain`. Liferay Tunnel serves a custom domain as the whole hostname, one tunnel at a time, so the tunnel came up on the bare domain while LDM announced `<project>.<domain>`. LDM's health check then could not find the tunnel and stopped it. LDM no longer requests the vanity domain, and the tunnel comes up on `<subdomain>.<default gateway>` as before this release. Per-project custom domains are tracked in LDM-#2503.
+
 ## [v2.26.16-pre.2] - 2026-11-24
 
 ### Fixed
