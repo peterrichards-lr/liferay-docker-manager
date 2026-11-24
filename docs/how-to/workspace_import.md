@@ -61,6 +61,29 @@ in the artifact's `WEB-INF/liferay-plugin-package.properties`. See
 [Client Extensions](client_extensions.md#4-site-initializers-are-deployed-after-the-first-boot)
 for the full mechanism and the manual deployment command.
 
+### Where a linked workspace's files land
+
+`ldm link` copies built artefacts, not build directories:
+
+* client extensions from `client-extensions/*.zip` and
+  `client-extensions/<name>/dist/*.zip` go to `osgi/client-extensions/`, and
+  are expanded under the project's `client-extensions/<name>/`. Nothing else
+  under a client extension's `build/` is copied;
+* fragment collections from `fragments/` (a zip carrying
+  `liferay-deploy-fragments.json`) go to `deploy/`. Liferay's auto-deploy
+  imports them and removes them from `deploy/` once the portal starts;
+* the workspace's `deploy/`, `files/` and `scripts/` are copied as they are;
+* with `--build`, the workspace is built first, so what the build produces
+  is what gets linked.
+
+> [!WARNING]
+> **A workspace `scripts/` is executed inside the container.** The project's
+> `scripts/` is mounted at `/mnt/liferay/scripts`, and the Liferay image's
+> entrypoint runs every script there before the portal starts, on every boot.
+> `ldm package` ships it to everyone who imports the project, too. `ldm link`
+> names each file it copies there in a warning. Keep build and release tooling
+> somewhere else, such as `tools/`.
+
 ### Manifest Verification
 
 Every `.ldmp` carries a `meta` manifest describing the package. It used to be
@@ -348,6 +371,12 @@ runs under `bash` and:
    earlier one failed.
 8. Uploads the package and its checksum as an Actions artifact, and attaches
    them as GitHub Release assets on a release or tag.
+
+With `--stateless` the workflow never boots Liferay, so steps 4 and 7 are
+dropped and step 3 adds `--no-run`. A boot would let Liferay's auto-deploy
+consume the fragments in `deploy/`, and a stateless package has no database to
+carry them. Your setup and verify steps still run, between the link and the
+package, but against the files: no portal is running. No licence is needed.
 
 If you pass a `project`, every `ldm` command in the workflow receives it. If
 you do not, each command resolves the project from the checkout.

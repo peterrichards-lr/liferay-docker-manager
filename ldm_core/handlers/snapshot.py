@@ -894,6 +894,57 @@ class SnapshotService(BaseHandler):
                     f"({evidence})."
                 )
 
+    @staticmethod
+    def _refuse_consumed_deploy_artefacts(project_meta, paths):
+        """Refuse a stateless package whose `deploy/` lost the workspace's files.
+
+        `ldm link` stages fragment collections and the workspace's `deploy/`
+        into the project's `deploy/`, and Liferay's auto-deploy CONSUMES that
+        directory once the portal boots. A stateless package ships no database,
+        so whatever was imported from `deploy/` is simply gone from it -- the
+        ldm-cx-samples package shipped an empty `deploy/` and its fragments
+        never reached any importer, with nothing said.
+
+        Refused rather than warned: a package silently missing what it was
+        meant to carry is the LDM-#1429 failure. Building without a boot is the
+        design (`_stage_stateless_package` takes no snapshot), so the remedy is
+        to package before running. Only a linked project is checked -- without
+        `workspace_path` there is no record of what `deploy/` should hold.
+        """
+        from ldm_core.workspace.hydration import deploy_bound_workspace_artefacts
+
+        linked = project_meta.get("workspace_path")
+        if not linked:
+            return
+        workspace = Path(linked)
+        # A Liferay Cloud repository keeps its Gradle workspace in `liferay/`,
+        # which is where the sync read it from (LDM-#1681).
+        candidates = [workspace, workspace / "liferay"]
+        expected: set[str] = set()
+        for candidate in candidates:
+            if candidate.is_dir():
+                expected.update(deploy_bound_workspace_artefacts(candidate))
+        if not expected:
+            return
+        deploy_dir = paths["deploy"]
+        missing = sorted(
+            name for name in expected if not (Path(deploy_dir) / name).exists()
+        )
+        if not missing:
+            return
+        UI.die(
+            f"deploy/ no longer holds {len(missing)} file(s) the linked workspace "
+            f"put there: {', '.join(missing)}. Liferay's auto-deploy consumed "
+            "them when the project booted, and a stateless package carries no "
+            "database, so they would be missing from it.",
+            tip=(
+                "Build a stateless package without booting: 'ldm link <workspace> "
+                "<project> --no-run --no-monitor' (or re-link an existing "
+                "project), then 'ldm package <project> --stateless'."
+            ),
+            exit_code=1,
+        )
+
     def _stage_stateless_package(self, root, paths, staging):
         """Lays out a stateless package in `staging`: meta + files.tar.gz.
 
@@ -907,6 +958,7 @@ class SnapshotService(BaseHandler):
         from ldm_core.snapshot.archive import write_stateless_payload
 
         project_meta = self.manager.read_meta(root) or {}
+        self._refuse_consumed_deploy_artefacts(project_meta, paths)
         # As `cmd_snapshot` does: give each patch JAR its sidecar first.
         discover_patches(paths["root"], project_meta.get("tag"))
 
@@ -1118,13 +1170,17 @@ class SnapshotService(BaseHandler):
                 UI.info(f"  - {line}")
 
         # LDM-#2443: scripts/ ships and is mounted in the importer's container.
+        # LDM-#2533: and Liferay's entrypoint EXECUTES it there, before the
+        # portal starts, so the listing is a warning, not information.
         if shipped_scripts:
-            UI.info(
-                f"Scripts shipped in the package ({len(shipped_scripts)}), "
-                "mounted at /mnt/liferay/scripts in whoever imports it:"
+            UI.warning(
+                f"This package ships {len(shipped_scripts)} script(s) that "
+                "Liferay's entrypoint will EXECUTE inside the container of "
+                "everyone who imports it, before the portal starts: "
+                f"{', '.join(name for name, _flagged in shipped_scripts)}. "
+                "If any is a developer tool rather than a container start-up "
+                "hook, move it out of the project's scripts/ and package again."
             )
-            for name, _flagged in shipped_scripts:
-                UI.info(f"  - {name}")
             for name, flagged in shipped_scripts:
                 if flagged:
                     UI.warning(
