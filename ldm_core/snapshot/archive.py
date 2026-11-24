@@ -13,6 +13,11 @@ from ldm_core.runtime.portal_workarounds import is_ldm_bundle
 from ldm_core.snapshot.package_kind import PACKAGE_KIND_KEY, STATELESS
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, safe_extract
+from ldm_core.workspace.site_initializers import (
+    DEFERRED_DIRNAME,
+    deferred_dir,
+    is_site_initializer_zip,
+)
 
 # LDM-#1579: the directory/pattern pairs that define what a project ships, as
 # paths relative to the project root.
@@ -143,13 +148,20 @@ PORTAL_PATCH_SOURCES = (("portal-patches", "*.jar"),)
 # what a vanilla instance needs to behave like the project -- and nothing the
 # project's Liferay wrote at runtime: no `data/`, no `osgi/state`, no `logs/`,
 # no generated `files/`, no `snapshots/`, no search backup. Paths are relative
-# to the project root and stored at the same path, which is the layout every
-# files.tar.gz has, so LDM v2.26.x `--samples` (which copies the extracted
-# member over the project) still reads a stateless pack correctly.
+# to the project root, which is the layout every files.tar.gz has, so LDM
+# v2.26.x `--samples` (which copies the extracted member over the project)
+# still reads a stateless pack correctly. One file is deliberately stored at a
+# different project path than it was found at: a site initializer, which goes
+# to `.ldm/deferred-client-extensions/` so that copy defers it too.
 #
 # Whole trees. `osgi/modules` goes through `_omit_ldm_bundles` like the
 # snapshot's `osgi` entry. Publisher material is filtered afterwards by
 # `write_redistributable_payload`, exactly as for a stateful package.
+#
+# Three trees are not added whole -- see `write_stateless_payload`:
+# `osgi/client-extensions` loses its site initializers to
+# `.ldm/deferred-client-extensions`, and `client-extensions` ships only the
+# descriptors of an extension that is not a container.
 STATELESS_TREES: tuple[str, ...] = (
     "deploy",
     "configs",
@@ -160,10 +172,23 @@ STATELESS_TREES: tuple[str, ...] = (
     "portal-patches",
     # The expanded client extensions -- each `<name>/` with its Dockerfile,
     # LCP.json and config -- are what `ldm run` builds microservice sidecars
-    # from; the zips alone start nothing outside Liferay. Added whole and
-    # unfiltered, as the snapshot adds it (`_ARCHIVE_DIR_NAMES` through
-    # `_add_to_archive`), so both kinds of package ship the same tree.
+    # from; the zips alone start nothing outside Liferay.
     "client-extensions",
+    # Site-initializer zips, held back until the portal is healthy. See
+    # `_stateless_site_initializers`.
+    f".ldm/{DEFERRED_DIRNAME}",
+)
+
+#: The members of an expanded client extension that LDM reads. Everything
+#: that describes one is read from these and nothing else:
+#: `_scan_extension_folder_metadata` (yaml, LCP.json, config json),
+#: `_process_existing_cx_folders` and the `ldm dev` monitor (Dockerfile, as a
+#: presence test), `_scan_for_expected_deployables` (yaml).
+CX_DESCRIPTOR_PATTERNS = (
+    "client-extension.y*ml",
+    "LCP.json",
+    "*client-extension-config.json",
+    "Dockerfile",
 )
 
 # Single files.
@@ -171,6 +196,113 @@ STATELESS_GLOBS: tuple[tuple[str, str], ...] = (
     ("files", "portal-ext.properties"),
     (".ldm", "fragment-overrides.json"),
 )
+
+
+def _stateless_site_initializers(root):
+    """The site-initializer zips a stateless package ships, by name.
+
+    LDM-#1779: a site initializer present in `osgi/client-extensions/` when a
+    portal first starts against an empty database fails silently -- and a
+    stateless package is, by definition, imported onto an empty database.
+    `ldm import` holds one back in `.ldm/deferred-client-extensions/` and
+    `_wait_for_ready` deploys it once the portal is healthy (every LDM since
+    v2.23.0). So the package puts it there: wherever the payload is extracted
+    or copied, the zip is never in `osgi/client-extensions/` at first boot.
+
+    That covers the readers that do not defer anything themselves: `ldm run
+    --samples`, which copies the extracted payload over the project -- in this
+    LDM and in v2.26.x, which predates stateless packages -- and the stateless
+    import.
+
+    Both sources: a zip `ldm link` already parked there (it is not deployed
+    until `ldm wait` succeeds, and was being left out of the package), and one
+    in `osgi/client-extensions/` after it was deployed. The parked copy wins:
+    it is the one `_wait_for_ready` would deploy over the other.
+    """
+    root = Path(root)
+    chosen: dict[str, Path] = {}
+    cx_dir = root / "osgi" / "client-extensions"
+    if cx_dir.is_dir():
+        for zip_path in sorted(cx_dir.glob("*.zip")):
+            if zip_path.is_file() and is_site_initializer_zip(zip_path):
+                chosen[zip_path.name] = zip_path
+    parked = deferred_dir(root)
+    if parked.is_dir():
+        for zip_path in sorted(parked.glob("*.zip")):
+            if zip_path.is_file():
+                chosen[zip_path.name] = zip_path
+    return chosen
+
+
+def _is_container_cx(folder):
+    """True unless `folder` is a client extension known not to be a container.
+
+    Mirrors `_process_existing_cx_folders`: a container has a Dockerfile and is
+    not an LCP `kind: Job`. Anything this cannot read is treated as a
+    container, so it ships whole -- shipping too much costs bytes, shipping too
+    little loses the build context.
+    """
+    if not (folder / "Dockerfile").exists():
+        return False
+    lcp = folder / "LCP.json"
+    if not lcp.is_file():
+        return True
+    try:
+        kind = json.loads(lcp.read_text(encoding="utf-8")).get("kind")
+    except Exception:
+        return True
+    return not (isinstance(kind, str) and kind.capitalize() == "Job")
+
+
+def _descriptor_only_cx_dirs(root, shipped_zips):
+    """Expanded client extensions shipped as their descriptors alone.
+
+    `ldm link` expands every client extension into `client-extensions/<stem>/`
+    and moves the zip to `osgi/client-extensions/`, so a package carrying both
+    trees carried each extension twice: a site initializer's images doubled
+    the package. Only a container needs its expanded tree, as a build context.
+    For any other extension LDM reads nothing from that directory but its
+    descriptors (`CX_DESCRIPTOR_PATTERNS`) -- to list it, to forward its
+    environment, and to find the zip whose OAuth URLs it rewrites for the
+    consumer's host -- so those are what ships.
+
+    Only when the extension's own zip ships beside it, so the package still
+    holds everything it held. A directory with no descriptor is not one LDM
+    recognises as an extension, so it is left alone.
+    """
+    root = Path(root)
+    slim: set[str] = set()
+    ce_dir = root / "client-extensions"
+    if not ce_dir.is_dir():
+        return slim
+    for folder in sorted(ce_dir.iterdir()):
+        if not folder.is_dir() or f"{folder.name}.zip" not in shipped_zips:
+            continue
+        has_descriptor = any(
+            next(folder.glob(p), None) is not None
+            for p in CX_DESCRIPTOR_PATTERNS
+            if p != "Dockerfile"
+        )
+        if has_descriptor and not _is_container_cx(folder):
+            slim.add(folder.name)
+    return slim
+
+
+def _keep_descriptors_only(slim):
+    """Tar filter: within `client-extensions/<name>/` for each name in `slim`,
+    keep the directory and its top-level descriptors, drop everything else."""
+
+    def _filter(tarinfo):
+        parts = PurePosixPath(tarinfo.name).parts
+        if len(parts) < 3 or parts[0] != "client-extensions" or parts[1] not in slim:
+            return tarinfo
+        if len(parts) == 3 and tarinfo.isfile():
+            name = parts[2]
+            if any(PurePosixPath(name).match(p) for p in CX_DESCRIPTOR_PATTERNS):
+                return tarinfo
+        return None
+
+    return _filter
 
 
 def write_stateless_payload(root, dst):
@@ -182,12 +314,45 @@ def write_stateless_payload(root, dst):
     """
     root = Path(root)
     added: list[str] = []
+    initializers = _stateless_site_initializers(root)
+    cx_dir = root / "osgi" / "client-extensions"
+    shipped_zips = set(initializers)
+    if cx_dir.is_dir():
+        shipped_zips.update(p.name for p in cx_dir.glob("*.zip") if p.is_file())
+    slim = _descriptor_only_cx_dirs(root, shipped_zips)
+    deferred_tree = f".ldm/{DEFERRED_DIRNAME}"
+
+    def _osgi_cx_filter(tarinfo):
+        rel = PurePosixPath(tarinfo.name)
+        if (
+            tarinfo.isfile()
+            and rel.parent == PurePosixPath("osgi/client-extensions")
+            and rel.name in initializers
+        ):
+            return None
+        return _omit_ldm_bundles(tarinfo)
+
     with tarfile.open(dst, "w:gz") as tar:
         for rel in STATELESS_TREES:
+            if rel == deferred_tree:
+                for name, zip_path in sorted(initializers.items()):
+                    tar.add(zip_path, arcname=f"{deferred_tree}/{name}")
+                if initializers:
+                    UI.detail(
+                        "Adding site initializer(s) to package, held back until "
+                        "the portal is ready: " + ", ".join(sorted(initializers))
+                    )
+                    added.append(rel)
+                continue
             src = root / rel
             if src.is_dir():
                 UI.detail(f"Adding {rel} to package...")
-                tar.add(src, arcname=rel, filter=_omit_ldm_bundles)
+                if rel == "osgi/client-extensions":
+                    tar.add(src, arcname=rel, filter=_osgi_cx_filter)
+                elif rel == "client-extensions":
+                    tar.add(src, arcname=rel, filter=_keep_descriptors_only(slim))
+                else:
+                    tar.add(src, arcname=rel, filter=_omit_ldm_bundles)
                 added.append(rel)
         for directory, pattern in STATELESS_GLOBS:
             base = root / directory

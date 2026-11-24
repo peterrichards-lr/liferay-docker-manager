@@ -167,6 +167,7 @@ STATELESS_PAYLOAD_TREES = (
     "scripts",
     "portal-patches",
     "client-extensions",
+    ".ldm/deferred-client-extensions",
 )
 STATELESS_PAYLOAD_FILES = (
     "files/portal-ext.properties",

@@ -232,10 +232,14 @@ which.
 A stateless package holds only what a fresh Liferay needs to behave like the
 project:
 
-- client extensions: the archives in `osgi/client-extensions/`, and the whole
-  `client-extensions/` tree, as a stateful package ships it. A container
-  extension's `Dockerfile` and `LCP.json` are there, so the importer's
-  `ldm run` builds its microservice;
+- client extensions: the archives in `osgi/client-extensions/`, and the
+  expanded `client-extensions/` folders. A container extension's folder ships
+  whole, so the importer's `ldm run` builds its microservice. Any other
+  extension ships only its descriptors there, since its zip is already in
+  the package;
+- site initializers, in `.ldm/deferred-client-extensions/`, so that the
+  importer's Liferay first starts without them and LDM deploys them once it
+  is healthy. This includes one `ldm link` is still holding back;
 - `deploy/`, `osgi/modules/`, `osgi/configs/` and `configs/`;
 - `files/portal-ext.properties`, `scripts/` and `portal-patches/`;
 - `.ldm/fragment-overrides.json`.
@@ -383,4 +387,4 @@ ldm re-seed demo              # Total project reset to Day Zero (Seeded)
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*
+*Last Updated: 2026-11-24* | *Last Reviewed: 2026-11-24*

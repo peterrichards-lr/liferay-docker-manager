@@ -10,6 +10,7 @@ import urllib.request
 from pathlib import Path
 from typing import ClassVar
 
+from ldm_core.constants import LFR_TUNNEL_IMAGE, LFR_TUNNEL_IMAGE_LATEST
 from ldm_core.docker_service import DockerService
 from ldm_core.ui import UI
 from ldm_core.utils import (
@@ -28,6 +29,32 @@ from ldm_core.utils import (
 # or ~/.ldmrc by hand. Neither word is a registrable domain, so neither can
 # collide with a real one.
 STANDARD_DOMAIN_ALIASES = ("default", "standard")
+
+
+# LDM-#2507: the client lifecycle events LDM listens for, and the command the
+# client runs for each (it sets LFT_EVENT; see cmd_tunnel_event).
+LDM_TUNNEL_HOOK_EVENTS = (
+    "warning_received",
+    "stopping",
+    "stopped",
+    "starting",
+    "started",
+)
+LDM_TUNNEL_HOOK_COMMAND = "ldm tunnel-event"
+
+
+def lfr_tunnel_hook_paths():
+    """`(client config.yaml, LDM's once-only marker)` for hook registration.
+
+    One seam for both paths so the suite can redirect them together: tests
+    that clear the environment also clear `LDM_HOME`, and would otherwise edit
+    the developer's real `~/.lfr-tunnel/config.yaml` (see conftest).
+    """
+    home = get_actual_home()
+    return (
+        home / ".lfr-tunnel" / "config.yaml",
+        home / ".ldm" / "lfr-tunnel-hooks-registered",
+    )
 
 
 def share_host_from_url(value):
@@ -242,6 +269,34 @@ class ShareService:
         env["LFT_SERVER_URL"] = url
         self._warn_gateway_pinned(url, "requested on the command line")
         return url
+
+    def sidecar_gateway_pin(self):
+        """LDM-#2505: the gateway the Docker sidecar is pinned to, or None.
+
+        The native path's rule (`_apply_gateway_pin`), applied to the sidecar:
+        a gateway variable already in LDM's environment, or a known gateway
+        named on this invocation. A domain merely remembered in meta or
+        ~/.ldmrc is not a request. The sidecar used to be pinned on every
+        share, because every share resolves some domain.
+        """
+        env = {
+            name: os.environ[name]
+            for name in self.GATEWAY_PIN_ENV_VARS
+            if os.environ.get(name)
+        }
+        return self._apply_gateway_pin(env)
+
+    @staticmethod
+    def export_sidecar_token(token):
+        """LDM-#2505: hand the tunnel token to `docker compose` through the
+        environment of this process, which every compose invocation inherits.
+
+        The compose file names the variable without a value, so Compose reads
+        it from here; nothing is written to the project. The value comes from
+        `_get_auth_token()` -- the keyring, as on the native path.
+        """
+        if token:
+            os.environ["LFT_CLIENT_TOKEN"] = token
 
     def _warn_gateway_pinned(self, url, reason):
         """LDM-#1569: say the cost out loud. The client prints its own
@@ -469,6 +524,23 @@ class ShareService:
                 if label:
                     return label, base
         return None, host
+
+    def requested_custom_domain(self, share_domain):
+        """The vanity domain to ask the gateway for, or None (LDM-#2503).
+
+        A `share_domain` that is not one of the gateway's base domains is a
+        custom domain the user registered in the portal. LDM announced it and
+        pinned Liferay's `web.server.host` to it, but never asked the tunnel
+        for it -- so the tunnel came up on `<sub>.<default gateway>` while
+        Liferay generated links to a host nothing served. The client takes it
+        as `-domain`, or `LFT_CLIENT_CUSTOM_DOMAIN` in the sidecar.
+        """
+        if not isinstance(share_domain, str) or not share_domain.strip():
+            return None
+        _, base = self.split_share_host(share_domain)
+        if not base or base in self.get_known_tunnel_base_domains():
+            return None
+        return base
 
     def get_default_tunnel_domain(self):
         """The domain to fall back to when nothing else is configured --
@@ -776,9 +848,19 @@ class ShareService:
             )
 
             if local_tuple < min_tuple:
-                UI.die(
-                    f"Your Liferay Tunnel client is too old to connect to the server (Minimum required: {min_version}). "
-                    "Please upgrade using 'lfr-tunnel -upgrade' or 'docker pull peterrichards/lfr-tunnel'."
+                # LDM-#2504: warn, never refuse. The gateway gives each user a
+                # grace period from their first registration with an old
+                # client, during which the tunnel works; refusing here made
+                # LDM stricter than the gateway, so an LDM user was blocked on
+                # the day of a min_version raise while a direct client user
+                # kept working. The refusal is the gateway's to make, and when
+                # it comes is_min_version_failure() explains it.
+                UI.warning(
+                    f"Your Liferay Tunnel client ({lv_str}) is below the gateway's "
+                    f"minimum version ({min_version}). It may keep working for a "
+                    "grace period, after which the gateway will refuse it. "
+                    "Upgrade with 'lfr-tunnel -upgrade' or "
+                    f"'docker pull {LFR_TUNNEL_IMAGE}'."
                 )
             elif local_tuple < latest_tuple:
                 UI.warning(
@@ -1466,6 +1548,9 @@ class ShareService:
                 cmd += ["-ports", str(ports)]
             if subdomain:
                 cmd += ["-subdomain", subdomain]
+            custom_domain = self.requested_custom_domain(share_domain)
+            if custom_domain:
+                cmd += ["-domain", custom_domain]
 
             # Pass custom target host if configured
             host_name = project_meta.get("host_name", "localhost")
@@ -1537,6 +1622,8 @@ class ShareService:
             if not pinned_gateway:
                 self._note_unpinned_gateway(share_domain)
 
+            self._register_tunnel_hooks_once()
+
             UI.detail("Starting lfr-tunnel in the background...")
             try:
                 res = subprocess.run(
@@ -1551,6 +1638,9 @@ class ShareService:
                             host_name
                             if host_name and host_name != "localhost"
                             else None
+                        ),
+                        log_path=self.client_log_path_from_output(
+                            res.stdout, res.stderr
                         ),
                     )
                     if success:
@@ -1638,19 +1728,15 @@ class ShareService:
                     UI.error(f"Failed to start tunnel (Exit {res.returncode})")
                     if res.stderr:
                         print(res.stderr.strip())
-                    log_file = (
-                        get_actual_home() / ".lfr-tunnel" / f"client-{subdomain}.log"
+                    _log_file, logs_str = self._read_client_log(
+                        subdomain,
+                        self.client_log_path_from_output(res.stdout, res.stderr),
                     )
-                    if log_file.exists():
-                        try:
-                            logs_str = log_file.read_text(encoding="utf-8").strip()
-                            if logs_str:
-                                UI.error("Tunnel Log Output:")
-                                print("-" * 40)
-                                print(logs_str)
-                                print("-" * 40)
-                        except Exception:
-                            pass
+                    if logs_str:
+                        UI.error("Tunnel Log Output:")
+                        print("-" * 40)
+                        print(logs_str)
+                        print("-" * 40)
                     # LDM-#1548: the diagnostics above are printed first, then
                     # the run fails. Previously this fell off the end of
                     # cmd_start, so `ldm share start` exited 0 with no tunnel.
@@ -1688,7 +1774,7 @@ class ShareService:
 
             # Proactive Version Checking for Docker
             docker_image = image or project_meta.get(
-                "share_image", "peterrichards/lfr-tunnel:latest"
+                "share_image", LFR_TUNNEL_IMAGE_LATEST
             )
             target_name = project_meta.get("target")
             docker_prefix = DockerService.get_docker_cmd_prefix(target_name)
@@ -1730,9 +1816,15 @@ class ShareService:
                 return
 
             UI.detail("Starting lfr-tunnel container...")
+            # LDM-#2505: the token reaches the sidecar from the keyring through
+            # this environment; the compose file and .env no longer carry it.
+            compose_env = os.environ.copy()
+            if token:
+                compose_env["LFT_CLIENT_TOKEN"] = token
             res = subprocess.run(
                 [*compose_base, "up", "-d", "lfr-tunnel"],
                 cwd=str(root),
+                env=compose_env,
                 capture_output=True,
                 text=True,
                 check=False,
@@ -2268,6 +2360,73 @@ class ShareService:
             # Silently ignore if the GUI app is not running
             pass
 
+    @staticmethod
+    def client_log_path_from_output(*streams):
+        """The log path a `-background` start announced, or None (LDM-#2502).
+
+        The client prints `[Client] Logs: <path>` once it has forked. Reading
+        that line means LDM follows the client if the log moves again, rather
+        than hardcoding where it lives today. Tolerates the line arriving
+        through slog's text handler, which quotes the message and escapes its
+        trailing newline.
+        """
+        for stream in streams:
+            for line in (stream or "").splitlines():
+                match = re.search(r"\[Client\] Logs:\s*(.+)", line)
+                if not match:
+                    continue
+                path = match.group(1).strip().strip('"').strip()
+                if path.endswith("\\n"):
+                    path = path[:-2].rstrip()
+                if path:
+                    return Path(path)
+        return None
+
+    def resolve_client_log_path(self, subdomain, announced=None):
+        """The native client's background log for `subdomain`, or None.
+
+        LDM-#2502: current clients write `~/.lfr-tunnel/logs/client-<sub>.log`
+        (lfr-tunnel `ClientLogPath`); the old `~/.lfr-tunnel/client-<sub>.log`
+        is never written again, so reading it showed a log from weeks earlier
+        or nothing. Order mirrors the client's own `ResolveClientLogPath` --
+        current first, legacy only as a fallback -- with the path the client
+        announced ahead of both.
+        """
+        base = get_actual_home() / ".lfr-tunnel"
+        candidates = [
+            Path(announced) if announced else None,
+            base / "logs" / f"client-{subdomain}.log",
+            base / f"client-{subdomain}.log",
+        ]
+        for candidate in candidates:
+            if candidate is not None and candidate.exists():
+                return candidate
+        return None
+
+    def _read_client_log(self, subdomain, announced=None):
+        """`(path, text)` of the client log, announcing which file and how old.
+
+        LDM-#2502: naming the file and its modification time is what stops a
+        stale log passing as the current one.
+        """
+        log_file = self.resolve_client_log_path(subdomain, announced)
+        if log_file is None:
+            return None, ""
+        try:
+            logs_str = log_file.read_text(encoding="utf-8").strip()
+        except Exception:
+            return log_file, ""
+        try:
+            from datetime import datetime
+
+            mtime = datetime.fromtimestamp(log_file.stat().st_mtime).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+        except Exception:
+            mtime = "unknown"
+        UI.info(f"Tunnel log: {log_file} (last modified {mtime})")
+        return log_file, logs_str
+
     def _diagnose_dns_failure(self, logs_str, domain):
         """LDM-#1038: recognizes a DNS resolution failure against the tunnel
         gateway host and, if the domain isn't one of the known base domains,
@@ -2308,8 +2467,12 @@ class ShareService:
         target_name=None,
         ports=None,
         target_host=None,
+        log_path=None,
     ):
         """Polls the lfr-tunnel status to verify connection health using -status-json.
+
+        `log_path` is the log the client announced on start (LDM-#2502); the
+        standard locations are tried after it.
 
         `ports` and `target_host` are what a native start asked for. When given,
         a tunnel the client calls unhealthy only because of its destination is
@@ -2549,12 +2712,12 @@ class ShareService:
                     pass
 
                 if not info_parsed:
-                    log_file = (
-                        get_actual_home() / ".lfr-tunnel" / f"client-{subdomain}.log"
-                    )
-                    if log_file.exists():
+                    log_file = self.resolve_client_log_path(subdomain, log_path)
+                    if log_file is not None:
                         try:
-                            logs_str = log_file.read_text(encoding="utf-8").strip()
+                            _log_file, logs_str = self._read_client_log(
+                                subdomain, log_path
+                            )
                             if logs_str:
                                 dns_reason = self._diagnose_dns_failure(
                                     logs_str, domain
@@ -2796,49 +2959,92 @@ class ShareService:
         except subprocess.CalledProcessError as e:
             UI.error(f"Failed to start port forwarding proxy: {e}")
 
-    def ensure_lfr_tunnel_config_hooks(self) -> None:
-        """Auto-registers LDM tunnel-event hooks in ~/.lfr-tunnel/config.yaml."""
-        config_dir = Path.home() / ".lfr-tunnel"
-        config_file = config_dir / "config.yaml"
-        config_dir.mkdir(parents=True, exist_ok=True)
+    def ensure_lfr_tunnel_config_hooks(self) -> list[str]:
+        """Registers LDM's tunnel-event hooks in the client's config.yaml.
 
-        try:
-            import yaml
-        except ImportError:
-            yaml = None  # type: ignore[assignment]
+        Returns the hook names it added; empty when it changed nothing.
 
-        hooks_spec = {
-            "warning_received": "ldm tunnel-event",
-            "stopping": "ldm tunnel-event",
-            "stopped": "ldm tunnel-event",
-            "starting": "ldm tunnel-event",
-            "started": "ldm tunnel-event",
-        }
+        LDM-#2507: this file belongs to the user, so it MERGES. A hook the user
+        already set -- to anything -- is left exactly as it is; only absent or
+        empty keys are filled. A file that does not parse, or whose `hooks:`
+        is not a mapping, is not touched at all: rewriting what could not be
+        read would destroy it. When there is no `hooks:` key yet, the block is
+        appended as text so the user's comments and layout survive.
+        """
+        import yaml
 
+        config_file, _marker = lfr_tunnel_hook_paths()
+        content = ""
+        data: dict = {}
         if config_file.exists():
             content = config_file.read_text(encoding="utf-8")
-            if (
-                'warning_received: "ldm tunnel-event"' in content
-                or "warning_received: ldm tunnel-event" in content
-            ):
-                return
-            if yaml:
-                try:
-                    data = yaml.safe_load(content) or {}
-                    if not isinstance(data, dict):
-                        data = {}
-                    data.setdefault("hooks", {}).update(hooks_spec)
-                    config_file.write_text(
-                        yaml.dump(data, default_flow_style=False), encoding="utf-8"
-                    )
-                    return
-                except Exception:
-                    pass
+            try:
+                loaded = yaml.safe_load(content)
+            except yaml.YAMLError:
+                return []
+            if loaded is None:
+                loaded = {}
+            if not isinstance(loaded, dict):
+                return []
+            data = loaded
 
-        lines = ["hooks:"]
-        for evt, cmd in hooks_spec.items():
-            lines.append(f'  {evt}: "{cmd}"')
-        config_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        hooks = data.get("hooks")
+        if hooks is not None and not isinstance(hooks, dict):
+            return []
+        existing = hooks or {}
+        missing = {
+            event: LDM_TUNNEL_HOOK_COMMAND
+            for event in LDM_TUNNEL_HOOK_EVENTS
+            if not str(existing.get(event) or "").strip()
+        }
+        if not missing:
+            return []
+
+        if "hooks" not in data:
+            block = "hooks:\n" + "".join(
+                f'  {event}: "{command}"\n' for event, command in missing.items()
+            )
+            prefix = (
+                content if not content or content.endswith("\n") else content + "\n"
+            )
+            new_content = prefix + block
+        else:
+            data["hooks"] = {**existing, **missing}
+            new_content = yaml.safe_dump(
+                data, default_flow_style=False, sort_keys=False
+            )
+
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        config_file.write_text(new_content, encoding="utf-8")
+        return list(missing)
+
+    def _register_tunnel_hooks_once(self):
+        """LDM-#2507: wire the tunnel lifecycle hooks on the first native share.
+
+        Once, not on every start: after the first attempt a marker records it,
+        so a hook the user later removes stays removed. Never fatal -- a share
+        must not fail because a convenience could not be installed.
+        """
+        try:
+            config_file, marker = lfr_tunnel_hook_paths()
+            if marker.exists():
+                return
+            added = self.ensure_lfr_tunnel_config_hooks()
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(f"{config_file}\n", encoding="utf-8")
+        except Exception as e:
+            UI.detail(f"Could not register lfr-tunnel lifecycle hooks: {e}")
+            return
+        if added:
+            kept = [e for e in LDM_TUNNEL_HOOK_EVENTS if e not in added]
+            message = (
+                f"Registered LDM's tunnel lifecycle hooks ({', '.join(added)}) in "
+                f"{config_file}, so `ldm tunnel-event` hears gateway failovers. "
+                "This happens once."
+            )
+            if kept:
+                message += f" Your own hooks for {', '.join(kept)} were left unchanged."
+            UI.info(message)
 
     def cmd_tunnel_event(self) -> None:
         """Subcommand 'ldm tunnel-event' handling lfr-tunnel hook protocol injected env vars."""

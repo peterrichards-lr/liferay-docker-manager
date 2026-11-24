@@ -117,7 +117,7 @@ class TestShareService(unittest.TestCase):
 
     @patch("subprocess.run")
     @patch("ldm_core.handlers.share.UI")
-    def test_verify_compatibility_hard_blocker(self, mock_ui, mock_run):
+    def test_verify_compatibility_below_minimum_warns(self, mock_ui, mock_run):
         mock_bin = MagicMock()
         mock_bin.exists.return_value = True
 
@@ -126,14 +126,16 @@ class TestShareService(unittest.TestCase):
         mock_res.stdout = '{"latest_version": "v1.3.0", "min_version": "v1.0.0"}'
         mock_run.return_value = mock_res
 
-        # Local version is older than min_version -> Hard Blocker
+        # LDM-#2504: below min_version warns and continues -- the gateway's
+        # grace period decides, not LDM.
         self.service._verify_compatibility([str(mock_bin)], "0.9.0")
 
-        mock_ui.die.assert_called_once_with(
-            "Your Liferay Tunnel client is too old to connect to the server (Minimum required: v1.0.0). "
-            "Please upgrade using 'lfr-tunnel -upgrade' or 'docker pull peterrichards/lfr-tunnel'."
-        )
-        mock_ui.warning.assert_not_called()
+        mock_ui.die.assert_not_called()
+        mock_ui.warning.assert_called_once()
+        message = mock_ui.warning.call_args[0][0]
+        self.assertIn("below the gateway's minimum version (v1.0.0)", message)
+        self.assertIn("grace period", message)
+        self.assertIn("docker pull peterjrichards/lfr-tunnel", message)
 
     @patch("subprocess.run")
     @patch("ldm_core.handlers.share.UI")
@@ -1491,7 +1493,7 @@ class TestShareService(unittest.TestCase):
             mock_target.return_value = TargetNode(name="node-a", host="34.1.1.1")
 
             self.service._get_docker_installed_version(
-                "peterrichards/lfr-tunnel:latest", target_name="node-a"
+                "peterjrichards/lfr-tunnel:latest", target_name="node-a"
             )
             call_cmd = mock_run.call_args[0][0]
             self.assertIn("--context", call_cmd)
@@ -1562,17 +1564,15 @@ class TestShareService(unittest.TestCase):
 
     def test_ensure_lfr_tunnel_config_hooks(self):
         """test auto-registration of hooks in ~/.lfr-tunnel/config.yaml."""
-        with patch("pathlib.Path.home") as mock_home:
-            import tempfile
+        from ldm_core.handlers import share as share_module
 
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                mock_home.return_value = Path(tmp_dir)
-                self.service.ensure_lfr_tunnel_config_hooks()
-                cfg = Path(tmp_dir) / ".lfr-tunnel" / "config.yaml"
-                self.assertTrue(cfg.exists())
-                content = cfg.read_text()
-                self.assertIn("warning_received", content)
-                self.assertIn("ldm tunnel-event", content)
+        # conftest redirects this seam to a temp directory for every test.
+        cfg, _marker = share_module.lfr_tunnel_hook_paths()
+        self.service.ensure_lfr_tunnel_config_hooks()
+        self.assertTrue(cfg.exists())
+        content = cfg.read_text()
+        self.assertIn("warning_received", content)
+        self.assertIn("ldm tunnel-event", content)
 
 
 class TestShareTunnelTopology(unittest.TestCase):

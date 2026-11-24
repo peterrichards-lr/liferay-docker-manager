@@ -543,9 +543,13 @@ class TestSystemService(unittest.TestCase):
         self.assertFalse(self.manager.runtime.cmd_run.called)
         self.assertFalse(self.manager.diagnostics.cmd_doctor.called)
 
+    # Unpatched, this ran a real `sudo -n sed -i ... /etc/hosts`
+    # on the developer's machine -- with cached sudo credentials it would have
+    # removed their LDM hosts entries.
+    @patch("ldm_core.handlers.system.SystemService._remove_hosts_entries")
     @patch("ldm_core.handlers.system.UI")
     @patch("ldm_core.utils.has_shared_projects")
-    def test_nuke_global_volume_guard(self, mock_has_shared, mock_ui):
+    def test_nuke_global_volume_guard(self, mock_has_shared, mock_ui, _hosts):
         """Verify cmd_nuke guards global volume drops correctly."""
         mock_ui.ask.return_value = "y"  # Confirm nuke
         mock_ui.confirm.return_value = False  # Deny global volume drop

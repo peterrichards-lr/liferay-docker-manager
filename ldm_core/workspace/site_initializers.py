@@ -58,7 +58,9 @@ PLUGIN_PACKAGE_PROPERTIES = "WEB-INF/liferay-plugin-package.properties"
 #: Staging directory, relative to the project root. ``.ldm/`` already holds
 #: project-scoped LDM state (``fragment-overrides.json``) and is archived into
 #: a ``.ldmp`` package wholesale, so a package built from a project whose
-#: initializer has not yet been deployed carries the deferral with it.
+#: initializer has not yet been deployed carries the deferral with it. A
+#: stateless package does not archive ``.ldm/``; it ships this directory
+#: explicitly, every site initializer in it (``write_stateless_payload``).
 DEFERRED_DIRNAME = "deferred-client-extensions"
 
 

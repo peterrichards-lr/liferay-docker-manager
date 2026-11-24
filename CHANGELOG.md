@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`ldm share` shows the client's current log** (LDM-#2502). It read the pre-move `~/.lfr-tunnel/client-<sub>.log`, so a failed share printed a stale log or none. LDM now follows the `[Client] Logs:` path the client prints, then `~/.lfr-tunnel/logs/`, then the old path, and names the file and its modification time.
+- **A vanity `share_domain` is requested from the tunnel** (LDM-#2503). LDM announced `<sub>.<vanity>` and pinned it as `web.server.host` but never passed `-domain`, so the tunnel served `<sub>.lfr-demo.se`. Native shares now pass `-domain`, and the Docker sidecar gets `LFT_CLIENT_CUSTOM_DOMAIN`.
+- **A client below the gateway's `min_version` warns instead of refusing** (LDM-#2504), matching the gateway's 14-day grace period.
+- **The Docker share sidecar no longer stores its token in `.env` or pins one gateway** (LDM-#2505). The token is passed from the keyring at start, and an existing `LFT_CLIENT_TOKEN` line is removed with a notice. `LFT_CLIENT_SERVER` is set only when you name a gateway.
+- **The share sidecar's version check uses the published image name** (LDM-#2506), `peterjrichards/lfr-tunnel`.
+- **Tunnel lifecycle hooks are registered** (LDM-#2507). The first `ldm share start` adds LDM's hooks to `~/.lfr-tunnel/config.yaml`, says so once, and never replaces a hook you set.
+- **Stateless packages ship each client extension once** (LDM-#2493). A non-container extension's expanded folder now carries only its descriptors; the zip carries the rest.
+- **Site initializers in a stateless package deploy after the portal is ready** (LDM-#2493). They are stored in `.ldm/deferred-client-extensions/`, which every LDM since v2.23.0 deploys once Liferay is healthy. That includes `--samples` on v2.26.x, and site initializers parked before the publisher's portal was ready are no longer left out.
+- **The `ldm init-ci` workflow installs LDM** (LDM-#2493). It ran `pip install liferay-docker-manager`, which is not on PyPI. It now downloads the release binary and verifies it against `checksums.txt`.
 - **Fragment overrides reach the live page through the Headless API** (LDM-#2427). LDM writes the published spec only and never calls `/publish`. On 2025.Q1 to 2026.Q3 it sets `feature.flag.LPD-35443` and `feature.flag.LPD-74328`. A refused update is now a warning carrying Liferay's reason, not a silent fall-through to SQL.
 - **No more 300-second retry on 2026.Q4.0** (LDM-#2497). A refused page-element update is treated as final: LDM warns once, makes one legacy attempt, then uses SQL.
 - **`fix-hosts` suggestions run as printed** (LDM-#2496). LDM suggested one command with several hostnames, which the parser rejected. It now suggests `ldm fix-hosts <project>`, or one command per hostname.

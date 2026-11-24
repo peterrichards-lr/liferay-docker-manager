@@ -545,10 +545,11 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
         UI.die(
             "Download URL not found for your architecture.",
             details=f"{platform.system()} {platform.machine()}",
+            # LDM is not published to PyPI: this tip used to send users to a
+            # `pip install` that returns 404.
             tip=(
                 "That release may not ship a binary for this platform. Check "
-                f"the assets at {GITHUB_REPO_URL}/releases, or install from "
-                "PyPI with 'pip install --upgrade liferay-docker-manager'."
+                f"the assets at {GITHUB_REPO_URL}/releases."
             ),
         )
 

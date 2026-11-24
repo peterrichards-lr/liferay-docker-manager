@@ -14,7 +14,7 @@ if sys.version_info < (3, 10):  # noqa: UP036
     sys.exit(1)
 
 
-from ldm_core.constants import SCRIPT_DIR, VERSION
+from ldm_core.constants import LFR_TUNNEL_IMAGE_LATEST, SCRIPT_DIR, VERSION
 from ldm_core.manager import LiferayManager
 from ldm_core.ui import UI
 from ldm_core.utils import check_for_updates
@@ -810,7 +810,7 @@ def get_parser():  # noqa: PLR0915
     )
     run.add_argument(
         "--share-image",
-        help="Custom Docker image to use for the sharing tunnel sidecar (defaults to peterjrichards/lfr-tunnel:latest)",
+        help=f"Custom Docker image to use for the sharing tunnel sidecar (defaults to {LFR_TUNNEL_IMAGE_LATEST})",
     )
     run.add_argument(
         "--share-inspector",
@@ -2163,7 +2163,7 @@ def get_parser():  # noqa: PLR0915
     )
     share_start.add_argument(
         "--image",
-        help="Custom Docker image to use for the sharing tunnel sidecar (defaults to peterjrichards/lfr-tunnel:latest)",
+        help=f"Custom Docker image to use for the sharing tunnel sidecar (defaults to {LFR_TUNNEL_IMAGE_LATEST})",
     )
     share_start.add_argument(
         "--inspector",
