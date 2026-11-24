@@ -560,6 +560,19 @@ too early:
 | Manifest fields (`tag`, `db_type`, ...) | Written | Written |
 | `ldm quickstart` seed | Skipped when the package has a database | Skipped |
 
+**A stateless package is built before the portal boots.** Liferay's
+auto-deploy consumes `deploy/` once the portal starts, and a stateless package
+has no database to carry what it imported. For a linked project,
+`ldm package --stateless` compares `deploy/` with what the workspace put there
+(its fragment collections and its own `deploy/` files, licences excepted) and
+refuses, with exit code `1`, when any is missing, naming each one. Link with
+`--no-run` and package before running the project.
+
+**`scripts/` ships and is executed.** In both kinds, `scripts/` is mounted at
+`/mnt/liferay/scripts` in the importer's container, and Liferay's entrypoint
+runs every script there before the portal starts. `ldm package` names each
+shipped script in a warning, and flags any that mention a licence or routes.
+
 A manifest without `package_kind` is stateful, so every existing package
 imports exactly as before. Both kinds keep the payload in a top-level
 `files.tar.gz`, laid out relative to the project root. That is the member

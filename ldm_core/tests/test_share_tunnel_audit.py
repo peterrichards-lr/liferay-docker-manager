@@ -333,7 +333,7 @@ class TheSidecarIsNotPinnedAndKeepsNoToken(unittest.TestCase):
         return svc, ui
 
     @patch.dict(os.environ, {}, clear=True)
-    def test_a_default_share_writes_no_token_and_no_gateway(self):
+    def test_a_default_share_writes_no_token_to_env_and_still_names_a_gateway(self):
         svc, _ui = self._build({"share_domain": "lfr-demo.se"})
 
         env_text = self.env_file.read_text()
@@ -341,8 +341,11 @@ class TheSidecarIsNotPinnedAndKeepsNoToken(unittest.TestCase):
         self.assertNotIn("LFT_SERVER_URL", env_text)
         self.assertNotIn("tok-SECRET", env_text)
         self.assertNotIn("tok-SECRET", " ".join(svc["environment"]))
-        self.assertFalse(
-            [e for e in svc["environment"] if e.startswith("LFT_CLIENT_SERVER")]
+        # The published image has no built-in gateway: without a server
+        # variable the sidecar exits at startup, so a default share still
+        # names the domain's gateway (in the compose file, not in .env).
+        self.assertIn(
+            "LFT_CLIENT_SERVER=https://tunnel.lfr-demo.se", svc["environment"]
         )
         self.assertIn("LFT_CLIENT_TOKEN", svc["environment"])
         # ...and compose gets it from this process's environment.

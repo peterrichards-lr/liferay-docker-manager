@@ -44,15 +44,60 @@ def _sync_modules_and_themes(self, workspace_root, paths, overwrite):
                     UI.detail(f"  + Synced {folder.capitalize()[:-1]}: {jar.name}")
 
 
+#: The descriptor that marks a zip as a fragment collection Liferay's
+#: auto-deploy imports, as opposed to a client extension.
+FRAGMENT_DESCRIPTOR = "liferay-deploy-fragments.json"
+
+
+def _workspace_fragment_zips(workspace_root):
+    frag_dir = Path(workspace_root) / "fragments"
+    if not frag_dir.is_dir():
+        return []
+    return list(frag_dir.glob("*.zip")) + list(frag_dir.glob("*/dist/*.zip"))
+
+
+def deploy_bound_workspace_artefacts(workspace_root):
+    """Names of the files `ldm link`/`import` puts in the project's `deploy/`.
+
+    The same selection the sync makes: every top-level entry of the
+    workspace's `deploy/` (`VolumeSyncStage`'s structural copy) and every
+    fragment collection `_sync_fragments` routes there. Liferay's auto-deploy
+    consumes `deploy/` once the portal boots, so these are what a stateless
+    package loses when it is built after a boot (`_stage_stateless_package`).
+    """
+    root = Path(workspace_root)
+    names = set()
+    deploy_src = root / "deploy"
+    if deploy_src.is_dir():
+        from ldm_core.handlers.license import is_licence_xml
+
+        for item in deploy_src.iterdir():
+            # A licence never ships in a package (LDM-#2443), so its absence
+            # is not a loss.
+            if item.suffix.lower() == ".xml" and item.is_file():
+                try:
+                    if is_licence_xml(item.read_bytes()):
+                        continue
+                except OSError:
+                    pass
+            names.add(item.name)
+    for zip_file in _workspace_fragment_zips(root):
+        try:
+            with zipfile.ZipFile(zip_file, "r") as zip_ref:
+                if FRAGMENT_DESCRIPTOR in zip_ref.namelist():
+                    names.add(zip_file.name)
+        except Exception:
+            continue
+    return sorted(names)
+
+
 def _sync_fragments(self, workspace_root, paths, overwrite):
     frag_dir = workspace_root / "fragments"
     if frag_dir.exists():
-        for zip_file in list(frag_dir.glob("*.zip")) + list(
-            frag_dir.glob("*/dist/*.zip")
-        ):
+        for zip_file in _workspace_fragment_zips(workspace_root):
             try:
                 with zipfile.ZipFile(zip_file, "r") as zip_ref:
-                    if "liferay-deploy-fragments.json" in zip_ref.namelist():
+                    if FRAGMENT_DESCRIPTOR in zip_ref.namelist():
                         dest = paths["deploy"] / zip_file.name
                         if not overwrite and dest.exists():
                             UI.detail(

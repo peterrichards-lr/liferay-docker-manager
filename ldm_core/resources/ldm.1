@@ -72,7 +72,7 @@ Backup and recover exact project states.
 .TP
 \fBpackage\fR [\fIPROJECT\fR] [\fB--output\fR \fIDIR\fR] [\fB--repo\fR \fIREPO\fR] [\fB--use-latest\fR] [\fB--stateless\fR]
 Package a project snapshot into a portable LDM package (\fB.ldmp\fR) with SHA-256 signature.
-Use \fB--stateless\fR to take no snapshot and package only the project's assets (client extensions, \fIdeploy/\fR, configs, OSGi modules, fragment overrides); the manifest declares \fBpackage_kind: stateless\fR, and importing it gives a vanilla instance with the assets deployed and nothing restored. Site initializers are packaged in \fI.ldm/deferred-client-extensions/\fR, so they deploy only once the portal is healthy. A package without \fBpackage_kind\fR is stateful and restores as before.
+Use \fB--stateless\fR to take no snapshot and package only the project's assets (client extensions, \fIdeploy/\fR, configs, OSGi modules, fragment overrides); the manifest declares \fBpackage_kind: stateless\fR, and importing it gives a vanilla instance with the assets deployed and nothing restored. Site initializers are packaged in \fI.ldm/deferred-client-extensions/\fR, so they deploy only once the portal is healthy. Liferay's auto-deploy consumes \fIdeploy/\fR once the portal boots, so for a linked project \fB--stateless\fR refuses (exit 1), naming each file, when \fIdeploy/\fR has lost a fragment collection or workspace \fIdeploy/\fR file: link with \fB--no-run\fR and package before running. \fIscripts/\fR ships in both kinds and is executed by Liferay's entrypoint in the importer's container; \fBpackage\fR names each script in a warning. A package without \fBpackage_kind\fR is stateful and restores as before.
 Use \fB--verified\fR \fITAG\fR and \fB--refuted\fR \fITAG\fR, each with a mandatory \fB--evidence\fR \fIREF\fR, to record what the package has actually been tested on as opposed to what it was built with. A refutation declares a verified ceiling that \fBldm run\fR refuses to boot above.
 The project's \fIportal-patches/\fR JARs and their sidecars are shipped, listed, and recorded in the manifest.
 .TP
@@ -106,7 +106,7 @@ Launch the web-based Visual Diagnostics Dashboard and property editor. Also top-
 Initialize project scaffolding without starting containers. Use \fB--vanilla\fR to bypass project seeding.
 .TP
 \fBlink\fR \fISOURCE_PATH\fR [\fINAME\fR]
-Initialize a project linked to a source workspace with real-time sync. (legacy alias: \fBinit-from\fR)
+Initialize a project linked to a source workspace with real-time sync. A workspace \fIscripts/\fR is copied into the project, where Liferay's entrypoint executes it inside the container; \fBlink\fR names each such file in a warning. With \fB--build\fR the workspace is built before it is linked. (legacy alias: \fBinit-from\fR)
 .TP
 \fBclone\fR \fIGIT_URL\fR [\fINAME\fR]
 Clone a Git repository and initialize it as an LDM project workspace.
@@ -243,7 +243,7 @@ Internal version management utility.
 Safely move LDM Docker data to an external drive.
 .TP
 \fBldm system init-ci\fR [\fIPROJECT\fR] [\fB--trigger\fR \fIrelease|tag|push|manual\fR] [\fB--setup-step\fR \fICMD\fR]... [\fB--verify-step\fR \fICMD\fR]... [\fB--stateless\fR]
-Write a GitHub Actions workflow that links and builds the workspace (\fBldm link . --no-monitor --build\fR), waits for its deployables, runs each setup step and then each verify step in order, packages an \fB.ldmp\fR only if they all pass, and always runs \fBldm down\fR. The workflow pins the LDM version that wrote it, installing that version's \fBldm-linux\fR release binary after checking it against the release's \fIchecksums.txt\fR; re-run with the same flags to upgrade. \fB--stateless\fR packages with \fBldm package --stateless\fR. (legacy: \fBldm init-ci\fR)
+Write a GitHub Actions workflow that links and builds the workspace (\fBldm link . --no-monitor --build\fR), waits for its deployables, runs each setup step and then each verify step in order, packages an \fB.ldmp\fR only if they all pass, and always runs \fBldm down\fR. The workflow pins the LDM version that wrote it, installing that version's \fBldm-linux\fR release binary after checking it against the release's \fIchecksums.txt\fR; re-run with the same flags to upgrade. \fB--stateless\fR packages with \fBldm package --stateless\fR and never boots Liferay: it links with \fB--no-run\fR, runs the steps, and packages, with no wait, no \fBldm down\fR and no licence. (legacy: \fBldm init-ci\fR)
 
 .SH OPTIONS
 .TP

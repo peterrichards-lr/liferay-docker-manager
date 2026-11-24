@@ -234,6 +234,63 @@ class AStatefulPackageIsUnchanged(_PackageHarness):
             self.assertEqual(raised.exception.code, 1)
 
 
+class ADeployDirTheBootConsumedIsRefused(_PackageHarness):
+    """Liferay's auto-deploy empties `deploy/` once the portal boots, and a
+    stateless package carries no database, so the fragments `ldm link` staged
+    there are simply gone. ldm-cx-samples' package shipped an empty `deploy/`
+    and said nothing; packaging such a project is now refused."""
+
+    def link_workspace(self, fragments, deploy=None):
+        import zipfile
+
+        workspace = self.base / "workspace"
+        for name in fragments:
+            path = workspace / "fragments" / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(path, "w") as z:
+                z.writestr("liferay-deploy-fragments.json", "{}")
+        for name, data in (deploy or {}).items():
+            path = workspace / "deploy" / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        meta = self.manager.read_meta(self.root)
+        meta["workspace_path"] = str(workspace)
+        self.manager.write_meta(self.root, meta)
+
+    def test_a_consumed_fragment_collection_is_refused_by_name(self):
+        # `my-fragments.zip` is still in deploy/ (see ASSETS); the other is not.
+        self.link_workspace(["my-fragments.zip", "consumed-fragments.zip"])
+        with (
+            patch("ldm_core.ui.UI.error") as said,
+            self.assertRaises(SystemExit) as raised,
+        ):
+            self.package(stateless=True)
+        self.assertEqual(raised.exception.code, 1)
+        message = str(said.call_args.args[0])
+        self.assertIn("consumed-fragments.zip", message)
+        self.assertNotIn("my-fragments.zip", message)
+        self.assertFalse((self.out / "demo.ldmp").exists())
+
+    def test_a_workspace_deploy_file_that_was_consumed_is_refused(self):
+        self.link_workspace([], deploy={"my-module.jar": b"jar"})
+        with self.assertRaises(SystemExit):
+            self.package(stateless=True)
+
+    def test_everything_still_in_deploy_packages(self):
+        self.link_workspace(["my-fragments.zip"])
+        pkg = self.package(stateless=True)
+        self.assertIn("deploy/my-fragments.zip", _payload_names(pkg))
+
+    def test_a_licence_is_never_expected(self):
+        """A licence is never shipped (LDM-#2443), so its loss is no loss."""
+        self.link_workspace([], deploy={"activation-key.xml": LICENCE})
+        self.package(stateless=True)
+
+    def test_an_unlinked_project_is_not_checked(self):
+        (self.root / "deploy" / "my-fragments.zip").unlink()
+        self.package(stateless=True)
+
+
 class TheKindIsReadSafely(unittest.TestCase):
     def test_a_manifest_without_the_field_is_stateful(self):
         self.assertEqual(package_kind({"tag": "2026.q1.4-lts"}), STATEFUL)

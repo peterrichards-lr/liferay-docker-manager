@@ -411,6 +411,14 @@ class ProjectSetupStage(PipelineStage):
             project_meta["tag"] = manifest["tag"]
         if manifest.get("db_type"):
             project_meta["db_type"] = manifest["db_type"]
+        # `--db` on `link`/`import` of a workspace. Only the run pipeline
+        # persisted it, so `ldm link --db postgresql --no-run` recorded no
+        # engine, and `ldm package --stateless` -- built without a boot by
+        # design -- wrote `"db_type": null` into a manifest `--samples` reads
+        # (LDM-#2492). A package's own manifest is left to decide for itself.
+        cli_db = getattr(manager.args, "db", None)
+        if cli_db and not is_ldmp:
+            project_meta["db_type"] = cli_db
 
         self._carry_compatibility_claim(manifest, project_meta)
 
@@ -823,11 +831,10 @@ class VolumeSyncStage(PipelineStage):
     discards it in `FinalizationStage` like any other scratch directory.
     """
 
-    def execute(self, context: PipelineContext) -> None:  # noqa: C901, PLR0912, PLR0915
+    def execute(self, context: PipelineContext) -> None:  # noqa: C901, PLR0912
         import os
         import shutil
         import typing
-        import zipfile
         from pathlib import Path
 
         from ldm_core.pipelines.import_pipeline import ImportPipelineContext
@@ -863,29 +870,6 @@ class VolumeSyncStage(PipelineStage):
         # `ExtractionStage`, through the real `is_lcp_workspace`.
         is_cloud = context.get("is_cloud", False)
 
-        def import_zips(search_base, label, target_dir, overwrite=False):
-            count = 0
-            if not search_base.exists():
-                return count
-
-            for zip_path in search_base.glob("**/*.zip"):
-                if "-sources" in zip_path.name or "javadoc" in zip_path.name:
-                    continue
-
-                UI.debug(f"Found {label} ZIP: {zip_path.name}")
-                with zipfile.ZipFile(zip_path, "r") as z:
-                    if z.testzip() is not None:
-                        UI.error(f"{zip_path.name} corrupt.")
-                        continue
-                target_file = target_dir / zip_path.name
-                if target_file.exists() and not overwrite:
-                    UI.debug(f"Skipping existing {label}: {zip_path.name}")
-                    continue
-
-                safe_copy(zip_path, target_file)
-                count += 1
-            return count
-
         # Sync code elements directly
         # Standard structural folders
         UI.detail("Syncing workspace structure and files...")
@@ -918,18 +902,23 @@ class VolumeSyncStage(PipelineStage):
                     elif not dest.exists() or overwrite:
                         safe_copy(item, dest)
 
+        if paths.get("scripts"):
+            self._warn_workspace_scripts(workspace_root / "scripts")
+
         self._sync_environment_configs(context, workspace_root, paths)
 
-        # Handle CEs and Fragments
-        import_zips(
-            workspace_root / "client-extensions",
-            "Extension",
-            paths.get("ce_dir"),
-            overwrite,
-        )
-        import_zips(
-            workspace_root / "fragments", "Fragment", paths.get("ce_dir"), overwrite
-        )
+        # Client extensions and fragments are synced by `_hydrate_from_workspace`
+        # at the end of this stage, and only there. An `import_zips` helper
+        # used to copy them here as well, flat into the project's
+        # `client-extensions/`: it globbed `client-extensions/**/*.zip`, so
+        # every intermediate Gradle output came along -- each site
+        # initializer's `build/liferay-client-extension-build/site-initializer/
+        # site-initializer.zip`, all under one name -- and it copied fragment
+        # collections there too, where nothing deploys a zip that carries no
+        # client-extension descriptor. Hydration already sends fragments to
+        # `deploy/` and client extensions to `osgi/client-extensions/`
+        # (`<cx>/dist/*.zip` and top-level zips only), so the copies were pure
+        # debris, shipped in every package.
 
         # Modules and Themes
         for search_folder in ["modules", "themes"]:
@@ -998,6 +987,40 @@ class VolumeSyncStage(PipelineStage):
             manager.workspace._hydrate_from_workspace(
                 workspace_root, paths, overwrite=overwrite
             )
+
+    @staticmethod
+    def _warn_workspace_scripts(scripts_src) -> list[str]:
+        """Name every file a workspace `scripts/` puts in the project (LDM-#2533).
+
+        The project's `scripts/` is mounted at `/mnt/liferay/scripts`
+        (`handlers/composer.py`), and the Liferay image's entrypoint runs every
+        script there before the portal starts. A workspace `scripts/` very
+        often holds developer tooling instead -- build and release helpers --
+        and LDM used to copy it in silently, so that tooling ran inside the
+        container on every boot, and, via `ldm package`, on every importer's.
+
+        Warned, not refused: entrypoint hooks are a legitimate use of the
+        directory, and refusing would break the projects that rely on it.
+        Returns the names warned about, relative to `scripts/`.
+        """
+        if not scripts_src.is_dir():
+            return []
+        names = sorted(
+            f.relative_to(scripts_src).as_posix()
+            for f in scripts_src.rglob("*")
+            if f.is_file()
+        )
+        if names:
+            UI.warning(
+                f"The workspace's scripts/ was copied into the project "
+                f"({len(names)} file{'s' if len(names) != 1 else ''}): "
+                f"{', '.join(names)}. Liferay's entrypoint EXECUTES every "
+                "script in scripts/ inside the container before the portal "
+                "starts, and 'ldm package' ships them to everyone who imports "
+                "the project. If these are developer tools rather than "
+                "container start-up hooks, move them out of scripts/."
+            )
+        return names
 
     @staticmethod
     def _sync_environment_configs(context, workspace_root, paths) -> None:
@@ -1310,8 +1333,13 @@ class ImportPipeline(Pipeline):
                 PackageVerificationStage(),
                 ProjectSetupStage(),
                 DatabaseRestoreStage(),
-                VolumeSyncStage(),
+                # Built BEFORE the sync: `--build` is "build, then link", and
+                # the sync copies `<cx>/dist/*.zip` and `build/libs/*.jar`,
+                # which the build is what produces. PR #497 put this after the
+                # sync, so on a clean checkout `ldm link --build` built the
+                # workspace and then linked none of it.
                 BuildWorkspaceStage(),
+                VolumeSyncStage(),
                 FinalizationStage(),
             ],
         )

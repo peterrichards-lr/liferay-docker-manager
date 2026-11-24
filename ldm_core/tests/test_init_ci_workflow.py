@@ -26,6 +26,9 @@ SETUP = ["setup/rebuild.sh", "./scripts/seed.sh --site 'Demo: One' # seed"]
 VERIFY = ["setup/step7-verify.sh", "curl -fsS http://localhost:8080 >/dev/null"]
 
 LDM_COMMANDS = ("link", "wait", "package", "down")
+# A stateless package is built without booting Liferay: nothing to wait for,
+# nothing to stop.
+STATELESS_LDM_COMMANDS = ("link", "package")
 
 RENDER_CASES: dict[str, dict[str, Any]] = {
     "bare": {},
@@ -38,7 +41,19 @@ RENDER_CASES: dict[str, dict[str, Any]] = {
     },
     # LDM-#2493
     "stateless": {"stateless": True},
+    "stateless+project+hooks": {
+        "stateless": True,
+        "project_id": "demo",
+        "setup_steps": SETUP,
+        "verify_steps": VERIFY,
+    },
 }
+
+
+def _expected_commands(case):
+    if RENDER_CASES[case].get("stateless"):
+        return STATELESS_LDM_COMMANDS
+    return LDM_COMMANDS
 
 
 def _render(**kwargs):
@@ -138,7 +153,7 @@ def test_project_reaches_every_ldm_command(case):
     kwargs = RENDER_CASES[case]
     text = _render(**kwargs)
     project = kwargs.get("project_id")
-    for sub in LDM_COMMANDS:
+    for sub in _expected_commands(case):
         tokens = shlex.split(_command_for(text, sub))
         positional = [t for t in tokens[2:] if not t.startswith("-")]
         if sub == "link":
@@ -181,7 +196,9 @@ def test_ldm_commands_parse_with_real_parser(case):
     parser, _ = get_parser()
     text = _render(**RENDER_CASES[case])
     commands = _ldm_commands(text)
-    assert sorted(shlex.split(c)[1] for c in commands) == sorted(LDM_COMMANDS)
+    assert sorted(shlex.split(c)[1] for c in commands) == sorted(
+        _expected_commands(case)
+    )
 
     for command in commands:
         argv = shlex.split(command)[1:]
@@ -196,6 +213,8 @@ def test_ldm_commands_parse_with_real_parser(case):
             assert args.source == "."
             assert args.no_monitor is True
             assert args.build is True
+            # LDM-#2493: only a stateless package is built without a boot.
+            assert args.no_run is bool(RENDER_CASES[case].get("stateless"))
         if argv[0] == "wait":
             assert args.wait_for_deployables is True
         assert args.project == RENDER_CASES[case].get("project_id"), command
@@ -238,6 +257,29 @@ def test_only_a_stateless_scaffold_packages_stateless(case):
     command = _command_for(_render(**RENDER_CASES[case]), "package")
     args = get_parser()[0].parse_args(shlex.split(command)[1:])
     assert args.stateless is bool(RENDER_CASES[case].get("stateless")), command
+
+
+def test_a_stateless_scaffold_never_boots_liferay():
+    """A boot lets Liferay's auto-deploy consume `deploy/`, which a stateless
+    package then ships empty. The stateless workflow links with `--no-run` and
+    packages; it never waits for, or stops, a portal. Hooks still run, between
+    the link and the package."""
+    _, steps = _steps(_render(stateless=True, setup_steps=SETUP, verify_steps=VERIFY))
+    names = [s["name"] for s in steps]
+    assert "Wait for Liferay & Deployments" not in names
+    assert "Stop Liferay Environment" not in names
+    assert "Start Liferay Environment" not in names
+    link = names.index("Build and Link Workspace")
+    package = names.index("Create LDM Package")
+    assert [s["name"] for s in steps[link + 1 : package]] == [
+        f"Setup 1/2: {SETUP[0]}",
+        f"Setup 2/2: {SETUP[1]}",
+        f"Verify 1/2: {VERIFY[0]}",
+        f"Verify 2/2: {VERIFY[1]}",
+    ]
+    link_args = get_parser()[0].parse_args(shlex.split(steps[link]["run"].strip())[1:])
+    assert link_args.no_run is True
+    assert link_args.build is True
 
 
 def test_dispatch_passes_stateless_to_init_ci_and_package():
