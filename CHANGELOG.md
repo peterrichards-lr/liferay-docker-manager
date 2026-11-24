@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.16-pre.1] - 2026-11-24
+
+### Added
+
+- **Stateless packages** (LDM-#2493). `ldm package --stateless` builds an `.ldmp` that carries assets only: `deploy/`, configs, OSGi modules and client extensions, scripts, portal patches and the `client-extensions/` source tree. Importing one deploys it onto a new vanilla instance and skips the database, search and volume restores. A package without a `package_kind` is stateful, exactly as before. `ldm init-ci --stateless` generates a pipeline that packages this way.
+- **Low-disk warning before a remote run** (LDM-#2145). `ldm run` against a remote target warns when the node's Docker engine has less than 3 GB free, and `ldm target status` shows a DISK FREE column.
+- **A package carries the container hostname** (LDM-#2445). `container_hostname` is recorded in the manifest and applied on import.
+- **OAuth client check after import** (LDM-#2446). When a sidecar's OAuth client ID has no match in the restored database, the import ends with a warning naming it, instead of the sidecar failing with 401s later.
+- **`LDM_SEARCH_READY_TIMEOUT`** (LDM-#2109) sets, in seconds, how long LDM waits for shared search to become ready. The default is still 5 minutes.
+
+### Changed
+
+- **The global infrastructure stack runs as Compose project `ldm-infra`** (LDM-#2244), with LDM ownership labels. A stack running under the old `resources` name is migrated automatically.
+- **An existing project is told once when its mode disagrees with an explicit default** (LDM-#2256), instead of silently keeping its own.
+- **The samples pack is refreshed and checksummed** (LDM-#2491), and its manifest is read as JSON (LDM-#2492).
+
+### Fixed
+
+- **Fragment overrides reach the live page through the Headless API** (LDM-#2427). LDM writes the published spec only and never calls `/publish`. On 2025.Q1 to 2026.Q3 it sets `feature.flag.LPD-35443` and `feature.flag.LPD-74328`. A refused update is now a warning carrying Liferay's reason, not a silent fall-through to SQL.
+- **No more 300-second retry on 2026.Q4.0** (LDM-#2497). A refused page-element update is treated as final: LDM warns once, makes one legacy attempt, then uses SQL.
+- **`fix-hosts` suggestions run as printed** (LDM-#2496). LDM suggested one command with several hostnames, which the parser rejected. It now suggests `ldm fix-hosts <project>`, or one command per hostname.
+- **The `--database-mode` suggestion names the real flag** (LDM-#2488). It said `--db-mode`.
+- **`ldm dev-setup --help` prints help** (LDM-#2477) instead of running the bootstrap.
+- **Documented commands parse** (LDM-#2149). Every `ldm` command in the docs is now checked against the real parser, and the 11 that failed are corrected.
+
 ## [v2.26.15] - 2026-11-23
 
 ### Fixed

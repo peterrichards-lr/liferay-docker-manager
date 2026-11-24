@@ -103,6 +103,23 @@ RELEASE_ANNOUNCEMENTS = {
     # LDM-#1663: a patch needs its OWN key, or the banner shows no
     # announcements for it (LDM-#2412); `release.py --promote` refuses a
     # stable X.Y.Z (Z > 0) without one.
+    "2.26.16": [
+        (
+            "ldm package --stateless",
+            "Package assets only and deploy them onto a new vanilla instance "
+            "on import, with no database, search or volume restore.",
+        ),
+        (
+            "ldm target status shows free disk",
+            "A remote run now warns when the node has under 3 GB free, and "
+            "target status shows a DISK FREE column.",
+        ),
+        (
+            "Fragment overrides reach the live page",
+            "The Headless page-element update writes the published page, and a "
+            "refusal is a warning with Liferay's reason, not a silent SQL fallback.",
+        ),
+    ],
     "2.26.15": [
         (
             "ldm system prune is safe on a shared remote node",
