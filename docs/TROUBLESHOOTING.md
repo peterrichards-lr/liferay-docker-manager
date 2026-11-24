@@ -900,12 +900,21 @@ project. `LDM_PROXY_LOG_LEVEL=WARN` is enough to surface it.
 
 ## 🛡️ EDR / SentinelOne Quarantine (lfr-tunnel)
 
-### **Issue: "Failed to verify lfr-tunnel installation after download"**
+### **Issue: the `lfr-tunnel` client is quarantined, or "No lfr-tunnel client found"**
 
-When using `--share` or `ldm share start` with the default `--share-provider lfr-tunnel`, LDM downloads a native host-side Go client executable (`lfr-tunnel`). Because this binary is compiled and downloaded dynamically, corporate Endpoint Detection and Response (EDR) platforms like **SentinelOne** or **Microsoft Defender** may flag it as an unsigned/untrusted executable and quarantine it.
+LDM does not install the `lfr-tunnel` client. With the default
+`--share-provider lfr-tunnel`, `ldm share start` and `ldm run --share` look
+for an installed client at `LDM_LFR_TUNNEL_BIN` (or `LFR_TUNNEL_BIN`),
+`lfr_tunnel_bin` in `~/.ldmrc`, your `PATH`, the endpoint-protection-approved
+`~/liferay/lfr-tunnel/lfr-tunnel` (`lfr-tunnel.exe` on Windows), and the
+legacy `~/.ldm/bin` -- and stop with `No lfr-tunnel client found.` when there
+is none.
 
-This causes the executable to be deleted or blocked immediately after download, resulting in the error:
-`❌ Failed to verify lfr-tunnel installation after download.`
+Corporate Endpoint Detection and Response (EDR) platforms like
+**SentinelOne** or **Microsoft Defender** may quarantine a client binary
+installed anywhere else. Install it with the client's own installer to
+`~/liferay/lfr-tunnel/lfr-tunnel`, the path endpoint protection is configured
+to allow. A different binary in `~/.ldm/bin` is reported and never run.
 
 ### **Solution: Use the Containerized Provider (`lfr-tunnel-docker`)**
 
@@ -923,6 +932,17 @@ Alternatively, if you are sharing a running project using `ldm share start`, exp
 ```bash
 ldm share start <project> --provider lfr-tunnel-docker --subdomain <subdomain>
 ```
+
+### **Issue: a native tunnel fails and the log shown is old or missing**
+
+Current clients write their background log to
+`~/.lfr-tunnel/logs/client-<subdomain>.log`; LDM used to read the pre-move
+`~/.lfr-tunnel/client-<subdomain>.log`, which is never updated again, so it
+showed a log from an earlier run or nothing. LDM now reads the path the client
+announces, then the current location, then the old one, and prints which file
+it read and when it was last modified. If that timestamp is not from your run,
+the client did not get far enough to write a log -- run it directly with
+`lfr-tunnel -subdomain <subdomain>` to see its output.
 
 ---
 
@@ -981,4 +1001,4 @@ Projects are discovered from the current folder, its parent, `~/ldm`, the LDM in
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*
+*Last Updated: 2026-11-24* | *Last Reviewed: 2026-11-24*

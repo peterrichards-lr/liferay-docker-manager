@@ -385,7 +385,9 @@ ldm system init-ci --trigger tag \
     --verify-step "setup/step7-verify.sh"
 ```
 
-The workflow pins the LDM version that generated it. To upgrade, run
+The workflow pins the LDM version that generated it, installing that
+version's `ldm-linux` release binary after checking it against the release's
+`checksums.txt`. To upgrade, run
 `init-ci` again from the newer LDM with the same `--setup-step` and
 `--verify-step` flags.
 
@@ -870,4 +872,4 @@ ldm target migrate win-wsl node-a
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*
+*Last Updated: 2026-11-24* | *Last Reviewed: 2026-11-24*

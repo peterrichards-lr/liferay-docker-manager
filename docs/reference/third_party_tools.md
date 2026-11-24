@@ -58,7 +58,7 @@ To build trust and provide transparency to developers, this document details eve
 
 ### 7. lfr-tunnel (Secure Tunneling Utility)
 
-* **Why it is needed**: Enables secure routing of public traffic from wildcard subdomains (`*.lfr-demo.se` and `*.lfr-demo.online`) to local Liferay/LDM stacks or containers. When developers run `ldm share` or start runtime instances with the `--share` flag, LDM downloads and manages the `lfr-tunnel` binary on the host to bridge traffic securely.
+* **Why it is needed**: Enables secure routing of public traffic from wildcard subdomains (`*.lfr-demo.se` and `*.lfr-demo.online`) to local Liferay/LDM stacks or containers. When developers run `ldm share` or start runtime instances with the `--share` flag, LDM runs an `lfr-tunnel` client you have installed (it does not install one; the client upgrades itself), or the `peterjrichards/lfr-tunnel` image with `--share-provider lfr-tunnel-docker`.
 * **Optionality**: Optional. If not installed, you can still develop and access stacks locally on `localhost`. Running share commands will automatically download the binary.
 
 ---
@@ -75,4 +75,4 @@ To build trust and provide transparency to developers, this document details eve
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-08-05* | *Last Reviewed: 2026-07-02*
+*Last Updated: 2026-11-24* | *Last Reviewed: 2026-11-24*

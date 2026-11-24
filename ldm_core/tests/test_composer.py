@@ -35,6 +35,11 @@ class MockComposerManager:
             "lfr-demo.se",
         ]
         self.share.get_default_tunnel_domain.return_value = "lfr-demo.online"
+        # LDM-#2505 / #2503: unpinned, no vanity domain -- the ordinary share.
+        # The real decisions are driven against a real ShareService in
+        # test_share_tunnel_audit.py.
+        self.share.sidecar_gateway_pin.return_value = None
+        self.share.requested_custom_domain.return_value = None
         self.share.resolve_tunnel_gateway_url.side_effect = lambda share_domain: (
             "https://tunnel."
             + (
@@ -760,6 +765,10 @@ class TestComposerService(unittest.TestCase):
         self.manager.args.share_subdomain = "my-sub"
         self.manager.args.share_image = "custom/lfr-tunnel:latest"
         self.manager.share._get_auth_token.return_value = "my-token"
+        # LDM-#2505: the user asked for this gateway (preset env / --share-domain).
+        self.manager.share.sidecar_gateway_pin.return_value = (
+            "https://tunnel.lfr-demo.se"
+        )
 
         import os
 
@@ -796,10 +805,13 @@ class TestComposerService(unittest.TestCase):
                         "./lfr-tunnel -ports 8080 2>&1 | tee /opt/liferay/logs/lfr-tunnel.log",
                     ],
                 )
-                self.assertIn(
-                    "LFT_CLIENT_TOKEN=${LFT_CLIENT_TOKEN:-my-token}",
-                    tunnel_service["environment"],
+                # LDM-#2505: named, never valued -- Compose reads it from the
+                # environment LDM exports it into.
+                self.assertIn("LFT_CLIENT_TOKEN", tunnel_service["environment"])
+                self.assertNotIn(
+                    "my-token", " ".join(map(str, tunnel_service["environment"]))
                 )
+                self.manager.share.export_sidecar_token.assert_called_with("my-token")
                 self.assertIn("LFT_TARGET_HOST=liferay", tunnel_service["environment"])
                 self.assertIn("LFT_PRESERVE_HOST=true", tunnel_service["environment"])
                 self.assertIn(
@@ -807,7 +819,7 @@ class TestComposerService(unittest.TestCase):
                     tunnel_service["environment"],
                 )
                 self.assertIn(
-                    "LFT_CLIENT_SERVER=${LFT_SERVER_URL:-https://tunnel.lfr-demo.se}",
+                    "LFT_CLIENT_SERVER=https://tunnel.lfr-demo.se",
                     tunnel_service["environment"],
                 )
                 self.assertNotIn("ports", tunnel_service)
@@ -1048,6 +1060,10 @@ class TestComposerService(unittest.TestCase):
         self.manager.args.share_subdomain = "my-sub"
         self.manager.args.share_domain = "lfr-demo.se"
         self.manager.share._get_auth_token.return_value = "my-token"
+        # LDM-#2505: the user asked for this gateway (preset env / --share-domain).
+        self.manager.share.sidecar_gateway_pin.return_value = (
+            "https://tunnel.lfr-demo.se"
+        )
 
         with (
             patch.object(
@@ -1065,7 +1081,7 @@ class TestComposerService(unittest.TestCase):
             self.assertIn("lfr-tunnel", compose["services"])
             tunnel_service = compose["services"]["lfr-tunnel"]
             self.assertIn(
-                "LFT_CLIENT_SERVER=${LFT_SERVER_URL:-https://tunnel.lfr-demo.se}",
+                "LFT_CLIENT_SERVER=https://tunnel.lfr-demo.se",
                 tunnel_service["environment"],
             )
 

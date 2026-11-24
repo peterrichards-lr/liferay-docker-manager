@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import ClassVar
 
+from ldm_core.constants import LFR_TUNNEL_IMAGE_LATEST
 from ldm_core.ui import UI
 from ldm_core.utils import (
     dict_to_yaml,
@@ -538,57 +539,62 @@ class ComposerService:
 
         return active
 
-    def _update_tunnel_env_file(
-        self, project_name, meta, subdomain, token, server_url, share_domain
-    ):
+    def _update_tunnel_env_file(self, project_name, meta, subdomain, share_domain):
+        """Writes the sidecar's non-secret settings to the project's `.env`.
+
+        LDM-#2505: never the token, and never a gateway. The token used to be
+        written here in plain text, in a folder people zip, share and commit;
+        it now reaches `docker compose` through the environment only (see
+        `ShareService.export_sidecar_token`). `LFT_SERVER_URL` used to be
+        written for every share, pinning the sidecar to one gateway with no
+        region election or failover -- a pin, when asked for, is now emitted
+        in the compose file for that run only. Lines an earlier LDM wrote for
+        either are removed, and the token's removal is announced.
+        """
         import re
         from pathlib import Path
 
-        if hasattr(self.manager, "detect_project_path"):
-            project_path = self.manager.detect_project_path(project_name)
-            if project_path and isinstance(project_path, (str, Path)):
-                if share_domain:
-                    meta["share_domain"] = share_domain
-                    self.manager.write_meta(project_path, meta)
+        if not hasattr(self.manager, "detect_project_path"):
+            return
+        project_path = self.manager.detect_project_path(project_name)
+        if not (project_path and isinstance(project_path, (str, Path))):
+            return
+        if share_domain:
+            meta["share_domain"] = share_domain
+            self.manager.write_meta(project_path, meta)
 
-                env_file = Path(project_path) / ".env"
-                env_content = ""
-                if env_file.exists():
-                    env_content = env_file.read_text()
+        env_file = Path(project_path) / ".env"
+        env_content = env_file.read_text() if env_file.exists() else ""
 
-                if "LFT_SUBDOMAIN=" in env_content:
-                    env_content = re.sub(
-                        r"LFT_SUBDOMAIN=.*",
-                        f"LFT_SUBDOMAIN={subdomain}",
-                        env_content,
-                    )
-                else:
-                    env_content = (
-                        env_content.rstrip() + f"\nLFT_SUBDOMAIN={subdomain}\n"
-                    )
+        if "LFT_SUBDOMAIN=" in env_content:
+            env_content = re.sub(
+                r"LFT_SUBDOMAIN=.*",
+                f"LFT_SUBDOMAIN={subdomain}",
+                env_content,
+            )
+        else:
+            env_content = env_content.rstrip() + f"\nLFT_SUBDOMAIN={subdomain}\n"
 
-                if "LFT_CLIENT_TOKEN=" in env_content:
-                    env_content = re.sub(
-                        r"LFT_CLIENT_TOKEN=.*",
-                        f"LFT_CLIENT_TOKEN={token}",
-                        env_content,
-                    )
-                else:
-                    env_content = env_content.rstrip() + f"\nLFT_CLIENT_TOKEN={token}\n"
+        env_content, token_lines = re.subn(
+            r"^LFT_CLIENT_TOKEN=.*(?:\n|$)", "", env_content, flags=re.MULTILINE
+        )
+        env_content, pin_lines = re.subn(
+            r"^LFT_SERVER_URL=.*(?:\n|$)", "", env_content, flags=re.MULTILINE
+        )
 
-                if server_url:
-                    if "LFT_SERVER_URL=" in env_content:
-                        env_content = re.sub(
-                            r"LFT_SERVER_URL=.*",
-                            f"LFT_SERVER_URL={server_url}",
-                            env_content,
-                        )
-                    else:
-                        env_content = (
-                            env_content.rstrip() + f"\nLFT_SERVER_URL={server_url}\n"
-                        )
+        env_file.write_text(env_content.strip() + "\n")
 
-                env_file.write_text(env_content.strip() + "\n")
+        if token_lines:
+            UI.info(
+                f"Removed the plain-text LFT_CLIENT_TOKEN from {env_file}. The "
+                "tunnel token is now read from your keyring and passed to the "
+                "sidecar at start-up, never written to the project."
+            )
+        if pin_lines:
+            UI.detail(
+                f"Removed LFT_SERVER_URL from {env_file}: the sidecar is no "
+                "longer pinned to one gateway unless you ask for one."
+            )
 
     def write_docker_compose(  # noqa: C901, PLR0912, PLR0915
         self, paths, meta, liferay_env=None, target_context=None
@@ -1887,7 +1893,6 @@ class ComposerService:
                     or meta.get("share_subdomain")
                     or project_name
                 )
-                import os
 
                 share_domain = getattr(
                     self.manager.args, "share_domain", None
@@ -1895,17 +1900,21 @@ class ComposerService:
                 if not share_domain:
                     _, share_domain = self.manager.share.resolve_share_config(meta)
 
-                server_url = os.environ.get("LFT_SERVER_URL")
-                if not server_url and share_domain:
-                    # LDM-#1077: the gateway itself is always a real Liferay
-                    # base domain -- a custom vanity domain is public-URL-only.
-                    server_url = self.manager.share.resolve_tunnel_gateway_url(
-                        share_domain
-                    )
+                # LDM-#2505: pinned only when the user asked for a gateway --
+                # the native path's LDM-#1569 rule. A pinned client gets no
+                # region election and no failover.
+                share_service = self.manager.share
+                pinned_url = share_service.sidecar_gateway_pin()
+                # LDM-#2503: a vanity domain must be requested, not merely
+                # announced.
+                custom_domain = share_service.requested_custom_domain(share_domain)
 
                 self._update_tunnel_env_file(
-                    project_name, meta, subdomain, token, server_url, share_domain
+                    project_name, meta, subdomain, share_domain
                 )
+                # LDM-#2505: the token travels through this process's
+                # environment to `docker compose`, never through a file.
+                share_service.export_sidecar_token(token)
 
                 share_inspector = (
                     getattr(self.manager.args, "share_inspector", False) is True
@@ -1913,30 +1922,25 @@ class ComposerService:
                 )
 
                 lfr_env = [
-                    f"LFT_CLIENT_TOKEN=${{LFT_CLIENT_TOKEN:-{token}}}",
+                    # Bare name: Compose takes the value from its own
+                    # environment, so the token is in neither the compose file
+                    # nor .env.
+                    "LFT_CLIENT_TOKEN",
                     "LFT_TARGET_HOST=liferay",
                     f"LFT_CLIENT_SUBDOMAIN=${{LFT_SUBDOMAIN:-{subdomain}}}",
                     "LFT_PRESERVE_HOST=true",
                 ]
                 lfr_env.append("LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}")
 
-                if server_url:
-                    lfr_env.append(
-                        f"LFT_CLIENT_SERVER=${{LFT_SERVER_URL:-{server_url}}}"
-                    )
-                else:
-                    # LDM-#1077: dynamic default, not a hardcoded literal --
-                    # honors a ~/.ldmrc "tunnel_base_domains" override for
-                    # self-hosted Liferay Tunnel deployments.
-                    default_gateway = self.manager.share.get_default_tunnel_domain()
-                    lfr_env.append(
-                        f"LFT_CLIENT_SERVER=${{LFT_SERVER_URL:-https://tunnel.{default_gateway}}}"
-                    )
+                if pinned_url:
+                    lfr_env.append(f"LFT_CLIENT_SERVER={pinned_url}")
+                if custom_domain:
+                    lfr_env.append(f"LFT_CLIENT_CUSTOM_DOMAIN={custom_domain}")
 
                 image = (
                     getattr(self.manager.args, "share_image", None)
                     or meta.get("share_image")
-                    or "peterjrichards/lfr-tunnel:latest"
+                    or LFR_TUNNEL_IMAGE_LATEST
                 )
 
                 from ldm_core.utils import sanitize_id

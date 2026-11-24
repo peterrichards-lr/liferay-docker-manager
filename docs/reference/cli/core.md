@@ -527,13 +527,30 @@ By default `ldm package` takes a fresh snapshot and packages it: a **stateful**
 package. With `--stateless` it takes no snapshot, and nothing needs to be
 running. It packages the project's assets and declares
 `"package_kind": "stateless"` in the manifest. The assets are
-`osgi/client-extensions/`, the whole `client-extensions/` tree (so container
-extensions keep the `Dockerfile` and `LCP.json` their microservice is built
-from), `deploy/`, `osgi/modules/`, `osgi/configs/`,
-`configs/`, `files/portal-ext.properties`, `scripts/`, `portal-patches/` and
-`.ldm/fragment-overrides.json`. The package has no database dump, `data/`,
-`osgi/state`, `snapshots/` or search snapshot. Importing it gives a vanilla
-instance with those assets deployed.
+`osgi/client-extensions/`, `client-extensions/`, `deploy/`, `osgi/modules/`,
+`osgi/configs/`, `configs/`, `files/portal-ext.properties`, `scripts/`,
+`portal-patches/` and `.ldm/fragment-overrides.json`. The package has no
+database dump, `data/`, `osgi/state`, `snapshots/` or search snapshot.
+Importing it gives a vanilla instance with those assets deployed.
+
+Client extensions are packaged so that each one ships once and none deploys
+too early:
+
+- **Each extension's zip ships once.** A container extension, one with a
+  `Dockerfile` that is not an LCP `kind: Job`, also ships its whole expanded
+  `client-extensions/<name>/` folder, because its microservice is built from
+  it. Any other extension whose zip is in the package ships only the
+  descriptors from that folder: `client-extension.yaml`, `LCP.json`,
+  `*.client-extension-config.json` and `Dockerfile`. Those are the only files
+  LDM reads there, so a site initializer's images are no longer packaged
+  twice.
+- **Site initializers are held back.** A site initializer is packaged in
+  `.ldm/deferred-client-extensions/`, not `osgi/client-extensions/`. That
+  includes one `ldm link` has parked there because the portal has not been
+  healthy yet. On the consumer's machine, Liferay starts without it, and
+  `ldm run` or `ldm wait` deploys it once the portal is healthy. Present at
+  first boot against an empty database, it fails silently and creates no
+  site.
 
 | | Stateful (default) | Stateless (`--stateless`) |
 | --- | --- | --- |
@@ -547,7 +564,9 @@ A manifest without `package_kind` is stateful, so every existing package
 imports exactly as before. Both kinds keep the payload in a top-level
 `files.tar.gz`, laid out relative to the project root. That is the member
 LDM v2.26.x `--samples` reads, so a samples pack built with `--stateless`
-works there too.
+works there too. Its site initializers are held back there as well, because
+every LDM since v2.23.0 deploys what it finds in
+`.ldm/deferred-client-extensions/` once the portal is ready.
 
 ### What a package leaves out
 
@@ -1079,4 +1098,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*
+*Last Updated: 2026-11-24* | *Last Reviewed: 2026-11-24*

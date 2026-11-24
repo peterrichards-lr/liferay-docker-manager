@@ -17,12 +17,19 @@ LDM supports two distinct tunneling providers:
 `lfr-tunnel` is a lightweight, host-side Go client that routes traffic from public wildcard subdomains (`*.lfr-demo.se` and `*.lfr-demo.online`) directly to your local ports.
 
 - **Pros**: Runs natively on the host, lowest CPU overhead, supports wildcard routing.
-- **Requirements**: LDM automatically downloads and updates the binary on the first invocation.
+- **Requirements**: an installed `lfr-tunnel` client. LDM does not install
+  or update one -- the client is distributed by its own project and upgrades
+  itself (`lfr-tunnel -upgrade`). LDM looks for it, in order, at
+  `LDM_LFR_TUNNEL_BIN` (or `LFR_TUNNEL_BIN`), `lfr_tunnel_bin` in `~/.ldmrc`,
+  your `PATH`, the endpoint-protection-approved location
+  `~/liferay/lfr-tunnel/lfr-tunnel` (`lfr-tunnel.exe` on Windows), and
+  finally the legacy `~/.ldm/bin`. If none is found, `ldm share start` stops
+  with `No lfr-tunnel client found.` and says where to install it.
 
 > [!WARNING]
-> **EDR / SentinelOne Quarantine:** Because `lfr-tunnel` (host-side) is a Go binary downloaded dynamically to the host, corporate endpoint protection tools (such as SentinelOne) may flag it as an untrusted threat and quarantine it. This will prevent LDM from starting the tunnel and cause the error: `❌ Failed to verify lfr-tunnel installation after download.`
+> **EDR / SentinelOne Quarantine:** Corporate endpoint protection (such as SentinelOne) may quarantine an `lfr-tunnel` binary it does not recognise. Install the client with its own installer to `~/liferay/lfr-tunnel/lfr-tunnel` -- the path endpoint protection is configured to allow -- rather than anywhere else. LDM never runs a different binary it finds in the legacy `~/.ldm/bin`; it names it and moves on.
 >
-> **The Solution:** If you encounter EDR interference, use the **`lfr-tunnel-docker`** (Zero-Install) provider instead. It runs the exact same client inside the isolated project Docker Compose network, bypassing host-level EDR checks entirely. Set it via `--share-provider lfr-tunnel-docker` on startup:
+> **The Solution:** If you cannot install a host binary at all, use the **`lfr-tunnel-docker`** (Zero-Install) provider instead. It runs the exact same client inside the isolated project Docker Compose network, bypassing host-level EDR checks entirely. Set it via `--share-provider lfr-tunnel-docker` on startup:
 >
 > ```bash
 > ldm run <project> --share --share-provider lfr-tunnel-docker --share-subdomain pjrtest
@@ -35,6 +42,16 @@ Runs the exact same `lfr-tunnel` client, but completely isolated as a service si
 - **Pros**: 100% immune to SentinelOne/EDR host-level alerts that block unknown Go binaries on macOS/Windows. Runs in sync with the project's lifecycle (`ldm run` / `ldm stop`), requiring zero manual background process management.
 - **Resource Constraints**: Optimized to consume absolute minimal resources (CPU is restricted to a maximum of `0.10` cores with `0.05` reservations, and memory is bound to a maximum of `50M` with `20M` reservations).
 - **Direct Tomcat Bypass**: Directly connects to the `liferay` container internally on Tomcat's port `8080` (rather than routing through the Traefik proxy), which resolves Host header/Virtual Host url conflicts for external redirect services.
+- **Image**: `peterjrichards/lfr-tunnel:latest` unless you pass `--share-image`.
+- **Token**: never written to the project. The compose file names
+  `LFT_CLIENT_TOKEN` without a value, and LDM supplies it from your keyring
+  (or wherever `ldm share` found it) through the environment when it starts
+  the stack. A project's `.env` used to carry the token in plain text; LDM
+  removes that line the next time it configures the sidecar, and says so.
+  Starting the sidecar with a bare `docker compose up` therefore needs
+  `LFT_CLIENT_TOKEN` exported in your shell.
+- **Gateway**: not pinned, so the client elects the nearest gateway and fails
+  over -- the same rule as the native client (see *Pinning a gateway* below).
 
 #### Conceptual Flow
 
@@ -145,9 +162,11 @@ rather than requiring you to know which is which:
 | `dev.example.com` | a custom vanity domain | `<subdomain>.dev.example.com`, no pin |
 | `default` | the standard gateway | `<subdomain>.lfr-demo.online`, ignoring any stored domain |
 
-A custom vanity domain only affects the **public URL**; the client always
-dials a real Liferay gateway, and the domain must be registered and approved
-in the Liferay Tunnel portal before it will resolve.
+For a custom vanity domain the client still dials a real Liferay gateway,
+and LDM asks that gateway for your domain: the native client is started with
+`-domain dev.example.com`, the `lfr-tunnel-docker` sidecar is given
+`LFT_CLIENT_CUSTOM_DOMAIN`. The domain must be registered and approved in the
+Liferay Tunnel portal before the gateway will serve it (LDM-#2503).
 
 ### Asking for the standard gateway
 
@@ -225,7 +244,24 @@ Three properties are deliberate:
 and suppresses the fetch entirely. That remains the mechanism for a
 self-hosted Liferay Tunnel gateway, whose names LDM has no way to discover --
 the fetch goes to the gateway the seed names, or to an explicitly pinned one
-(`LFT_SERVER_URL`).
+(`LFT_SERVER_URL` -- see below).
+
+### Pinning a gateway
+
+By default nothing is pinned, for either provider: the client elects the
+nearest gateway and fails over if it stops. Pinning is an explicit opt-out of
+both, and LDM pins only when you ask for it:
+
+- a known gateway named on the command line (`--domain lfr-demo.se`, or
+  `--share-domain` on `ldm run`), or
+- `LFT_SERVER_URL`, `LFT_CLIENT_SERVER` or `LFT_SERVER` set in the environment
+  LDM runs in.
+
+A domain merely remembered in a project's `meta` or in `~/.ldmrc` is not a
+request, and LDM warns whenever a run is pinned. The `lfr-tunnel-docker`
+sidecar used to be pinned on every share and to persist `LFT_SERVER_URL` in
+the project's `.env`; it follows the same rule now, and LDM removes that
+line (LDM-#2505).
 
 > [!NOTE]
 > Answering the interactive "Choose sharing domain" prompt stores your answer
@@ -259,6 +295,37 @@ flag, the project's `meta` or `~/.ldmrc` that holds one.
 `status` resolves nothing and writes nothing. It will not prompt for a domain
 the way `share start` does, and will not persist one to `~/.ldmrc`, so reading
 the status can never change what the next share does.
+
+### When a native tunnel fails
+
+LDM prints the client's background log, and names the file and when it was
+last written, so a stale log cannot pass for the current one:
+
+```text
+ℹ  Tunnel log: /Users/you/.lfr-tunnel/logs/client-peters.log (last modified 2026-11-24 10:02:11)
+```
+
+It reads the path the client announces on start (`[Client] Logs: <path>`)
+first, then `~/.lfr-tunnel/logs/client-<subdomain>.log`, then the
+pre-move `~/.lfr-tunnel/client-<subdomain>.log` written by older clients
+(LDM-#2502).
+
+### Client below the gateway's minimum version
+
+If the client is older than the gateway's `min_version`, LDM warns and
+carries on. The gateway gives each user a grace period with an old client;
+once that ends the gateway refuses the connection, and LDM explains the
+refusal and how to upgrade (`lfr-tunnel -upgrade`, or `docker pull
+peterjrichards/lfr-tunnel` for the sidecar) (LDM-#2504).
+
+### Lifecycle hooks
+
+The first native `ldm share start` registers LDM's lifecycle hooks in the
+client's `~/.lfr-tunnel/config.yaml`, so `ldm tunnel-event` hears when a
+gateway is about to stop or has failed over, and says it did so. It merges
+rather than overwrites: a hook you have already set is left exactly as it is,
+a file LDM cannot parse is not touched, and it happens once -- remove a hook
+afterwards and it stays removed (LDM-#2507).
 
 ### Stop a Tunnel
 
@@ -617,11 +684,11 @@ If you are running the `lfr-tunnel` Go executable directly or writing custom scr
 
 ### 3. Background Daemon Control
 
-- **`-background`**: Fork/daemonize the client process into the background. Output logs are redirected to `~/.lfr-tunnel/client.log` and the process ID is tracked in `~/.lfr-tunnel/lfr-tunnel.pid`.
+- **`-background`**: Fork/daemonize the client process into the background. Output is written to `~/.lfr-tunnel/logs/client-<subdomain>.log` (clients before the log move wrote `~/.lfr-tunnel/client-<subdomain>.log`), and the client prints the path as `[Client] Logs: <path>`.
 - **`-status`**: Introspects and outputs the running status/PID of the background daemon.
 - **`-stop`**: Sends a shutdown signal (`SIGINT`) to clean up and close the background tunnel daemon.
-- **`-upgrade`**: Triggers a self-upgrade sequence downloading the latest release binary.
+- **`-upgrade`**: Self-upgrades the client to its latest release.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-17* | *Last Reviewed: 2026-11-17*
+*Last Updated: 2026-11-24* | *Last Reviewed: 2026-11-24*

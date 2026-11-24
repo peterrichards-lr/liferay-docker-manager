@@ -330,7 +330,11 @@ This scaffolds a `.github/workflows/ldm-package-release.yml` file whose job
 runs under `bash` and:
 
 1. Provisions a clean Ubuntu environment.
-2. Installs LDM from PyPI, pinned to the version that generated the file.
+2. Installs LDM, pinned to the version that generated the file: it
+   downloads `ldm-linux` from that version's GitHub release, checks it
+   against the release's `checksums.txt`, installs it as
+   `$HOME/.local/bin/ldm` and adds that directory to `PATH` for the later
+   steps. A binary that fails its checksum stops the job.
 3. Links and builds the checked-out workspace with
    `ldm link . [project] --no-monitor --build --non-interactive`. Without
    `--no-monitor`, `ldm link` ends in the file watcher and the step never
@@ -338,7 +342,8 @@ runs under `bash` and:
 4. Waits for all OSGi modules and Client Extensions to deploy cleanly
    (`ldm wait --wait-for-deployables`).
 5. Runs each `--setup-step`, then each `--verify-step`, in the order given.
-6. Bundles the database and volume into a `.ldmp` package.
+6. Bundles the database and volume into a `.ldmp` package, or only the
+   project's assets with `--stateless`.
 7. Stops the environment with `ldm down`. This step runs even when an
    earlier one failed.
 8. Uploads the package and its checksum as an Actions artifact, and attaches
@@ -375,4 +380,4 @@ after asking, or straight away with `-y`.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*
+*Last Updated: 2026-11-24* | *Last Reviewed: 2026-11-24*

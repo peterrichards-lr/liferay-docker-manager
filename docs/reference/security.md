@@ -176,6 +176,11 @@ LDM integrates Yelp's `detect-secrets` scanner into its pre-commit hook suite to
   .venv/bin/python3 -m pre_commit run detect-secrets --all-files
   ```
 
+- **Release commits**: `scripts/release.py` lets `.secrets.baseline` into a
+  bump or promote commit only when it differs from `HEAD` in nothing but
+  `line_number` and `generated_at` -- the drift caused by adding lines above a
+  recorded finding. Any other change refuses the release, so a newly recorded
+  secret can never ride a release commit (LDM-#2512).
 - **Updating Exceptions**: If a new safe mock key is flagged as a false positive, append it to the baseline:
 
   ```bash
@@ -226,4 +231,4 @@ f7e5b56e5e4e6e94fe5de5424e66fef84be863f385
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*
+*Last Updated: 2026-11-24* | *Last Reviewed: 2026-11-24*

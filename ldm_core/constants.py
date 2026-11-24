@@ -953,3 +953,11 @@ ASCII_TRANSCODE_MAP = {
     "ŧ": "t",
     "Ŧ": "T",
 }
+
+# LDM-#2506: the published lfr-tunnel Docker image. One name, because share.py
+# carried a misspelt copy (`peterrichards`) for its default image and its
+# upgrade hint while the composer and CLI help had the right one -- and the
+# version check that pulls it swallows every failure, so the typo silently
+# disabled that check for the sidecar.
+LFR_TUNNEL_IMAGE = "peterjrichards/lfr-tunnel"
+LFR_TUNNEL_IMAGE_LATEST = f"{LFR_TUNNEL_IMAGE}:latest"

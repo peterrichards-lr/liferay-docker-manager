@@ -188,6 +188,23 @@ def isolate_ldm_home(tmp_path_factory, monkeypatch):
     monkeypatch.setenv("LDM_HOME", str(tmp_path_factory.mktemp("ldm-home")))
 
 
+@pytest.fixture(autouse=True)
+def isolate_lfr_tunnel_hooks(tmp_path_factory, monkeypatch):
+    """Redirects LDM-#2507's hook registration away from the real home.
+
+    `ldm share start` now merges LDM's lifecycle hooks into the client's
+    `~/.lfr-tunnel/config.yaml` and drops a marker in `~/.ldm`. LDM_HOME above
+    would cover both -- except that many share tests run under
+    ``patch.dict(os.environ, {}, clear=True)``, which removes LDM_HOME with
+    everything else, and every one of them reaches `cmd_start`. Patching the
+    single seam both paths come from holds regardless of the environment.
+    Tests about registration itself read the same seam to find the files.
+    """
+    base = tmp_path_factory.mktemp("lfr-tunnel-hooks")
+    paths = (base / ".lfr-tunnel" / "config.yaml", base / ".ldm" / "hooks-marker")
+    monkeypatch.setattr("ldm_core.handlers.share.lfr_tunnel_hook_paths", lambda: paths)
+
+
 # --- LDM-#1409: the Docker boundary -----------------------------------------
 
 _DOCKER_BINARIES = frozenset(

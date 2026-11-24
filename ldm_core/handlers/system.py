@@ -68,6 +68,8 @@ def render_ci_workflow(
     The project argument, when given, is passed to every ldm command; when it
     is not, every command resolves the project from the checkout as before.
     """
+    from ldm_core.constants import GITHUB_REPO_URL
+
     if version is None:
         from ldm_core.constants import VERSION
 
@@ -139,8 +141,14 @@ jobs:
 
       - name: Install LDM
         run: |
-          python -m pip install --upgrade pip
-          pip install liferay-docker-manager=={version}
+          base="{GITHUB_REPO_URL}/releases/download/v{version}"
+          tmp="$(mktemp -d)"
+          curl -fsSL -o "$tmp/ldm-linux" "$base/ldm-linux"
+          curl -fsSL -o "$tmp/checksums.txt" "$base/checksums.txt"
+          (cd "$tmp" && grep -E '[[:space:]][*]?ldm-linux$' checksums.txt | sha256sum -c -)
+          mkdir -p "$HOME/.local/bin"
+          install -m 0755 "$tmp/ldm-linux" "$HOME/.local/bin/ldm"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Start Liferay Environment
         run: |

@@ -159,7 +159,6 @@ def test_header_names_version_and_upgrade_path():
     assert "init-ci" in header
     assert "--setup-step" in header
     assert "--verify-step" in header
-    assert "pip install liferay-docker-manager==9.9.9" in text
 
 
 # --- 2. Never `ldm import <dir>` -------------------------------------------
@@ -287,3 +286,124 @@ def test_render_passes_actionlint(case, tmp_path):
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+# --- 5. Installing LDM ------------------------------------------------------
+#
+# The template ran `pip install liferay-docker-manager=={version}`, and PyPI
+# has no such package, so every scaffolded workflow failed at its first LDM
+# step. It now installs the release binary. The step is EXECUTED here with
+# `curl` stubbed, because a grep for the URL passes against a script that
+# cannot run.
+
+_CURL_STUB = """#!/usr/bin/env bash
+# Records the URL and serves the matching fixture for `curl -fsSL -o OUT URL`.
+out=""; url=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -*) shift ;;
+    *) url="$1"; shift ;;
+  esac
+done
+echo "$url" >> "$FIXTURES/curl.log"
+cp "$FIXTURES/$(basename "$url")" "$out"
+"""
+
+
+def _install_step(text):
+    _, steps = _steps(text)
+    return next(s for s in steps if s["name"] == "Install LDM")
+
+
+def _run_install(tmp_path, tamper=False):
+    import hashlib
+
+    if not shutil.which("sha256sum"):
+        pytest.skip("sha256sum not available")
+    fixtures = tmp_path / "fixtures"
+    stubs = tmp_path / "stubs"
+    home = tmp_path / "home"
+    for d in (fixtures, stubs, home):
+        d.mkdir()
+    # Installed as `ldm` with mode 0755 but never run: `ldm` is a watched
+    # name (LDM-#1899), and the step deliberately does not execute it.
+    binary = b"not a real binary\n"
+    (fixtures / "ldm-linux").write_bytes(binary)
+    digest = hashlib.sha256(b"tampered" if tamper else binary).hexdigest()
+    (fixtures / "checksums.txt").write_text(
+        f"{'0' * 64}  ldm-macos-arm64\n{digest}  ldm-linux\n"
+    )
+    curl = stubs / "curl"
+    curl.write_text(_CURL_STUB)
+    # lint: executable-stub -- bash must exec it to run the install step offline; "curl" is not a watched name
+    curl.chmod(0o755)
+    github_path = tmp_path / "github_path"
+    github_path.touch()
+
+    step = _install_step(_render())
+    env = {
+        "PATH": f"{stubs}{os.pathsep}{os.environ['PATH']}",
+        "HOME": str(home),
+        "GITHUB_PATH": str(github_path),
+        "FIXTURES": str(fixtures),
+        **{k: str(v) for k, v in step.get("env", {}).items()},
+    }
+    result = subprocess.run(  # nosec B603 B607
+        ["bash", "-e", "-o", "pipefail", "-c", step["run"]],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        env=env,
+        check=False,
+    )
+    return result, home, github_path, fixtures
+
+
+def test_ldm_is_not_installed_from_pypi():
+    text = _render()
+    assert "pip install liferay-docker-manager" not in text
+
+
+def test_the_release_binary_is_installed_and_put_on_path(tmp_path):
+    from ldm_core.constants import GITHUB_REPO_URL
+
+    result, home, github_path, fixtures = _run_install(tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    installed = home / ".local" / "bin" / "ldm"
+    assert installed.is_file()
+    assert os.access(installed, os.X_OK)
+    assert github_path.read_text().split() == [str(home / ".local" / "bin")]
+    assert installed.read_bytes() == (fixtures / "ldm-linux").read_bytes()
+    base = f"{GITHUB_REPO_URL}/releases/download/v9.9.9"
+    assert (fixtures / "curl.log").read_text().split() == [
+        f"{base}/ldm-linux",
+        f"{base}/checksums.txt",
+    ]
+
+
+def test_a_binary_that_fails_its_checksum_is_not_installed(tmp_path):
+    result, home, github_path, _ = _run_install(tmp_path, tamper=True)
+    assert result.returncode != 0
+    assert not (home / ".local" / "bin" / "ldm").exists()
+    assert github_path.read_text() == ""
+
+
+def test_nothing_shipped_points_at_pypi():
+    """LDM is not on PyPI. The `ldm upgrade` no-binary tip and the docs for
+    the template also sent users there."""
+    repo = Path(__file__).resolve().parents[2]
+    pattern = re.compile(r"pip install[^\n'\"]*liferay-docker-manager|from PyPI", re.I)
+    sources = [
+        p
+        for p in (repo / "ldm_core").rglob("*.py")
+        if "tests" not in p.relative_to(repo).parts
+    ]
+    sources += list((repo / "docs").rglob("*.md"))
+    offenders = [
+        f"{p.relative_to(repo)}:{n}"
+        for p in sources
+        for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+        if pattern.search(line)
+    ]
+    assert offenders == []
