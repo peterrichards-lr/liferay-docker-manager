@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Docker share sidecar starts again** (LDM-#2505). pre.1 stopped giving the `lfr-tunnel-docker` sidecar a gateway unless you pinned one, but the published image has none built in, so the sidecar exited at startup with "No tunnel server configured". It now always gets one: the gateway you pinned, else the one its share domain resolves to. The token still never goes into `.env`.
 - **A stateless package can no longer silently lose `deploy/`** (LDM-#2493). Liferay's auto-deploy consumes `deploy/` at boot, so packaging a linked project after `ldm run` shipped without its fragment collections. `ldm package --stateless` now refuses and names the missing files; package before booting (`ldm link --no-run`, then `ldm package --stateless`).
 - **`ldm system init-ci --stateless` never boots Liferay** (LDM-#2493). The generated workflow links with `--no-run --build` and packages straight away, so it needs no licence and no wait. The stateful workflow is unchanged.
 - **`ldm link --build` builds before it links.** The workspace was synced before the build, so on a clean checkout nothing built was linked. This was a regression in both kinds of workflow.

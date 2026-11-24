@@ -248,9 +248,9 @@ the fetch goes to the gateway the seed names, or to an explicitly pinned one
 
 ### Pinning a gateway
 
-By default nothing is pinned, for either provider: the client elects the
-nearest gateway and fails over if it stops. Pinning is an explicit opt-out of
-both, and LDM pins only when you ask for it:
+By default the native client is not pinned: it elects the nearest gateway and
+fails over if it stops. Pinning is an explicit opt-out of both, and LDM pins it
+only when you ask for it:
 
 - a known gateway named on the command line (`--domain lfr-demo.se`, or
   `--share-domain` on `ldm run`), or
@@ -258,10 +258,15 @@ both, and LDM pins only when you ask for it:
   LDM runs in.
 
 A domain merely remembered in a project's `meta` or in `~/.ldmrc` is not a
-request, and LDM warns whenever a run is pinned. The `lfr-tunnel-docker`
-sidecar used to be pinned on every share and to persist `LFT_SERVER_URL` in
-the project's `.env`; it follows the same rule now, and LDM removes that
-line (LDM-#2505).
+request, and LDM warns whenever a run is pinned.
+
+The `lfr-tunnel-docker` sidecar is always given a gateway
+(`LFT_CLIENT_SERVER`): the one you pinned, else the one its share domain
+resolves to. The published image has no gateway built in, so a sidecar with
+none exits at startup. Failover for the sidecar needs the client's bootstrap
+setting, which LDM will use once the image in use supports it. LDM no longer
+writes `LFT_SERVER_URL` to the project's `.env`, and removes a line left by an
+earlier version (LDM-#2505).
 
 > [!NOTE]
 > Answering the interactive "Choose sharing domain" prompt stores your answer

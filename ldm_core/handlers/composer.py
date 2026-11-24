@@ -1900,9 +1900,9 @@ class ComposerService:
                 if not share_domain:
                     _, share_domain = self.manager.share.resolve_share_config(meta)
 
-                # LDM-#2505: pinned only when the user asked for a gateway --
-                # the native path's LDM-#1569 rule. A pinned client gets no
-                # region election and no failover.
+                # LDM-#2505: the gateway the user asked for, if any. Unlike the
+                # native client, the sidecar cannot run unpinned yet -- see
+                # below.
                 share_service = self.manager.share
                 pinned_url = share_service.sidecar_gateway_pin()
                 # LDM-#2503: a vanity domain must be requested, not merely
@@ -1932,8 +1932,19 @@ class ComposerService:
                 ]
                 lfr_env.append("LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}")
 
-                if pinned_url:
-                    lfr_env.append(f"LFT_CLIENT_SERVER={pinned_url}")
+                # The published image has no gateway of its own (its build
+                # sets no DefaultServerURL), so a sidecar with no server
+                # variable exits at startup with "No tunnel server
+                # configured". It therefore always gets one: the gateway the
+                # user pinned, else the one its share domain resolves to.
+                # Region election and failover need `LFT_CLIENT_BOOTSTRAP`,
+                # which only images after lfr-tunnel v1.52.11 understand, so
+                # switching to it must be gated on the image version (#2536).
+                # Never set both: newer clients refuse that combination.
+                gateway_url = pinned_url or share_service.resolve_tunnel_gateway_url(
+                    share_domain
+                )
+                lfr_env.append(f"LFT_CLIENT_SERVER={gateway_url}")
                 if custom_domain:
                     lfr_env.append(f"LFT_CLIENT_CUSTOM_DOMAIN={custom_domain}")
 
