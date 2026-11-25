@@ -2942,12 +2942,16 @@ class DoctorRunner:
         Schema in docs/reference/cli/system.md. Exit codes match the formatted
         view: 0 when nothing failed (warnings included), 1 otherwise.
         """
+        # Details and hints go through UI.redact, as the trace log does: this
+        # output is made to be pasted into tickets and CI logs, and a check's
+        # detail can quote a KEY=value line. UI.redact is also the sanitizer
+        # LDM's CodeQL query recognises (.github/codeql/ldm-python-queries).
         checks = [
             {
                 "name": strip_ansi(str(component)),
                 "subsystem": get_subsystem(component),
                 "status": self._json_status(ok),
-                "detail": strip_ansi(str(status)),
+                "detail": strip_ansi(UI.redact(str(status))),
             }
             for component, status, ok in self.results
         ]
@@ -2966,7 +2970,10 @@ class DoctorRunner:
             # Hints are recorded per run, not per check, so they are reported
             # the same way rather than guessed onto a check.
             "hints": [
-                {"text": strip_ansi(str(h.get("text") or "")), "doc": h.get("doc")}
+                {
+                    "text": strip_ansi(UI.redact(str(h.get("text") or ""))),
+                    "doc": h.get("doc"),
+                }
                 for h in self.hints
             ],
             "projects": [str(p) for p in self.project_paths],

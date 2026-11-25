@@ -223,6 +223,30 @@ class TestDoctorJson(unittest.TestCase):
         )
         self.assertEqual(data["subsystems"]["docker"], "fail")
 
+    def test_secrets_in_details_and_hints_are_redacted(self):
+        # The JSON is made to be pasted into tickets, like the support bundle,
+        # so it goes through UI.redact as the trace log does. A MAC address is
+        # an identifier, not a secret, and must survive (LDM-#1808's hint).
+        code, out, _err = self._doctor(
+            [
+                ("DB", "MYSQL_PASSWORD=hunter2 rejected", False)
+            ],  # pragma: allowlist secret
+            hints=[
+                ("Set LDM_TOKEN=abc123 and retry", None),  # pragma: allowlist secret
+                (
+                    "The container's MAC is 02:aa:bb:cc:dd:02, not 02:aa:bb:cc:dd:01",
+                    None,
+                ),
+            ],
+        )
+        self.assertEqual(code, 1)
+        data = json.loads(out)
+        self.assertNotIn("hunter2", out)
+        self.assertNotIn("abc123", out)
+        self.assertIn("[REDACTED]", data["checks"][0]["detail"])
+        self.assertIn("[REDACTED]", data["hints"][0]["text"])
+        self.assertIn("02:aa:bb:cc:dd:02", data["hints"][1]["text"])
+
     def test_warnings_alone_exit_zero(self):
         code, out, _err = self._doctor([("Disk Space", "low", "warn")])
         self.assertEqual(code, 0)

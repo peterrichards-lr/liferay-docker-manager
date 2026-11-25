@@ -100,6 +100,8 @@ ldm doctor --json --all
 | `checks[].subsystem` | `system`, `docker` or `project`: the same grouping as the formatted summary. |
 | `hints` | Fix hints for the run, in the order they were raised. Doctor records them per run, not per check, so they are not attached to a check. `doc` is a URL or `null`. |
 
+Each check's `detail` and each hint's `text` pass through the same redaction as LDM's trace log, so a `KEY=value` secret such as `MYSQL_PASSWORD=...` appears as `MYSQL_PASSWORD=[REDACTED]`. The output is safe to paste into a ticket.
+
 The exit code is the same as without `--json`: `0` when nothing failed
 (warnings included), `1` otherwise.
 
