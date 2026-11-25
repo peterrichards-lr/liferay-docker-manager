@@ -4145,6 +4145,105 @@ class TheRoundTripServeCheckRetriesForABoundedPeriod(unittest.TestCase):
             self.assertIn(marker, ps1)
 
 
+# A `docker` stub defined as a PowerShell FUNCTION, so the capture code runs for
+# real while nothing is executed. Multi-line on every stream the capture reads.
+_PS_DOCKER_STUB = r"""
+function docker {
+    $verb = $args[0]
+    if ($verb -eq 'ps') { 'demo-roundtrip'; return }
+    if ($verb -eq 'inspect') {
+        if ($args[2] -like '*range .State.Health.Log*') {
+            '   probe exit=1: refused'
+            '   probe exit=0: ok'
+        } else { '   state=running health=healthy' }
+        return
+    }
+    if ($verb -eq 'logs') {
+        if ($args -contains '--tail') { 'tail line 1'; 'tail line 2'; return }
+        'INFO boot started'
+        'ERROR first failure'
+        '    at com.example.Frame(Frame.java:1)'
+        'Caused by: java.lang.NullPointerException'
+        'INFO still booting'
+    }
+}
+"""
+
+
+@unittest.skipUnless(_pwsh_binary(), "pwsh/powershell not available")
+class PowerShellCapturesKeepTheirLineBreaks(unittest.TestCase):
+    """LDM-#2541: ConvertTo-LdmText was called POSITIONALLY on captured arrays.
+
+    Bound that way, the whole array is one object and `[string]` joins its
+    lines with spaces, so every multi-line capture in the failure evidence came
+    out as a single line -- and the first-errors filter, seeing the whole log as
+    one line, let INFO lines and stack frames through. The bash twin keeps each
+    line, so the two halves' reports differed for the same failure.
+    """
+
+    def _run(self, body):
+        funcs = "\n".join(
+            _extract_function(
+                PS1_SCRIPT, re.compile(rf"^function {name} \{{.*?^\}}", re.M | re.S)
+            )
+            for name in ("Write-TrapNote", "Write-Verdict", "Write-RoundTripOutput")
+        )
+        # Write-FailureDebugLogs pulls in ConvertTo-LdmText via _PS_HELPERS.
+        funcs += "\n" + _extract_function(
+            PS1_SCRIPT,
+            re.compile(r"^function Write-FailureDebugLogs \{.*?^\}", re.M | re.S),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp) / "results.txt"
+            results.write_text("", encoding="utf-8")
+            script = (
+                f"{funcs}\n{_PS_DOCKER_STUB}\n"
+                f"$RESULTS_FILE_TMP = '{results}'\n$PROJECT_NAME = 'unused'\n"
+                f"{body} | Out-Null\n"
+            )
+            res = subprocess.run(
+                [_pwsh_binary(), "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
+            )
+            self.assertEqual(res.returncode, 0, res.stderr)
+            return [
+                line.rstrip()
+                for line in results.read_text(encoding="utf-8-sig").splitlines()
+            ]
+
+    def test_failure_capture_keeps_each_line(self):
+        lines = self._run("Write-FailureDebugLogs -Containers @('demo-roundtrip')")
+        for expected in (
+            "   probe exit=1: refused",
+            "   probe exit=0: ok",
+            "     ERROR first failure",
+            "     Caused by: java.lang.NullPointerException",
+            "tail line 1",
+            "tail line 2",
+        ):
+            self.assertIn(expected, lines)
+        first = lines.index("   first errors:")
+        last = lines.index("   last 50 lines:")
+        self.assertEqual(
+            lines[first + 1 : last],
+            [
+                "     ERROR first failure",
+                "     Caused by: java.lang.NullPointerException",
+            ],
+            "the first-errors filter let non-error lines through",
+        )
+
+    def test_round_trip_output_keeps_each_line(self):
+        lines = self._run(
+            "Write-RoundTripOutput -Label 'docker logs' -Raw (docker logs x --tail 2)"
+        )
+        self.assertIn("          tail line 1", lines)
+        self.assertIn("          tail line 2", lines)
+
+
 class BothHalvesReapOnlyWhatTheRunItselfCreated(unittest.TestCase):
     """LDM-#2214: a verification run should leave the host as it found it.
 

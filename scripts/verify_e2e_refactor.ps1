@@ -548,11 +548,15 @@ function Write-FailureDebugLogs {
         Write-TrapNote ">> Logs for ${container}:"
         try {
             $state = & docker inspect --format '   state={{.State.Status}} exit={{.State.ExitCode}} oom-killed={{.State.OOMKilled}} health={{if .State.Health}}{{.State.Health.Status}} failing-streak={{.State.Health.FailingStreak}}{{else}}none{{end}}' $container 2>&1
-            Write-TrapNote (ConvertTo-LdmText $state)
+            # LDM-#2541: piped, never positional. Passed positionally, a
+            # captured array arrives as ONE object and [string] joins its lines
+            # with spaces -- every multi-line capture below came out as a single
+            # line, and the first-errors filter saw the whole log as one line.
+            Write-TrapNote ($state | ConvertTo-LdmText)
 
             $probes = & docker inspect --format '{{if .State.Health}}{{range .State.Health.Log}}   probe exit={{.ExitCode}}: {{.Output}}
 {{end}}{{end}}' $container 2>&1
-            $probeText = ConvertTo-LdmText $probes
+            $probeText = $probes | ConvertTo-LdmText
             if (-not [string]::IsNullOrWhiteSpace($probeText)) {
                 # Truncated: a chatty probe must not bury the logs below it.
                 if ($probeText.Length -gt 2000) { $probeText = $probeText.Substring(0, 2000) }
@@ -563,7 +567,7 @@ function Write-FailureDebugLogs {
             # ends in a wall of stack frames, so the last 50 lines held no
             # exception message at all -- an OrbStack round-trip failure could
             # not be diagnosed from its own report. Parity with the bash twin.
-            $allLogs = (ConvertTo-LdmText (& docker logs $container 2>&1)) -split "`r?`n"
+            $allLogs = ((& docker logs $container 2>&1) | ConvertTo-LdmText) -split "`r?`n"
             $firstErrors = @($allLogs |
                 Where-Object { $_ -cmatch 'ERROR|FATAL|Exception|Caused by' -and $_ -notmatch '^\s+at ' } |
                 Select-Object -First 25 |
@@ -572,7 +576,7 @@ function Write-FailureDebugLogs {
             foreach ($line in $firstErrors) { Write-TrapNote "     $line" }
             Write-TrapNote "   last 50 lines:"
             $logs = & docker logs $container --tail 50 2>&1
-            Write-TrapNote (ConvertTo-LdmText $logs)
+            Write-TrapNote ($logs | ConvertTo-LdmText)
         } catch {
             Write-TrapNote "   (could not read $container -- $($_.Exception.Message))"
         }
