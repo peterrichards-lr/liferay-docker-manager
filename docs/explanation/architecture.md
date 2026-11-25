@@ -139,7 +139,7 @@ graph TD
     end
 
     subgraph LDM_Logic [ldm scan_client_extensions]
-        Detect{Has Dockerfile?}
+        Detect{"Service? Dockerfile, not a Job, not static"}
         Extract[Unzip context to CX_Build]
         Repackage[JIT Repackage Config Overrides]
         Move[Move zip to OSGi_CX]
@@ -404,4 +404,4 @@ sequenceDiagram
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*
+*Last Updated: 2026-11-25* | *Last Reviewed: 2026-11-25*

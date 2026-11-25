@@ -245,6 +245,128 @@ def warn_oauth_erc_list_gaps(workspace_root):
             UI.raw(f"  {tip}")
 
 
+#: Client-extension types whose content Liferay serves from the deployed zip.
+#: Measured, not listed from memory (LDM-#2534): these are the types carried
+#: by the static extensions in `ldm-cx-samples`, every one of which the CX
+#: build packages as `FROM liferay/caddy` + `COPY static/ /public_html/` and
+#: gives a `baseURL` of `${portalURL}/o/<projectName>` -- the portal, not a
+#: sidecar. A type missing from this set is still recognised as static by its
+#: LCP.json (`loadBalancer.cdn`), which the build writes for all of them.
+STATIC_CX_TYPES = frozenset(
+    {
+        "customElement",
+        "themeCSS",
+        "themeFavicon",
+        "themeSpritemap",
+    }
+)
+
+
+def _declared_cx_types(text, is_yaml):
+    """Every `type` a client-extension.yaml or *.client-extension-config.json declares."""
+    try:
+        data = yaml.safe_load(text) if is_yaml else json.loads(text)
+    except Exception:
+        return set()
+    if not isinstance(data, dict):
+        return set()
+    types = set()
+    if is_yaml and isinstance(data.get("type"), str):
+        types.add(data["type"].strip())
+    for block in data.values():
+        if isinstance(block, dict) and isinstance(block.get("type"), str):
+            types.add(block["type"].strip())
+    return types
+
+
+def cx_is_service(members):
+    """Whether a client extension runs as a container of its own. LDM-#2534.
+
+    The ONE answer to "is this a service", shared by the metadata scan of a
+    built zip (`_process_built_cx_zips`), of an expanded folder
+    (`_process_existing_cx_folders`), the `ldm dev` monitor and the stateless
+    package's slimming (`snapshot/archive.py`). They used to carry copies of
+    "has a Dockerfile and is not a Job", which is true of every static
+    extension too: Liferay's CX build writes a Dockerfile and an LCP.json into
+    all of them. Measured across `ldm-cx-samples`' 16 built zips:
+
+    * 9 static (themeCSS, themeFavicon, themeSpritemap, customElement):
+      `FROM liferay/caddy`, LCP.json `loadBalancer.cdn: true`, no `ports`
+    * 3 `kind: Job` (batch, two site initializers)
+    * 4 services (node microservices, object/workflow actions): a real
+      runtime, LCP.json `ports` declared, no `cdn`
+
+    So a static extension is one that declares no ports AND either asks for
+    the CDN or declares only `STATIC_CX_TYPES`. A declared port keeps an
+    extension a service whatever its type, because something is listening.
+
+    `members` maps a member's basename to a zero-argument callable returning
+    its text; only the basenames below are read. An LCP.json that cannot be
+    read leaves the extension a service: building a container that was not
+    needed costs time, dropping one that was breaks the extension.
+    """
+    if "Dockerfile" not in members:
+        return False
+
+    lcp: Any = {}
+    if "LCP.json" in members:
+        try:
+            lcp = json.loads(members["LCP.json"]())
+        except Exception:
+            lcp = None
+    if not isinstance(lcp, dict):
+        return True
+
+    if str(lcp.get("kind") or "").capitalize() == "Job":
+        return False
+    if lcp.get("deploy", True) is False:
+        return False
+    return bool(lcp.get("ports")) or not _is_static_cx(members, lcp)
+
+
+def _is_static_cx(members, lcp):
+    """No ports assumed: the CDN flag, or nothing but `STATIC_CX_TYPES`."""
+    load_balancer = lcp.get("loadBalancer")
+    if isinstance(load_balancer, dict) and load_balancer.get("cdn") is True:
+        return True
+    types: set[str] = set()
+    for name, read in members.items():
+        is_yaml = name in ("client-extension.yaml", "client-extension.yml")
+        if is_yaml or name.endswith("client-extension-config.json"):
+            try:
+                types |= _declared_cx_types(read(), is_yaml)
+            except Exception:
+                continue
+    return bool(types) and types <= STATIC_CX_TYPES
+
+
+def folder_cx_is_service(folder):
+    """`cx_is_service` for an expanded client extension directory."""
+    folder = Path(folder)
+    members = {
+        p.name: (lambda p=p: p.read_text(encoding="utf-8", errors="replace"))
+        for p in folder.iterdir()
+        if p.is_file()
+    }
+    return cx_is_service(members)
+
+
+def zip_cx_is_service(zip_ref):
+    """`cx_is_service` for an open client-extension zip.
+
+    Members match by basename, at any depth, as the zip scan always has.
+    """
+    members: dict[str, Any] = {}
+    for name in zip_ref.namelist():
+        if name.endswith("/"):
+            continue
+        members.setdefault(
+            Path(name).name,
+            lambda n=name: zip_ref.read(n).decode("utf-8", errors="replace"),
+        )
+    return cx_is_service(members)
+
+
 def _get_effective_blacklist(self, paths=None):
     blacklist = load_env_blacklist(SCRIPT_DIR / "common" / "env-blacklist.txt")
     if paths and paths.get("root"):
@@ -604,11 +726,8 @@ def _process_built_cx_zips(  # noqa: C901
                     Path(f).name in ["client-extension.yaml", "LCP.json"]
                     for f in namelist
                 ):
-                    is_service = (
-                        any(Path(f).name == "Dockerfile" for f in namelist)
-                        and ext_info.get("kind") != "Job"
-                        and ext_info.get("deploy", True) is not False
-                    )
+                    # LDM-#2534: the shared rule, not a copy of it.
+                    is_service = zip_cx_is_service(zip_ref)
 
                     if is_service:
                         if target_folder.exists():
@@ -685,9 +804,8 @@ def _process_existing_cx_folders(
         ext_info = _scan_extension_metadata(self, folder_path=item)
         if ext_info["type"] or (item / "LCP.json").exists():
             found_ids.add(item.name)
-            is_service = (item / "Dockerfile").exists() and ext_info.get(
-                "kind"
-            ) != "Job"
+            # LDM-#2534: the shared rule, not a copy of it.
+            is_service = folder_cx_is_service(item)
             port = next(
                 (p.get("port") for p in ext_info.get("ports", []) if p.get("external")),
                 80,

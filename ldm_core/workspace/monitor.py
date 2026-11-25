@@ -11,6 +11,7 @@ from ldm_core.ui import UI
 from ldm_core.utils import (
     atomic_copy,
 )
+from ldm_core.workspace.metadata import folder_cx_is_service
 
 
 def cmd_monitor(self, source_path=None, project_id=None):  # noqa: C901, PLR0912, PLR0915
@@ -129,7 +130,11 @@ def cmd_monitor(self, source_path=None, project_id=None):  # noqa: C901, PLR0912
                         # Only trigger targeted deploy if it's a Docker-based service (SSCE)
                         svc_id = f.stem.lower().replace("_", "-")
                         target_folder = self.paths["ce_dir"] / f.stem
-                        if (target_folder / "Dockerfile").exists():
+                        # LDM-#2534: the same rule that decides whether the
+                        # composer generated a service for it at all.
+                        if target_folder.is_dir() and folder_cx_is_service(
+                            target_folder
+                        ):
                             updated_services.add(svc_id)
                 else:
                     # JARs for Liferay modules (sync to deploy)

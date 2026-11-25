@@ -36,13 +36,19 @@ from ldm_core.tests.test_workspace import MockWorkspaceManager
 
 
 def _cx_zip(path, ext_id, *, declare_ports=False):
-    """A service extension: a Dockerfile makes it one, `kind` is not Job."""
+    """A service extension: a Dockerfile, `kind` not Job, and a service type.
+
+    LDM-#2534: not `customElement`. Liferay's build packages every custom
+    element as a static `liferay/caddy` image the portal serves from the zip,
+    so a Dockerfile beside one no longer makes it a service. `objectAction` is
+    what ldm-cx-samples' `ecopulse-object-action` microservice declares.
+    """
     body = {"id": ext_id, "memory": 512, "kind": "Deployment"}
     if declare_ports:
         body["ports"] = [{"port": 9090, "external": True}]
     with zipfile.ZipFile(path, "w") as z:
         z.writestr("LCP.json", json.dumps(body))
-        z.writestr("client-extension.yaml", f"{ext_id}:\n  type: customElement\n")
+        z.writestr("client-extension.yaml", f"{ext_id}:\n  type: objectAction\n")
         z.writestr("Dockerfile", 'FROM alpine\nCMD ["sleep", "3600"]\n')
 
 
