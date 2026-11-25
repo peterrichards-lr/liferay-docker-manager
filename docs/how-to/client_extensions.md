@@ -32,6 +32,26 @@ LDM manages SSCE containers out of the box:
 - **Dynamic Docker Compose Sidecars**: Generates dynamic Compose fragments to spin up the SSCE microservice alongside Liferay on the same internal container network.
 - **Automated OAuth2 ERC Wiring**: Injects Liferay OAuth2 External Reference Codes (ERC) so the microservice and Liferay authenticate seamlessly.
 
+### Which extensions get a container
+
+Liferay's client-extension build writes a `Dockerfile` and an `LCP.json` into
+**every** extension, static ones included, so neither file on its own says an
+extension is a service. LDM runs a container for an extension only when all of
+these hold:
+
+- it has a `Dockerfile`;
+- its `LCP.json` is not `kind: Job` and does not set `deploy: false`;
+- it is not static. An extension is static when its `LCP.json` declares no
+  `ports` and either sets `loadBalancer.cdn: true` or declares only the types
+  `customElement`, `themeCSS`, `themeFavicon` or `themeSpritemap`.
+
+That is how the build packages themes, favicons, spritemaps and custom
+elements: a `liferay/caddy` image serving `static/`, with the CDN flag set and
+no ports. On a self-hosted portal Liferay serves those files itself, from the
+deployed zip, so a container would only duplicate them. A declared port
+always makes an extension a service, whatever its type, because something is
+listening on it (LDM-#2534).
+
 ### Your extension's config tree can be rewritten after it starts
 
 LDM points your extension at `LIFERAY_ROUTES_CLIENT_EXTENSION` and
@@ -334,4 +354,4 @@ optimistic.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*
+*Last Updated: 2026-11-25* | *Last Reviewed: 2026-11-25*

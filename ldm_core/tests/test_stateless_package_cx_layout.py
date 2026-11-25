@@ -195,8 +195,11 @@ class OnlyAContainerShipsItsExpandedTree(_Layout):
     def test_a_site_initializer_ships_its_images_once(self):
         images = [n for n in self.shipped if n.endswith("hero.png")]
         self.assertEqual(images, [], "zipped AND expanded")
-        for name in ("Dockerfile", "LCP.json", f"{SI}.client-extension-config.json"):
+        for name in ("LCP.json", f"{SI}.client-extension-config.json"):
             self.assertIn(f"client-extensions/{SI}/{name}", self.shipped)
+        # LDM-#2534: a slimmed extension is not a container, so its Dockerfile
+        # is not a descriptor -- and an older LDM would key on it.
+        self.assertNotIn(f"client-extensions/{SI}/Dockerfile", self.shipped)
 
     def test_a_frontend_extension_ships_its_descriptor_only(self):
         self.assertIn(

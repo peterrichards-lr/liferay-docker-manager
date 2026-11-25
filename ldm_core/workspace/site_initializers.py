@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Any
 
 from ldm_core.ui import UI
+from ldm_core.workspace.metadata import zip_cx_is_service
 
 #: The header Liferay's ``SiteInitializerClientExtension`` tracks bundles on.
 #: Read out of a real built artifact --
@@ -122,30 +123,22 @@ def cx_service_missing_lcp_id(zip_path: Path) -> bool:
     """
     try:
         with zipfile.ZipFile(zip_path, "r") as archive:
-            names = archive.namelist()
-            has_dockerfile = any(
-                n == "Dockerfile" or n.endswith("/Dockerfile") for n in names
-            )
-            if not has_dockerfile:
-                # No Dockerfile means no container, so no identity is needed.
+            # LDM-#2534: `is_service` itself, not a copy of it. A Dockerfile
+            # alone is not enough: a `kind: Job` (a real site initializer
+            # ships both) and a static extension (every one the CX build
+            # writes has a Dockerfile) are never given a container identity.
+            if not zip_cx_is_service(archive):
                 return False
+            names = archive.namelist()
             lcp = next(
                 (n for n in names if n == "LCP.json" or n.endswith("/LCP.json")),
                 None,
             )
             if lcp is None:
-                # No LCP.json at all: nothing declares `kind`, so
-                # `_scan_extension_metadata` leaves it None and `is_service`
-                # is True. A Dockerfile with no identity beside it.
+                # No LCP.json at all: a Dockerfile with no identity beside it.
                 return True
             data = json.loads(archive.read(lcp).decode("utf-8", errors="replace"))
             if not isinstance(data, dict):
-                return False
-            # Mirror `is_service` exactly: a Dockerfile alone is not enough.
-            # `kind: Job` is a one-shot task, not a running service -- a real
-            # site initializer ships a Dockerfile AND `"kind": "Job"`, and is
-            # never given a container identity.
-            if data.get("kind") == "Job":
                 return False
             return not data.get("id")
     except Exception:
