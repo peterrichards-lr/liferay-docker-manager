@@ -150,6 +150,32 @@ ldm share start [project] --provider lfr-tunnel --subdomain my-subdomain --ports
   to `https://127.0.0.1/` (LDM-#2398). The `lfr-tunnel-docker` sidecar has
   always done this.
 
+### Default admin credentials
+
+A shared instance is on the public internet. Before a tunnel starts, LDM checks
+whether the instance still accepts the default admin login
+(`test@liferay.com` with the default password) -- one authenticated request to
+the instance's own Headless API. If it does, anyone with the URL can sign in as
+an administrator, so LDM asks before sharing it. Under `-y` it refuses, with
+exit code `1`, and nothing is shared.
+
+Change the administrator's password in the portal, or say you mean it:
+
+```bash
+ldm share start --allow-default-credentials
+ldm start my-project --share --allow-default-credentials
+```
+
+The check applies however the share starts: `share start`, and `run`, `start`,
+`import` or `quickstart` with `--share`. If LDM cannot reach the instance to
+check, it warns and shares. `--dry-run` skips the check.
+
+One exception: with the `lfr-tunnel-docker` provider, `run --share` and
+`start --share` put the tunnel sidecar in the stack itself, so it starts with
+the containers and the check only runs once the portal is up. A refusal then
+stops LDM, but not the sidecar that is already serving -- stop it with
+`ldm share stop`. `ldm share start --provider lfr-tunnel-docker` checks first.
+
 ### What `--domain` accepts
 
 `--domain` takes three different kinds of value, and LDM tells them apart
@@ -285,6 +311,14 @@ To inspect the active tunnel and retrieve its public URL:
 
 ```bash
 ldm share status [project]
+```
+
+For a script or an agent, `--json` prints the public URL as a stable object,
+and only reads: it never installs a client or prompts. The schema is in
+[Machine-Readable Output](../reference/json_output.md#ldm-share-status-json).
+
+```bash
+ldm share status [project] --json
 ```
 
 `ldm share status` reports the same provenance as `ldm share start`, because
@@ -698,4 +732,4 @@ If you are running the `lfr-tunnel` Go executable directly or writing custom scr
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-24* | *Last Reviewed: 2026-11-24*
+*Last Updated: 2026-11-25* | *Last Reviewed: 2026-11-25*

@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import platform
@@ -43,21 +44,159 @@ def probe_http_readiness(url, is_running=True, timeout=1.0):
         return False, "starting"
 
 
+INFO_JSON_SCHEMA_VERSION = 1
+
+
+def build_info_payload(handler, root, meta):
+    """The stable `ldm info --json` object (LDM-#2525).
+
+    Documented in docs/reference/cli/core.md. It carries what an agent acts on
+    -- where the project is reached, locally and publicly -- and deliberately
+    no credentials: `ldm info --credentials` is the explicit way to ask for
+    those. Values are derived the same way the formatted view derives them.
+    """
+    from ldm_core.config import get_active_target
+    from ldm_core.docker_service import DockerService
+    from ldm_core.handlers.composer import resolve_access_url
+
+    raw_target = getattr(handler.manager, "target", None) or meta.get("target")
+    target_node = get_active_target(raw_target).name
+    container_name = sanitize_id(
+        meta.get("liferay_container_name")
+        or meta.get("container_name")
+        or root.name.replace(".", "-")
+    )
+    status = DockerService.get_status(container_name, target_name=target_node)
+
+    host_name = meta.get("host_name", "localhost")
+    ssl_enabled = bool(handler.manager.composer._is_ssl_active(host_name, meta))
+    port = meta.get("port", 8080)
+    url = resolve_access_url(host_name, meta, ssl_enabled)
+
+    project_name = meta.get("container_name", root.name)
+    share_subdomain = meta.get("share_subdomain")
+    share_domain = meta.get("share_domain", "lfr-demo.online")
+    # `share` is persisted as the string "true"/"false", so it is parsed, not
+    # tested for truthiness ("false" is a non-empty string).
+    is_shared = str(meta.get("share", "false")).lower() == "true" or bool(
+        meta.get("share_provider")
+    )
+    public_urls: list = []
+    if is_shared and share_subdomain:
+        public_urls = list(
+            handler.manager.share.resolve_public_tunnel_urls(share_subdomain, root.name)
+            or []
+        )
+
+    extensions = []
+    paths = handler.manager.setup_paths(root)
+    if paths["cx"].exists():
+        from ldm_core.handlers.workspace import WorkspaceService
+
+        extensions = WorkspaceService(handler.manager).scan_client_extensions(
+            paths["root"], paths["cx"], paths["ce_dir"]
+        )
+    if not extensions:
+        extensions = meta.get("extensions", [])
+        if isinstance(extensions, str):
+            try:
+                extensions = json.loads(extensions)
+            except Exception:
+                extensions = []
+
+    ext_entries = []
+    for ext in extensions:
+        if not (isinstance(ext, dict) and ext.get("is_service")):
+            continue
+        ext_id = ext.get("id")
+        if ssl_enabled:
+            local_url = f"https://{ext_id}.{host_name}"
+        else:
+            ext_port = meta.get(f"port_{ext_id}") or port
+            local_url = f"http://{ext_id}.{host_name}:{ext_port}"
+        public_url = None
+        if is_shared and share_subdomain:
+            public_url = next(
+                (u for u in public_urls if f"-{ext_id}." in u),
+                f"https://{share_subdomain}-{ext_id}.{share_domain}",
+            )
+        ext_entries.append(
+            {
+                "id": ext_id,
+                "container": sanitize_id(f"{project_name}-{ext_id}"),
+                "local_url": local_url,
+                "public_url": public_url,
+            }
+        )
+
+    try:
+        port_value = int(port)
+    except (TypeError, ValueError):
+        port_value = None
+
+    return {
+        "schema_version": INFO_JSON_SCHEMA_VERSION,
+        "project": project_name,
+        "path": str(root),
+        "id": meta.get("uuid"),
+        "target": target_node,
+        "status": status,
+        "running": status == "running",
+        "host_name": host_name,
+        "port": port_value,
+        "ssl": ssl_enabled,
+        "url": url,
+        "container": container_name,
+        "share": {
+            "enabled": is_shared,
+            "provider": meta.get("share_provider"),
+            "subdomain": share_subdomain,
+            "domain": share_domain if is_shared else None,
+            "public_urls": public_urls,
+        },
+        "extensions": ext_entries,
+    }
+
+
+def _print_info_json(handler, root, meta):
+    """Print the object. A module-level function on purpose: run_info imports
+    `json` locally further down, which makes the name local to all of it."""
+    # Anything a helper prints on the way must not corrupt the JSON.
+    with contextlib.redirect_stdout(sys.stderr):
+        payload = build_info_payload(handler, root, meta)
+    print(json.dumps(payload, indent=2))
+
+
 def run_info(  # noqa: C901, PLR0912, PLR0915
     handler,
     project_id=None,
     credentials_only=False,
     credential_type="admin",
     password_only=False,
+    as_json=False,
 ):
     """Displays user-friendly project metadata."""
-    root = handler.manager.detect_project_path(project_id)
+    if as_json and not credentials_only:
+        # A project picker or a notice must not land in the JSON on stdout.
+        with contextlib.redirect_stdout(sys.stderr):
+            root = handler.manager.detect_project_path(project_id)
+    else:
+        root = handler.manager.detect_project_path(project_id)
     if not root:
+        if as_json:
+            # A consumer of --json must never have to parse an empty stdout.
+            UI.die("No project found.")
         return
 
     meta = handler.manager.read_meta(root)
     if not meta:
+        if as_json:
+            UI.die(f"No metadata found for project at {root}")
         UI.warning(f"No metadata found for project at {root}")
+        return
+
+    if as_json and not credentials_only:
+        _print_info_json(handler, root, meta)
         return
 
     if credentials_only:

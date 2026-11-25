@@ -118,6 +118,9 @@ def measure_engine_free_bytes(docker_prefix=None, timeout=None, run=None):
         return None
 
 
+DOCTOR_JSON_SCHEMA_VERSION = 1
+
+
 class DoctorRunner:
     """Isolated context for running LDM Doctor checks."""
 
@@ -139,6 +142,8 @@ class DoctorRunner:
         self.provider = "Unknown"
         self.mount_type = "unknown"
         self.docker_version = None
+        # Set while `--json` is producing output: the real stdout (LDM-#2525).
+        self._json_out: Any = None
 
     @staticmethod
     def _expected_router_names(docker_prefix):
@@ -422,7 +427,39 @@ class DoctorRunner:
             f"{GITHUB_DOCS_URL}/how-to/share_configuration.md",
         )
 
+    # The flags whose own output or side effects cannot share stdout with the
+    # `--json` object (LDM-#2525).
+    _JSON_INCOMPATIBLE = (
+        ("--slug", "slug"),
+        ("--ssl", "ssl"),
+        ("--fix", "fix"),
+        ("--fix-hosts", "fix_hosts"),
+        ("--bundle", "bundle"),
+    )
+
+    def _json_requested(self):
+        return getattr(self.args, "json", False) is True
+
+    def _run_json(self):
+        """`--json`: every check, printed as one object (LDM-#2525)."""
+        conflicts = [
+            flag
+            for flag, attr in self._JSON_INCOMPATIBLE
+            if getattr(self.args, attr, False) is True
+        ]
+        if conflicts:
+            UI.die(f"--json cannot be combined with {', '.join(conflicts)}.")
+        # Every check reports through UI as it goes; all of that goes to
+        # stderr so stdout carries exactly one JSON object.
+        self._json_out = sys.stdout
+        with contextlib.redirect_stdout(sys.stderr):
+            self.run()
+
     def run(self):
+        if self._json_requested() and self._json_out is None:
+            self._run_json()
+            return
+
         self.arch, self.host_os, self.provider, self.mount_type = _get_env_info(
             self.handler
         )
@@ -2729,6 +2766,9 @@ class DoctorRunner:
                 all_ok = False
                 subsystem_status[sub] = False
 
+        if self._json_out is not None:
+            self._emit_json(get_subsystem, subsystem_status, all_ok)
+
         # Read filter & verbosity flags
         show_system = getattr(self.args, "system", False)
         show_docker = getattr(self.args, "docker", False)
@@ -2887,6 +2927,52 @@ class DoctorRunner:
                 msg += f" (Attempted {len(fixable_commands)} auto-fixes)."
             UI.error(msg)
             sys.exit(1)
+
+    @staticmethod
+    def _json_status(ok):
+        if ok is True:
+            return "pass"
+        if ok == "warn":
+            return "warn"
+        return "fail"
+
+    def _emit_json(self, get_subsystem, subsystem_status, all_ok):
+        """Print the `ldm system doctor --json` object and exit (LDM-#2525).
+
+        Schema in docs/reference/cli/system.md. Exit codes match the formatted
+        view: 0 when nothing failed (warnings included), 1 otherwise.
+        """
+        checks = [
+            {
+                "name": strip_ansi(str(component)),
+                "subsystem": get_subsystem(component),
+                "status": self._json_status(ok),
+                "detail": strip_ansi(str(status)),
+            }
+            for component, status, ok in self.results
+        ]
+        counts = {"pass": 0, "warn": 0, "fail": 0}
+        for check in checks:
+            counts[check["status"]] += 1
+        overall = "fail" if counts["fail"] else ("warn" if counts["warn"] else "pass")
+        payload = {
+            "schema_version": DOCTOR_JSON_SCHEMA_VERSION,
+            "status": overall,
+            "summary": {**counts, "total": len(checks)},
+            "subsystems": {
+                sub: self._json_status(state) for sub, state in subsystem_status.items()
+            },
+            "checks": checks,
+            # Hints are recorded per run, not per check, so they are reported
+            # the same way rather than guessed onto a check.
+            "hints": [
+                {"text": strip_ansi(str(h.get("text") or "")), "doc": h.get("doc")}
+                for h in self.hints
+            ],
+            "projects": [str(p) for p in self.project_paths],
+        }
+        print(json.dumps(payload, indent=2), file=self._json_out, flush=True)
+        sys.exit(0 if all_ok else 1)
 
     def _check_ssl_diagnostics(self):  # noqa: C901, PLR0912, PLR0915
         UI.heading("LDM Doctor - SSL Diagnostics")

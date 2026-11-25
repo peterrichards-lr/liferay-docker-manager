@@ -1301,20 +1301,20 @@ class TestBaseFixHosts(unittest.TestCase):
 
     def _suggested(self, domains, project=None):
         """Fail `sudo -n` and return the `ldm ...` commands the user is told
-        to run, as argv lists (LDM-#2496)."""
+        to run, as argv lists (LDM-#2496). Since LDM-#2517 they travel as the
+        privileged step's human-only alternative, joined with `&&`."""
         failed = MagicMock(returncode=1)
         with (
             patch("ldm_core.handlers.base.platform.system", return_value="Darwin"),
             patch.object(self.handler, "is_wsl", return_value=False),
             patch("ldm_core.handlers.base.subprocess.Popen", return_value=failed),
             patch("ldm_core.handlers.base.UI.detail"),
-            patch("ldm_core.handlers.base.UI.die", side_effect=SystemExit) as die,
+            patch("ldm_core.privileged.require", side_effect=SystemExit) as require,
             self.assertRaises(SystemExit),
         ):
             self.handler._apply_hosts_fix(domains, project=project)
-        said = die.call_args.args[0]
-        tail = said.split("Please run manually:", 1)[1]
-        return [line.split() for line in tail.splitlines() if line.strip()]
+        said = require.call_args.kwargs["alternative"]
+        return [part.split() for part in said.split("&&") if part.strip()]
 
     def _parse(self, command):
         """Parse a suggested command exactly as `ldm` would."""

@@ -125,7 +125,11 @@ class BaseHandler:
                 UI.detail(
                     f"Missing host entries detected: {', '.join(unresolved)}. Attempting non-interactive fix..."
                 )
-                if self._apply_hosts_fix(unresolved, project=project_id):
+                if self._apply_hosts_fix(
+                    unresolved,
+                    project=project_id,
+                    resume=f"ldm run {project_id}" if project_id else None,
+                ):
                     # Give the OS a moment to refresh DNS cache
                     import time
 
@@ -314,8 +318,31 @@ class BaseHandler:
             return [f"ldm fix-hosts {project}"]
         return [f"ldm fix-hosts {d}" for d in domains]
 
-    def _apply_hosts_fix(self, unresolved_domains, project=None):
-        """Attempts to append missing host entries to the system hosts file."""
+    @staticmethod
+    def _hosts_append_command(content, hosts_path="/etc/hosts"):
+        """The argv a person runs to append ``content`` to the hosts file.
+
+        One argv (`sudo sh -c ...`) because the remedy needs a redirect, and an
+        argv is what LDM-#2517's payload carries and ``shlex.join`` quotes.
+        """
+        import shlex
+
+        from ldm_core import privileged
+
+        lines = [line for line in content.splitlines() if line.strip()]
+        script = (
+            "printf '%s\\n' "
+            + " ".join(shlex.quote(line) for line in lines)
+            + f" >> {shlex.quote(hosts_path)}"
+        )
+        return privileged.sudo_sh(script)
+
+    def _apply_hosts_fix(self, unresolved_domains, project=None, resume=None):
+        """Attempts to append missing host entries to the system hosts file.
+
+        ``resume`` is the command to run once a person has applied the entries
+        by hand, reported with LDM-#2517's privileged-step payload.
+        """
         # 1. Filter out empty or already resolved (sanity check)
         domains = sorted({d for d in unresolved_domains if d and d != "localhost"})
         if not domains:
@@ -381,14 +408,18 @@ class BaseHandler:
 
                 if process.returncode != 0:
                     if self.non_interactive:
+                        # LDM-#2517: name the exact command and exit with the
+                        # privileged-step code, rather than a generic failure
+                        # an agent cannot act on. `sudo -n` never prompted, so
+                        # nothing has waited on a password.
+                        from ldm_core import privileged
+
                         commands = self._fix_hosts_commands(domains, project)
-                        UI.die(
-                            "Elevation failed (sudo -n). Please run manually:"
-                            + (
-                                f" {commands[0]}"
-                                if len(commands) == 1
-                                else "".join(f"\n    {c}" for c in commands)
-                            )
+                        privileged.require(
+                            f"{hosts_path} needs entries for: {', '.join(domains)}",
+                            self._hosts_append_command(content_to_add, hosts_path),
+                            resume=resume,
+                            alternative=" && ".join(commands),
                         )
                     return False
 
@@ -505,7 +536,21 @@ class BaseHandler:
                 subprocess.run(cmd, check=True)
                 return True
             except Exception as ex:
-                UI.error(f"Failed to clean {hosts_path}: {ex}")
+                if self.non_interactive and isinstance(
+                    ex, subprocess.CalledProcessError
+                ):
+                    # LDM-#2517: `sudo -n` could not elevate. Cleanup, so it is
+                    # deferred rather than fatal -- `ldm down` calls this BEFORE
+                    # `compose down`, and stopping here would leave the
+                    # containers it was removing running.
+                    from ldm_core import privileged
+
+                    privileged.defer(
+                        f"LDM-managed entries remain in {hosts_path}",
+                        ["sudo", *cmd[len(sudo_prefix) :]],
+                    )
+                else:
+                    UI.error(f"Failed to clean {hosts_path}: {ex}")
                 return False
         return True
 

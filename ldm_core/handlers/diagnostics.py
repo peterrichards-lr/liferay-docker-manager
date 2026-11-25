@@ -13,11 +13,19 @@ class DiagnosticsService(BaseHandler):
         credentials_only=False,
         credential_type="admin",
         password_only=False,
+        as_json=False,
     ):
         """Displays project metadata information."""
         from ldm_core.diagnostics.info import run_info
 
-        run_info(self, project_id, credentials_only, credential_type, password_only)
+        run_info(
+            self,
+            project_id,
+            credentials_only,
+            credential_type,
+            password_only,
+            as_json=as_json,
+        )
 
     def cmd_status(
         self, project_id=None, all_projects=False, detailed=False, as_json=False

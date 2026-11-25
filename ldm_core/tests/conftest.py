@@ -134,16 +134,26 @@ def clear_dry_run_vfs():
 
 
 @pytest.fixture(autouse=True)
-def reset_singletons():
-    """Resets UI and Benchmarker class singletons to prevent state pollution."""
+def reset_singletons(monkeypatch):
+    """Resets UI and Benchmarker class singletons to prevent state pollution.
+
+    Also the privileged-step state (LDM-#2517): a step deferred by one test --
+    any non-interactive hosts cleanup whose `sudo -n` fails -- would otherwise
+    turn the next test's successful dispatch into exit 6. LDM_JSON is cleared
+    for the same reason: exported by a developer, it adds stdout lines.
+    """
+    from ldm_core import privileged
     from ldm_core.ui import UI
     from ldm_core.utils import Benchmarker
 
+    monkeypatch.delenv(privileged.JSON_ENV_VAR, raising=False)
     UI.reset()
     Benchmarker.reset()
+    privileged.reset()
     yield
     UI.reset()
     Benchmarker.reset()
+    privileged.reset()
 
 
 @pytest.fixture(autouse=True)
