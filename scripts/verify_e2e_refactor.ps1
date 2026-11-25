@@ -2016,6 +2016,9 @@ function Test-MacPinRefusal {
     #
     # Parity with verify_mac_pin_refusal in verify_e2e_refactor.sh.
     param($LdmCmd, $WorkDir)
+    # LDM-#2539: never the default 8080 -- a host listener there makes the
+    # -y pre-flight refuse, and the check reports a product failure.
+    $bootPort = Get-FreeSslTestPort -Preferred 8080
 
     $isoHome = Join-Path $WorkDir "mac-refusal-home"
     $runDir = Join-Path $WorkDir "mac-refusal-work"
@@ -2039,7 +2042,7 @@ function Test-MacPinRefusal {
         }
 
         Set-Location $runDir
-        $out = & $LdmCmd run $proj --node $node -y -t 2026.q1.7-lts --no-wait 2>&1 | ConvertTo-LdmText
+        $out = & $LdmCmd run $proj --node $node -y -t 2026.q1.7-lts --no-wait --port $bootPort 2>&1 | ConvertTo-LdmText
         if ($LASTEXITCODE -ne 0) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: could not start the pinned project.`n   Output was: ${out}" }
         }
@@ -2108,6 +2111,9 @@ function Test-ContainersRemovedVolumesIntact {
     # Parity with verify_containers_removed_volumes_intact in
     # verify_e2e_refactor.sh.
     param([string]$LdmCmd, [string]$WorkDir)
+    # LDM-#2539: never the default 8080 -- a host listener there makes the
+    # -y pre-flight refuse, and the check reports a product failure.
+    $bootPort = Get-FreeSslTestPort -Preferred 8080
 
     $isoHome = Join-Path $WorkDir 'notcreated-home'
     $runDir  = Join-Path $WorkDir 'notcreated-work'
@@ -2124,7 +2130,7 @@ function Test-ContainersRemovedVolumesIntact {
     Set-Location $runDir
 
     try {
-        $out = & $LdmCmd run $proj -y -t 2026.q1.7-lts --no-wait 2>&1 | ConvertTo-LdmText
+        $out = & $LdmCmd run $proj -y -t 2026.q1.7-lts --no-wait --port $bootPort 2>&1 | ConvertTo-LdmText
         if ($LASTEXITCODE -ne 0) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: could not start the project (exit ${LASTEXITCODE}).`n   Output was: ${out}" }
         }
@@ -2183,7 +2189,7 @@ function Test-ContainersRemovedVolumesIntact {
 
         # 3. 'ldm run' must recreate the stack from the surviving named
         #    volume -- no data loss.
-        $out = & $LdmCmd run $proj -y -t 2026.q1.7-lts --no-wait 2>&1 | ConvertTo-LdmText
+        $out = & $LdmCmd run $proj -y -t 2026.q1.7-lts --no-wait --port $bootPort 2>&1 | ConvertTo-LdmText
         if ($LASTEXITCODE -ne 0) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: 'ldm run' could not recreate '${proj}' after its containers were removed (exit ${LASTEXITCODE}).`n   Output was: ${out}" }
         }
@@ -2449,6 +2455,9 @@ function Test-BringupTimeoutIsReadByTheBinary {
     # '--no-wait' keeps this to about a minute: the bound applies to
     # 'compose up', which has already run by the time the containers exist.
     param($LdmCmd, $WorkDir)
+    # LDM-#2539: never the default 8080 -- a host listener there makes the
+    # -y pre-flight refuse, and the check reports a product failure.
+    $bootPort = Get-FreeSslTestPort -Preferred 8080
 
     $isoHome = Join-Path $WorkDir "bringup-home"
     $runDir = Join-Path $WorkDir "bringup-work"
@@ -2466,7 +2475,7 @@ function Test-BringupTimeoutIsReadByTheBinary {
     $startLocation = Get-Location
     try {
         Set-Location $runDir
-        $out = & $LdmCmd run $proj -y -t 2026.q1.7-lts --no-wait 2>&1 | ConvertTo-LdmText
+        $out = & $LdmCmd run $proj -y -t 2026.q1.7-lts --no-wait --port $bootPort 2>&1 | ConvertTo-LdmText
         if ($LASTEXITCODE -ne 0) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: a malformed LDM_BRINGUP_TIMEOUT failed the run (exit ${LASTEXITCODE}).`n        It must warn and fall back to the default, not abort: a typo in an`n        environment variable should never stop a stack starting.`n   Output was: ${out}" }
         }
@@ -2663,6 +2672,9 @@ function Test-StopHintAndStartConfirmation {
     # Parity with verify_stop_hint_and_start_confirmation in
     # verify_e2e_refactor.sh.
     param([string]$LdmCmd, [string]$WorkDir)
+    # LDM-#2539: never the default 8080 -- a host listener there makes the
+    # -y pre-flight refuse, and the check reports a product failure.
+    $bootPort = Get-FreeSslTestPort -Preferred 8080
 
     $isoHome = Join-Path $WorkDir 'stophint-home'
     $runDir  = Join-Path $WorkDir 'stophint-work'
@@ -2677,7 +2689,7 @@ function Test-StopHintAndStartConfirmation {
     Set-Location $runDir
 
     try {
-        $out = & $LdmCmd run $proj -y -t 2026.q1.7-lts --no-wait 2>&1 | ConvertTo-LdmText
+        $out = & $LdmCmd run $proj -y -t 2026.q1.7-lts --no-wait --port $bootPort 2>&1 | ConvertTo-LdmText
         if ($LASTEXITCODE -ne 0) {
             return @{ Ok = $false; Message = "[ERROR] ERROR: could not start the project (exit ${LASTEXITCODE}).`n   Output was: ${out}" }
         }

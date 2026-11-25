@@ -1,23 +1,28 @@
 === LDM BINARY VERIFICATION REPORT ===
-Timestamp:    Fri 20 Nov 15:04:59 GMT 2026
+Timestamp:    Wed 25 Nov 08:40:06 GMT 2026
 Hostname:  [ANONYMIZED]
 Platform:     Fedora Linux 45 (Workstation Edition)
 Run Context:  workstation
 Binary:    [ANONYMIZED]
-Version:      ldm 2.26.15-pre.1
-Script Ver:   2.26.15-pre.1
+Version:      ldm 2.26.16-pre.3
+Script Ver:   2.26.16-pre.3
 Docker:    29.9.3
 Compose:   5.7.1
 
+✅ Docker has room to finish: 83 GB free, need 15 GB (host: 83 GB).
 >> Initializing Infrastructure
 [0;32m✅  Infrastructure setup complete.[0m
+✅ liferay-search-global carries com.liferay.ldm.managed=true and com.liferay.ldm.infra=search (LDM-#2244).
+✅ liferay-proxy-global runs as Compose project 'ldm-infra' (LDM-#2244).
 >> Custom SSL Port Setup
 [0;32m✅  Infrastructure setup complete.[0m
 ✅ Custom SSL Port & Recreate verified (port 8443).
 ✅ Dev Guardrails verified.
+✅ 'ldm dev-setup --help' exits 0 with usage and creates nothing (LDM-#2477).
 ✅ Cascading default write refused with the working command named; non-cascading keys still write.
 ✅ Config reset-all and revert verified, including the state-bearing refusal (LDM-#1853/#1854).
 ✅ 'ldm config' answers from the deciding store, expands the defaults block and redacts inside it (LDM-#2174).
+✅ 'ldm ai' offline slice verified: --help exits 0, bare form refuses without an argparse error, no-key run returns with the key URL (LDM-#2138).
 ✅ 'ldm renew-ssl' re-issues into <home>/liferay-docker-certs (serial changes), and .ldm/infra/certs is not used.
 ✅ 'target add --mac-address' persists the value to ~/.ldmrc (LDM-#1759).
 ✅ A stale container's MAC is refused with exit 3, naming both values (LDM-#1798).
@@ -26,6 +31,7 @@ Compose:   5.7.1
 ✅ '--delete' removed the project directory, and stayed local.
 ✅ A node-targeted '--delete' announces the node, degrades on an unreachable one, and still removes locally.
 ✅ LDM_BRINGUP_TIMEOUT is read by the binary: a malformed value warns and falls back.
+✅ The search wipe is refused while a project runs, --force overrides it, and the failing container's logs are saved first (LDM-#2083/#2109).
 ✅ '--force' renders as an option, not an always-firing positional (LDM-#1835).
 ✅ '--container' is honoured and stored sanitised as 'LDM-Cname' (LDM-#1836).
 ✅ 'ldm guide' describes the real precedence and a command that works (LDM-#1824).
@@ -54,76 +60,77 @@ Compose:   5.7.1
 [2m╰─────────────┴─────────────────┴──────────┴────────────────╯[0m
 >> Target Status (Local)
 [1;33m=== Target Compute Nodes Status & Connectivity Probe ===[0m
-[2m╭────────┬─────────────────┬────────┬────────────────┬──────────────────┬────────────────────╮[0m
-│ [0;37m[1mTARGET[0m │ [0;37m[1mHOST / ENDPOINT[0m │ [0;37m[1mSTATUS[0m │ [0;37m[1mENGINE VERSION[0m │ [0;37m[1mCPUs / MEMORY   [0m │ [0;37m[1mRUNNING CONTAINERS[0m │
-[2m├────────┼─────────────────┼────────┼────────────────┼──────────────────┼────────────────────┤[0m
-│ local  │ localhost       │ [0;32mONLINE[0m │ v29.9.3        │ 8 CPUs / 15.5 GB │ 3                  │
-[2m╰────────┴─────────────────┴────────┴────────────────┴──────────────────┴────────────────────╯[0m
+[2m╭────────┬─────────────────┬────────┬────────────────┬──────────────────┬────────────────────┬───────────╮[0m
+│ [0;37m[1mTARGET[0m │ [0;37m[1mHOST / ENDPOINT[0m │ [0;37m[1mSTATUS[0m │ [0;37m[1mENGINE VERSION[0m │ [0;37m[1mCPUs / MEMORY   [0m │ [0;37m[1mRUNNING CONTAINERS[0m │ [0;37m[1mDISK FREE[0m │
+[2m├────────┼─────────────────┼────────┼────────────────┼──────────────────┼────────────────────┼───────────┤[0m
+│ local  │ localhost       │ [0;32mONLINE[0m │ v29.9.3        │ 8 CPUs / 15.5 GB │ 3                  │ 79.0 GB   │
+[2m╰────────┴─────────────────┴────────┴────────────────┴──────────────────┴────────────────────┴───────────╯[0m
 >> Target Add (Mock Node)
-[0;32m✅  Target node 'e2e-target-49489' (127.0.0.1) registered successfully.[0m
+[0;32m✅  Target node 'e2e-target-41509' (127.0.0.1) registered successfully.[0m
 ✅ Target registration verified.
 >> Target Remove (Mock Node)
-[0;32m✅  Target node 'e2e-target-49489' removed.[0m
+[0;32m✅  Target node 'e2e-target-41509' removed.[0m
 >> Target Add (127.0.0.2 Loopback)
-[0;32m✅  Target node 'loopback-node-49489' (127.0.0.2) registered successfully.[0m
+[0;32m✅  Target node 'loopback-node-41509' (127.0.0.2) registered successfully.[0m
 ✅ Loopback target registration verified.
 >> Target Status (Loopback Node)
 [1;33m=== Target Compute Nodes Status & Connectivity Probe ===[0m
-[2m╭─────────────────────┬─────────────────┬────────┬────────────────┬──────────────────┬────────────────────╮[0m
-│ [0;37m[1mTARGET             [0m │ [0;37m[1mHOST / ENDPOINT[0m │ [0;37m[1mSTATUS[0m │ [0;37m[1mENGINE VERSION[0m │ [0;37m[1mCPUs / MEMORY   [0m │ [0;37m[1mRUNNING CONTAINERS[0m │
-[2m├─────────────────────┼─────────────────┼────────┼────────────────┼──────────────────┼────────────────────┤[0m
-│ loopback-node-49489 │ 127.0.0.2       │ [0;32mONLINE[0m │ v29.9.3        │ 8 CPUs / 15.5 GB │ 3                  │
-[2m╰─────────────────────┴─────────────────┴────────┴────────────────┴──────────────────┴────────────────────╯[0m
+[2m╭─────────────────────┬─────────────────┬────────┬────────────────┬──────────────────┬────────────────────┬───────────╮[0m
+│ [0;37m[1mTARGET             [0m │ [0;37m[1mHOST / ENDPOINT[0m │ [0;37m[1mSTATUS[0m │ [0;37m[1mENGINE VERSION[0m │ [0;37m[1mCPUs / MEMORY   [0m │ [0;37m[1mRUNNING CONTAINERS[0m │ [0;37m[1mDISK FREE[0m │
+[2m├─────────────────────┼─────────────────┼────────┼────────────────┼──────────────────┼────────────────────┼───────────┤[0m
+│ loopback-node-41509 │ 127.0.0.2       │ [0;32mONLINE[0m │ v29.9.3        │ 8 CPUs / 15.5 GB │ 3                  │ 79.0 GB   │
+[2m╰─────────────────────┴─────────────────┴────────┴────────────────┴──────────────────┴────────────────────┴───────────╯[0m
 >> Target Remove (Loopback Node)
-[0;32m✅  Target node 'loopback-node-49489' removed.[0m
+[0;32m✅  Target node 'loopback-node-41509' removed.[0m
 >> Target Add (TEST-NET-1 Remote Node)
-[0;32m✅  Target node 'announce-node-49489' (192.0.2.10) registered successfully.[0m
-[0;33mℹ  Docker context 'announce-node-49489' dials ssh://192.0.2.10.[0m
+[0;32m✅  Target node 'announce-node-41509' (192.0.2.10) registered successfully.[0m
+[0;33mℹ  Docker context 'announce-node-41509' dials ssh://192.0.2.10.[0m
 [1;33m=== LDM Sandbox Projects ===[0m
-[0;33mℹ  1 project targets a remote compute node (announce-proj-49489 -> announce-node-49489); this may take longer than usual, and will wait if the node is asleep.[0m
+[0;33mℹ  1 project targets a remote compute node (announce-proj-41509 -> announce-node-41509); this may take longer than usual, and will wait if the node is asleep.[0m
 [2m╭─────────────────────┬───────────────┬─────────────────────┬─────────────┬───────────────────────╮[0m
 │ [0;37m[1mProject            [0m │ [0;37m[1mVersion      [0m │ [0;37m[1mTarget             [0m │ [0;37m[1mStatus     [0m │ [0;37m[1mURL                  [0m │
 [2m├─────────────────────┼───────────────┼─────────────────────┼─────────────┼───────────────────────┤[0m
-│ [0;36mannounce-proj-49489[0m │ 2026.q1.7-lts │ [1;36mannounce-node-49489[0m │ [0;33mNot Created[0m │ [4mhttp://localhost:8099[0m │
+│ [0;36mannounce-proj-41509[0m │ 2026.q1.7-lts │ [1;36mannounce-node-41509[0m │ [0;33mNot Created[0m │ [4mhttp://localhost:8099[0m │
 [2m╰─────────────────────┴───────────────┴─────────────────────┴─────────────┴───────────────────────╯[0m
 ✅ Remote compute node announced up front, naming project -> node (LDM-#1341).
 ✅ Announcement correctly suppressed under --json (LDM-#1093).
-[0;33mℹ  1 project targets a remote compute node (sshfail-proj-49489 -> sshfail-node-49489); this may take longer than usual, and will wait if the node is asleep.[0m
-[0;33mℹ  Cannot reach compute node 'sshfail-node-49489' over SSH (nobody@127.0.0.1:51197 refused the connection). It may still be starting -- retrying for up to 30s. Set LDM_SSH_READY_TIMEOUT=0 to disable.[0m
-[1;31m❌  Cannot reach compute node 'sshfail-node-49489' over SSH (nobody@127.0.0.1:51197 refused the connection).[0m
-[0;36m💡 Tip:      Nothing is listening on port 51197. If the node was started moments ago, sshd may not be up yet -- wait a few seconds and retry. Otherwise it may be stopped or re-addressed: check with 'ldm target status sshfail-node-49489', then re-register with 'ldm target add sshfail-node-49489 --host <ip> --user nobody --key <key>'.[0m
+[0;33mℹ  1 project targets a remote compute node (sshfail-proj-41509 -> sshfail-node-41509); this may take longer than usual, and will wait if the node is asleep.[0m
+[0;33mℹ  Cannot reach compute node 'sshfail-node-41509' over SSH (nobody@127.0.0.1:43703 refused the connection). It may still be starting -- retrying for up to 30s. Set LDM_SSH_READY_TIMEOUT=0 to disable.[0m
+[1;31m❌  Cannot reach compute node 'sshfail-node-41509' over SSH (nobody@127.0.0.1:43703 refused the connection).[0m
+[0;36m💡 Tip:      Nothing is listening on port 43703. If the node was started moments ago, sshd may not be up yet -- wait a few seconds and retry. Otherwise it may be stopped or re-addressed: check with 'ldm target status sshfail-node-41509', then re-register with 'ldm target add sshfail-node-41509 --host <ip> --user nobody --key <key>'.[0m
 ✅ Unreachable node diagnosed by name and cause, with no raw blob (LDM-#1345).
-[0;33mℹ  The LDM project 'portconflict-49489' already exists and this command will reconfigure it.[0m
+[0;33mℹ  The LDM project 'portconflict-41509' already exists and this command will reconfigure it.[0m
 [1;36m▶  Synchronizing Assets[0m
 [0;33mℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...[0m
-[1;31m❌  Port conflict detected: Port 5601 is already in use on the host and is required by service 'kibana' in your compose configuration. It is currently held by container 'ldm-e2e-port-holder-49489'.[0m
+[1;31m❌  Port conflict detected: Port 5601 is already in use on the host and is required by service 'kibana' in your compose configuration. It is currently held by container 'ldm-e2e-port-holder-41509'.[0m
 [0;36m💡 Tip:      Service 'kibana' has a fixed port, so a re-run will produce 5601 again. Free up port 5601 on the host, or disable/move that service, then re-run.[0m
 ✅ Late port conflict exits 4 and gives honest advice for a fixed-port service (LDM-#1350/#1397).
 >> Running LDM Project
-[0;33mℹ  The LDM project 'ldm-smoke-test-49489' already exists and this command will reconfigure it.[0m
+[0;33mℹ  The LDM project 'ldm-smoke-test-41509' already exists and this command will reconfigure it.[0m
 [1;36m▶  Synchronizing Assets[0m
 [0;33mℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...[0m
 [1;36m▶  Starting Container Stack[0m
-[0;32m✅  Project 'ldm-smoke-test-49489' started in background.[0m
-[0;36m💡  Next step: Run 'ldm link <path-to-cx>' to attach client extensions, or 'ldm logs -f ldm-smoke-test-49489' to tail logs.[0m
-✅ All 3 named volume(s) carry ownership labels naming 'ldm-smoke-test-49489' with the right role (LDM-#2243).
+[0;32m✅  Project 'ldm-smoke-test-41509' started in background.[0m
+[0;36m💡  Next step: Run 'ldm link <path-to-cx>' to attach client extensions, or 'ldm logs -f ldm-smoke-test-41509' to tail logs.[0m
+✅ All 3 named volume(s) carry ownership labels naming 'ldm-smoke-test-41509' with the right role (LDM-#2243).
 ✅ The portal runs with umask 0022, so the config trees it publishes are readable by a client extension (LDM-#1944).
 >> Deploying artifact
 [0;32m✅  Artifact deployment complete.[0m
 ✅ Hot Deploy verified.
 ✅ Hot Deploy verified.
+✅ Docker has room for the snapshot: 77 GB free, need 5 GB (host: 77 GB).
 >> Creating Snapshot
 [0;33mℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...[0m
 [0;32m✅  Database dump completed.[0m
 [0;33mℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...[0m
-[0;32m✅  Snapshot saved: /home/[USER]/ldm-verify/e2e-work-dir-49489/ldm-smoke-test-49489/snapshots/20261120_151929[0m
+[0;32m✅  Snapshot saved: /home/[USER]/ldm-verify/e2e-work-dir-41509/ldm-smoke-test-41509/snapshots/20261125_085715[0m
 ✅ Integrity check verified.
 >> Bypassing Integrity
-[1;33m=== Snapshots for ldm-smoke-test-49489 ===[0m
-[1] [0;36m20261120_151929[0m - [1mBinary-Verify[0m (1.0 GB)[2m [DB,VOL,MOD][0m
-[0;33m⚠️  Resetting [1mldm-smoke-test-49489[0m (all)...[0m
-[0;33m⚠️  Tearing down stack: ldm-smoke-test-49489[0m
-[0;32m✅  Project ldm-smoke-test-49489 reset successful.[0m
+[1;33m=== Snapshots for ldm-smoke-test-41509 ===[0m
+[1] [0;36m20261125_085715[0m - [1mBinary-Verify[0m (1.0 GB)[2m [DB,VOL,MOD][0m
+[0;33m⚠️  Resetting [1mldm-smoke-test-41509[0m (all)...[0m
+[0;33m⚠️  Tearing down stack: ldm-smoke-test-41509[0m
+[0;32m✅  Project ldm-smoke-test-41509 reset successful.[0m
 [0;33m⚠️  Integrity verification disabled via --no-verify.[0m
 [1;36m▶  Restoring Workspace Data[0m
 [0;33m⚠️  Discarded 11 search setting(s) from the package's portal-ext.properties; this machine resolved search_mode 'sidecar'.[0m
@@ -157,20 +164,20 @@ Compose:   5.7.1
 ✅ Set User Default verified.
 ✅ Remove User Default verified.
 >> Scaling Liferay
-[0;32m✅  Updated scale factors for project ldm-smoke-test-49489[0m
+[0;32m✅  Updated scale factors for project ldm-smoke-test-41509[0m
 ✅ logs --instance routing verified.
 ✅ Trace Log (last-command.log) verified.
 >> Scaling Liferay back to 1 for logs export check
-[0;32m✅  Updated scale factors for project ldm-smoke-test-49489[0m
+[0;32m✅  Updated scale factors for project ldm-smoke-test-41509[0m
 >> Starting project for logs export check
-[0;33mℹ  The LDM project 'ldm-smoke-test-49489' already exists and this command will reconfigure it.[0m
+[0;33mℹ  The LDM project 'ldm-smoke-test-41509' already exists and this command will reconfigure it.[0m
 [1;36m▶  Synchronizing Assets[0m
 [0;33mℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...[0m
 [1;36m▶  Starting Container Stack[0m
-[0;32m✅  Project 'ldm-smoke-test-49489' started in background.[0m
-[0;36m💡  Next step: Run 'ldm link <path-to-cx>' to attach client extensions, or 'ldm logs -f ldm-smoke-test-49489' to tail logs.[0m
+[0;32m✅  Project 'ldm-smoke-test-41509' started in background.[0m
+[0;36m💡  Next step: Run 'ldm link <path-to-cx>' to attach client extensions, or 'ldm logs -f ldm-smoke-test-41509' to tail logs.[0m
 >> Exporting project logs
-✅ Logs Export verified (ldm-smoke-test-49489-ldm-smoke-test-49489_20261120_152334.log).
+✅ Logs Export verified (ldm-smoke-test-41509-ldm-smoke-test-41509_20261125_090038.log).
 ✅ ldm start fast-fail verified.
 ✅ ldm run reconfigure UX message verified.
 ✅ Safe SELECT SQL Query verified.
@@ -178,25 +185,25 @@ Compose:   5.7.1
 [0;36m💡  Next step: Run 'ldm start' to start the container again, or 'ldm status' to view environment status.[0m
 >> Rebuilding properties
 [0;33mℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...[0m
-[1;33m=== Rebuilding Properties for project: ldm-smoke-test-49489 ===[0m
+[1;33m=== Rebuilding Properties for project: ldm-smoke-test-41509 ===[0m
 [0;32m✅  Properties successfully rebuilt.[0m
 ✅ Properties Override Cascade verified (rebuild).
 >> Resetting properties
 [0;33mℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...[0m
-[1;33m=== Resetting Properties for project: ldm-smoke-test-49489 ===[0m
+[1;33m=== Resetting Properties for project: ldm-smoke-test-41509 ===[0m
 [0;32m✅  Properties successfully reset.[0m
 ✅ Properties Override Reset verified.
 ✅ ldm list --json schema verified.
 ✅ ldm status --json schema verified.
 >> Starting project for idempotency check
-[0;33mℹ  The LDM project 'ldm-smoke-test-49489' already exists and this command will reconfigure it.[0m
+[0;33mℹ  The LDM project 'ldm-smoke-test-41509' already exists and this command will reconfigure it.[0m
 [1;36m▶  Synchronizing Assets[0m
 [0;33mℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...[0m
 [1;36m▶  Starting Container Stack[0m
 [1;36m▶  Awaiting Liferay Readiness[0m
-✅  Liferay ready: http://localhost:49489  (55s awaiting readiness)
+✅  Liferay ready: http://localhost:41509  (55s awaiting readiness)
 ✅ Idempotent Exit Code 5 verified.
-✅ Reported access URL serves: http://localhost:49489 -> HTTP 200 (LDM-#1574).
+✅ Reported access URL serves: http://localhost:41509 -> HTTP 200 (LDM-#1574).
 >> Deploying Synthetic CX
 [0;32m✅  Artifact deployment complete.[0m
 ✅ Client Extension deploy & staging verified.
@@ -214,7 +221,7 @@ Compose:   5.7.1
 [0;33mℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...[0m
 [0;32m✅  Database dump completed.[0m
 [0;33mℹ  Verifying Docker can mount the project directory (pulls alpine on first use)...[0m
-[0;32m✅  Snapshot saved: /home/[USER]/ldm-verify/e2e-work-dir-49489/ldm-smoke-test-49489/snapshots/20261120_152546[0m
+[0;32m✅  Snapshot saved: /home/[USER]/ldm-verify/e2e-work-dir-41509/ldm-smoke-test-41509/snapshots/20261125_090253[0m
 ✅ Snapshot manifest lists the client extension it claims (LDM-#1573).
 ✅ All 4 published config file(s) under routes/ are readable by a client extension (LDM-#1944/#1946).
    published DXP config tree:
@@ -255,16 +262,23 @@ ASSERTED: LDM recorded 6 startup phases including 'Tomcat Server Ready', and the
 ✅ 'ldm db start'/'db stop' drive the real global container, idempotently (LDM-#1400).
 ✅ Every service and volume carries the project UUID ownership label (LDM-#1393/#1395).
 ✅ Shared search mode verified (flag honoured, mode persisted, OSGi config written and mounted).
+✅ Docker has room for the .ldmp round trip: 74 GB free, need 5 GB (host: 74 GB).
 ASSERTED: the package's custom_env carries none of LDM's rendered keys (0 declared).
-✅ The package ldm-smoke-test-49489.ldmp carries none of the publisher's rendered environment (LDM-#2370).
+✅ The package ldm-smoke-test-41509.ldmp carries none of the publisher's rendered environment (LDM-#2370).
 SKIPPED (not run): the source project's osgi/modules held no LDM bundle when it was packaged -- its tag is outside every workaround's window -- so a package without one proves nothing about LDM-#2359.
 ⚠️  SKIPPED (not run): LDM-#2359 was NOT evaluated -- see the reason above. This is not a pass.
-ℹ  Stopped 'ldm-smoke-test-49489' so the imported copy boots alone (LDM-#2245).
-✅ .ldmp round trip verified: packed, imported as 'ldm-smoke-test-49489-roundtrip', booted and serving HTTP 200 on 49495 (LDM-#2131).
+ASSERTED: the stateful package is not stateless (package_kind None) and its manifest carries the container_hostname key.
+✅ The stateful package ldm-smoke-test-41509.ldmp is the package kind it should be (LDM-#2493/#2445).
+ASSERTED: the --stateless package declares package_kind 'stateless' and carries no database dump, data/, osgi/state or search backup (3 top-level members, 26 payload members).
+✅ The --stateless package ldm-smoke-test-41509.ldmp is the package kind it should be (LDM-#2493/#2445).
+ℹ  Stopped 'ldm-smoke-test-41509' so the imported copy boots alone (LDM-#2245).
+✅ .ldmp round trip verified: packed, imported as 'ldm-smoke-test-41509-roundtrip', booted and serving HTTP 200 on 41515 (LDM-#2131).
 ASSERTED: no key is duplicated in the copy's liferay environment (15 entries).
 ASSERTED: the copy's custom_env carries none of LDM's rendered keys (0 declared).
-✅ The imported copy 'ldm-smoke-test-49489-roundtrip' carries none of the publisher's rendered environment (LDM-#2370).
-✅ 'ldm reset all' removed the database volume ldm-smoke-test-49489-roundtrip-db-db-data (LDM-#2118).
+✅ The imported copy 'ldm-smoke-test-41509-roundtrip' carries none of the publisher's rendered environment (LDM-#2370).
+   recorded: status='ready' pre_readiness_seconds=48.4 elapsed_seconds=46; measured wall clock 95s
+✅ A plain 'ldm run' recorded a positive pre_readiness_seconds that reconciles with the wall clock (LDM-#2200).
+✅ 'ldm reset all' removed the database volume ldm-smoke-test-41509-roundtrip-db-db-data (LDM-#2118).
 >> Checking Status
 [1;33m=== LDM Service Status ===[0m
 [0;37mGlobal Infrastructure:[0m
