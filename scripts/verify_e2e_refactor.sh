@@ -2761,6 +2761,10 @@ YAML
 }
 
 verify_mac_pin_refusal() {
+    # LDM-#2539: never the default 8080 -- a host listener there makes the
+    # -y pre-flight refuse, and the check reports a product failure.
+    local boot_port
+    boot_port=$(pick_free_port 8080)
     local ldm_cmd="$1"
     local work_dir="$2"
 
@@ -2793,7 +2797,7 @@ verify_mac_pin_refusal() {
     # Boot far enough for the container to exist; its MAC is readable from
     # creation, so waiting for Liferay would cost minutes for no extra signal.
     out=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" run "$proj" \
-        --node "$node" -y -t 2026.q1.7-lts --no-wait 2>&1) && code=0 || code=$?
+        --node "$node" -y -t 2026.q1.7-lts --no-wait --port "$boot_port" 2>&1) && code=0 || code=$?
     if [ "$code" -ne 0 ]; then
         _macrefuse_teardown
         echo "❌ ERROR: could not start the pinned project (exit ${code})."
@@ -2845,6 +2849,10 @@ verify_mac_pin_refusal() {
 }
 
 verify_containers_removed_volumes_intact() {
+    # LDM-#2539: never the default 8080 -- a host listener there makes the
+    # -y pre-flight refuse, and the check reports a product failure.
+    local boot_port
+    boot_port=$(pick_free_port 8080)
     # LDM-#1873: end-to-end coverage for LDM-#1870's fix. `ldm list` used to
     # report a project whose containers were removed entirely (e.g. `docker
     # rm`, volumes intact) as merely "Stopped" -- indistinguishable from a
@@ -2885,7 +2893,7 @@ verify_containers_removed_volumes_intact() {
 
     local out code
     out=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" run "$proj" \
-        -y -t 2026.q1.7-lts --no-wait 2>&1) && code=0 || code=$?
+        -y -t 2026.q1.7-lts --no-wait --port "$boot_port" 2>&1) && code=0 || code=$?
     if [ "$code" -ne 0 ]; then
         _notcreated_teardown
         echo "❌ ERROR: could not start the project (exit ${code})."
@@ -2977,7 +2985,7 @@ verify_containers_removed_volumes_intact() {
     # 3. `ldm run` must recreate the stack from the surviving named volume --
     #    no data loss.
     out=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" run "$proj" \
-        -y -t 2026.q1.7-lts --no-wait 2>&1) && code=0 || code=$?
+        -y -t 2026.q1.7-lts --no-wait --port "$boot_port" 2>&1) && code=0 || code=$?
     if [ "$code" -ne 0 ]; then
         _notcreated_teardown
         echo "❌ ERROR: 'ldm run' could not recreate '${proj}' after its containers were removed (exit ${code})."
@@ -3015,6 +3023,10 @@ verify_containers_removed_volumes_intact() {
 }
 
 verify_stop_hint_and_start_confirmation() {
+    # LDM-#2539: never the default 8080 -- a host listener there makes the
+    # -y pre-flight refuse, and the check reports a product failure.
+    local boot_port
+    boot_port=$(pick_free_port 8080)
     # LDM-#1937: the complement of verify_containers_removed_volumes_intact
     # above. That function covers containers that were REMOVED, where `ldm
     # start` cannot help and must refuse naming `ldm run`. This one covers
@@ -3059,7 +3071,7 @@ verify_stop_hint_and_start_confirmation() {
 
     local out code
     out=$(cd "$run_dir" && LDM_HOME="$iso_home" "$ldm_cmd" run "$proj" \
-        -y -t 2026.q1.7-lts --no-wait 2>&1) && code=0 || code=$?
+        -y -t 2026.q1.7-lts --no-wait --port "$boot_port" 2>&1) && code=0 || code=$?
     if [ "$code" -ne 0 ]; then
         _stophint_teardown
         echo "❌ ERROR: could not start the project (exit ${code})."
@@ -3420,6 +3432,10 @@ print(next((r.get("target", "") for r in rows if r.get("project") == sys.argv[1]
 }
 
 verify_bringup_timeout_is_read_by_the_binary() {
+    # LDM-#2539: never the default 8080 -- a host listener there makes the
+    # -y pre-flight refuse, and the check reports a product failure.
+    local boot_port
+    boot_port=$(pick_free_port 8080)
     # LDM-#2064: the bound on the stack bring-up is overridable, and the
     # override has to be read by the SHIPPED binary. A unit test can prove the
     # resolver behaves; only this can prove the value reaches it through the
@@ -3455,7 +3471,7 @@ verify_bringup_timeout_is_read_by_the_binary() {
 
     local out code
     out=$(cd "$run_dir" && LDM_HOME="$iso_home" LDM_BRINGUP_TIMEOUT="not-a-number" \
-        "$ldm_cmd" run "$proj" -y -t 2026.q1.7-lts --no-wait 2>&1) && code=0 || code=$?
+        "$ldm_cmd" run "$proj" -y -t 2026.q1.7-lts --no-wait --port "$boot_port" 2>&1) && code=0 || code=$?
 
     if [ "$code" -ne 0 ]; then
         _bringup_teardown
