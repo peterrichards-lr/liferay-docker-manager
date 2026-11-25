@@ -971,7 +971,10 @@ function Write-RoundTripOutput {
     )
 
     Write-Verdict "          --- what '$Label' said ---"
-    $text = ConvertTo-LdmText $Raw
+    # Piped, not positional: passed positionally, a captured array arrives as
+    # ONE object and [string] joins its lines with spaces, so every dump came
+    # out as a single line (found while adding LDM-#2541's curl evidence).
+    $text = $Raw | ConvertTo-LdmText
     $any = $false
     foreach ($line in ($text -split "`n")) {
         if ($line.Trim()) {
@@ -1158,6 +1161,33 @@ function Get-HttpStatus {
         }
     }
     return [PSCustomObject]@{ Status = $status; Note = $note }
+}
+
+function Wait-HttpServing {
+    # LDM-#2541: the PowerShell twin of http_status_until_serving() in
+    # verify_e2e_refactor.sh. Asks through Get-HttpStatus until the portal
+    # serves, for a bounded period.
+    #
+    # One request was the whole of the round-trip serve check, and on an
+    # OrbStack host it read '000' against a copy Docker reported healthy -- a
+    # run that passed unchanged an hour later. Only 200/302 stops the loop
+    # early; anything else is retried until the budget is spent, and the LAST
+    # probe is returned either way, so the caller's assertion stays exactly as
+    # strict as before. Each attempt can itself take up to Get-HttpStatus's
+    # 30 s timeout, so the worst case is the budget plus one attempt.
+    param(
+        [Parameter(Mandatory = $true)][string]$Uri,
+        [int]$BudgetSec = 180,
+        [int]$PauseSec = 10
+    )
+    $deadline = (Get-Date).AddSeconds($BudgetSec)
+    while ($true) {
+        $probe = Get-HttpStatus -Uri $Uri
+        if ($probe.Status -eq "200" -or $probe.Status -eq "302") { break }
+        if ((Get-Date) -ge $deadline) { break }
+        Start-Sleep -Seconds $PauseSec
+    }
+    return $probe
 }
 
 function Get-HostFreeGb {
@@ -7958,8 +7988,15 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
     # default and a hung probe would burn a CI job rather than fail it.
     #
     # Redirects are FOLLOWED, and that is load-bearing -- see Get-HttpStatus.
+    #
+    # LDM-#2541: retried for up to $roundTripServeBudget seconds, and a
+    # failure carries its own evidence -- the port mapping Docker holds and a
+    # verbose curl -- so the next '000' can be told apart from a refused port
+    # or a hung render without a re-run. Parity with the bash half.
+    $roundTripServeBudget = 180
     if ($roundTripOk) {
-        $roundTripProbe = Get-HttpStatus -Uri "http://localhost:$roundTripPort/c/portal/layout"
+        $roundTripUrl = "http://localhost:$roundTripPort/c/portal/layout"
+        $roundTripProbe = Wait-HttpServing -Uri $roundTripUrl -BudgetSec $roundTripServeBudget -PauseSec 10
         $roundTripStatus = $roundTripProbe.Status
         if ($roundTripStatus -eq "200" -or $roundTripStatus -eq "302") {
             Write-Verdict "[SUCCESS] .ldmp round trip verified: packed, imported as '$ROUNDTRIP_PROJECT', booted and serving HTTP $roundTripStatus on $roundTripPort (LDM-#2131)."
@@ -7971,6 +8008,22 @@ assert 'osgi/configs:/opt/liferay/osgi/configs' in compose, (
                 # a blocked redirect are all just '000' and the run has to be
                 # repeated on another shell to tell them apart.
                 Write-Verdict "          The probe reported: $($roundTripProbe.Note)"
+            }
+            Write-Verdict "          Retried for ${roundTripServeBudget}s; the last status was '$roundTripStatus' (LDM-#2541)."
+            $rtPortRaw = & docker port $ROUNDTRIP_PROJECT 2>&1
+            Write-RoundTripOutput -Label "docker port $ROUNDTRIP_PROJECT" -Raw $rtPortRaw
+            # -CommandType Application: on Windows PowerShell 5.1 `curl` is an
+            # alias for Invoke-WebRequest, which takes none of these flags.
+            # Windows 10+ ships a real curl.exe, which this finds instead.
+            $rtCurl = Get-Command -Name curl -CommandType Application -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+            if ($rtCurl) {
+                $rtNullDevice = if ($env:OS -eq "Windows_NT") { "NUL" } else { "/dev/null" }
+                $rtCurlRaw = & $rtCurl.Source -sv --max-time 10 -o $rtNullDevice $roundTripUrl 2>&1
+                Write-RoundTripOutput -Label "curl -sv --max-time 10 $roundTripUrl" -Raw $rtCurlRaw
+            }
+            else {
+                Write-Verdict "          curl is not installed; no verbose probe."
             }
             $roundTripOk = $false
         }

@@ -487,6 +487,15 @@ with. Each check now records a line such as
 `Docker has room to finish: 20 GB free, need 15 GB (host: 21 GB)`. Those
 figures are what ruled disk out as the cause of an OrbStack round-trip failure.
 
+**The round trip's serve check retries for up to three minutes** (LDM-#2541).
+It used to make one request to `/c/portal/layout`, and on an OrbStack host that
+read `000` against a copy Docker reported healthy, in a run that passed
+unchanged an hour later. It now asks every 10 seconds until the budget is spent,
+and still passes only on `200` or `302`. If it never serves, the report records
+the last status, `docker port` for the copy's container and, where `curl` is
+installed, a `curl -sv --max-time 10` of the URL, so the failure carries its own
+evidence instead of needing a re-run.
+
 The run refuses **before pulling anything**, so a machine that cannot finish
 never produces a half-written report. That matters because a report which failed
 for lack of disk still reads as a defect finding, and these reports are the
@@ -1132,4 +1141,4 @@ table above as the CI budget** — the workflow prints its own timings from
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*
+*Last Updated: 2026-11-25* | *Last Reviewed: 2026-11-25*

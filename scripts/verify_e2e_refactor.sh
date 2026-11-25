@@ -1175,6 +1175,33 @@ except Exception:
     print("000")
 PYEOF
 }
+
+# LDM-#2541: ask until the portal serves, for a bounded period.
+#
+# One request was the whole of the round-trip serve check, and on an OrbStack
+# host it read '000' against a copy Docker reported healthy -- a run that
+# passed unchanged an hour later. A single slow first render should not read
+# as "does not serve". Only 200/302 stops the loop early; anything else is
+# retried until the budget is spent, and the LAST status is printed either
+# way, so the caller's assertion stays exactly as strict as before.
+#
+# Usage: http_status_until_serving <url> [budget-seconds] [pause-seconds]
+# Each attempt can itself take up to http_status's 30 s timeout, so the worst
+# case is the budget plus one attempt.
+http_status_until_serving() {
+    local url="$1" budget="${2:-180}" pause="${3:-10}"
+    local deadline status
+    deadline=$(($(date +%s) + budget))
+    while :; do
+        status=$(http_status "$url")
+        case "$status" in
+            200 | 302) break ;;
+        esac
+        [ "$(date +%s)" -ge "$deadline" ] && break
+        sleep "$pause"
+    done
+    printf '%s\n' "$status"
+}
 VENV_PIP="${TEST_VENV}/bin/pip"
 VENV_PYTEST="${TEST_VENV}/bin/pytest"
 
@@ -7848,14 +7875,33 @@ fi
 # Serving is the assertion. `ldm run` returning 0 already means LDM believes it
 # is ready; this asks the portal itself, independently, which is the whole
 # difference between "the command succeeded" and "the demo works".
+#
+# LDM-#2541: retried for up to ROUNDTRIP_SERVE_BUDGET seconds, and a failure
+# carries its own evidence -- the port mapping Docker holds and a verbose curl
+# -- so the next '000' can be told apart from a refused port or a hung render
+# without a re-run.
+ROUNDTRIP_SERVE_BUDGET=180
 if [ "$ROUNDTRIP_OK" = true ]; then
-    ROUNDTRIP_STATUS=$(http_status "http://localhost:${ROUNDTRIP_PORT}/c/portal/layout")
+    ROUNDTRIP_URL="http://localhost:${ROUNDTRIP_PORT}/c/portal/layout"
+    ROUNDTRIP_STATUS=$(http_status_until_serving "$ROUNDTRIP_URL" "$ROUNDTRIP_SERVE_BUDGET" 10)
     case "$ROUNDTRIP_STATUS" in
         200 | 302)
             report_ok "✅ .ldmp round trip verified: packed, imported as '${ROUNDTRIP_PROJECT}', booted and serving HTTP ${ROUNDTRIP_STATUS} on ${ROUNDTRIP_PORT} (LDM-#2131)."
             ;;
         *)
             echo "❌ ERROR: the imported project booted but does not serve -- HTTP '${ROUNDTRIP_STATUS}' on port ${ROUNDTRIP_PORT} (LDM-#2131)." | tee -a "$RESULTS_FILE_TMP"
+            {
+                echo "   Retried for ${ROUNDTRIP_SERVE_BUDGET}s; the last status was '${ROUNDTRIP_STATUS}' (LDM-#2541)."
+                echo "--- docker port ${ROUNDTRIP_PROJECT} ---"
+                docker port "$ROUNDTRIP_PROJECT" 2>&1 || true
+                if command -v curl >/dev/null 2>&1; then
+                    echo "--- curl -sv --max-time 10 ${ROUNDTRIP_URL} ---"
+                    curl -sv --max-time 10 -o /dev/null "$ROUNDTRIP_URL" 2>&1 || true
+                else
+                    echo "--- curl is not installed; no verbose probe ---"
+                fi
+                echo "--- end ---"
+            } | tee -a "$RESULTS_FILE_TMP"
             ROUNDTRIP_OK=false
             ;;
     esac
