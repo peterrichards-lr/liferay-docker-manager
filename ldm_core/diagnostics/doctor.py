@@ -1900,7 +1900,7 @@ class DoctorRunner:
                 if lcp_errors:
                     for err in lcp_errors:
                         UI.raw(f"  {UI.YELLOW}⚠{UI.COLOR_OFF} {err}")
-                self._check_oauth_erc_list(p_path, lcp_file)
+                self._check_erc_list(p_path, lcp_file)
 
             # 7.2.4 License Check
             self._check_project_license(p_path, meta)
@@ -2273,26 +2273,26 @@ class DoctorRunner:
             except Exception:
                 pass
 
-    def _check_oauth_erc_list(self, p_path, lcp_file):
+    def _check_erc_list(self, p_path, lcp_file):
         """Warn when a config-node microservice's LCP.json lacks its ERC list.
 
         LDM-#2407. A warning, never a failure, and only for an ABSENT
         variable. A present list that omits a declared ERC is usually
-        deliberate, so it is a verbose-only detail. See `oauth_erc_list_gap`.
+        deliberate, so it is a verbose-only detail. See `erc_list_gap`.
         """
         from ldm_core.workspace.metadata import (
-            describe_oauth_erc_list_gap,
-            oauth_erc_list_gap,
+            describe_erc_list_gap,
+            erc_list_gap,
         )
 
         try:
-            gap = oauth_erc_list_gap(lcp_file.parent)
+            gap = erc_list_gap(lcp_file.parent)
         except Exception:
             return
         if not gap:
             return
         label = lcp_file.parent.relative_to(p_path).as_posix()
-        summary, tip = describe_oauth_erc_list_gap(gap, label)
+        summary, tip = describe_erc_list_gap(gap, label)
         if gap["listed"] is not None:
             UI.detail(f"[{p_path.name}] {summary}")
             return

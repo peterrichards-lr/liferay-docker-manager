@@ -141,7 +141,7 @@ def _depends_on_config_node(cx_dir):
     return False
 
 
-def oauth_erc_list_gap(cx_dir):
+def erc_list_gap(cx_dir):
     """Report a config-node microservice whose LCP.json does not name its OAuth apps.
 
     LDM-#2407. config-node's `lxcConfig.oauthApplication(erc)` resolves only
@@ -199,8 +199,8 @@ def oauth_erc_list_gap(cx_dir):
     )
 
 
-def describe_oauth_erc_list_gap(gap, label):
-    """The (summary, tip) pair for a gap from `oauth_erc_list_gap`."""
+def describe_erc_list_gap(gap, label):
+    """The (summary, tip) pair for a gap from `erc_list_gap`."""
     if gap["listed"] is None:
         summary = (
             f"'{label}' uses config-node and declares OAuth application(s) "
@@ -225,7 +225,7 @@ def describe_oauth_erc_list_gap(gap, label):
     return summary, tip
 
 
-def warn_oauth_erc_list_gaps(workspace_root):
+def warn_erc_list_gaps(workspace_root):
     """Warn, at import, for each config-node microservice lacking the list.
 
     LDM-#2407. Advisory only, and only for an ABSENT variable: a list that
@@ -238,9 +238,9 @@ def warn_oauth_erc_list_gaps(workspace_root):
     for item in sorted(ce_dir.iterdir()):
         if not item.is_dir() or item.name.startswith("."):
             continue
-        gap = oauth_erc_list_gap(item)
+        gap = erc_list_gap(item)
         if gap and gap["listed"] is None:
-            summary, tip = describe_oauth_erc_list_gap(gap, item.name)
+            summary, tip = describe_erc_list_gap(gap, item.name)
             UI.warning(summary)
             UI.raw(f"  {tip}")
 
