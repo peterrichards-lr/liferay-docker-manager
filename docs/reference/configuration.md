@@ -274,6 +274,7 @@ itself behaves.
 | `LDM_HOME` | — | State directory. See [above](#state-directory-ldm_home). |
 | `LDM_HTTP_PORT` | `80` | Host HTTP port for the global proxy. |
 | `LDM_IGNORE_DOCKER` | `false` | `true` skips Docker availability checks. |
+| `LDM_JSON` | unset | `1` makes a privileged step that LDM cannot perform under `-y` also print a `privileged_step` JSON line to stdout (exit `6`), for commands that have no `--json` of their own. See [JSON output](json_output.md). |
 | `LDM_LFR_TUNNEL_BIN` | unset | Path to the `lfr-tunnel` binary, instead of searching `PATH`. |
 | `LDM_LFR_TUNNEL_INSTALL_CMD` | unset | Command LDM names when `lfr-tunnel` is missing. |
 | `LDM_MCP_CIRCUIT_BREAKER_MAX_ACTIONS` | `5` | Actions allowed inside the MCP circuit-breaker window. |
@@ -418,4 +419,4 @@ LDM mounts.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-23* | *Last Reviewed: 2026-11-23*
+*Last Updated: 2026-11-25* | *Last Reviewed: 2026-11-25*

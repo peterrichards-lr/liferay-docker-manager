@@ -235,8 +235,10 @@ project:
 - client extensions: the archives in `osgi/client-extensions/`, and the
   expanded `client-extensions/` folders. A container extension's folder ships
   whole, so the importer's `ldm run` builds its microservice. Any other
-  extension ships only its descriptors there, since its zip is already in
-  the package;
+  extension -- a site initializer, batch job, theme, favicon, spritemap or
+  custom element -- ships only its descriptors there, since its zip is already
+  in the package. Its `Dockerfile` is left out too, so an older LDM does not
+  mistake it for a container;
 - site initializers, in `.ldm/deferred-client-extensions/`, so that the
   importer's Liferay first starts without them and LDM deploys them once it
   is healthy. This includes one `ldm link` is still holding back;
@@ -405,4 +407,4 @@ ldm re-seed demo              # Total project reset to Day Zero (Seeded)
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-24* | *Last Reviewed: 2026-11-24*
+*Last Updated: 2026-11-25* | *Last Reviewed: 2026-11-25*

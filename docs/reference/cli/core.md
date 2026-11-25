@@ -330,18 +330,23 @@ LDM will launch an interactive wizard to gather your JDBC connection details (Ho
 
 ### SSL Defaults (New Projects)
 
-LDM uses smarter defaults for SSL based on your hostname. When a custom `--host-name` is used, SSL is enabled by default to support modern Liferay features like Client Extensions.
+LDM uses smarter defaults for SSL based on your hostname. When a custom domain is used with `--host-name`, SSL is enabled by default to support modern Liferay features like Client Extensions. `localhost` and `*.localhost` names stay on HTTP unless you pass `--ssl` (LDM-#2514), and need no hosts-file entry or `sudo` (LDM-#2513). A bare name with no dot, such as `--host-name myproj`, becomes `myproj.localhost`. See [Networking & DNS](../networking.md) for the full rules.
 
 > [!TIP]
-> **SSL Hostname Prompt**: If you explicitly pass the `--ssl` flag without providing a `--host-name`, LDM will interactively prompt you for a custom virtual hostname. This allows LDM to attempt to inject the custom domain into your `/etc/hosts` file automatically. (In non-interactive mode `-y`, it safely defaults to `localhost`).
+> **SSL Hostname Prompt**: If you explicitly pass the `--ssl` flag without providing a `--host-name`, LDM will interactively prompt you for a virtual hostname, suggesting `<project>.localhost` (no hosts entry needed). A custom domain you enter there goes through the hosts-file prompt as usual. (In non-interactive mode `-y`, it safely defaults to `localhost`).
 
 | Command | Host Name | SSL Default | Access URL |
 | :--- | :--- | :--- | :--- |
 | `ldm run` | `localhost` | `False` | `http://localhost:8080` |
 | `ldm run --ssl` | *Prompts User* | `True` | `https://<prompted-host>` |
-| `ldm run --host-name my.local` | `my.local` | `True` | `https://my.local` |
+| `ldm run --host-name my.localhost` | `my.localhost` | `False` | `http://my.localhost` |
+| `ldm run --host-name my` | `my.localhost` | `False` | `http://my.localhost` |
+| `ldm run --host-name my.localhost --ssl` | `my.localhost` | `True` | `https://my.localhost` |
+| `ldm run --host-name my.demo` | `my.demo` | `True` | `https://my.demo` |
 | `ldm run --no-ssl` | `localhost` | `False` | `http://localhost:8080` |
-| `ldm run --host-name my.local --no-ssl` | `my.local` | `False` | `http://my.local:8080` |
+| `ldm run --host-name my.demo --no-ssl` | `my.demo` | `False` | `http://my.demo:8080` |
+
+A `*.localhost` URL carries no port when the global proxy holds port 80; if it could not bind port 80, LDM reports `http://my.localhost:<port>` instead.
 
 ### 🛡️ Modern Liferay & JDK 17+ Standards
 
@@ -865,6 +870,7 @@ single non-Liferay service prints only `restarted.`
 
 - **`--share`** (Only for `start` and `run`): Starts a secure tunnel once the containers are up. On `start` this is the point of the flag: `run` reconfigures the project before booting it, which is exactly what someone sharing an already-configured project does not want. Cannot be combined with `--all` -- a tunnel leases one subdomain and forwards to one target -- and the refusal arrives before any project is started. ![Added in v2.26.0](https://img.shields.io/badge/Added%20in-v2.26.0-blue)
 - **`--share-subdomain`**, **`--share-domain`**, **`--share-url`**, **`--share-provider`**, **`--share-image`**, **`--share-inspector`** (Only for `start` and `run`): As for `ldm share start`'s `--subdomain`, `--domain`, `--url`, `--provider`, `--image` and `--inspector`; see [Sharing & Tunnels](../../how-to/sharing_tunnels.md). Sharing is auxiliary to `start`: the project starts, and then it is shared -- `ldm start --share` saves you running `ldm start` and `ldm share start` in sequence. ![Added in v2.26.0](https://img.shields.io/badge/Added%20in-v2.26.0-blue)
+- **`--allow-default-credentials`** (with `--share`, for `start` and `run`; also `import` and `quickstart`): Share even though the instance still accepts the default admin login. Without it LDM asks first, and under `-y` refuses to share; see [Sharing & Tunnels](../../how-to/sharing_tunnels.md#default-admin-credentials). ![Added in v2.27.0](https://img.shields.io/badge/Added%20in-v2.27.0-blue)
 - **`--clean-state`** (Only for `start` and `run`): Explicitly wipes the contents of the OSGi state volume before starting the container to remove any stale bundle locks. ![Added in v2.15.22](https://img.shields.io/badge/Added%20in-v2.15.22-blue)
 - **`--fix-permissions`** (Only for `start` and `run`): Forces root permission reclamation on bind-mounted host directories. Useful for resolving Liferay lock crashes when running macOS/Windows Docker Desktop against external drives or network shares. ![Added in v2.15.22](https://img.shields.io/badge/Added%20in-v2.15.22-blue)
 - **`--force-recreate`** (For `run`, `start`, and `restart`): Recreates containers even if their configuration and image haven't changed. **Note:** Since native Docker `start` doesn't support recreation, passing this to `ldm start` or `ldm restart` will smoothly intercept and route to `up -d --force-recreate` under the hood. ![Added in v2.15.23](https://img.shields.io/badge/Added%20in-v2.15.23-blue)
@@ -1111,4 +1117,4 @@ The following flags can be passed to almost any command:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-24* | *Last Reviewed: 2026-11-24*
+*Last Updated: 2026-11-25* | *Last Reviewed: 2026-11-25*

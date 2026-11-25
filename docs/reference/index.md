@@ -17,6 +17,8 @@ through. For why LDM behaves the way it does, see
   to a single command, and the less common combinations.
 - **[Exit Codes](exit_codes.md)** — what each exit code means, for scripts and
   CI pipelines that branch on them.
+- **[Machine-Readable Output](json_output.md)** — the `--json` objects of
+  `info`, `doctor` and `share status`, and the privileged-step payload.
 
 ## Settings
 
@@ -40,4 +42,4 @@ through. For why LDM behaves the way it does, see
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*
+*Last Updated: 2026-11-25* | *Last Reviewed: 2026-11-25*

@@ -481,6 +481,18 @@ the page, not on this file. The triage notes below stay here, for agents.
   Automation and E2E assertions on this contract must pass `-y`.
   Because it is not a failure, a stage refusing with `5` does **not** trigger
   a pipeline rollback -- see *Pipeline Rollback* above (LDM-#1636).
+- `6`: Privileged Step Required (LDM-#2517, v2.27.0) -- LDM needs root and,
+  under `-y`, only tried `sudo -n`, which cannot prompt. It never hangs and
+  never takes a password: it prints the exact command (an argv, shell-quoted
+  once with `shlex.join`) and, with `--json` or `LDM_JSON=1`, a
+  `{"privileged_step": {"reason", "command", "resume"}}` line on stdout. All of
+  it lives in `ldm_core/privileged.py`. Use `privileged.require()` when the step
+  blocks the command and `privileged.defer()` for cleanup or optional extras --
+  `defer` lets the command finish (`ldm down --clean-hosts` removes hosts entries
+  BEFORE `compose down`; exiting there would leave the containers up) and
+  `cli._dispatch_command` turns its success into `6`. Not `2`: automation reads
+  `2` as "supply a credential and retry", and this needs a person instead. A new
+  sudo call site MUST either run interactively or go through this module.
 - **Low-level subprocess wrapper exception**: `ldm_core/utils.py`'s
   `run_command()` helper -- called from a very large number of sites across
   the codebase -- intentionally uses POSIX-standard shell conventions instead
@@ -491,14 +503,14 @@ the page, not on this file. The triage notes below stay here, for agents.
   generic failure, since discarding that information would make wrapped-tool
   failures harder to diagnose. This is a deliberate, standard choice for a
   subprocess-wrapping utility, not a violation of the contract above -- the
-  0-5/126 contract governs LDM's own top-level command outcomes, not every
+  0-6/126 contract governs LDM's own top-level command outcomes, not every
   exit path of every subprocess it shells out to.
 - **`130` on user interrupt**: `Ctrl+C` exits `130` (`128 + SIGINT`), the POSIX
   convention, standardized across the three places that catch `KeyboardInterrupt`
   --- `ldm_core/utils.py:593` (inside `run_command()`), `ldm_core/ui.py:574`
   (interactive prompts) and `ldm_core/cli.py:3139` (the top-level handler). Like
   `124`/`127` this is a deliberate shell-convention exit, not an LDM-contract
-  code, so do not renumber it into the 0-5 range.
+  code, so do not renumber it into the 0-6 range.
 
 ### Piped-Input Automation
 
@@ -635,4 +647,4 @@ When LDM generates, deploys, or reasons about Client Extensions:
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*
+*Last Updated: 2026-11-25* | *Last Reviewed: 2026-11-25*

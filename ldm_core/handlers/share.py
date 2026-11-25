@@ -1469,6 +1469,13 @@ class ShareService:
         # LDM-#2009: and for the same reason -- before any binary, version
         # check, token or gateway round trip.
         self._assert_target_is_running(provider, project_meta, project_id)
+        # LDM-#2526: and before anything goes public, refuse an instance that
+        # still accepts the default admin login unless the user says so.
+        from ldm_core.handlers.share_credentials import (
+            assert_default_credentials_acceptable,
+        )
+
+        assert_default_credentials_acceptable(self.manager, project_meta)
 
         dry_run = bool(getattr(self.manager, "dry_run", False))
 

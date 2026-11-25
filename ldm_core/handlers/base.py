@@ -63,8 +63,22 @@ class BaseHandler:
 
     def ensure_hostnames_resolve(self, root, host_name, project_id=None):  # noqa: PLR0912
         """Verifies that the main host and all extension subdomains resolve, fixing them if needed."""
-        if host_name == "localhost":
+        from ldm_core.hostnames import is_loopback_name
+
+        # LDM-#2513: `localhost` and every `*.localhost` name -- the project's
+        # own and its client extensions' `<cx>.<project>.localhost` -- resolve
+        # to loopback with no hosts entry (RFC 6761), so they never reach the
+        # hosts-file prompt below and never ask for sudo. Only custom domains
+        # do.
+        if is_loopback_name(host_name):
             return True
+
+        # LDM-#2513: the sudo-free alternative to a `.local` name.
+        localhost_form = (
+            f"{host_name[: -len('.local')]}.localhost"
+            if host_name.endswith(".local")
+            else None
+        )
 
         # Windows/WSL .local warning
         if host_name.endswith(".local") and (
@@ -74,7 +88,10 @@ class BaseHandler:
             UI.detail(
                 "On Windows, '.local' is reserved for mDNS and may ignore your hosts file."
             )
-            UI.detail("Recommended: Use '.test' or '.internal' instead.")
+            UI.detail(
+                f"Recommended: Use '{localhost_form}', which needs no hosts "
+                "entry, or '.test' / '.internal' instead."
+            )
 
         # macOS .local warning
         if host_name.endswith(".local") and platform.system().lower() == "darwin":
@@ -83,7 +100,8 @@ class BaseHandler:
                 "On macOS, '.local' hostnames can resolve slowly due to mDNS/Bonjour overhead."
             )
             UI.detail(
-                "Recommended: Consider a different TLD like '.test' or '.internal' instead."
+                f"Recommended: Use '{localhost_form}', which needs no hosts "
+                "entry, or a TLD like '.test' or '.internal'."
             )
 
             import sys
@@ -125,7 +143,11 @@ class BaseHandler:
                 UI.detail(
                     f"Missing host entries detected: {', '.join(unresolved)}. Attempting non-interactive fix..."
                 )
-                if self._apply_hosts_fix(unresolved, project=project_id):
+                if self._apply_hosts_fix(
+                    unresolved,
+                    project=project_id,
+                    resume=f"ldm run {project_id}" if project_id else None,
+                ):
                     # Give the OS a moment to refresh DNS cache
                     import time
 
@@ -314,10 +336,39 @@ class BaseHandler:
             return [f"ldm fix-hosts {project}"]
         return [f"ldm fix-hosts {d}" for d in domains]
 
-    def _apply_hosts_fix(self, unresolved_domains, project=None):
-        """Attempts to append missing host entries to the system hosts file."""
+    @staticmethod
+    def _hosts_append_command(content, hosts_path="/etc/hosts"):
+        """The argv a person runs to append ``content`` to the hosts file.
+
+        One argv (`sudo sh -c ...`) because the remedy needs a redirect, and an
+        argv is what LDM-#2517's payload carries and ``shlex.join`` quotes.
+        """
+        import shlex
+
+        from ldm_core import privileged
+
+        lines = [line for line in content.splitlines() if line.strip()]
+        script = (
+            "printf '%s\\n' "
+            + " ".join(shlex.quote(line) for line in lines)
+            + f" >> {shlex.quote(hosts_path)}"
+        )
+        return privileged.sudo_sh(script)
+
+    def _apply_hosts_fix(self, unresolved_domains, project=None, resume=None):
+        """Attempts to append missing host entries to the system hosts file.
+
+        ``resume`` is the command to run once a person has applied the entries
+        by hand, reported with LDM-#2517's privileged-step payload.
+        """
         # 1. Filter out empty or already resolved (sanity check)
-        domains = sorted({d for d in unresolved_domains if d and d != "localhost"})
+        # LDM-#2513: never write a `*.localhost` entry -- those names resolve
+        # to loopback without one, so an entry is a sudo prompt for nothing.
+        from ldm_core.hostnames import is_loopback_name
+
+        domains = sorted(
+            {d for d in unresolved_domains if d and not is_loopback_name(d)}
+        )
         if not domains:
             return True
 
@@ -381,14 +432,18 @@ class BaseHandler:
 
                 if process.returncode != 0:
                     if self.non_interactive:
+                        # LDM-#2517: name the exact command and exit with the
+                        # privileged-step code, rather than a generic failure
+                        # an agent cannot act on. `sudo -n` never prompted, so
+                        # nothing has waited on a password.
+                        from ldm_core import privileged
+
                         commands = self._fix_hosts_commands(domains, project)
-                        UI.die(
-                            "Elevation failed (sudo -n). Please run manually:"
-                            + (
-                                f" {commands[0]}"
-                                if len(commands) == 1
-                                else "".join(f"\n    {c}" for c in commands)
-                            )
+                        privileged.require(
+                            f"{hosts_path} needs entries for: {', '.join(domains)}",
+                            self._hosts_append_command(content_to_add, hosts_path),
+                            resume=resume,
+                            alternative=" && ".join(commands),
                         )
                     return False
 
@@ -428,6 +483,11 @@ class BaseHandler:
 
     def _remove_hosts_entries(self, hostnames=None, all_ldm=False):
         """Removes LDM-tagged entries from the system hosts file."""
+        # LDM-#2513: LDM never writes a `*.localhost` entry, so removing one
+        # would be an elevation prompt for nothing.
+        from ldm_core.hostnames import is_loopback_name
+
+        hostnames = [h for h in (hostnames or []) if not is_loopback_name(h)]
         if not hostnames and not all_ldm:
             return True
 
@@ -505,7 +565,21 @@ class BaseHandler:
                 subprocess.run(cmd, check=True)
                 return True
             except Exception as ex:
-                UI.error(f"Failed to clean {hosts_path}: {ex}")
+                if self.non_interactive and isinstance(
+                    ex, subprocess.CalledProcessError
+                ):
+                    # LDM-#2517: `sudo -n` could not elevate. Cleanup, so it is
+                    # deferred rather than fatal -- `ldm down` calls this BEFORE
+                    # `compose down`, and stopping here would leave the
+                    # containers it was removing running.
+                    from ldm_core import privileged
+
+                    privileged.defer(
+                        f"LDM-managed entries remain in {hosts_path}",
+                        ["sudo", *cmd[len(sudo_prefix) :]],
+                    )
+                else:
+                    UI.error(f"Failed to clean {hosts_path}: {ex}")
                 return False
         return True
 
@@ -2347,7 +2421,12 @@ class BaseHandler:
 
     def get_resolved_ip(self, host_name):
         """Resolves a hostname to its IP address."""
-        if not host_name or host_name == "localhost":
+        from ldm_core.hostnames import is_loopback_name
+
+        # LDM-#2513: `*.localhost` is loopback by definition (RFC 6761). Not
+        # every resolver implements that (glibc without nss-myhostname does
+        # not), so it is answered here rather than asked of the OS.
+        if not host_name or is_loopback_name(host_name):
             return "127.0.0.1"
         try:
             import socket

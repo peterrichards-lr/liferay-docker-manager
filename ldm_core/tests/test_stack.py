@@ -274,6 +274,10 @@ class TestStackInfrastructure(unittest.TestCase):
                 ),
                 patch.object(self.manager, "run_command") as mock_run,
                 patch("time.sleep") as mock_sleep,
+                # LDM-#2515: the CA is checked before a certificate is issued.
+                patch.object(
+                    type(self.manager.infra), "_mkcert_ca_ready", return_value=True
+                ),
             ):
 
                 def mock_mkcert(*args, **kwargs):

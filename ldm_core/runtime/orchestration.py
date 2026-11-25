@@ -489,6 +489,27 @@ class OrchestrationService(BaseHandler):
                     cmd = [*compose_base, "start"]
                 if service:
                     cmd.append(service)
+                else:
+                    # LDM-#2526: never the lfr-tunnel-docker sidecar. Started
+                    # here it would put the instance on its public URL before
+                    # `share.cmd_start` (`--share`, below) has checked the
+                    # default admin login; that call starts it afterwards.
+                    from ldm_core.handlers.share_credentials import (
+                        services_holding_back_sidecar,
+                    )
+
+                    held_back = services_holding_back_sidecar(compose_file)
+                    cmd.extend(held_back)
+                    if (
+                        held_back
+                        and not share_options
+                        and str(meta.get("share", "false")).lower() == "true"
+                    ):
+                        UI.hint(
+                            f"The share tunnel for '{root.name}' was not "
+                            "started. Run 'ldm share start "
+                            f"{root.name}' to share it again."
+                        )
                 res = self.manager.run_command(
                     cmd,
                     check=not all_projects,
@@ -1570,6 +1591,15 @@ class OrchestrationService(BaseHandler):
 
         for target in targets:
             host_name = target["meta"].get("host_name")
+            from ldm_core.hostnames import is_localhost_subdomain
+
+            # LDM-#2514: a `*.localhost` project without SSL has no
+            # certificate to renew, and asking mkcert for one would make it a
+            # requirement for a project that does not use it (LDM-#2515).
+            if is_localhost_subdomain(host_name) and (
+                str(target["meta"].get("ssl", "false")).lower() != "true"
+            ):
+                continue
             if host_name and host_name != "localhost":
                 UI.detail(f"Renewing SSL for {UI.CYAN}{host_name}{UI.COLOR_OFF}...")
                 # Delete existing certs to force renewal

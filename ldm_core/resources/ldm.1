@@ -91,8 +91,8 @@ Fully wipe and re-initialize a project from its seed.
 \fBcache\fR (alias: \fBclear-cache\fR, \fBclear-tags\fR)
 Clear the local Docker Hub tag cache.
 .TP
-\fBinfo\fR [\fIPROJECT\fR]
-Display formatted project metadata.
+\fBinfo\fR [\fIPROJECT\fR] [\fB\-\-json\fR]
+Display formatted project metadata. \fB\-\-json\fR prints a stable JSON object with the project's local and public URLs instead.
 .TP
 \fBtray\fR [\fB\-\-autostart\fR|\fB\-\-uninstall\-autostart\fR]
 Launch the cross-platform System Tray GUI menu bar application. Use \fB\-\-autostart\fR to configure launch-on-login. This is a top-level command; there is no \fBldm system tray\fR.
@@ -212,8 +212,8 @@ value is applied when the container is recreated: \fBldm stop\fR, then
 
 .SS system \- System Utilities & Diagnostics
 .TP
-\fBldm system doctor\fR [\fB--ssl\fR] [\fB--domain\fR \fIDOMAIN\fR] [\fB--fix\fR]
-Verify host health, Docker resources, and project dependencies. Use \fB--ssl\fR to check certificate routing, and \fB--fix\fR to automatically apply suggested solutions. (legacy: \fBldm doctor\fR)
+\fBldm system doctor\fR [\fB--ssl\fR] [\fB--domain\fR \fIDOMAIN\fR] [\fB--fix\fR] [\fB\-\-json\fR]
+Verify host health, Docker resources, and project dependencies. Use \fB--ssl\fR to check certificate routing, and \fB--fix\fR to automatically apply suggested solutions. \fB\-\-json\fR prints every check as pass, warn or fail, with the fix hints, as a stable JSON object. (legacy: \fBldm doctor\fR)
 .TP
 \fBldm system prune\fR
 Reclaim disk space by removing orphaned containers, search snapshots, and caches. Against a remote target (\fB--node\fR) the orphaned-container and search-snapshot sweeps are skipped, because projects started from other machines cannot be told apart from orphans; image and build-cache pruning still run. (legacy: \fBldm prune\fR)
@@ -231,7 +231,7 @@ Write that completion block into the shell startup profile automatically, backin
 Display this manual page. (legacy: \fBldm man\fR)
 .TP
 \fBldm system fix-hosts\fR [\fIHOSTNAME\fR]
-Append missing project hostnames to \fB/etc/hosts\fR. (legacy: \fBldm fix-hosts\fR)
+Append missing project hostnames to \fB/etc/hosts\fR. Only custom domains need an entry: \fBlocalhost\fR and \fB*.localhost\fR names resolve to loopback without one and are skipped. (legacy: \fBldm fix-hosts\fR)
 .TP
 \fBldm system dev-setup\fR
 Configure the LDM development environment. (legacy: \fBldm dev-setup\fR)
@@ -385,6 +385,13 @@ Orchestration or deployment error inside LDM, e.g. a port conflict.
 Idempotent no-op: nothing needed doing. Returned only with
 \fB\-y\fR/\fB\-\-non\-interactive\fR; interactively LDM prompts instead.
 .TP
+.B 6
+A privileged step is required: LDM needs root and, under
+\fB\-y\fR, could not get it without a password. The exact command to run is
+printed; with \fB\-\-json\fR or \fBLDM_JSON=1\fR it is also printed to
+stdout as a \fBprivileged_step\fR JSON object. LDM never asks for or accepts
+a password itself.
+.TP
 .B 130
 Interrupted with Ctrl+C.
 .PP
@@ -422,4 +429,4 @@ Peter Richards <peter.richards@liferay.com>
 
 .SH SEE ALSO
 .B docker(1), docker-compose(1)
-.\" Last Updated: 2026-11-23 | Last Reviewed: 2026-11-23
+.\" Last Updated: 2026-11-25 | Last Reviewed: 2026-11-25

@@ -13,6 +13,7 @@ from ldm_core.runtime.portal_workarounds import is_ldm_bundle
 from ldm_core.snapshot.package_kind import PACKAGE_KIND_KEY, STATELESS
 from ldm_core.ui import UI
 from ldm_core.utils import get_actual_home, safe_extract
+from ldm_core.workspace.metadata import folder_cx_is_service
 from ldm_core.workspace.site_initializers import (
     DEFERRED_DIRNAME,
     deferred_dir,
@@ -179,16 +180,20 @@ STATELESS_TREES: tuple[str, ...] = (
     f".ldm/{DEFERRED_DIRNAME}",
 )
 
-#: The members of an expanded client extension that LDM reads. Everything
+#: The members of a non-container client extension that LDM reads. Everything
 #: that describes one is read from these and nothing else:
 #: `_scan_extension_folder_metadata` (yaml, LCP.json, config json),
-#: `_process_existing_cx_folders` and the `ldm dev` monitor (Dockerfile, as a
-#: presence test), `_scan_for_expected_deployables` (yaml).
+#: `_scan_for_expected_deployables` (yaml).
+#:
+#: Not the Dockerfile (LDM-#2534). Only a container needs one, and a container
+#: ships whole. An LDM that predates the shared `cx_is_service` rule keys on
+#: the Dockerfile alone -- `ldm run --samples` in v2.26.x copies a stateless
+#: payload straight over a project -- so a Dockerfile left in a slimmed static
+#: extension would have it build `COPY static/` from a folder without one.
 CX_DESCRIPTOR_PATTERNS = (
     "client-extension.y*ml",
     "LCP.json",
     "*client-extension-config.json",
-    "Dockerfile",
 )
 
 # Single files.
@@ -237,21 +242,17 @@ def _stateless_site_initializers(root):
 def _is_container_cx(folder):
     """True unless `folder` is a client extension known not to be a container.
 
-    Mirrors `_process_existing_cx_folders`: a container has a Dockerfile and is
-    not an LCP `kind: Job`. Anything this cannot read is treated as a
-    container, so it ships whole -- shipping too much costs bytes, shipping too
-    little loses the build context.
+    LDM-#2534: the same rule `_process_existing_cx_folders` applies, from the
+    same function, so a folder slimmed here is one the importer never builds.
+    A copy of the rule lived here and treated every static extension as a
+    container, because Liferay's build gives each a Dockerfile. Anything the
+    rule cannot read is a container, so it ships whole -- shipping too much
+    costs bytes, shipping too little loses the build context.
     """
-    if not (folder / "Dockerfile").exists():
-        return False
-    lcp = folder / "LCP.json"
-    if not lcp.is_file():
-        return True
     try:
-        kind = json.loads(lcp.read_text(encoding="utf-8")).get("kind")
-    except Exception:
+        return folder_cx_is_service(folder)
+    except OSError:
         return True
-    return not (isinstance(kind, str) and kind.capitalize() == "Job")
 
 
 def _descriptor_only_cx_dirs(root, shipped_zips):
@@ -279,9 +280,7 @@ def _descriptor_only_cx_dirs(root, shipped_zips):
         if not folder.is_dir() or f"{folder.name}.zip" not in shipped_zips:
             continue
         has_descriptor = any(
-            next(folder.glob(p), None) is not None
-            for p in CX_DESCRIPTOR_PATTERNS
-            if p != "Dockerfile"
+            next(folder.glob(p), None) is not None for p in CX_DESCRIPTOR_PATTERNS
         )
         if has_descriptor and not _is_container_cx(folder):
             slim.add(folder.name)

@@ -12,7 +12,7 @@ from ldm_core.utils import (
     safe_copy,
     safe_move,
 )
-from ldm_core.workspace.metadata import warn_oauth_erc_list_gaps
+from ldm_core.workspace.metadata import warn_erc_list_gaps
 from ldm_core.workspace.site_initializers import (
     is_site_initializer_zip,
     stage_for_deferred_deploy,
@@ -150,7 +150,7 @@ def _hydrate_from_workspace(self, workspace_root, paths, overwrite=True):
     # microservice's client-extension.yaml beside its LCP.json. Advisory, so a
     # failure to read either must never fail the import.
     try:
-        warn_oauth_erc_list_gaps(workspace_root)
+        warn_erc_list_gaps(workspace_root)
     except Exception:
         pass
 

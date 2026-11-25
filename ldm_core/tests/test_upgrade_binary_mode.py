@@ -131,11 +131,12 @@ class TestTheUpgradeUsesIt(unittest.TestCase):
         """`cp` onto an existing file keeps its mode AND owner, so a binary an
         affected release left 0777 (or chowned to 1000) stayed that way. The two
         fallbacks are os.system (interactive) and subprocess (non-interactive);
-        the third use is the command printed when both fail."""
+        the third use is the command printed when both fail, and the fourth the
+        privileged-step command handed over under -y (LDM-#2517)."""
         import inspect
 
         src = inspect.getsource(upgrade.run_upgrade)
-        self.assertEqual(3, src.count("_sudo_install_argv("))
+        self.assertEqual(4, src.count("_sudo_install_argv("))
         self.assertNotIn('"cp"', src)
         self.assertNotIn("sudo cp", src)
 

@@ -150,6 +150,33 @@ ldm share start [project] --provider lfr-tunnel --subdomain my-subdomain --ports
   to `https://127.0.0.1/` (LDM-#2398). The `lfr-tunnel-docker` sidecar has
   always done this.
 
+### Default admin credentials
+
+A shared instance is on the public internet. Before a tunnel starts, LDM checks
+whether the instance still accepts the default admin login
+(`test@liferay.com` with the default password) -- one authenticated request to
+the instance's own Headless API. If it does, anyone with the URL can sign in as
+an administrator, so LDM asks before sharing it. Under `-y` it refuses, with
+exit code `1`, and nothing is shared.
+
+Change the administrator's password in the portal, or say you mean it:
+
+```bash
+ldm share start --allow-default-credentials
+ldm start my-project --share --allow-default-credentials
+```
+
+The check applies however the share starts: `share start`, and `run`, `start`,
+`import` or `quickstart` with `--share`. If LDM cannot reach the instance to
+check, it warns and shares. `--dry-run` skips the check.
+
+With the `lfr-tunnel-docker` provider the tunnel is a sidecar in the project's
+stack, and it is held back when the stack starts: the containers come up
+without it, the check runs once the portal answers, and only then is the
+sidecar started. A refusal leaves it stopped, so the instance is never public.
+A plain `ldm start` (without `--share`) does not restart the sidecar either;
+it says so, and `ldm share start <project>` shares the project again.
+
 ### What `--domain` accepts
 
 `--domain` takes three different kinds of value, and LDM tells them apart
@@ -287,6 +314,14 @@ To inspect the active tunnel and retrieve its public URL:
 ldm share status [project]
 ```
 
+For a script or an agent, `--json` prints the public URL as a stable object,
+and only reads: it never installs a client or prompts. The schema is in
+[Machine-Readable Output](../reference/json_output.md#ldm-share-status-json).
+
+```bash
+ldm share status [project] --json
+```
+
 `ldm share status` reports the same provenance as `ldm share start`, because
 it is where you look when an address has already surprised you:
 
@@ -404,7 +439,7 @@ ldm run my-project --expose
 
 When developing with LDM, you may want to toggle your project network routing between:
 
-- **Local Hosts-based SSL Mode**: Testing offline using a local custom domain name (e.g. `https://my-project.local` mapped in `/etc/hosts` with certificates managed via `mkcert`).
+- **Local Hosts-based SSL Mode**: Testing offline over HTTPS on a local name (by default `https://my-project.localhost`, which needs no `/etc/hosts` entry; a custom domain mapped in `/etc/hosts` also works), with certificates managed via `mkcert`.
 - **Public Share Tunnel Mode**: Exposing Liferay publicly via a leased subdomain on a secure tunnel gateway (e.g. `https://my-project.lfr-demo.online`).
 
 Manually updating Liferay virtual hosts, rebuilding project properties, and updating environment config files inside your client extensions can be error-prone. LDM automates this using the `ssl-mode` command:
@@ -418,8 +453,8 @@ ldm config ssl-mode <hosts | share> [project] [--subdomain <subdomain>] [--domai
 #### 1. Hosts Mode (`hosts`)
 
 - Switches the project's metadata `ssl` parameter to `true`.
-- Sets the project's `host_name` to `<project_name>.local` (or retains your custom local domain).
-- Surgically searches for and updates all local `.env` files (e.g., `LIFERAY_URL`, `LIFERAY_PORTAL_URL`, `AICA_LIFERAY_URL`) to point to `https://<project_name>.local`.
+- Sets the project's `host_name` to `<project_name>.localhost` (or retains your custom local domain). A `.localhost` name resolves to loopback with no `/etc/hosts` entry, so the switch needs no `sudo` (LDM-#2513); it was `<project_name>.local` before.
+- Surgically searches for and updates all local `.env` files (e.g., `LIFERAY_URL`, `LIFERAY_PORTAL_URL`, `AICA_LIFERAY_URL`) to point to `https://<project_name>.localhost`.
 - Rebuilds project properties so Liferay aligns its internal virtual host settings.
 
 #### 2. Share Mode (`share`)
@@ -698,4 +733,4 @@ If you are running the `lfr-tunnel` Go executable directly or writing custom scr
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-24* | *Last Reviewed: 2026-11-24*
+*Last Updated: 2026-11-25* | *Last Reviewed: 2026-11-25*

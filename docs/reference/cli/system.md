@@ -2,7 +2,7 @@
 
 ## `system doctor` (legacy: `doctor`)
 
-Verify host environment health, Docker resources (CPUs/Memory), disk space (warns on dangling volumes), and project dependencies. Includes checks for required tools: `mkcert`, `telnet`, `nc`, `lcp`, `lfr-tunnel`, and the Docker Compose V2 plugin.
+Verify host environment health, Docker resources (CPUs/Memory), disk space (warns on dangling volumes), and project dependencies. Includes checks for tools: `mkcert`, `telnet`, `nc`, `lcp`, `lfr-tunnel`, and the Docker Compose V2 plugin. `mkcert` is reported as *not needed* -- a pass, not a warning -- while no project uses SSL (LDM-#2515).
 
 The `lfr-tunnel` row reports the client's version and the date it was last
 installed or self-upgraded, for whichever binary `ldm share` would use --
@@ -31,10 +31,17 @@ ldm system doctor --slug      # Output a machine-readable environment identifier
 ldm system doctor --fix-hosts # Add missing domains to /etc/hosts (will prompt for sudo)
 ldm system doctor --ssl       # Run SSL diagnostic workflow to verify certificate chains and routing
 ldm system doctor --ssl --domain aica.local # Check a specific domain
+ldm system doctor --json      # Every check as pass/warn/fail, with fix hints, as one JSON object
 
 # Legacy flat form (still works):
 ldm doctor --fix
 ```
+
+`--json` prints a stable object instead of the dashboard -- the schema is in
+[Machine-Readable Output](../json_output.md#ldm-system-doctor-json). It lists
+every check, passed ones included, and keeps the exit code: `0` unless a check
+failed. It cannot be combined with `--fix`, `--fix-hosts`, `--bundle`, `--slug`
+or `--ssl`.
 
 ## `system fix-hosts` (legacy: `fix-hosts`)
 
@@ -109,7 +116,11 @@ ldm info [project]
 ldm info [project] --credentials  # Print the default admin credentials block
 ldm info [project] --credentials --credential-type database  # Print the database credentials
 ldm info [project] --credentials --password-only  # Print ONLY the raw password string (useful for CI scripts: `export PASS=$(ldm info --credentials --password-only)`)
+ldm info [project] --json  # A stable JSON object: status, local URL, share and extension URLs
 ```
+
+`--json` carries no credentials; the schema is in
+[Machine-Readable Output](../json_output.md#ldm-info-json).
 
 The output includes an **`ID:`** row -- the project's internal UUID (LDM-#1393).
 LDM identifies projects by this, not by their name: the name is yours to choose
@@ -672,6 +683,7 @@ ldm tray --uninstall-autostart  # Remove launch-on-login autostart
 ## Global and Subcommand Flags Reference
 
 - **`--all`**: Apply command across all managed projects.
+- **`--allow-default-credentials`** (`share start`, and `run`, `start`, `import`, `quickstart` with `--share`): Share even though the instance still accepts the default admin login (`test@liferay.com`). Without it LDM asks first, and refuses under `-y`. See [Sharing & Tunnels](../../how-to/sharing_tunnels.md#default-admin-credentials). ![Added in v2.27.0](https://img.shields.io/badge/Added%20in-v2.27.0-blue)
 - **`--autostart`** / **`--install-autostart`**: Install System Tray application to launch automatically on user login.
 - **`--bundle`**: Generate a sanitized zip bundle of logs and config.
 - **`--credentials`**: Print admin or service credentials.
@@ -688,6 +700,7 @@ ldm tray --uninstall-autostart  # Remove launch-on-login autostart
 - **`--fragment-patch-timeout`** (`wait`): Per-loop seconds to poll the headless-admin-site API for OSGi/Site Initializer readiness before patching fragment overrides (default: 300, or 900 when auto-detected on an external drive). Runs after — and additive to — `wait`'s own `--timeout`; also overridable via `LDM_FRAGMENT_PATCH_TIMEOUT`. ![Added in v2.15.27](https://img.shields.io/badge/Added%20in-v2.15.27-blue)
 - **`--global`**: Apply setting globally.
 - **`--help`**: Display CLI help menu.
+- **`--json`** (`info`, `system doctor`, `share status`, `status`, `list`): Print a stable JSON object instead of formatted output. Schemas: [Machine-Readable Output](../json_output.md). ![Added in v2.27.0](https://img.shields.io/badge/Added%20in-v2.27.0-blue)
 - **`--index`** / **`-i`**: Select project by 1-based index from list. ![Added in v2.15.22](https://img.shields.io/badge/Added%20in-v2.15.22-blue)
 - **`--leave-running`**: Leave workspace containers running after operation.
 - **`--list`**: List items or URLs.
@@ -872,4 +885,4 @@ ldm target migrate win-wsl node-a
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-24* | *Last Reviewed: 2026-11-24*
+*Last Updated: 2026-11-25* | *Last Reviewed: 2026-11-25*

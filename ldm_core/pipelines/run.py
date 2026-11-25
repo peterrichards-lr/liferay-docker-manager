@@ -1585,8 +1585,13 @@ class ConfigResolutionStage(PipelineStage):
         # including the default of no claim at all.
         self._apply_compatibility_claim(manager, paths, project_meta, tag)
 
+        # LDM-#2513: the flag and the prompt answer are normalised -- a bare
+        # `myproj` becomes `myproj.localhost` -- while a stored host name is
+        # used as it is: existing projects are never silently rewritten.
+        from ldm_core.hostnames import localhost_name_for, normalize_host_name_or_die
+
         host_name = (
-            manager.args.host_name
+            normalize_host_name_or_die(manager.args.host_name)
             or project_meta.get("host_name")
             or manager.defaults.get("host_name")
             or "localhost"
@@ -1596,13 +1601,24 @@ class ConfigResolutionStage(PipelineStage):
             if host_name == "localhost":
                 if manager.non_interactive:
                     UI.die("--samples requires a custom hostname.")
-                host_name = UI.ask("Enter project Virtual Hostname", "samples.local")
+                host_name = normalize_host_name_or_die(
+                    UI.ask("Enter project Virtual Hostname", "samples.local")
+                )
 
         if getattr(manager.args, "ssl", None) is True and not getattr(
             manager.args, "host_name", None
         ):
             if not manager.non_interactive:
-                host_name = UI.ask("Enter project Virtual Hostname", host_name)
+                # LDM-#2513: offer the sudo-free named host alongside the
+                # default. The default itself is unchanged.
+                host_name = normalize_host_name_or_die(
+                    UI.ask(
+                        "Enter project Virtual Hostname (e.g. "
+                        f"{localhost_name_for(project_id)}, no hosts entry "
+                        "needed)",
+                        host_name,
+                    )
+                )
 
         db_type, db_mode_resolved = self._resolve_database(
             manager, project_meta, is_samples
@@ -2131,6 +2147,36 @@ class EnvironmentSetupStage(PipelineStage):
 class ComposerStage(PipelineStage):
     """Generates compose definitions and applies overrides."""
 
+    @staticmethod
+    def _record_http_proxy_port(manager, project_meta, host_name):
+        """Persist the proxy's observed http port for a `*.localhost` project.
+
+        LDM-#2514: `resolve_access_url` serves `http://<host>` with no port
+        only when this key says the proxy holds port 80. When port 80 was
+        already taken, `setup_infrastructure` binds the proxy elsewhere; the
+        project then falls back to Liferay's own published port, and the user
+        is told so here rather than handed a URL that does not answer.
+        """
+        ports = None
+        try:
+            ports = manager.infra.get_proxy_ports()
+        except Exception:
+            ports = None
+        http_port = ports.get("http") if isinstance(ports, dict) else None
+        if not http_port:
+            project_meta.pop("http_proxy_port", None)
+            return
+        project_meta["http_proxy_port"] = http_port
+        if int(http_port) != 80:
+            from ldm_core.handlers.composer import resolve_access_url
+
+            UI.warning(
+                f"Port 80 is not available to the global proxy (it is on "
+                f"{http_port}), so '{host_name}' cannot be served without a "
+                f"port. Liferay is reachable at "
+                f"{resolve_access_url(host_name, project_meta, False)}."
+            )
+
     def execute(self, context: PipelineContext) -> None:  # noqa: C901, PLR0912, PLR0915
         context = typing.cast(RunPipelineContext, context)
         manager = context.manager
@@ -2402,7 +2448,18 @@ class ComposerStage(PipelineStage):
         # resolver reports everywhere. That is a legitimate thing for a package
         # to intend (the AICA `.ldmp` declares exactly this), so say what the
         # user gets rather than refusing to start.
-        if host_name and host_name != "localhost" and not ssl_enabled:
+        #
+        # LDM-#2514: a `*.localhost` name is not a custom host name. Without
+        # SSL it is the normal named-local case and is fronted by the proxy's
+        # plain-HTTP router (provisioned below), so it gets no warning.
+        from ldm_core.hostnames import is_custom_domain, routes_http_via_proxy
+
+        http_proxy = routes_http_via_proxy(host_name, ssl_enabled)
+        if not http_proxy:
+            # A recorded proxy port only means something while the project is
+            # routed through the proxy's HTTP router.
+            project_meta.pop("http_proxy_port", None)
+        if is_custom_domain(host_name) and not ssl_enabled:
             from ldm_core.handlers.composer import resolve_access_url
 
             UI.warning(
@@ -2446,7 +2503,12 @@ class ComposerStage(PipelineStage):
                 UI.detail("Ensuring global database service is running...")
                 manager.infra.setup_global_database(db_type=shared_db_type)
 
-        if ssl_enabled or getattr(manager.args, "search", False) or use_shared_db:
+        if (
+            ssl_enabled
+            or http_proxy
+            or getattr(manager.args, "search", False)
+            or use_shared_db
+        ):
             infra_start = time.time()
             resolved_ip = manager.get_resolved_ip(host_name) or "127.0.0.1"
             if ssl_enabled and not no_up:
@@ -2470,8 +2532,17 @@ class ComposerStage(PipelineStage):
                     use_shared_search=use_shared_search,
                     use_shared_db=use_shared_db,
                     db_type=shared_db_type,
+                    use_proxy=http_proxy,
                 )
             project_meta["ssl_port"] = ssl_port
+
+            # LDM-#2514: record the proxy's http port, so every URL LDM
+            # reports (`resolve_access_url`) can tell whether the port-free
+            # `http://<project>.localhost` is really served. Only what was
+            # observed is recorded: a proxy that could not be inspected leaves
+            # no key, and the URL falls back to Liferay's own published port.
+            if http_proxy and shutil.which("docker") and not no_up:
+                self._record_http_proxy_port(manager, project_meta, host_name)
 
             # LDM-#1363: `ldm run` assumed the global infrastructure was
             # already up. For search this meant Liferay was pointed at
@@ -3088,6 +3159,20 @@ class ExecutionStage(PipelineStage):
         if force_recreate:
             cmd.append("--force-recreate")
 
+        # LDM-#2526: the lfr-tunnel-docker sidecar is left out of the bring-up.
+        # Started here it would make the instance public before the
+        # default-credentials check, which can only run once the portal
+        # answers; `share.cmd_start` (readiness, or the --no-wait branch below)
+        # runs the check and only then starts the sidecar.
+        from ldm_core.handlers.share_credentials import (
+            services_holding_back_sidecar,
+        )
+
+        held_back_services = services_holding_back_sidecar(
+            paths.get("compose") or paths["root"] / "docker-compose.yml"
+        )
+        cmd.extend(held_back_services)
+
         show_summary = context.get("show_summary") and not getattr(
             manager.args, "quiet", False
         )
@@ -3321,7 +3406,7 @@ class ExecutionStage(PipelineStage):
                 # it is the same operation in two steps -- a `start` that takes
                 # thirty minutes is as broken as a `create` that does.
                 manager.run_command(
-                    [*compose_base, "start"],
+                    [*compose_base, "start", *held_back_services],
                     cwd=str(paths["root"]),
                     capture_output=not follow,
                     timeout=_stack_bringup_timeout(),

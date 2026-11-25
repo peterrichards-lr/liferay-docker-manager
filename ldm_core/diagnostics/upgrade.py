@@ -780,6 +780,21 @@ def run_upgrade(handler):  # noqa: C901, PLR0911, PLR0912, PLR0915
                     UI.success(f"Successfully upgraded to v{latest}!")
                     _announce_post_upgrade_actions(VERSION, latest)
                 except Exception as e:
+                    if getattr(handler.manager.args, "non_interactive", False):
+                        # LDM-#2517: `sudo -n` could not elevate without a
+                        # password. Hand over the exact command, which reuses
+                        # the verified download, and exit with the dedicated
+                        # code -- this used to print prose and exit 0.
+                        from ldm_core import privileged
+
+                        UI.debug(f"Details: {e}")
+                        install = shlex.join(_sudo_install_argv([], temp_new, exe_path))
+                        privileged.require(
+                            f"replacing {exe_path} with v{latest} needs root",
+                            privileged.sudo_sh(
+                                f"{install} && rm -f {shlex.quote(str(temp_new))}"
+                            ),
+                        )
                     UI.error(
                         "Failed to replace binary. Elevated privileges were denied or incorrect.",
                         tip=(
