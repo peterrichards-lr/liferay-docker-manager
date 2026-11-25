@@ -1830,7 +1830,20 @@ class ComposerService:
         )
 
         share_host = None
-        if is_share and share_provider in ["lfr-tunnel", "lfr-tunnel-docker"]:
+        # LDM-#2503: a custom domain the project requests is the whole public
+        # host. Taken from the project's own request rather than from a live
+        # lookup: at compose time the tunnel is usually not up yet, and the
+        # lookup's fallback cannot see the project's meta.
+        custom_domain = (
+            self.manager.share.project_custom_domain(meta)
+            if is_share and share_provider == "lfr-tunnel"
+            else None
+        )
+        if not isinstance(custom_domain, str):
+            custom_domain = None
+        if custom_domain:
+            share_host = custom_domain
+        elif is_share and share_provider in ["lfr-tunnel", "lfr-tunnel-docker"]:
             public_url = self.manager.share.resolve_public_tunnel_url(share_subdomain)
             if public_url:
                 from urllib.parse import urlparse
@@ -1856,6 +1869,10 @@ class ComposerService:
             # virtual-host validation.
             for known_domain in self.manager.share.get_known_tunnel_base_domains():
                 valid_hosts += f",*.{known_domain}"
+            # LDM-#2503: a custom domain is on none of those, so Liferay's
+            # virtual-host check would reject every request it proxies.
+            if custom_domain:
+                valid_hosts += f",{custom_domain}"
 
         # AICA#1283: the header keys alone are inert. Liferay honours a
         # forwarded header only when its `.enabled` flag is set, and all three

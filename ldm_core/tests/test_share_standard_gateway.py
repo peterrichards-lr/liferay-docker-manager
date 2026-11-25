@@ -119,7 +119,8 @@ class TheAnnouncedUrlIsReconciled(ShareCase):
         self.service._ensure_binary = MagicMock(return_value=Path("/fake/lfr-tunnel"))  # type: ignore[method-assign]
         self.service._get_auth_token = MagicMock(return_value="my-token")  # type: ignore[method-assign]
         self.service._verify_compatibility = MagicMock()  # type: ignore[method-assign]
-        self.service._get_installed_version = MagicMock(return_value="1.0.0")  # type: ignore[method-assign]
+        # LDM-#2503: the first client that can report a custom domain's status.
+        self.service._get_installed_version = MagicMock(return_value="1.52.12")  # type: ignore[method-assign]
         self.service.resolve_public_tunnel_url = MagicMock(return_value=resolved_url)  # type: ignore[method-assign]
 
         result = MagicMock()
@@ -132,10 +133,11 @@ class TheAnnouncedUrlIsReconciled(ShareCase):
         return mock_ui
 
     def test_it_says_when_the_tunnel_came_up_somewhere_else(self):
+        # LDM-#2503: a custom domain is announced as the whole host.
         mock_ui = self.start(CUSTOM, f"https://peters.{self.standard}")
         warned = self.said(mock_ui, "warning")
         self.assertIn(f"peters.{self.standard}", warned)
-        self.assertIn(f"peters.{CUSTOM}", warned)
+        self.assertIn(f"https://{CUSTOM}", warned)
 
     def test_it_explains_why_a_custom_domain_did_not_take(self):
         mock_ui = self.start(CUSTOM, f"https://peters.{self.standard}")
@@ -144,7 +146,7 @@ class TheAnnouncedUrlIsReconciled(ShareCase):
         self.assertIn("--domain default", guidance)
 
     def test_it_is_silent_when_the_tunnel_came_up_where_announced(self):
-        mock_ui = self.start(CUSTOM, f"https://peters.{CUSTOM}")
+        mock_ui = self.start(CUSTOM, f"https://{CUSTOM}")
         self.assertEqual(self.said(mock_ui, "warning"), "")
 
     def test_it_is_silent_on_the_standard_gateway(self):
@@ -180,7 +182,7 @@ class AskingForTheStandardGatewayIsRecorded(ShareCase):
         self.service._ensure_binary = MagicMock(return_value=Path("/fake/lfr-tunnel"))  # type: ignore[method-assign]
         self.service._get_auth_token = MagicMock(return_value="my-token")  # type: ignore[method-assign]
         self.service._verify_compatibility = MagicMock()  # type: ignore[method-assign]
-        self.service._get_installed_version = MagicMock(return_value="1.0.0")  # type: ignore[method-assign]
+        self.service._get_installed_version = MagicMock(return_value="1.52.12")  # type: ignore[method-assign]
         self.service.resolve_public_tunnel_url = MagicMock(  # type: ignore[method-assign]
             return_value=f"https://peters.{self.standard}"
         )

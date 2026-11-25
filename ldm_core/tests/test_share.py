@@ -1687,6 +1687,8 @@ class TestShareTunnelTopology(unittest.TestCase):
         pinning would hand the user the *default* gateway they never asked
         for, minus election and failover."""
         self.mock_manager.args.domain = "my-vanity.example"
+        # LDM-#2503: a custom domain needs a client that can report its status.
+        self.service._get_installed_version.return_value = "1.52.12"  # type: ignore[attr-defined]
 
         _cmd, env = self._run_start(mock_run, subdomain="demo")
 
@@ -2383,12 +2385,15 @@ class TestAddressProvenance(unittest.TestCase):
         self.assertEqual(self.service._share_domain_source, "this project's meta")
 
     def test_a_domain_from_the_global_config_says_so(self):
-        """The reported case: a machine-wide pin nobody remembered setting."""
+        """The reported case: a machine-wide pin nobody remembered setting.
+
+        A gateway domain since LDM-#2503: a custom one in ~/.ldmrc is no longer
+        used at all (TestACustomDomainIsPerProject)."""
         self.mock_manager.config.get_global_config = lambda: {  # type: ignore[method-assign]
-            "share_domain": "dev.solaramoto.com"
+            "share_domain": "lfr-demo.se"
         }
         _, domain = self._resolve()
-        self.assertEqual(domain, "dev.solaramoto.com")
+        self.assertEqual(domain, "lfr-demo.se")
         self.assertEqual(self.service._share_domain_source, "~/.ldmrc")
 
     def test_the_built_in_default_says_so(self):
@@ -2427,13 +2432,13 @@ class TestAddressProvenance(unittest.TestCase):
 
     def test_the_line_names_both_halves_and_both_sources(self):
         self.mock_manager.config.get_global_config = lambda: {  # type: ignore[method-assign]
-            "share_domain": "dev.solaramoto.com"
+            "share_domain": "lfr-demo.se"
         }
         _, domain = self._resolve()
         self.service._resolve_subdomain("peters", "someproject")
         line = self.service._describe_address_sources("peters", domain)
         self.assertIn("subdomain 'peters' from the command line", line)
-        self.assertIn("domain 'dev.solaramoto.com' from ~/.ldmrc", line)
+        self.assertIn("domain 'lfr-demo.se' from ~/.ldmrc", line)
 
     def test_nothing_is_emitted_when_no_source_is_known(self):
         """So a caller can print it unconditionally without a bare fragment."""
@@ -2509,10 +2514,29 @@ class TestStatusSaysWhereTheAddressCameFrom(unittest.TestCase):
     def test_a_domain_from_the_global_config_is_named(self):
         """The reported case -- a machine-wide pin nobody remembers setting."""
         self.mock_manager.config.get_global_config = lambda: {  # type: ignore[method-assign]
+            "share_domain": "lfr-demo.se"
+        }
+        domain, source = self.service.configured_domain_source({})
+        self.assertEqual((domain, source), ("lfr-demo.se", "~/.ldmrc"))
+
+    def test_a_custom_domain_in_the_global_config_is_not_reported_as_used(self):
+        """LDM-#2503: status follows resolution, which does not use it."""
+        self.mock_manager.config.get_global_config = lambda: {  # type: ignore[method-assign]
             "share_domain": "dev.solaramoto.com"
         }
         domain, source = self.service.configured_domain_source({})
-        self.assertEqual((domain, source), ("dev.solaramoto.com", "~/.ldmrc"))
+        self.assertEqual(
+            (domain, source),
+            (ShareService.DEFAULT_TUNNEL_BASE_DOMAINS[0], "LDM's default"),
+        )
+
+    def test_the_projects_own_custom_domain_is_reported(self):
+        domain, source = self.service.configured_domain_source(
+            {"share_custom_domain": "dev.solaramoto.com", "share_domain": "x"}
+        )
+        self.assertEqual(
+            (domain, source), ("dev.solaramoto.com", "this project's meta")
+        )
 
     def test_the_project_meta_beats_the_global_config(self):
         """Same precedence as resolution, so status cannot disagree with it."""

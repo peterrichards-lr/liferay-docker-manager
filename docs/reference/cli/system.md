@@ -636,7 +636,7 @@ containerised `lfr-tunnel-docker` provider, which needs no host binary.
 - **`--clear-lock`** ![Added in v2.15.17](https://img.shields.io/badge/Added%20in-v2.15.17-blue): Clear the stale concurrency project lock for the specified project and exit.
 - **`--container`**: Show detailed Docker container diagnostic checks.
 - **`--docker`**: Show detailed Docker diagnostic checks.
-- **`--domain`**: Custom domain prefix (e.g. lfr-demo.online, lfr-demo.se).
+- **`--domain`**: For `share start`, a tunnel base domain (e.g. lfr-demo.online, lfr-demo.se), a host on one (`peters.lfr-demo.se`), `default` for the standard gateway, or a custom domain registered to you in the Liferay Tunnel portal. A custom domain is the whole public hostname, is requested for this project only (native `lfr-tunnel` provider, client v1.52.12 or later) and is remembered for it -- see [Custom domains](../../how-to/sharing_tunnels.md#custom-domains).
 - **`--download`**: Force downloading of dependencies.
 - **`--dry-run`**: Preview execution without mutations.
 - **`--files-only`**: Extract or backup files/folders only.
@@ -724,7 +724,7 @@ ldm tray --uninstall-autostart  # Remove launch-on-login autostart
 - **`--restore`**: Restore project backup/snapshot.
 - **`--service`**: Specify container service.
 - **`--set`**: Directly set version string.
-- **`--share-domain`**: Custom domain for sharing.
+- **`--share-domain`**: As `share start --domain`, for `run` and `start` with `--share`.
 - **`--share-image`**: Custom Docker image for sharing sidecar.
 - **`--share-inspector`**: Expose local inspector dashboard on port 4040.
 - **`--share-provider`**: Sharing provider to use.

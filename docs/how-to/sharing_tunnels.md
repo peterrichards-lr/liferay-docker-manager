@@ -150,6 +150,19 @@ ldm share start [project] --provider lfr-tunnel --subdomain my-subdomain --ports
   to `https://127.0.0.1/` (LDM-#2398). The `lfr-tunnel-docker` sidecar has
   always done this.
 
+- **A connected tunnel is not stopped because a lookup missed it.** If
+  `-status-json` does not report the tunnel but the client's inspector says
+  it is connected and healthy under this subdomain, LDM warns and keeps the
+  share. When the inspector that answered belongs to another tunnel, the
+  failure says so ("Status Lookup Failed") instead of the old, contradictory
+  "Connection state is 'connected'" (LDM-#2503).
+
+- **A `*.localhost` host name is this machine.** The client is given
+  `-target-host` only for a project whose `host_name` is a real host: for
+  `localhost` and for any `*.localhost` name (loopback by RFC 6761) it dials
+  `127.0.0.1`, where LDM publishes the port. Such a name also does not let the
+  native provider through for a project on a remote node.
+
 ### Default admin credentials
 
 A shared instance is on the public internet. Before a tunnel starts, LDM checks
@@ -186,27 +199,72 @@ rather than requiring you to know which is which:
 | :--- | :--- | :--- |
 | `lfr-demo.se` | a known gateway base domain | `<subdomain>.lfr-demo.se`, gateway pinned |
 | `peters.lfr-demo.se` | a host **on** a known base domain | subdomain `peters` on `lfr-demo.se`, gateway pinned |
-| `dev.example.com` | a custom vanity domain | not supported yet -- see below |
+| `dev.example.com` | a custom domain | `dev.example.com` itself, for this project only -- see below |
 | `default` | the standard gateway | `<subdomain>.lfr-demo.online`, ignoring any stored domain |
 
-**Custom vanity domains are not supported yet** (LDM-#2503). Liferay Tunnel
-serves a custom domain as the *whole* hostname -- nothing is prepended -- with
-one live tunnel per domain, and each hostname must be registered to you in the
-portal. A single `share_domain` stored in `~/.ldmrc` therefore cannot serve
-every project, so LDM does not request it: the tunnel comes up on
-`<subdomain>.<default gateway>`. Use a gateway base domain until per-project
-custom domains land.
+### Custom domains
+
+A custom domain is a hostname you own, pointed at the gateway with a CNAME
+record and registered to you in the Liferay Tunnel portal. Liferay Tunnel
+serves it as the **whole** public hostname -- nothing is prepended -- and one
+live tunnel holds it at a time. The default quota is one custom domain per
+user.
+
+```bash
+ldm share start my-project --domain dev.example.com
+```
+
+```text
+ℹ  Public URL: https://dev.example.com
+```
+
+What LDM does with it (LDM-#2503):
+
+- **It is per project.** LDM passes `-domain dev.example.com` to the client
+  and records the domain in the project's meta (`share_custom_domain`), so a
+  later `ldm share start my-project` or `ldm run --share` asks for it again.
+  `--domain default` (or a gateway domain) clears it.
+- **It is never taken from shared configuration.** A custom domain in
+  `~/.ldmrc`, or one an earlier LDM copied into a project's `share_domain`,
+  would have every project ask for the same domain. LDM warns that it is not
+  using it, and the share comes up on `<subdomain>.<default gateway>`. Name it
+  with `--domain` on the one project that should have it.
+- **A second project is warned, not refused.** If another project also stores
+  the same custom domain, `share start` names it before starting: only one of
+  them can be shared at a time. If that other share is live, the gateway
+  refuses this one, and LDM says which project is the likely holder.
+- **Liferay is configured for it.** `web.server.host` is the custom domain,
+  and it is added to `virtual.hosts.valid.hosts`.
+- **The address comes from the client.** The subdomain is still passed, so
+  `-status-json -subdomain <subdomain>` finds the tunnel; the public URL is
+  read from its `public_urls`, never composed.
+- **Refusals are explained, not timed out.** The client's `-background` start
+  exits within about 20 seconds when the gateway refuses, and LDM reports the
+  cause with the gateway's own line: the domain is already in use by another
+  tunnel (409), registered to someone else or in quarantine (409), not
+  registered to you (403), or over your custom-domain quota (403).
+
+Requirements:
+
+- **lfr-tunnel v1.52.12 or later.** Older clients write a custom-domain
+  tunnel's status under an empty name, so `-status-json` cannot find it and the
+  health check would stop a working tunnel -- what happened in v2.26.16-pre.1.
+  LDM refuses a custom domain on an older client and tells you to run
+  `lfr-tunnel -upgrade`.
+- **The native `lfr-tunnel` provider.** `lfr-tunnel-docker` refuses a custom
+  domain: the sidecar's refusals arrive as a container exit rather than the
+  explained exit above, and an unpinned `:latest` image's version cannot be
+  checked when its compose file is written.
 
 ### Asking for the standard gateway
 
-The domain is **sticky**. LDM records it in the project's meta and in
-`~/.ldmrc`, so a custom domain set once is reused by every later
-`ldm share start` for that project -- including one where you only passed
-`--subdomain`:
+The domain is **sticky**. LDM records it in the project's meta, so a custom
+domain set once is reused by every later `ldm share start` for that project --
+including one where you only passed `--subdomain`:
 
 ```bash
 ldm share start my-project --subdomain peters
-#  -> still uses the custom domain pinned weeks ago
+#  -> still uses the custom domain set weeks ago
 ```
 
 Pass `default` (or `standard`) to ask for the standard gateway instead:
@@ -215,27 +273,25 @@ Pass `default` (or `standard`) to ask for the standard gateway instead:
 ldm share start my-project --subdomain peters --domain default
 ```
 
-This also **replaces the domain stored for that project**, so subsequent runs
-use the standard gateway too. It does not alter `~/.ldmrc`; the project's own
-value takes precedence over it either way.
+This also **replaces the domain stored for that project**, and clears its
+custom domain, so subsequent runs use the standard gateway too. It does not
+alter `~/.ldmrc`; the project's own value takes precedence over it either way.
 
-### When the domain you asked for did not take
+### When the tunnel came up somewhere else
 
-An unregistered custom domain does not fail -- the gateway routes you on the
-standard domain instead. LDM announces a public URL before the tunnel starts
-and resolves the real one afterwards, so when those differ it now says so:
+LDM announces a public URL before the tunnel starts and resolves the real one
+afterwards, so when those differ it says so rather than leaving two
+contradictory URLs on screen (LDM-#2191):
 
 ```text
 ✅  🌍 Public Tunnel Active: https://peters.lfr-demo.se
 ⚠️  The tunnel came up on https://peters.lfr-demo.se, not the
-    https://peters.dev.example.com announced above. Use the address on this line.
-💡  Next step: 'dev.example.com' is a custom domain, and the gateway routes one
-    only once it has been registered and approved in the Liferay Tunnel portal.
+    https://dev.example.com announced above. Use the address on this line.
 ```
 
-Previously both URLs were printed and neither was reconciled with the other,
-so the first -- which does not resolve -- was indistinguishable from fact
-(LDM-#2191).
+An unregistered custom domain no longer falls back silently: LDM requests it
+with `-domain`, and the gateway's refusal fails the share with its reason --
+see [Custom domains](#custom-domains).
 
 If you already have the URL, pass it whole and let LDM take it apart:
 
@@ -693,7 +749,8 @@ When starting or running projects via LDM, you can configure the sharing behavio
 - **`--provider <lfr-tunnel | lfr-tunnel-docker | ngrok>`**: Explicitly selects the provider.
 - **`--subdomain <name>`**: Requests a specific subdomain.
 - **`--domain <domain>`**: A known gateway base domain, a host on one, or a
-  custom vanity domain -- see *What `--domain` accepts* above.
+  custom domain for this project -- see *What `--domain` accepts* and
+  [Custom domains](#custom-domains) above.
 - **`--url <url>`**: The public URL to claim, e.g.
   `https://peters.lfr-demo.se`. Shorthand for `--subdomain` and `--domain`
   together.

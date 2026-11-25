@@ -39,6 +39,7 @@ class MockComposerManager:
         # The real decisions are driven against a real ShareService in
         # test_share_tunnel_audit.py.
         self.share.sidecar_gateway_pin.return_value = None
+        self.share.project_custom_domain.return_value = None
         self.share.resolve_tunnel_gateway_url.side_effect = lambda share_domain: (
             "https://tunnel."
             + (
