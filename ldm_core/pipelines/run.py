@@ -3088,6 +3088,20 @@ class ExecutionStage(PipelineStage):
         if force_recreate:
             cmd.append("--force-recreate")
 
+        # LDM-#2526: the lfr-tunnel-docker sidecar is left out of the bring-up.
+        # Started here it would make the instance public before the
+        # default-credentials check, which can only run once the portal
+        # answers; `share.cmd_start` (readiness, or the --no-wait branch below)
+        # runs the check and only then starts the sidecar.
+        from ldm_core.handlers.share_credentials import (
+            services_holding_back_sidecar,
+        )
+
+        held_back_services = services_holding_back_sidecar(
+            paths.get("compose") or paths["root"] / "docker-compose.yml"
+        )
+        cmd.extend(held_back_services)
+
         show_summary = context.get("show_summary") and not getattr(
             manager.args, "quiet", False
         )
@@ -3321,7 +3335,7 @@ class ExecutionStage(PipelineStage):
                 # it is the same operation in two steps -- a `start` that takes
                 # thirty minutes is as broken as a `create` that does.
                 manager.run_command(
-                    [*compose_base, "start"],
+                    [*compose_base, "start", *held_back_services],
                     cwd=str(paths["root"]),
                     capture_output=not follow,
                     timeout=_stack_bringup_timeout(),

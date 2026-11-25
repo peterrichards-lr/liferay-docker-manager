@@ -27,6 +27,37 @@ PROBE_PATH = "/o/headless-admin-user/v1.0/my-user-account"
 
 ALLOW_FLAG = "--allow-default-credentials"
 
+# The compose service `composer._build_lfr_tunnel_service` emits for the
+# `lfr-tunnel-docker` provider. It is started only by `ShareService.cmd_start`
+# (`compose up -d lfr-tunnel`), after the check below.
+SIDECAR_SERVICE = "lfr-tunnel"
+
+
+def services_holding_back_sidecar(compose_file):
+    """The services a bring-up should name so the share sidecar is left out.
+
+    A bare `compose up`/`create`/`start` starts every service in the file,
+    including the tunnel sidecar -- which would put the instance on its public
+    URL before `assert_default_credentials_acceptable` has run. Naming every
+    other service starts exactly what the bare form would, minus the sidecar;
+    `ShareService.cmd_start` brings it up once the check has passed.
+
+    Returns ``[]`` when the file defines no sidecar, meaning "no change: start
+    everything", so a project that is not shared through Docker is unaffected.
+    """
+    from pathlib import Path
+
+    from ldm_core.utils import yaml_to_dict
+
+    try:
+        text = Path(compose_file).read_text(errors="replace")
+    except (OSError, TypeError):
+        return []
+    services = (yaml_to_dict(text) or {}).get("services") or {}
+    if not isinstance(services, dict) or SIDECAR_SERVICE not in services:
+        return []
+    return [name for name in services if name != SIDECAR_SERVICE]
+
 
 def default_credentials_work(base_url, email, password, timeout=5.0):
     """True if ``email``/``password`` sign in at ``base_url``; False if refused.

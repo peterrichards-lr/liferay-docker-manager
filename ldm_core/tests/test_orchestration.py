@@ -477,6 +477,57 @@ class TestOrchestration(unittest.TestCase):
             inspector=False,
         )
 
+    def _start_recording(self, share_options, sidecar=True):
+        """cmd_start against a real compose file; returns every compose argv
+        and the order of `compose start` vs `share.cmd_start`."""
+        import yaml
+
+        services = ["liferay", "test-db"] + (["lfr-tunnel"] if sidecar else [])
+        (self.tmp_dir / "docker-compose.yml").write_text(
+            yaml.safe_dump({"services": {s: {"image": "x"} for s in services}})
+        )
+        order: list = []
+
+        def run(cmd, *a, **kw):
+            if "start" in cmd:
+                order.append(("compose", list(cmd)))
+            return "fake-container-id"
+
+        self.handler.manager.share.cmd_start.side_effect = (  # type: ignore[attr-defined]
+            lambda **kw: order.append(("share", kw))
+        )
+        with (
+            patch.object(self.handler.manager, "read_meta", return_value={}),
+            patch.object(BaseHandler, "run_command", side_effect=run),
+            patch("ldm_core.runtime.mac_pin.configured_mac", return_value=None),
+        ):
+            self.handler.handler.orchestration.cmd_start(
+                "test", share_options=share_options
+            )
+        return order
+
+    def test_start_share_starts_the_sidecar_only_through_share_start(self) -> None:
+        """LDM-#2526: `compose start` would start the lfr-tunnel-docker
+        sidecar -- making the instance public -- before `share.cmd_start` ran
+        the default-credentials check. It names the other services instead."""
+        order = self._start_recording(
+            {"provider": "lfr-tunnel-docker", "subdomain": None}
+        )
+        self.assertEqual([kind for kind, _ in order], ["compose", "share"])
+        self.assertEqual(order[0][1][-3:], ["start", "liferay", "test-db"])
+
+    def test_start_without_share_leaves_the_sidecar_stopped(self) -> None:
+        """Plain `ldm start` no longer revives an unchecked tunnel."""
+        order = self._start_recording(None)
+        self.assertEqual([kind for kind, _ in order], ["compose"])
+        # Named, not merely absent: a bare `compose start` starts it too.
+        self.assertEqual(order[0][1][-3:], ["start", "liferay", "test-db"])
+
+    def test_start_without_a_sidecar_is_unchanged(self) -> None:
+        """Control: no sidecar in the file, so the bare `compose start` stays."""
+        order = self._start_recording(None, sidecar=False)
+        self.assertEqual(order[0][1][-1], "start")
+
     @patch("ldm_core.runtime.orchestration.UI.die", side_effect=SystemExit(1))
     def test_share_with_all_projects_is_refused(self, mock_die) -> None:
         """A tunnel leases one subdomain and forwards to one target."""

@@ -170,11 +170,12 @@ The check applies however the share starts: `share start`, and `run`, `start`,
 `import` or `quickstart` with `--share`. If LDM cannot reach the instance to
 check, it warns and shares. `--dry-run` skips the check.
 
-One exception: with the `lfr-tunnel-docker` provider, `run --share` and
-`start --share` put the tunnel sidecar in the stack itself, so it starts with
-the containers and the check only runs once the portal is up. A refusal then
-stops LDM, but not the sidecar that is already serving -- stop it with
-`ldm share stop`. `ldm share start --provider lfr-tunnel-docker` checks first.
+With the `lfr-tunnel-docker` provider the tunnel is a sidecar in the project's
+stack, and it is held back when the stack starts: the containers come up
+without it, the check runs once the portal answers, and only then is the
+sidecar started. A refusal leaves it stopped, so the instance is never public.
+A plain `ldm start` (without `--share`) does not restart the sidecar either;
+it says so, and `ldm share start <project>` shares the project again.
 
 ### What `--domain` accepts
 
