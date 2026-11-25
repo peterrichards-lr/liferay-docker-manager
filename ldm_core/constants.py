@@ -103,6 +103,29 @@ RELEASE_ANNOUNCEMENTS = {
     # LDM-#1663: a patch needs its OWN key, or the banner shows no
     # announcements for it (LDM-#2412); `release.py --promote` refuses a
     # stable X.Y.Z (Z > 0) without one.
+    "2.27": [
+        (
+            "<project>.localhost needs no sudo",
+            "Name a project <project>.localhost and it resolves with no "
+            "hosts-file edit and no sudo. mkcert is set up only when a "
+            "project first uses SSL.",
+        ),
+        (
+            "ldm share start --domain <your-domain>",
+            "Share one project on a custom domain registered to you "
+            "(Liferay Tunnel v1.52.12 or later). A refusal quotes the gateway.",
+        ),
+        (
+            "Static client extensions get no container",
+            "Themes, favicons, CSS, spritemaps and custom elements are served "
+            "by the portal; only real services get a sidecar.",
+        ),
+        (
+            "--json on info, doctor and share status",
+            "Machine-readable output, and exit code 6 when a step needs "
+            "privileges under -y.",
+        ),
+    ],
     "2.26.16": [
         (
             "ldm package --stateless",

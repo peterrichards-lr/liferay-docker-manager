@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.27.0-pre.1] - 2026-11-25
+
+### Added
+
+- **`<project>.localhost` as a named host, with no sudo** (LDM-#2513). A `*.localhost` name resolves to the loopback address on its own (RFC 6761), so LDM edits the hosts file only for custom domains. A bare `--host-name myproj` becomes `myproj.localhost`, and `ldm fork` defaults to `<target>.localhost`.
+
+- **Custom share domains, per project** (LDM-#2503). `ldm share start --domain <host>` requests a domain registered to you with `-domain`, for that project only. It needs Liferay Tunnel v1.52.12 or later; an older client is refused with an upgrade hint before anything is recorded. When the gateway refuses (409 taken, 403 not registered), LDM quotes its message. A custom domain inherited from `~/.ldmrc` is set aside with a warning rather than claimed by every project. The Docker sidecar provider does not support custom domains yet (LDM-#2543).
+
+- **`--json` on `ldm info`, `ldm system doctor` and `ldm share status`** (LDM-#2525). The doctor's check details and hints are redacted, so the output is safe to paste into a ticket. Schemas are in the JSON output reference.
+
+- **Exit code 6, "privileged step required"** (LDM-#2517). Under `-y`, a step that needs sudo stops (or, for cleanup commands, finishes the rest first) and exits 6 instead of prompting. With `--json` or `LDM_JSON=1`, a `privileged_step` JSON line names the step.
+
+- **A share checks for the default admin login first** (LDM-#2526). If the instance still accepts the default credentials, an interactive share asks and `-y` exits 1. `--allow-default-credentials` overrides it. With the `lfr-tunnel-docker` provider, the sidecar starts only after the check passes, so a refused instance is never made public.
+
+- **The share sidecar fails over between gateways** (LDM-#2536). On `lfr-tunnel` images v1.52.12 or later, the sidecar gets `LFT_CLIENT_BOOTSTRAP` and elects a region instead of being pinned to one gateway. Older tags and `:latest` keep `LFT_CLIENT_SERVER` (LDM-#2542).
+
+### Changed
+
+- **Static client extensions get no container** (LDM-#2534). Themes, favicons, CSS, spritemaps and custom elements are served by the portal, so only extensions that run a service (declared ports, a real runtime) get a sidecar. The same rule decides what `ldm package --stateless` slims and what `ldm dev` redeploys. Slimmed extensions in a stateless package no longer carry a `Dockerfile`.
+
+- **`*.localhost` names do not turn on SSL automatically** (LDM-#2514); custom domains still do. mkcert is optional, and set up only when a project first uses SSL (LDM-#2515).
+
+- **A plain `ldm start` no longer restarts a Docker-provider tunnel** (LDM-#2526). It prints a hint to run `ldm share start`; `ldm run` still re-shares after the credentials check.
+
+### Fixed
+
+- **The share health check no longer gives "connected" as a reason to stop a tunnel** (LDM-#2503). When the status lookup misses a tunnel the client reports as connected under this subdomain, the share is kept with a warning.
+
+- **A `*.localhost` host name is not sent to the tunnel as `-target-host`**, and no longer lets the native provider through for a project on a remote node.
+
+- **Verification scripts** (LDM-#2539, #2541). The isolated boot checks use a free port rather than 8080; the `.ldmp` round trip retries for up to three minutes and records `docker port` and curl evidence if it still does not serve; and the PowerShell failure capture keeps its line breaks.
+
 ## [v2.26.16] - 2026-11-25
 
 ### Added
@@ -31,11 +63,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`ldm share` shows the client's current log** (LDM-#2502). It read the pre-move `~/.lfr-tunnel/client-<sub>.log`, so a failed share printed a stale log or none. LDM now follows the `[Client] Logs:` path the client prints, then `~/.lfr-tunnel/logs/`, then the old path, and names the file and its modification time.
 
-- **A vanity `share_domain` is requested from the tunnel** (LDM-#2503). LDM announced `<sub>.<vanity>` and pinned it as `web.server.host` but never passed `-domain`, so the tunnel served `<sub>.lfr-demo.se`. Native shares now pass `-domain`, and the Docker sidecar gets `LFT_CLIENT_CUSTOM_DOMAIN`.
-
 - **A client below the gateway's `min_version` warns instead of refusing** (LDM-#2504), matching the gateway's 14-day grace period.
 
-- **The Docker share sidecar no longer stores its token in `.env` or pins one gateway** (LDM-#2505). The token is passed from the keyring at start, and an existing `LFT_CLIENT_TOKEN` line is removed with a notice. `LFT_CLIENT_SERVER` is set only when you name a gateway.
+- **The Docker share sidecar no longer stores its token in `.env`** (LDM-#2505). The token is passed from the keyring at start, and an existing `LFT_CLIENT_TOKEN` line is removed with a notice. The sidecar always gets a gateway: the one you pinned, else the one its share domain resolves to.
 
 - **The share sidecar's version check uses the published image name** (LDM-#2506), `peterjrichards/lfr-tunnel`.
 
@@ -59,8 +89,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Documented commands parse** (LDM-#2149). Every `ldm` command in the docs is now checked against the real parser, and the 11 that failed are corrected.
 
-- **The Docker share sidecar starts again** (LDM-#2505). pre.1 stopped giving the `lfr-tunnel-docker` sidecar a gateway unless you pinned one, but the published image has none built in, so the sidecar exited at startup with "No tunnel server configured". It now always gets one: the gateway you pinned, else the one its share domain resolves to. The token still never goes into `.env`.
-
 - **A stateless package can no longer silently lose `deploy/`** (LDM-#2493). Liferay's auto-deploy consumes `deploy/` at boot, so packaging a linked project after `ldm run` shipped without its fragment collections. `ldm package --stateless` now refuses and names the missing files; package before booting (`ldm link --no-run`, then `ldm package --stateless`).
 
 - **`ldm system init-ci --stateless` never boots Liferay** (LDM-#2493). The generated workflow links with `--no-run --build` and packages straight away, so it needs no licence and no wait. The stateful workflow is unchanged.
@@ -73,7 +101,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A workspace's `scripts/` is called out** (LDM-#2533). Liferay's entrypoint executes the project's `scripts/` inside the container. `ldm link` and `ldm import` now warn and name each file copied there, and `ldm package` warns about every script it ships.
 
-- **Sharing with a custom vanity `share_domain` works again** (LDM-#2503). pre.1 began passing the vanity domain to the tunnel with `-domain`. Liferay Tunnel serves a custom domain as the whole hostname, one tunnel at a time, so the tunnel came up on the bare domain while LDM announced `<project>.<domain>`. LDM's health check then could not find the tunnel and stopped it. LDM no longer requests the vanity domain, and the tunnel comes up on `<subdomain>.<default gateway>` as before this release. Per-project custom domains are tracked in LDM-#2503.
+- **A custom vanity `share_domain` is not requested from the tunnel** (LDM-#2503). Liferay Tunnel serves a custom domain as the whole hostname, one tunnel at a time, so passing it to every share broke them. Shares come up on `<subdomain>.<default gateway>`, as in v2.26.15. Per-project custom domains follow in v2.27.0.
 
 ## [v2.26.16-pre.3] - 2026-11-24
 
