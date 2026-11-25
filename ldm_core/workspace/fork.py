@@ -40,6 +40,7 @@ def cmd_fork(self, source, target, snapshot=None):
         )
         return target
 
+    from ldm_core.hostnames import localhost_name_for
     from ldm_core.utils import sanitize_id
 
     # 1. Resolve paths
@@ -118,7 +119,9 @@ def cmd_fork(self, source, target, snapshot=None):
             "liferay_container_name": sanitized_target,
             "db_container_name": f"{sanitized_target}-db",
             "tunnel_container_name": f"{sanitized_target}-tunnel",
-            "host_name": f"{sanitized_target}.local",
+            # LDM-#2513: `.localhost`, not `.local` -- it resolves to loopback
+            # with no hosts entry, so a fork never asks for sudo.
+            "host_name": localhost_name_for(sanitized_target),
             "seeded": "true",
         }
     )

@@ -231,7 +231,7 @@ Write that completion block into the shell startup profile automatically, backin
 Display this manual page. (legacy: \fBldm man\fR)
 .TP
 \fBldm system fix-hosts\fR [\fIHOSTNAME\fR]
-Append missing project hostnames to \fB/etc/hosts\fR. (legacy: \fBldm fix-hosts\fR)
+Append missing project hostnames to \fB/etc/hosts\fR. Only custom domains need an entry: \fBlocalhost\fR and \fB*.localhost\fR names resolve to loopback without one and are skipped. (legacy: \fBldm fix-hosts\fR)
 .TP
 \fBldm system dev-setup\fR
 Configure the LDM development environment. (legacy: \fBldm dev-setup\fR)
@@ -422,4 +422,4 @@ Peter Richards <peter.richards@liferay.com>
 
 .SH SEE ALSO
 .B docker(1), docker-compose(1)
-.\" Last Updated: 2026-11-23 | Last Reviewed: 2026-11-23
+.\" Last Updated: 2026-11-25 | Last Reviewed: 2026-11-25

@@ -2926,7 +2926,7 @@ def get_parser():  # noqa: PLR0915
     doctor.add_argument(
         "--fix-hosts",
         action="store_true",
-        help="Automatically fix missing entries in /etc/hosts",
+        help="Automatically fix missing entries in /etc/hosts (custom domains only; *.localhost names need none)",
     )
     doctor.add_argument(
         "--bundle",
@@ -3023,7 +3023,7 @@ def get_parser():  # noqa: PLR0915
     fix_hosts_cmd = system_subparsers.add_parser(
         "fix-hosts",
         parents=[base_sub_parent],
-        help="Append missing project hostnames/subdomains to the hosts file",
+        help="Append missing project hostnames/subdomains to the hosts file (custom domains only; *.localhost names need none)",
     )
     fix_hosts_cmd.add_argument(
         "host_name",

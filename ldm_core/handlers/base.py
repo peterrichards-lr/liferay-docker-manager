@@ -63,8 +63,22 @@ class BaseHandler:
 
     def ensure_hostnames_resolve(self, root, host_name, project_id=None):  # noqa: PLR0912
         """Verifies that the main host and all extension subdomains resolve, fixing them if needed."""
-        if host_name == "localhost":
+        from ldm_core.hostnames import is_loopback_name
+
+        # LDM-#2513: `localhost` and every `*.localhost` name -- the project's
+        # own and its client extensions' `<cx>.<project>.localhost` -- resolve
+        # to loopback with no hosts entry (RFC 6761), so they never reach the
+        # hosts-file prompt below and never ask for sudo. Only custom domains
+        # do.
+        if is_loopback_name(host_name):
             return True
+
+        # LDM-#2513: the sudo-free alternative to a `.local` name.
+        localhost_form = (
+            f"{host_name[: -len('.local')]}.localhost"
+            if host_name.endswith(".local")
+            else None
+        )
 
         # Windows/WSL .local warning
         if host_name.endswith(".local") and (
@@ -74,7 +88,10 @@ class BaseHandler:
             UI.detail(
                 "On Windows, '.local' is reserved for mDNS and may ignore your hosts file."
             )
-            UI.detail("Recommended: Use '.test' or '.internal' instead.")
+            UI.detail(
+                f"Recommended: Use '{localhost_form}', which needs no hosts "
+                "entry, or '.test' / '.internal' instead."
+            )
 
         # macOS .local warning
         if host_name.endswith(".local") and platform.system().lower() == "darwin":
@@ -83,7 +100,8 @@ class BaseHandler:
                 "On macOS, '.local' hostnames can resolve slowly due to mDNS/Bonjour overhead."
             )
             UI.detail(
-                "Recommended: Consider a different TLD like '.test' or '.internal' instead."
+                f"Recommended: Use '{localhost_form}', which needs no hosts "
+                "entry, or a TLD like '.test' or '.internal'."
             )
 
             import sys
@@ -317,7 +335,13 @@ class BaseHandler:
     def _apply_hosts_fix(self, unresolved_domains, project=None):
         """Attempts to append missing host entries to the system hosts file."""
         # 1. Filter out empty or already resolved (sanity check)
-        domains = sorted({d for d in unresolved_domains if d and d != "localhost"})
+        # LDM-#2513: never write a `*.localhost` entry -- those names resolve
+        # to loopback without one, so an entry is a sudo prompt for nothing.
+        from ldm_core.hostnames import is_loopback_name
+
+        domains = sorted(
+            {d for d in unresolved_domains if d and not is_loopback_name(d)}
+        )
         if not domains:
             return True
 
@@ -428,6 +452,11 @@ class BaseHandler:
 
     def _remove_hosts_entries(self, hostnames=None, all_ldm=False):
         """Removes LDM-tagged entries from the system hosts file."""
+        # LDM-#2513: LDM never writes a `*.localhost` entry, so removing one
+        # would be an elevation prompt for nothing.
+        from ldm_core.hostnames import is_loopback_name
+
+        hostnames = [h for h in (hostnames or []) if not is_loopback_name(h)]
         if not hostnames and not all_ldm:
             return True
 
@@ -2347,7 +2376,12 @@ class BaseHandler:
 
     def get_resolved_ip(self, host_name):
         """Resolves a hostname to its IP address."""
-        if not host_name or host_name == "localhost":
+        from ldm_core.hostnames import is_loopback_name
+
+        # LDM-#2513: `*.localhost` is loopback by definition (RFC 6761). Not
+        # every resolver implements that (glibc without nss-myhostname does
+        # not), so it is answered here rather than asked of the OS.
+        if not host_name or is_loopback_name(host_name):
             return "127.0.0.1"
         try:
             import socket

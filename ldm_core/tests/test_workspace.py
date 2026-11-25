@@ -1623,12 +1623,13 @@ class TestWorkspaceQuickstart(unittest.TestCase):
         self.assertEqual(written_meta["project_name"], "target_fork")
         self.assertEqual(written_meta["container_name"], "target_fork")
         self.assertEqual(written_meta["db_container_name"], "target_fork-db")
-        self.assertEqual(written_meta["host_name"], "target_fork.local")
+        # LDM-#2513: a sudo-free `.localhost` name, as a valid DNS label.
+        self.assertEqual(written_meta["host_name"], "target-fork.localhost")
         self.assertEqual(written_meta["port"], "8081")
 
         # Verify registration and restore calls
         mock_register_project.assert_called_once_with(
-            "target_fork", target_dir, "target_fork.local"
+            "target_fork", target_dir, "target-fork.localhost"
         )
         self.manager.snapshot.cmd_restore.assert_called_once_with(
             project_id="target_fork", backup_dir=str(snapshot_dir)

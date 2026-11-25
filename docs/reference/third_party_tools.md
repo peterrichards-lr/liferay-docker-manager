@@ -33,7 +33,7 @@ To build trust and provide transparency to developers, this document details eve
 ### 2. mkcert (Local HTTPS)
 
 * **Why it is needed**: Modern web browsers enforce strict security checks, and developing client extensions or OAuth2 configurations often requires secure `https://` origins. `mkcert` automates the complex task of creating a local CA and registering it in your machine's system trust stores, preventing "Not Secure" browser warning screens.
-* **Optionality**: If not installed, LDM runs fine over standard HTTP port `8080` (or your configured port).
+* **Optionality**: Not a base prerequisite (LDM-#2515). Without it LDM runs fine over HTTP -- `http://localhost:8080`, or `http://<project>.localhost` -- and `ldm doctor` reports it as *not needed* while no project uses SSL. The first time a project needs SSL (`--ssl`, or a custom domain, which enables SSL by default), LDM offers to set it up interactively (Homebrew on macOS, Scoop on Windows, then `mkcert -install`), or names the one-time command(s) to run when non-interactive. See [Networking & DNS](networking.md#local-https-mkcert).
 * **Trust Boundary**: LDM only calls `mkcert` locally. Certificates are stored in `~/liferay-docker-certs`.
 
 ### 3. OpenSSL
@@ -75,4 +75,4 @@ To build trust and provide transparency to developers, this document details eve
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-24* | *Last Reviewed: 2026-11-24*
+*Last Updated: 2026-11-25* | *Last Reviewed: 2026-11-25*

@@ -986,6 +986,24 @@ class DoctorRunner:
                         f"'{active_target.name}'.",
                     )
 
+    def _any_project_uses_ssl(self):
+        """True when any LDM project on this machine has SSL enabled (LDM-#2515).
+
+        `requires_ssl` covers only the project doctor was pointed at (or all of
+        them under `--all`). Whether mkcert is *needed* is a machine question,
+        so every project is consulted. A failure to enumerate them answers
+        True: when it cannot be shown that nothing needs mkcert, the existing
+        warning stands.
+        """
+        try:
+            for root in self.handler.manager.find_dxp_roots() or []:
+                meta = self.handler.manager.read_meta(root["path"]) or {}
+                if str(meta.get("ssl", "false")).lower() == "true":
+                    return True
+        except Exception:
+            return True
+        return False
+
     def _check_global_config_and_network(self):  # noqa: C901, PLR0912, PLR0915
         # 3. mkcert Check
         mkcert_status, mkcert_ok, ca_root = check_mkcert(self.handler)
@@ -1077,6 +1095,20 @@ class DoctorRunner:
         if mkcert_ok == "warn" and self.requires_ssl:
             mkcert_ok = False
 
+        # LDM-#2515: mkcert only matters to a project that uses SSL. With none,
+        # its absence (or an uninitialised CA) is neutral, not a warning, so a
+        # clean machine running only default projects gets a green doctor. It
+        # is set up lazily the first time a project needs SSL.
+        mkcert_needed = self.requires_ssl or self._any_project_uses_ssl()
+        if mkcert_ok is not True and not mkcert_needed:
+            mkcert_status = (
+                "Not needed (no project uses SSL)"
+                if mkcert_status == "Not installed"
+                else f"{mkcert_status} -- not needed, no project uses SSL"
+            )
+            mkcert_ok = True
+        self.mkcert_needed = mkcert_needed
+
         self.results.append(("mkcert", mkcert_status, mkcert_ok))
         if mkcert_ok is not True:
             if mkcert_status == "Not installed":
@@ -1105,7 +1137,7 @@ class DoctorRunner:
                 except Exception:
                     pass
 
-            if self.is_wsl:
+            if self.is_wsl and mkcert_needed:
                 # Check if CAROOT points to Windows
                 is_win_ca = ca_root and "/mnt/c/" in ca_root
                 if not is_win_ca:
@@ -1155,10 +1187,15 @@ class DoctorRunner:
 
         # mkcert is optional -- it only gates local SSL -- so its absence is a
         # warning. docker and openssl are not: without them LDM cannot work.
+        # LDM-#2515: and when no project uses SSL, not even that.
         optional_tools = {"mkcert"}
         for tool_name, tool_path in tool_list:
             if tool_path:
                 self.results.append((f"Path: {tool_name}", str(tool_path), True))
+            elif tool_name == "mkcert" and not mkcert_needed:
+                self.results.append(
+                    (f"Path: {tool_name}", "Not needed (no project uses SSL)", True)
+                )
             else:
                 self.results.append(
                     (
@@ -2058,6 +2095,25 @@ class DoctorRunner:
             dns_ok = dns_res[0]
             unresolved = dns_res[1]
             non_local = dns_res[2]
+
+            # LDM-#2513: a stored bare host name (no dot) predates the
+            # normalisation `--host-name` now applies. It is never rewritten
+            # silently, so suggest the sudo-free form instead.
+            if (
+                isinstance(host_name, str)
+                and host_name != "localhost"
+                and "." not in host_name
+            ):
+                from ldm_core.hostnames import localhost_name_for
+
+                suggested = localhost_name_for(host_name)
+                self.add_hint(
+                    f"[{p_path.name}] Host name '{host_name}' has no domain and "
+                    f"needs a hosts-file entry. '{suggested}' resolves with none: "
+                    f"{UI.WHITE}ldm run {p_path.name} --host-name {suggested}"
+                    f"{UI.COLOR_OFF}",
+                    f"{GITHUB_DOCS_URL}/reference/networking.md",
+                )
 
             if host_name != "localhost":
                 fix_hosts = getattr(self.args, "fix_hosts", False)

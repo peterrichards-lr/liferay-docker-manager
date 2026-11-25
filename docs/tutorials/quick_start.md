@@ -12,6 +12,8 @@ See the specific installation guides for your OS.
   - _Note_: `ldm doctor` expects these minimums. If you allocate exactly 8GB, Docker may report ~7.7GB due to system overhead; the tool accounts for this by allowing a 7.5GB threshold.
 - **Python**: 3.10+ (required for source installations and for macOS/Linux standalone binaries, as they are packaged as ZipApps. Not required for Windows standalone binaries).
 
+- **mkcert**: _Not_ a prerequisite. Projects run over HTTP -- `http://localhost:8080`, or `http://<project>.localhost` for a named host that needs no hosts-file entry -- without it. It is needed only for local HTTPS; see _Advanced: Local HTTPS_ below.
+
 For a detailed breakdown of all third-party dependencies, why they are needed, and feature impact, see the [THIRD_PARTY_TOOLS.md](../reference/third_party_tools.md) guide.
 
 ## 🪟 Windows Setup & Tools
@@ -29,19 +31,15 @@ Open PowerShell **as an Administrator** to enable Telnet (required for OSGi Gogo
 Enable-WindowsOptionalFeature -Online -FeatureName TelnetClient
 ```
 
-### 2. Install SSL Tools (Chocolatey or Scoop)
-
-To enable "Green Lock" SSL on Windows, you must install `mkcert` and `openssl`. You can use either Chocolatey or Scoop.
+### 2. Install OpenSSL (Chocolatey or Scoop)
 
 **Option A: Chocolatey** (Requires Administrator PowerShell)
 
 ```powershell
-choco install mkcert openssl
-mkcert -install
+choco install openssl
 ```
 
 **Option B: Scoop** (Run as a Standard User!)
-_Note: Scoop refuses to run as Administrator. Run these in a standard, non-elevated PowerShell:_
 
 ```powershell
 # 1. Install Scoop (The Package Manager)
@@ -50,51 +48,50 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser; iwr -useb 
 # 2. Install Git (Required for Scoop Buckets and OpenSSL)
 scoop install git
 
-# 3. Add the Extras Bucket (Required for mkcert)
-scoop bucket add extras
-
-# 4. Install SSL Tools
+# 3. Install OpenSSL
 # Note: We use openssl-mingw instead of the default openssl to bypass a broken 
 # global Scoop dependency (innounp 404 error) that affects the standard installer.
-scoop install mkcert openssl-mingw
+scoop install openssl-mingw
 ```
 
-_After Scoop finishes, open an **Administrator PowerShell** to initialize the trust store:_
-
-```powershell
-# 5. Initialize Local Trust Store (Requires Administrator)
-mkcert -install
-```
-
-## 🍎 Install SSL Tools (macOS)
+## 🍎 Install Tools (macOS)
 
 **Using [Homebrew](https://brew.sh/):**
 
 ```bash
 
-# Install Docker CLI and SSL tools
-brew install docker docker-compose mkcert nss openssl
-mkcert -install
+# Install the Docker CLI and OpenSSL
+brew install docker docker-compose openssl
 ```
 
 **Using [MacPorts](https://www.macports.org/):**
 
 ```bash
 
-# Install Docker CLI and SSL tools
-sudo port install docker docker-compose mkcert nss openssl
-mkcert -install
+# Install the Docker CLI and OpenSSL
+sudo port install docker docker-compose openssl
 ```
 
-## 🐧 Install SSL Tools (Native Linux)
-
-...
+## 🐧 Install Tools (Native Linux)
 
 ```bash
 
-sudo apt update && sudo apt install mkcert libnss3-tools openssl
-mkcert -install
+sudo apt update && sudo apt install openssl
 ```
+
+## 🔒 Advanced: Local HTTPS (mkcert)
+
+Only needed when a project uses SSL -- `--ssl`, or a custom domain such as
+`acme.demo`, which enables SSL by default. LDM offers to set `mkcert` up the
+first time that happens; under `-y` it prints the command to run instead.
+`ldm doctor` shows it as _not needed_ until then. To install it up front:
+
+- **macOS**: `brew install mkcert nss` (or `sudo port install mkcert nss`), then `mkcert -install`
+- **Linux**: `sudo apt install mkcert libnss3-tools`, then `mkcert -install`
+- **Windows**: `choco install mkcert` (Administrator), or `scoop bucket add extras` and `scoop install mkcert`; then `mkcert -install` from an Administrator PowerShell
+
+`mkcert -install` adds a local CA to your trust store and may ask for your
+password. See [Networking & DNS](../reference/networking.md#local-https-mkcert).
 
 ## 🐳 Linux & WSL Docker Permissions
 
@@ -748,4 +745,4 @@ LDM binaries use **"Magic Byte" detection** to accurately report their checksum 
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-19* | *Last Reviewed: 2026-11-19*
+*Last Updated: 2026-11-25* | *Last Reviewed: 2026-11-25*

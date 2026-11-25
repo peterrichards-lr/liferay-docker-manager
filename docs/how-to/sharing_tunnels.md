@@ -404,7 +404,7 @@ ldm run my-project --expose
 
 When developing with LDM, you may want to toggle your project network routing between:
 
-- **Local Hosts-based SSL Mode**: Testing offline using a local custom domain name (e.g. `https://my-project.local` mapped in `/etc/hosts` with certificates managed via `mkcert`).
+- **Local Hosts-based SSL Mode**: Testing offline over HTTPS on a local name (by default `https://my-project.localhost`, which needs no `/etc/hosts` entry; a custom domain mapped in `/etc/hosts` also works), with certificates managed via `mkcert`.
 - **Public Share Tunnel Mode**: Exposing Liferay publicly via a leased subdomain on a secure tunnel gateway (e.g. `https://my-project.lfr-demo.online`).
 
 Manually updating Liferay virtual hosts, rebuilding project properties, and updating environment config files inside your client extensions can be error-prone. LDM automates this using the `ssl-mode` command:
@@ -418,8 +418,8 @@ ldm config ssl-mode <hosts | share> [project] [--subdomain <subdomain>] [--domai
 #### 1. Hosts Mode (`hosts`)
 
 - Switches the project's metadata `ssl` parameter to `true`.
-- Sets the project's `host_name` to `<project_name>.local` (or retains your custom local domain).
-- Surgically searches for and updates all local `.env` files (e.g., `LIFERAY_URL`, `LIFERAY_PORTAL_URL`, `AICA_LIFERAY_URL`) to point to `https://<project_name>.local`.
+- Sets the project's `host_name` to `<project_name>.localhost` (or retains your custom local domain). A `.localhost` name resolves to loopback with no `/etc/hosts` entry, so the switch needs no `sudo` (LDM-#2513); it was `<project_name>.local` before.
+- Surgically searches for and updates all local `.env` files (e.g., `LIFERAY_URL`, `LIFERAY_PORTAL_URL`, `AICA_LIFERAY_URL`) to point to `https://<project_name>.localhost`.
 - Rebuilds project properties so Liferay aligns its internal virtual host settings.
 
 #### 2. Share Mode (`share`)
@@ -698,4 +698,4 @@ If you are running the `lfr-tunnel` Go executable directly or writing custom scr
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-24* | *Last Reviewed: 2026-11-24*
+*Last Updated: 2026-11-25* | *Last Reviewed: 2026-11-25*

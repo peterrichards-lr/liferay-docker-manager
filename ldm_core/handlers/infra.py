@@ -749,7 +749,7 @@ class InfraService:
             UI.detail(f"  Could not capture the search container's logs: {exc}")
             return None
 
-    def setup_infrastructure(  # noqa: C901, PLR0912, PLR0915
+    def setup_infrastructure(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self,
         resolved_ip,
         ssl_port,
@@ -759,12 +759,17 @@ class InfraService:
         use_shared_db=False,
         force_recreate=False,
         db_type=None,
+        use_proxy=False,
     ):
         """Initializes global Traefik proxy and search services.
 
         LDM-#1361: `db_type` selects which engine's global database
         container to provision. `None` means PostgreSQL, preserving the
         pre-#1361 behaviour for callers that do not know the engine.
+
+        LDM-#2514: `use_proxy` starts the same proxy for a project that needs
+        it without SSL -- a `*.localhost` project served through the `web`
+        entrypoint. No certificate is involved, so mkcert is not needed.
         """
         self._ensure_network(self.target)
         # Orchestrated Global Search (ES8)
@@ -774,8 +779,19 @@ class InfraService:
         if use_shared_db:
             self.setup_global_database(db_type=db_type)
 
-        if not use_ssl:
+        if not use_ssl and not use_proxy:
             return 443
+
+        if not use_ssl:
+            # The cert directory is bind-mounted into the proxy whether or not
+            # any certificate exists. `setup_ssl` creates it on the SSL path;
+            # without it Docker would create the source itself, root-owned.
+            try:
+                (get_actual_home() / "liferay-docker-certs").mkdir(
+                    parents=True, exist_ok=True
+                )
+            except OSError as e:
+                UI.debug(f"Could not create the certificate directory: {e}")
 
         # Docker bridge proxy check (Traefik needs to talk to Docker socket securely)
         # LDM-#1548: resolved against the same target as the compose stack below,
@@ -1060,8 +1076,116 @@ class InfraService:
         )
         UI.detail(
             "Browsers will show an untrusted-certificate warning. Fix the cause "
-            f"above and re-run {UI.WHITE}ldm ssl renew{UI.COLOR_OFF}."
+            f"above and re-run {UI.WHITE}ldm renew-ssl{UI.COLOR_OFF}."
         )
+
+    @staticmethod
+    def _mkcert_install_command():
+        """The command that installs mkcert without sudo, or None (LDM-#2515).
+
+        Only package managers that run as the user qualify: Homebrew on macOS,
+        Scoop on Windows. Linux package managers need root, so on Linux the
+        install is always a step for the user.
+        """
+        import platform
+
+        system = platform.system().lower()
+        if system == "darwin" and shutil.which("brew"):
+            return ["brew", "install", "mkcert", "nss"]
+        if system == "windows" and shutil.which("scoop"):
+            return ["scoop", "install", "mkcert"]
+        return None
+
+    @staticmethod
+    def _mkcert_manual_install_hint():
+        import platform
+
+        system = platform.system().lower()
+        if system == "darwin":
+            return "brew install mkcert nss"
+        if system == "windows":
+            return "scoop bucket add extras && scoop install mkcert"
+        return "sudo apt install mkcert libnss3-tools"
+
+    def _mkcert_ca_ready(self):
+        """True when mkcert's local CA exists (`mkcert -install` has run)."""
+        from pathlib import Path
+
+        try:
+            ca_root = self.manager.run_command(["mkcert", "-CAROOT"], check=False)
+        except Exception:
+            return False
+        if not ca_root or not str(ca_root).strip():
+            return False
+        return (Path(str(ca_root).strip()) / "rootCA.pem").exists()
+
+    def _privileged_step_required(self, commands, reason):
+        """Describe a step LDM cannot take for the user, non-interactively.
+
+        TODO(#2517): replace this body with the structured "privileged step"
+        exit code and payload that #2517 defines, so an agent can hand the
+        command to its user. Until then it prints the same information as
+        plain text. This is the only call site for LDM-#2515's local-HTTPS
+        setup -- swap it here.
+        """
+        UI.warning(f"Local HTTPS needs a one-time setup step: {reason}")
+        UI.detail("Run this yourself, then re-run the LDM command:")
+        for command in commands:
+            UI.detail(f"    {UI.WHITE}{command}{UI.COLOR_OFF}")
+
+    def ensure_local_ca(self):
+        """Make sure mkcert and its local CA are ready, setting them up lazily.
+
+        LDM-#2515: called the first time a project needs SSL -- `--ssl`, or a
+        custom domain's auto-SSL. Interactively, LDM offers to do each missing
+        step; non-interactively it names the steps and returns False, and the
+        caller falls back to Traefik's default certificate as before.
+
+        Returns True when certificates can be issued.
+        """
+        interactive = not getattr(self.manager, "non_interactive", False)
+
+        if not shutil.which("mkcert"):
+            install_cmd = self._mkcert_install_command()
+            UI.warning("Local HTTPS needs 'mkcert', which is not installed.")
+            if (
+                interactive
+                and install_cmd
+                and UI.confirm(f"Install it now with '{' '.join(install_cmd)}'?", "Y")
+            ):
+                self.manager.run_command(install_cmd, check=False, capture_output=False)
+
+        if not shutil.which("mkcert"):
+            steps = [self._mkcert_manual_install_hint(), "mkcert -install"]
+            reason = "install mkcert and create its local CA."
+        else:
+            if self._mkcert_ca_ready():
+                return True
+            UI.warning(
+                "mkcert's local CA has not been created yet ('mkcert -install')."
+            )
+            if interactive and UI.confirm(
+                "Run 'mkcert -install' now? It adds a local CA to your trust "
+                "store and may ask for your password.",
+                "Y",
+            ):
+                self.manager.run_command(
+                    ["mkcert", "-install"], check=False, capture_output=False
+                )
+                if self._mkcert_ca_ready():
+                    return True
+                UI.error("'mkcert -install' did not create the local CA.")
+            steps = ["mkcert -install"]
+            reason = "create mkcert's local CA and add it to the trust store."
+
+        if interactive:
+            UI.detail("To enable local HTTPS, run:")
+            for step in steps:
+                UI.detail(f"    {UI.WHITE}{step}{UI.COLOR_OFF}")
+            UI.detail(f"then {UI.WHITE}ldm renew-ssl{UI.COLOR_OFF}.")
+        else:
+            self._privileged_step_required(steps, reason)
+        return False
 
     def setup_ssl(self, cert_dir, host_name):  # noqa: PLR0911, PLR0912
         """Ensures valid locally-trusted wildcard certificates exist for the host.
@@ -1071,17 +1195,12 @@ class InfraService:
         failure path must say for itself what the consequence is -- see
         `_ssl_fallback_warning`.
         """
-        if not shutil.which("mkcert"):
-            UI.error("LDM Requirement Missing: mkcert")
-            UI.detail(
-                "Local SSL requires 'mkcert'. Please install it to continue:\n"
-                "  - macOS: brew install mkcert nss\n"
-                "  - Windows: scoop install mkcert\n"
-                "  - Linux: sudo apt install mkcert libnss3-tools\n"
-            )
-            UI.detail(
-                f"After installation, run: {UI.WHITE}mkcert -install{UI.COLOR_OFF}"
-            )
+        # LDM-#2515: mkcert is no longer a base prerequisite. This is the first
+        # point at which a project actually needs it -- a certificate has to be
+        # issued -- so it is set up here: offered interactively, described as
+        # one step otherwise. A host whose certificate already exists needs
+        # nothing from mkcert.
+        if not (cert_dir / f"{host_name}.pem").exists() and not self.ensure_local_ca():
             UI.warning("SSL proxy will use default self-signed certs for now.")
             return False
 
