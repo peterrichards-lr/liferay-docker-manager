@@ -12,6 +12,14 @@ from typing import ClassVar
 
 from ldm_core.constants import LFR_TUNNEL_IMAGE, LFR_TUNNEL_IMAGE_LATEST
 from ldm_core.docker_service import DockerService
+from ldm_core.handlers.share_custom_domain import (
+    CUSTOM_DOMAIN_META_KEY,
+    MIN_CUSTOM_DOMAIN_CLIENT_VERSION,
+    client_supports_custom_domain,
+    custom_domain_refusal,
+    is_loopback_host_name,
+    projects_claiming_domain,
+)
 from ldm_core.ui import UI
 from ldm_core.utils import (
     dns_label,
@@ -170,6 +178,9 @@ class ShareService:
         # every time. One flag per process (this service is a manager
         # singleton, see ldm_core/manager.py), not per call.
         self._custom_domain_note_shown = False
+        # LDM-#2503: and for the warning that a custom domain found in shared
+        # configuration is not being requested.
+        self._ignored_custom_domain_note_shown = False
         # LDM-#1569: same one-flag-per-process reasoning as above, for the
         # note explaining that a remembered gateway domain is no longer
         # pinned.
@@ -960,7 +971,9 @@ class ShareService:
             return
 
         host_name = (project_meta or {}).get("host_name") or "localhost"
-        if host_name != "localhost":
+        # LDM-#2503 review: a `*.localhost` name is loopback (RFC 6761), so it
+        # points at this machine exactly as `localhost` does -- not an escape.
+        if not is_loopback_host_name(host_name):
             # Explicitly pointed somewhere reachable; the native provider
             # forwards there and can legitimately work.
             return
@@ -1049,7 +1062,7 @@ class ShareService:
             exit_code=3,
         )
 
-    def resolve_share_config(  # noqa: C901, PLR0912
+    def resolve_share_config(  # noqa: C901, PLR0912, PLR0915
         self, project_meta=None, provider=None, domain=None, domain_source=None
     ):
         """Resolves share provider and share domain, prompting the user if not configured."""
@@ -1101,8 +1114,13 @@ class ShareService:
         ):
             domain = self.get_default_tunnel_domain()
             self._share_domain_source = "the command line (--domain default)"
+        # LDM-#2503: a custom domain this project asked for on an earlier run
+        # wins over `share_domain`, which earlier releases filled with whatever
+        # domain they resolved -- see share_custom_domain.py.
         if not domain and project_meta:
-            domain = project_meta.get("share_domain")
+            domain = project_meta.get(CUSTOM_DOMAIN_META_KEY) or project_meta.get(
+                "share_domain"
+            )
             if domain:
                 self._share_domain_source = "this project's meta"
         if not domain:
@@ -1122,12 +1140,19 @@ class ShareService:
                         f"Choose sharing domain ({', '.join(known_domains)})",
                         default_domain,
                     )
-                    self.manager.config.set_global_config("share_domain", domain)
-                    # Worth naming explicitly: this answer has just been saved
-                    # to ~/.ldmrc for EVERY project on this machine.
-                    self._share_domain_source = (
-                        "your prompt answer, now saved to ~/.ldmrc"
-                    )
+                    if self.is_custom_share_domain(domain):
+                        # LDM-#2503: a custom domain serves one project, so it
+                        # is never saved for every project on the machine.
+                        self._share_domain_source = (
+                            "your prompt answer, for this project only"
+                        )
+                    else:
+                        self.manager.config.set_global_config("share_domain", domain)
+                        # Worth naming explicitly: this answer has just been
+                        # saved to ~/.ldmrc for EVERY project on this machine.
+                        self._share_domain_source = (
+                            "your prompt answer, now saved to ~/.ldmrc"
+                        )
             else:
                 domain = ""
 
@@ -1146,6 +1171,8 @@ class ShareService:
                     f"Read '{derived_subdomain}.{domain}' as subdomain "
                     f"'{derived_subdomain}' on '{domain}'."
                 )
+
+        domain = self._set_aside_shared_custom_domain(provider, domain, project_meta)
 
         # LDM-#1038: a custom vanity domain silently "just works" from LDM's
         # side (LFT_SERVER_URL is built from whatever string was typed in),
@@ -1167,6 +1194,94 @@ class ShareService:
             )
 
         return provider, domain
+
+    def _set_aside_shared_custom_domain(self, provider, domain, project_meta):
+        """LDM-#2503: a custom domain is the WHOLE hostname of ONE tunnel, so it
+        is requested only for the project that asked for it -- on the command
+        line, or stored by such a request under share_custom_domain.
+
+        One found anywhere else (~/.ldmrc, or a `share_domain` an earlier
+        release copied into this project's meta) would have every project ask
+        for the same domain; the gateway leases it to the first and refuses the
+        rest. So it is set aside, said once, and the standard gateway is used.
+        """
+        if provider not in ("lfr-tunnel", "lfr-tunnel-docker"):
+            return domain
+        if not self.is_custom_share_domain(domain):
+            return domain
+        if self._custom_domain_is_requested(domain, project_meta):
+            return domain
+        ignored_from = self._share_domain_source or "configuration"
+        if not self._ignored_custom_domain_note_shown:
+            self._ignored_custom_domain_note_shown = True
+            UI.warning(
+                f"Not using custom domain '{domain}' from {ignored_from}: a "
+                "custom domain serves one tunnel at a time, so LDM requests "
+                "it only for a project that names it. To share this project "
+                f"on it, run 'ldm share start --domain {domain}'."
+            )
+        self._share_domain_source = (
+            f"LDM's default (custom domain in {ignored_from} not used)"
+        )
+        return self.get_default_tunnel_domain()
+
+    def is_custom_share_domain(self, value):
+        """True when ``value`` is a custom domain rather than a gateway's (LDM-#2503).
+
+        Neither a known gateway base domain (`lfr-demo.se`) nor a host on one
+        (`peters.lfr-demo.se`) -- those are the gateway's own namespace. The
+        known list includes what the gateway advertises in
+        `supported_domains`, so a base domain added server side is not taken
+        for a custom one.
+        """
+        if not isinstance(value, str) or not value.strip():
+            return False
+        if value.strip().lower() in STANDARD_DOMAIN_ALIASES:
+            return False
+        sub, base = self.split_share_host(value)
+        return (
+            sub is None
+            and bool(base)
+            and base not in self.get_known_tunnel_base_domains()
+        )
+
+    def _custom_domain_is_requested(self, domain, project_meta):
+        """Whether ``domain`` came from a per-project request (LDM-#2503)."""
+        source = self._share_domain_source
+        # None only when a caller passed `domain=` without naming its source,
+        # i.e. handed LDM the domain to use for this call.
+        if source is None or source.startswith(
+            ("--", "the command line", "your prompt answer")
+        ):
+            return True
+        stored = (project_meta or {}).get(CUSTOM_DOMAIN_META_KEY)
+        return bool(stored) and share_host_from_url(stored) == domain
+
+    def project_custom_domain(self, project_meta=None):
+        """The custom domain this project's share requests, or None (LDM-#2503).
+
+        For callers that compose rather than start a tunnel -- the composer
+        pins Liferay's `web.server.host` with it. A flag on this invocation
+        wins, then the project's `share_custom_domain`. Native provider only:
+        the Docker sidecar does not request custom domains (see `cmd_start`).
+        """
+        meta = project_meta or {}
+        args = getattr(self.manager, "args", None)
+        provider = getattr(args, "share_provider", None)
+        if not isinstance(provider, str) or not provider:
+            provider = meta.get("share_provider") or "lfr-tunnel"
+        if provider != "lfr-tunnel":
+            return None
+        for attr in ("share_domain", "domain"):
+            value = getattr(args, attr, None)
+            if isinstance(value, str) and value:
+                if not self.is_custom_share_domain(value):
+                    return None
+                return share_host_from_url(value)
+        stored = meta.get(CUSTOM_DOMAIN_META_KEY)
+        if self.is_custom_share_domain(stored):
+            return share_host_from_url(stored)
+        return None
 
     def _reconcile_announced_url(self, planned_url, public_url, share_domain):
         """Withdraw the planned URL when the tunnel came up somewhere else.
@@ -1192,16 +1307,16 @@ class ShareService:
             "announced above. Use the address on this line."
         )
 
-        # The LDM-#1038 note above says approval is REQUIRED; it cannot say
-        # whether THIS domain has it. Reaching here is the evidence that it
-        # does not, so this is the first point at which that can be stated.
-        if share_domain and share_domain not in self.get_known_tunnel_base_domains():
+        # LDM-#2503: a custom domain is requested with `-domain` and a refusal
+        # fails the share, so a tunnel serving another host is not a quiet
+        # fallback -- say what was asked for and how to stop asking.
+        if self.is_custom_share_domain(share_domain):
             UI.hint(
-                f"'{share_domain}' is a custom domain, and the gateway routes one "
-                "only once it has been registered and approved in the Liferay "
-                f"Tunnel portal ({self._tunnel_portal_urls_text()}). Until then "
-                "the standard gateway is used. Pass --domain default to ask for "
-                "it deliberately and replace the domain stored for this project."
+                f"'{share_domain}' is a custom domain; LDM asked the gateway for "
+                "it, and it must be registered to you in the Liferay Tunnel "
+                f"portal ({self._tunnel_portal_urls_text()}). Pass --domain "
+                "default to use the standard gateway and clear the custom "
+                "domain stored for this project."
             )
 
     def resolve_public_tunnel_urls(self, subdomain, project_id=None):
@@ -1248,7 +1363,7 @@ class ShareService:
 
         return urls
 
-    def resolve_public_tunnel_url(self, subdomain, project_id=None):
+    def resolve_public_tunnel_url(self, subdomain, project_id=None):  # noqa: C901, PLR0912
         """Resolves the primary public tunnel URL, falling back to static generation if offline."""
         urls = self.resolve_public_tunnel_urls(subdomain, project_id)
         if urls:
@@ -1256,6 +1371,7 @@ class ShareService:
 
         server_url = os.environ.get("LFT_SERVER_URL")
         domain = None
+        from_share_config = False
 
         if not server_url and project_id:
             try:
@@ -1263,7 +1379,17 @@ class ShareService:
                 if root:
                     # Try from metadata
                     meta = self.manager.read_meta(root)
-                    if meta and meta.get("share_domain"):
+                    # LDM-#2503: a custom domain is the whole host.
+                    custom = self.project_custom_domain(meta)
+                    if custom:
+                        return f"https://{custom}"
+                    # A custom `share_domain` that is not this project's own
+                    # request was never asked for, so it is not the host.
+                    if (
+                        meta
+                        and meta.get("share_domain")
+                        and not self.is_custom_share_domain(meta["share_domain"])
+                    ):
                         domain = meta["share_domain"]
 
                     if not domain:
@@ -1291,6 +1417,7 @@ class ShareService:
             else:
                 # Load from share config resolution fallback
                 _, domain = self.resolve_share_config()
+                from_share_config = True
 
         if not domain:
             domain = self.get_default_tunnel_domain()
@@ -1300,6 +1427,12 @@ class ShareService:
         # `peters.lfr-demo.se` produced `peters.peters.lfr-demo.se` here even
         # once the rest of the resolution had been fixed.
         _, domain = self.split_share_host(domain)
+
+        # LDM-#2503: resolve_share_config() returns a custom domain only when
+        # this invocation asked for it, and it is then the whole host. (A
+        # gateway host from LFT_SERVER_URL is not, and keeps the subdomain.)
+        if from_share_config and self.is_custom_share_domain(domain):
+            return f"https://{domain}"
 
         return f"https://{subdomain}.{domain}"
 
@@ -1320,12 +1453,17 @@ class ShareService:
             if isinstance(value, str) and value:
                 _, base = self.split_share_host(value)
                 return base, "the command line"
+        # LDM-#2503: the same rule resolve_share_config() applies -- a custom
+        # domain counts only as this project's own request.
+        stored = (project_meta or {}).get(CUSTOM_DOMAIN_META_KEY)
+        if self.is_custom_share_domain(stored):
+            return share_host_from_url(stored), "this project's meta"
         stored = (project_meta or {}).get("share_domain")
-        if stored:
+        if stored and not self.is_custom_share_domain(stored):
             _, base = self.split_share_host(stored)
             return base, "this project's meta"
         stored = self.manager.config.get_global_config().get("share_domain")
-        if stored:
+        if stored and not self.is_custom_share_domain(stored):
             _, base = self.split_share_host(stored)
             return base, "~/.ldmrc"
         return self.get_default_tunnel_domain(), "LDM's default"
@@ -1479,12 +1617,95 @@ class ShareService:
 
         dry_run = bool(getattr(self.manager, "dry_run", False))
 
+        # LDM-#2503: resolve_share_config() lets a custom domain through only
+        # when this project asked for it, so whatever custom domain is left is
+        # one to request.
+        custom_domain = (
+            share_domain if self.is_custom_share_domain(share_domain) else None
+        )
+        if custom_domain and provider == "lfr-tunnel-docker":
+            # The image reads LFT_CLIENT_CUSTOM_DOMAIN, but the sidecar is not
+            # a `-background` start: a refusal is a container exit rather than
+            # the exit 1 and gateway line LDM reports below, and its client
+            # version cannot be known when the compose file is written for an
+            # unpinned `:latest`. Refused before anything is written or started.
+            # Supporting it there is LDM-#2543.
+            UI.die(
+                f"Custom domain '{custom_domain}' is not supported with the "
+                "lfr-tunnel-docker provider.",
+                details=(
+                    "A custom domain is served by one tunnel at a time, and LDM "
+                    "requests it only with the native lfr-tunnel client."
+                ),
+                tip=(
+                    "Share with the native client:\n"
+                    f"    ldm share start --provider lfr-tunnel --domain {custom_domain}\n"
+                    "or use the standard gateway with --domain default."
+                ),
+                exit_code=3,
+            )
+        other_claimants: list[str] = []
+        if custom_domain and not dry_run:
+            # One live tunnel per custom domain. Another project holding the
+            # same one is legitimate -- only one of them may be shared at a
+            # time -- so this warns rather than refuses; the gateway's 409 is
+            # the refusal, and it names these projects when it comes.
+            other_claimants = projects_claiming_domain(
+                self.manager, custom_domain, exclude_root=root
+            )
+            if other_claimants:
+                UI.warning(
+                    f"Custom domain '{custom_domain}' is also set for project(s) "
+                    f"{', '.join(sorted(other_claimants))}. Only one tunnel can "
+                    "hold it: if one of those is shared, the gateway refuses "
+                    "this share. Stop it first with 'ldm share stop <project>'."
+                )
+
+        # LDM-#2503: the native client is resolved and version-checked BEFORE
+        # anything is written to the project, so a client refused for a
+        # custom domain leaves no share_custom_domain behind to be requested
+        # again on the next run.
+        # LDM-#2008: a dry run must not need what a real run needs. This
+        # short-circuit used to sit BELOW the three calls guarded here, so
+        # `--dry-run` demanded an installed client and a gateway token --
+        # which meant the one path that could have been exercised in CI
+        # was the one path that could not.
+        bin_path = "lfr-tunnel"
+        if provider == "lfr-tunnel" and not dry_run:
+            bin_path = self._ensure_binary()
+            installed_ver = self._get_installed_version(bin_path)
+            self._verify_compatibility([str(bin_path)], installed_ver)
+            # LDM-#2503: an older client serves the domain but writes its
+            # state under an empty name, so the health check below cannot
+            # find a connected tunnel and stops it (v2.26.16-pre.1).
+            if custom_domain and not client_supports_custom_domain(installed_ver):
+                found = f"v{installed_ver}" if installed_ver else "unknown"
+                UI.die(
+                    f"Custom domain '{custom_domain}' needs lfr-tunnel "
+                    f"v{MIN_CUSTOM_DOMAIN_CLIENT_VERSION} or later "
+                    f"(this client: {found}).",
+                    details=(
+                        "Older clients cannot report the status of a tunnel "
+                        "started with -domain, so LDM would stop it as "
+                        "unhealthy."
+                    ),
+                    tip=f"The client upgrades itself. Run:\n    {bin_path} -upgrade",
+                    exit_code=3,
+                )
+
         # LDM-#2008: a dry run may not write the project meta. It did, which
         # made `--dry-run` a way to silently pin a project's share domain --
         # and would make the E2E section that exercises this path mutate the
         # project it runs against.
         if root and share_domain and not dry_run:
             project_meta["share_domain"] = share_domain
+            # LDM-#2503: the custom domain is recorded under its own key, which
+            # is what marks it as this project's own request on later runs.
+            # Anything else clears it -- `--domain default` included.
+            if custom_domain:
+                project_meta[CUSTOM_DOMAIN_META_KEY] = custom_domain
+            else:
+                project_meta.pop(CUSTOM_DOMAIN_META_KEY, None)
             if provider == "lfr-tunnel":
                 self.manager.write_meta(root, project_meta)
 
@@ -1498,17 +1719,6 @@ class ShareService:
             if root and subdomain and not dry_run:
                 project_meta["share_subdomain"] = subdomain
                 self.manager.write_meta(root, project_meta)
-
-            # LDM-#2008: a dry run must not need what a real run needs. This
-            # short-circuit used to sit BELOW the three calls guarded here, so
-            # `--dry-run` demanded an installed client and a gateway token --
-            # which meant the one path that could have been exercised in CI
-            # was the one path that could not.
-            bin_path = "lfr-tunnel"
-            if not dry_run:
-                bin_path = self._ensure_binary()
-                installed_ver = self._get_installed_version(bin_path)
-                self._verify_compatibility([str(bin_path)], installed_ver)
 
             # LDM-#1569: -ports only when the user (or lcp.json above) named
             # them. Left off, the client auto-discovers -- Docker containers
@@ -1538,16 +1748,25 @@ class ShareService:
                 cmd += ["-ports", str(ports)]
             if subdomain:
                 cmd += ["-subdomain", subdomain]
-            # LDM-#2503: no `-domain`. lfr-tunnel takes a custom domain as the
-            # WHOLE hostname (one live tunnel per domain, registered per
-            # hostname), so a vanity `share_domain` -- global in ~/.ldmrc --
-            # cannot be requested per project yet. Passing it in v2.26.16-pre.1
-            # made every such share fail its health check.
+            # LDM-#2503: the custom domain is the WHOLE public hostname. The
+            # subdomain is still passed: `-status-json -subdomain` finds the
+            # tunnel by it, and `-stop -subdomain` stops it.
+            if custom_domain:
+                cmd += ["-domain", custom_domain]
 
-            # Pass custom target host if configured
+            # Pass custom target host if configured. Not for a loopback name:
+            # the client already dials 127.0.0.1, which is where LDM publishes
+            # the port for `localhost` and for a `*.localhost` name alike, and
+            # handing it a `*.localhost` name only adds a lookup that the
+            # client's resolver may not answer.
             host_name = project_meta.get("host_name", "localhost")
-            if host_name and host_name != "localhost":
-                cmd += ["-target-host", host_name]
+            target_host = (
+                host_name
+                if host_name and not is_loopback_host_name(host_name)
+                else None
+            )
+            if target_host:
+                cmd += ["-target-host", target_host]
 
             # LDM-#2008: say where this is going BEFORE going there. The
             # reported failure printed a warning naming a domain the user had
@@ -1559,11 +1778,12 @@ class ShareService:
             # Composed rather than resolved: resolve_public_tunnel_url() asks
             # the client for live status, which spawns the binary. That is
             # right after the tunnel is up and wrong before it exists.
-            planned_url = (
-                f"https://{subdomain}.{share_domain}"
-                if share_domain
-                else self.resolve_public_tunnel_url(subdomain, project_id)
-            )
+            if custom_domain:
+                planned_url = f"https://{custom_domain}"
+            elif share_domain:
+                planned_url = f"https://{subdomain}.{share_domain}"
+            else:
+                planned_url = self.resolve_public_tunnel_url(subdomain, project_id)
             UI.info(f"Public URL: {UI.CYAN}{planned_url}{UI.COLOR_OFF}")
             # LDM-#2019: and say where each half came from. Printing only the
             # resolved address answers "what" and leaves "why that one?" to a
@@ -1626,14 +1846,12 @@ class ShareService:
                         subdomain,
                         domain=share_domain,
                         ports=ports,
-                        target_host=(
-                            host_name
-                            if host_name and host_name != "localhost"
-                            else None
-                        ),
+                        target_host=target_host,
                         log_path=self.client_log_path_from_output(
                             res.stdout, res.stderr
                         ),
+                        custom_domain=custom_domain,
+                        other_claimants=other_claimants,
                     )
                     if success:
                         UI.success("Tunnel started in the background.")
@@ -1708,6 +1926,30 @@ class ShareService:
                                 "refused the connection."
                             ),
                             tip=tip,
+                            exit_code=3,
+                        )
+
+                    # LDM-#2503: with `-background`, a refused custom domain
+                    # exits 1 within ~20s carrying the gateway's own line. Say
+                    # what it means instead of dumping the log.
+                    refusal = (
+                        custom_domain_refusal(
+                            (res.stderr or "") + "\n" + (res.stdout or ""),
+                            custom_domain,
+                            other_claimants,
+                        )
+                        if custom_domain
+                        else None
+                    )
+                    if refusal:
+                        UI.die(
+                            refusal.message,
+                            details=(
+                                f"Gateway said: {refusal.gateway_line}"
+                                if refusal.gateway_line
+                                else None
+                            ),
+                            tip=refusal.tip,
                             exit_code=3,
                         )
 
@@ -2450,7 +2692,7 @@ class ShareService:
             "Please check your network/DNS connectivity."
         )
 
-    def _poll_tunnel_health(  # noqa: C901, PLR0911, PLR0912, PLR0915
+    def _poll_tunnel_health(  # noqa: C901, PLR0911, PLR0912, PLR0913, PLR0915
         self,
         subdomain,
         container_name=None,
@@ -2460,11 +2702,18 @@ class ShareService:
         ports=None,
         target_host=None,
         log_path=None,
+        custom_domain=None,
+        other_claimants=None,
     ):
         """Polls the lfr-tunnel status to verify connection health using -status-json.
 
         `log_path` is the log the client announced on start (LDM-#2502); the
         standard locations are tried after it.
+
+        `custom_domain` is the domain a native start requested with `-domain`
+        (LDM-#2503); a refusal of it found in the log is reported as such
+        rather than as a subdomain conflict. `other_claimants` names projects
+        that store the same custom domain, for that message.
 
         `ports` and `target_host` are what a native start asked for. When given,
         a tunnel the client calls unhealthy only because of its destination is
@@ -2599,6 +2848,11 @@ class ShareService:
                     if sub_res.returncode == 0:
                         try:
                             info = json.loads(sub_res.stdout)
+                            # The inspector inside the container can only be
+                            # this tunnel's, so its word is enough.
+                            if self._info_reports_healthy_tunnel(info):
+                                self._warn_status_lookup_missed(subdomain)
+                                return True, None
                             error_reason = self._diagnose_tunnel_info(
                                 info, subdomain, requested_ports=ports
                             )
@@ -2696,6 +2950,14 @@ class ShareService:
                     )
                     if req_res.status_code == 200:
                         info = req_res.json()
+                        # LDM-#2503: a healthy, connected tunnel is not a
+                        # failure because the status lookup missed it -- that
+                        # verdict stopped working tunnels in v2.26.16-pre.1.
+                        # The default inspector port can belong to another
+                        # tunnel, so it must name this subdomain.
+                        if self._info_reports_healthy_tunnel(info, subdomain):
+                            self._warn_status_lookup_missed(subdomain)
+                            return True, None
                         error_reason = self._diagnose_tunnel_info(
                             info, subdomain, requested_ports=ports
                         )
@@ -2714,8 +2976,20 @@ class ShareService:
                                 dns_reason = self._diagnose_dns_failure(
                                     logs_str, domain
                                 )
+                                # LDM-#2503: "Domain is already taken" would
+                                # otherwise match the subdomain-conflict branch
+                                # below and blame the wrong name.
+                                refusal = (
+                                    custom_domain_refusal(
+                                        logs_str, custom_domain, other_claimants
+                                    )
+                                    if custom_domain
+                                    else None
+                                )
                                 if dns_reason:
                                     error_reason = dns_reason
+                                elif refusal:
+                                    error_reason = refusal.as_reason()
                                 elif (
                                     "unauthorized" in logs_str.lower()
                                     or "401" in logs_str
@@ -2871,7 +3145,58 @@ class ShareService:
             return f"Downstream Offline: Local target port {port} is not responsive."
 
         conn_state = (info.get("connection") or {}).get("state", "disconnected")
+        if conn_state == "connected":
+            # LDM-#2503: nothing above failed and the tunnel says it is
+            # connected, so the fault is the status lookup, not the tunnel.
+            # This line used to read "Connection state is 'connected'" as the
+            # reason a share failed -- which is how pre.1 explained stopping a
+            # working tunnel.
+            owner = info.get("client_subdomain") or (
+                (info.get("subdomain") or {}).get("requested")
+            )
+            whose = (
+                f" The inspector that answered belongs to '{owner}'."
+                if owner and owner != subdomain
+                else ""
+            )
+            return (
+                "Status Lookup Failed: 'lfr-tunnel -status-json -subdomain "
+                f"{subdomain}' never reported '{subdomain}' as running and "
+                f"healthy.{whose}"
+            )
         return f"Tunnel Connection Error: Connection state is '{conn_state}'."
+
+    @staticmethod
+    def _info_reports_healthy_tunnel(info, subdomain=None):
+        """True when an inspector's `/api/info` describes a working tunnel.
+
+        Connected, authenticated, leased and healthy. With ``subdomain`` the
+        info must also name it, because a native client's default inspector
+        port is shared by whichever tunnel bound it first.
+        """
+        if not isinstance(info, dict):
+            return False
+        if (info.get("connection") or {}).get("state") != "connected":
+            return False
+        if info.get("status") != "healthy":
+            return False
+        if subdomain is None:
+            return True
+        lease = info.get("subdomain") or {}
+        return subdomain in (
+            info.get("client_subdomain"),
+            lease.get("requested"),
+            lease.get("assigned"),
+        )
+
+    @staticmethod
+    def _warn_status_lookup_missed(subdomain):
+        UI.warning(
+            f"The tunnel for '{subdomain}' is connected and healthy, but "
+            f"'lfr-tunnel -status-json -subdomain {subdomain}' did not report "
+            "it. Continuing; upgrade the client if 'ldm share status' cannot "
+            "see it either."
+        )
 
     def cmd_inspector(self, project_id=None, port=4040):
         """Launches a temporary port-forwarding container to expose the lfr-tunnel inspector dashboard on the specified host port."""

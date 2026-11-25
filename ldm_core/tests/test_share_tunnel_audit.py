@@ -171,20 +171,22 @@ class TheFailureOutputReadsTheCurrentClientLog(_NativeStart):
         self.assertIn("Subdomain Conflict", reason)
 
 
-# --- LDM-#2503: a vanity domain is NOT requested (yet) -----------------------
+# --- LDM-#2503: a custom domain is requested per project --------------------
 #
-# lfr-tunnel serves a custom domain as the whole hostname, one tunnel at a
-# time; passing a global vanity `share_domain` as `-domain` broke every such
-# share in v2.26.16-pre.1. Until #2503 makes it per project, it is not passed.
+# v2.26.16-pre.1 passed a global vanity `share_domain` as `-domain` and broke
+# every such share. A custom domain is now requested only for the project that
+# names it; test_share_custom_domain.py covers that in full.
 
 
-class AVanityDomainIsNotRequested(_NativeStart):
+class AVanityDomainFromLdmrcIsNotRequested(_NativeStart):
     @patch.dict(os.environ, {}, clear=True)
     @patch("subprocess.run")
-    def test_native_does_not_pass_domain_for_a_vanity_share_domain(self, mock_run):
-        cmd, _env = self._run_start(
-            mock_run, subdomain="demo", ports="8080", domain="dev.solaramoto.com"
-        )
+    def test_native_does_not_pass_domain_for_a_global_vanity_domain(self, mock_run):
+        self.mock_manager.config.get_global_config = lambda: {  # type: ignore[method-assign]
+            "share_domain": "dev.solaramoto.com"
+        }
+        with patch("ldm_core.handlers.share.UI"):
+            cmd, _env = self._run_start(mock_run, subdomain="demo", ports="8080")
         self.assertNotIn("-domain", cmd)
 
     @patch.dict(os.environ, {}, clear=True)

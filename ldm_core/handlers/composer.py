@@ -1830,7 +1830,20 @@ class ComposerService:
         )
 
         share_host = None
-        if is_share and share_provider in ["lfr-tunnel", "lfr-tunnel-docker"]:
+        # LDM-#2503: a custom domain the project requests is the whole public
+        # host. Taken from the project's own request rather than from a live
+        # lookup: at compose time the tunnel is usually not up yet, and the
+        # lookup's fallback cannot see the project's meta.
+        custom_domain = (
+            self.manager.share.project_custom_domain(meta)
+            if is_share and share_provider == "lfr-tunnel"
+            else None
+        )
+        if not isinstance(custom_domain, str):
+            custom_domain = None
+        if custom_domain:
+            share_host = custom_domain
+        elif is_share and share_provider in ["lfr-tunnel", "lfr-tunnel-docker"]:
             public_url = self.manager.share.resolve_public_tunnel_url(share_subdomain)
             if public_url:
                 from urllib.parse import urlparse
@@ -1856,6 +1869,10 @@ class ComposerService:
             # virtual-host validation.
             for known_domain in self.manager.share.get_known_tunnel_base_domains():
                 valid_hosts += f",*.{known_domain}"
+            # LDM-#2503: a custom domain is on none of those, so Liferay's
+            # virtual-host check would reject every request it proxies.
+            if custom_domain:
+                valid_hosts += f",{custom_domain}"
 
         # AICA#1283: the header keys alone are inert. Liferay honours a
         # forwarded header only when its `.enabled` flag is set, and all three
@@ -1978,24 +1995,28 @@ class ComposerService:
                 ]
                 lfr_env.append("LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}")
 
-                # The published image has no gateway of its own (its build
-                # sets no DefaultServerURL), so a sidecar with no server
-                # variable exits at startup with "No tunnel server
-                # configured". It therefore always gets one: the gateway the
-                # user pinned, else the one its share domain resolves to.
-                # Region election and failover need `LFT_CLIENT_BOOTSTRAP`,
-                # which only images after lfr-tunnel v1.52.11 understand, so
-                # switching to it must be gated on the image version (#2536).
-                # Never set both: newer clients refuse that combination.
-                gateway_url = pinned_url or share_service.resolve_tunnel_gateway_url(
-                    share_domain
-                )
-                lfr_env.append(f"LFT_CLIENT_SERVER={gateway_url}")
-
                 image = (
                     getattr(self.manager.args, "share_image", None)
                     or meta.get("share_image")
                     or LFR_TUNNEL_IMAGE_LATEST
+                )
+
+                # The published image has no gateway of its own (its build
+                # sets no DefaultServerURL), so a sidecar with no gateway
+                # variable exits at startup with "No tunnel server
+                # configured". It therefore always gets one: the gateway the
+                # user pinned, else the one its share domain resolves to.
+                # LDM-#2536: as LFT_CLIENT_BOOTSTRAP -- region election and
+                # failover -- on an image tagged v1.52.12 or later, unless the
+                # user pinned it; as LFT_CLIENT_SERVER otherwise, `:latest`
+                # included. Exactly one: the client refuses both together.
+                from ldm_core.handlers.share_sidecar import sidecar_gateway_env
+
+                gateway_url = pinned_url or share_service.resolve_tunnel_gateway_url(
+                    share_domain
+                )
+                lfr_env.append(
+                    sidecar_gateway_env(image, gateway_url, pinned=bool(pinned_url))
                 )
 
                 from ldm_core.utils import sanitize_id
