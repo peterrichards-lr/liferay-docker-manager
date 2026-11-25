@@ -55,8 +55,8 @@ When running `ldm run` without overriding flags, LDM provisions the following ou
 | **Liferay Version** | Latest **LTS** | N/A | Automatically resolves and pulls the latest verified LTS container tag. |
 | **Database** | **PostgreSQL** | `5433` | Shared Global Infrastructure container (`liferay-db-global`, published on `5433`), reducing memory consumption across projects. MySQL/MariaDB shares its own global container (`liferay-db-mysql-global`, published on `3307`). |
 | **Search Engine** | **Elasticsearch 8.x** | `9200` | Shared Global Search service. Isolated sidecars are supported via `--search-mode sidecar`. |
-| **Reverse Proxy** | **Traefik** | `80`, `443` | Automated HTTP/HTTPS routing with `mkcert` zero-config SSL certificates. |
-| **Default Hostname** | `localhost` / `<project>.local` | `8080` / `443` | Auto-resolved in `/etc/hosts` to loopback (`127.0.0.1`) or target node IP. |
+| **Reverse Proxy** | **Traefik** | `80`, `443` | Automated HTTP/HTTPS routing; SSL certificates via `mkcert`, set up only when a project first uses SSL (LDM-#2515). |
+| **Default Hostname** | `localhost` / `<project>.localhost` | `8080` / `80` / `443` | `localhost` and `*.localhost` resolve to loopback with no `/etc/hosts` entry (LDM-#2513). Custom domains are resolved via `/etc/hosts` to loopback (`127.0.0.1`) or the target node IP. See [Networking & DNS](../reference/networking.md). |
 
 ---
 
@@ -71,4 +71,4 @@ LDM uses a hybrid storage architecture to maximize performance while preventing 
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-10* | *Last Reviewed: 2026-09-10*
+*Last Updated: 2026-11-25* | *Last Reviewed: 2026-11-25*

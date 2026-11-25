@@ -1591,6 +1591,15 @@ class OrchestrationService(BaseHandler):
 
         for target in targets:
             host_name = target["meta"].get("host_name")
+            from ldm_core.hostnames import is_localhost_subdomain
+
+            # LDM-#2514: a `*.localhost` project without SSL has no
+            # certificate to renew, and asking mkcert for one would make it a
+            # requirement for a project that does not use it (LDM-#2515).
+            if is_localhost_subdomain(host_name) and (
+                str(target["meta"].get("ssl", "false")).lower() != "true"
+            ):
+                continue
             if host_name and host_name != "localhost":
                 UI.detail(f"Renewing SSL for {UI.CYAN}{host_name}{UI.COLOR_OFF}...")
                 # Delete existing certs to force renewal

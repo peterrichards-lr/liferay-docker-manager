@@ -330,18 +330,23 @@ LDM will launch an interactive wizard to gather your JDBC connection details (Ho
 
 ### SSL Defaults (New Projects)
 
-LDM uses smarter defaults for SSL based on your hostname. When a custom `--host-name` is used, SSL is enabled by default to support modern Liferay features like Client Extensions.
+LDM uses smarter defaults for SSL based on your hostname. When a custom domain is used with `--host-name`, SSL is enabled by default to support modern Liferay features like Client Extensions. `localhost` and `*.localhost` names stay on HTTP unless you pass `--ssl` (LDM-#2514), and need no hosts-file entry or `sudo` (LDM-#2513). A bare name with no dot, such as `--host-name myproj`, becomes `myproj.localhost`. See [Networking & DNS](../networking.md) for the full rules.
 
 > [!TIP]
-> **SSL Hostname Prompt**: If you explicitly pass the `--ssl` flag without providing a `--host-name`, LDM will interactively prompt you for a custom virtual hostname. This allows LDM to attempt to inject the custom domain into your `/etc/hosts` file automatically. (In non-interactive mode `-y`, it safely defaults to `localhost`).
+> **SSL Hostname Prompt**: If you explicitly pass the `--ssl` flag without providing a `--host-name`, LDM will interactively prompt you for a virtual hostname, suggesting `<project>.localhost` (no hosts entry needed). A custom domain you enter there goes through the hosts-file prompt as usual. (In non-interactive mode `-y`, it safely defaults to `localhost`).
 
 | Command | Host Name | SSL Default | Access URL |
 | :--- | :--- | :--- | :--- |
 | `ldm run` | `localhost` | `False` | `http://localhost:8080` |
 | `ldm run --ssl` | *Prompts User* | `True` | `https://<prompted-host>` |
-| `ldm run --host-name my.local` | `my.local` | `True` | `https://my.local` |
+| `ldm run --host-name my.localhost` | `my.localhost` | `False` | `http://my.localhost` |
+| `ldm run --host-name my` | `my.localhost` | `False` | `http://my.localhost` |
+| `ldm run --host-name my.localhost --ssl` | `my.localhost` | `True` | `https://my.localhost` |
+| `ldm run --host-name my.demo` | `my.demo` | `True` | `https://my.demo` |
 | `ldm run --no-ssl` | `localhost` | `False` | `http://localhost:8080` |
-| `ldm run --host-name my.local --no-ssl` | `my.local` | `False` | `http://my.local:8080` |
+| `ldm run --host-name my.demo --no-ssl` | `my.demo` | `False` | `http://my.demo:8080` |
+
+A `*.localhost` URL carries no port when the global proxy holds port 80; if it could not bind port 80, LDM reports `http://my.localhost:<port>` instead.
 
 ### 🛡️ Modern Liferay & JDK 17+ Standards
 

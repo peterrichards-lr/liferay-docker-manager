@@ -2,7 +2,7 @@
 
 ## `system doctor` (legacy: `doctor`)
 
-Verify host environment health, Docker resources (CPUs/Memory), disk space (warns on dangling volumes), and project dependencies. Includes checks for required tools: `mkcert`, `telnet`, `nc`, `lcp`, `lfr-tunnel`, and the Docker Compose V2 plugin.
+Verify host environment health, Docker resources (CPUs/Memory), disk space (warns on dangling volumes), and project dependencies. Includes checks for tools: `mkcert`, `telnet`, `nc`, `lcp`, `lfr-tunnel`, and the Docker Compose V2 plugin. `mkcert` is reported as *not needed* -- a pass, not a warning -- while no project uses SSL (LDM-#2515).
 
 The `lfr-tunnel` row reports the client's version and the date it was last
 installed or self-upgraded, for whichever binary `ldm share` would use --

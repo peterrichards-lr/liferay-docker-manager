@@ -1189,14 +1189,19 @@ class TestConfigService(unittest.TestCase):
             self.manager.write_meta.assert_called_once()
             meta_arg = self.manager.write_meta.call_args[0][1]
             self.assertEqual(meta_arg["ssl"], "true")
-            self.assertEqual(meta_arg["host_name"], f"{tmp_path.name}.local")
+            # LDM-#2513: `<project>.localhost`, not `<project>.local` -- the
+            # switch needs no hosts-file edit. Lower-cased and reduced to a
+            # DNS label, since a temp dir name may carry `_`.
+            from ldm_core.hostnames import localhost_name_for
+
+            expected_host = localhost_name_for(tmp_path.name)
+            self.assertTrue(expected_host.endswith(".localhost"))
+            self.assertEqual(meta_arg["host_name"], expected_host)
 
             # Check .env sync
             env_content = env_file.read_text()
-            self.assertIn(f"LIFERAY_URL=https://{tmp_path.name}.local", env_content)
-            self.assertIn(
-                f"AICA_LIFERAY_URL=https://{tmp_path.name}.local", env_content
-            )
+            self.assertIn(f"LIFERAY_URL=https://{expected_host}", env_content)
+            self.assertIn(f"AICA_LIFERAY_URL=https://{expected_host}", env_content)
 
             # Check stop/start and rebuild
             # LDM-#1410: an SSL mode switch stops the stack as an internal

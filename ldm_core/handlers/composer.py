@@ -38,11 +38,21 @@ def resolve_access_url(
     - Over **https** the request is served by the global Traefik proxy, so the
       port is the proxy's mapped 443 when one is actually running
       (``proxy_ports``), else the project's recorded ``ssl_port``, else 443.
-    - Over **http** nothing fronts the project: `composer.py` emits Traefik
-      labels only under `if ssl_enabled`, and they hardcode `tls=true` /
-      `entrypoints=websecure`. There is no `web`-entrypoint router, so the
-      proxy's http port serves nothing for this project and must NOT be
-      consulted. The port is Liferay's own published port from metadata.
+    - Over **http** nothing fronts a `localhost` or custom-domain project:
+      its Traefik labels are emitted only under `if ssl_enabled`, and they
+      hardcode `tls=true` / `entrypoints=websecure`. The proxy's http port
+      serves nothing for such a project and must NOT be consulted. The port is
+      Liferay's own published port from metadata.
+    - LDM-#2514: the one exception is a non-SSL ``*.localhost`` project, which
+      gets a plain-HTTP router on the proxy's ``web`` entrypoint. It is served
+      at ``http://<host>`` with no port, but only when the run pipeline
+      recorded that it provisioned that router (``http_proxy_port`` in the
+      metadata) AND the proxy's http port is 80. Otherwise -- port 80 was taken
+      and the proxy fell back to another, or the router was never provisioned
+      -- the URL falls back to Liferay's own published port, which such a
+      project still publishes for exactly that reason. A ``host_override``
+      also takes the direct port: the proxy routes on the ``Host`` header, and
+      an override address would not carry the name the router matches.
     - The port is omitted when it is the scheme's default, so
       ``http://host:80`` is never printed as a distinct thing from
       ``http://host``.
@@ -70,6 +80,19 @@ def resolve_access_url(
         scheme = "http"
         default_port = 80
         port = meta.get("port", 8080)
+        from ldm_core.hostnames import routes_http_via_proxy
+
+        if routes_http_via_proxy(host_name, False) and host_override in (
+            None,
+            host_name,
+        ):
+            recorded = meta.get("http_proxy_port")
+            proxy_http = (proxy_ports or {}).get("http") or recorded
+            try:
+                if recorded and int(proxy_http) == default_port:
+                    port = default_port
+            except (TypeError, ValueError):
+                pass
 
     try:
         port = int(port)
@@ -521,9 +544,13 @@ class ComposerService:
 
     def _is_ssl_active(self, host_name, meta):
         """Determines if SSL/Proxy routing should be enabled for a project."""
+        from ldm_core.hostnames import auto_ssl_default
+
         is_literal_localhost = host_name == "localhost"
 
-        # Priority: 1. CLI Arg, 2. Meta 'ssl', 3. Meta 'use_ssl', 4. Default (True for custom)
+        # Priority: 1. CLI Arg, 2. Meta 'ssl', 3. Meta 'use_ssl', 4. Default.
+        # LDM-#2514: the default is True for custom domains only --
+        # `localhost` and `*.localhost` stay HTTP unless SSL is asked for.
         ssl_arg = getattr(self.manager.args, "ssl", None)
         meta_ssl = meta.get("ssl", meta.get("use_ssl"))
 
@@ -532,7 +559,7 @@ class ComposerService:
         elif meta_ssl is not None:
             active = str(meta_ssl).lower() == "true"
         else:
-            active = not is_literal_localhost
+            active = auto_ssl_default(host_name)
 
         if is_literal_localhost:
             return False
@@ -1348,7 +1375,29 @@ class ComposerService:
         # existing non-SSL custom-host project from `host:port` to `host`,
         # require port 80, and pull Traefik onto boot paths that skip infra
         # entirely -- for no gain, since the direct port already works.
-        if ssl_enabled:
+        #
+        # LDM-#2514 is the deliberate exception, and only for `*.localhost`:
+        # those names are new, so no existing project's URL moves, and the
+        # point of a named local host is a port-free URL with its own cookie
+        # scope. They get a plain-HTTP router on the `web` entrypoint. The
+        # direct port is STILL published (`_inject_liferay_share_env` keys on
+        # `not ssl_enabled`), so a proxy that could not bind port 80 leaves the
+        # project reachable on `host:port`, which is what the URL resolver
+        # then reports.
+        from ldm_core.hostnames import routes_http_via_proxy
+
+        if routes_http_via_proxy(host_name, ssl_enabled):
+            traefik_id = f"{project_name}-main"
+            service["labels"].extend(
+                [
+                    "traefik.enable=true",
+                    "traefik.docker.network=liferay-net",
+                    f"traefik.http.routers.{traefik_id}.rule=Host(`{host_name}`)",
+                    f"traefik.http.routers.{traefik_id}.entrypoints=web",
+                    f"traefik.http.services.{traefik_id}.loadbalancer.server.port=8080",
+                ]
+            )
+        elif ssl_enabled:
             traefik_id = f"{project_name}-main"
             service["labels"].extend(
                 [

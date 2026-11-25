@@ -2758,19 +2758,26 @@ class ConfigService:
         if mode == "hosts":
             # Switch to local hosts-based SSL
             project_meta["ssl"] = "true"
-            # Keep existing host_name if it is not localhost/empty, otherwise default
+            # Keep existing host_name if it is not localhost/empty, otherwise default.
+            # LDM-#2513: the default is `<project>.localhost`, not
+            # `<project>.local` -- `.local` is the mDNS TLD (slow lookups on
+            # macOS) and always needed a hosts-file edit, so sudo. A
+            # `.localhost` name resolves to loopback with no entry at all.
+            from ldm_core.hostnames import is_loopback_name, localhost_name_for
+
             existing_host = project_meta.get("host_name", "localhost")
             if existing_host == "localhost":
-                project_meta["host_name"] = f"{project_name}.local"
+                project_meta["host_name"] = localhost_name_for(project_name)
 
             self.manager.write_meta(root_path, project_meta)
 
             # Synchronize environment files (.env)
             target_url = f"https://{project_meta['host_name']}"
             self._sync_env_files(root_path, target_url)
-            UI.detail(
-                "Tip: You can run 'ldm system fix-hosts' to update your local /etc/hosts file if needed."
-            )
+            if not is_loopback_name(project_meta["host_name"]):
+                UI.detail(
+                    "Tip: You can run 'ldm system fix-hosts' to update your local /etc/hosts file if needed."
+                )
 
         elif mode == "share":
             # Switch to public share tunnel

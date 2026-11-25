@@ -31,15 +31,14 @@ Open PowerShell **as an Administrator** to enable Telnet (required for OSGi Gogo
 Enable-WindowsOptionalFeature -Online -FeatureName TelnetClient
 ```
 
-### 2. Install SSL Tools (Chocolatey or Scoop)
+### 2. Install OpenSSL (Chocolatey or Scoop)
 
-To enable "Green Lock" SSL on Windows, you must install `mkcert` and `openssl`. You can use either Chocolatey or Scoop.
+LDM uses `openssl` for certificate checks in `ldm doctor`. You can use either Chocolatey or Scoop.
 
 **Option A: Chocolatey** (Requires Administrator PowerShell)
 
 ```powershell
-choco install mkcert openssl
-mkcert -install
+choco install openssl
 ```
 
 **Option B: Scoop** (Run as a Standard User!)
@@ -52,19 +51,35 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser; iwr -useb 
 # 2. Install Git (Required for Scoop Buckets and OpenSSL)
 scoop install git
 
-# 3. Add the Extras Bucket (Required for mkcert)
-scoop bucket add extras
-
-# 4. Install SSL Tools
+# 3. Install OpenSSL
 # Note: We use openssl-mingw instead of the default openssl to bypass a broken 
 # global Scoop dependency (innounp 404 error) that affects the standard installer.
-scoop install mkcert openssl-mingw
+scoop install openssl-mingw
 ```
 
-_After Scoop finishes, open an **Administrator PowerShell** to initialize the trust store:_
+### 3. Advanced: Local HTTPS (optional)
+
+`mkcert` is **not** needed for the default setup: projects run at
+`http://localhost:8080` or `http://<project>.localhost` with no certificate.
+It is needed only when a project uses SSL -- `--ssl`, or a custom domain such
+as `acme.demo`, which enables SSL by default. LDM offers to set it up the first
+time that happens (via Scoop when it is installed), or you can install it
+yourself now. See
+[Networking & DNS](../reference/networking.md#local-https-mkcert).
+
+With Chocolatey (Administrator PowerShell):
 
 ```powershell
-# 5. Initialize Local Trust Store (Requires Administrator)
+choco install mkcert
+mkcert -install
+```
+
+With Scoop (standard PowerShell), then initialise the trust store from an **Administrator PowerShell**:
+
+```powershell
+scoop bucket add extras
+scoop install mkcert
+# Then, as Administrator:
 mkcert -install
 ```
 
@@ -102,4 +117,4 @@ backend -- run `wsl --shutdown` afterwards to restore them.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-10-09* | *Last Reviewed: 2026-10-09*
+*Last Updated: 2026-11-25* | *Last Reviewed: 2026-11-25*

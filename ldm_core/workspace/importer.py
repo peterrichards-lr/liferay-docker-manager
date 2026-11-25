@@ -713,9 +713,14 @@ def _hydrate_ldm_package_to_project(
 
     safe_container_name = sanitize_id(project_name)
 
+    # LDM-#2513: a flag or manifest host name is normalised (a bare `myproj`
+    # becomes `myproj.localhost`); the stored one is not -- no silent rewrites.
+    # LDM-#2514: only a custom domain defaults to SSL.
+    from ldm_core.hostnames import auto_ssl_default, normalize_host_name_or_die
+
     final_host_name = (
-        getattr(self.manager.args, "host_name", None)
-        or manifest.get("host_name")
+        normalize_host_name_or_die(getattr(self.manager.args, "host_name", None))
+        or normalize_host_name_or_die(manifest.get("host_name"))
         or project_meta.get("host_name")
         or "localhost"
     )
@@ -723,7 +728,7 @@ def _hydrate_ldm_package_to_project(
     if ssl_arg is not None:
         final_ssl = str(ssl_arg).lower()
     elif getattr(self.manager.args, "host_name", None) is not None:
-        final_ssl = str(final_host_name != "localhost").lower()
+        final_ssl = str(auto_ssl_default(final_host_name)).lower()
     else:
         manifest_ssl = manifest.get("ssl")
         if manifest_ssl is not None:

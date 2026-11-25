@@ -149,7 +149,7 @@ LDM implements a proactive redaction layer to prevent the accidental logging of 
 
 ## 6. SSL Trust (mkcert)
 
-LDM uses `mkcert` to provide a "Green Lock" experience. This requires installing a local Certificate Authority (CA) on your machine.
+LDM uses `mkcert` to provide a "Green Lock" experience for projects that use SSL. This requires installing a local Certificate Authority (CA) on your machine. It is optional: projects on `localhost` or `*.localhost` run over HTTP without it, and LDM sets it up only when a project first needs SSL, asking first (LDM-#2515).
 
 - **Risk**: If your private CA key is compromised, an attacker could spoof websites on your local machine.
 - **Mitigation**: LDM stores certificates in `~/liferay-docker-certs`. Ensure this directory is kept private.
@@ -231,4 +231,4 @@ f7e5b56e5e4e6e94fe5de5424e66fef84be863f385
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-24* | *Last Reviewed: 2026-11-24*
+*Last Updated: 2026-11-25* | *Last Reviewed: 2026-11-25*
