@@ -249,12 +249,13 @@ Requirements:
 - **lfr-tunnel v1.52.12 or later.** Older clients write a custom-domain
   tunnel's status under an empty name, so `-status-json` cannot find it and the
   health check would stop a working tunnel -- what happened in v2.26.16-pre.1.
-  LDM refuses a custom domain on an older client and tells you to run
-  `lfr-tunnel -upgrade`.
+  LDM refuses a custom domain on an older client, before writing anything to
+  the project, and tells you to run `lfr-tunnel -upgrade`.
 - **The native `lfr-tunnel` provider.** `lfr-tunnel-docker` refuses a custom
   domain: the sidecar's refusals arrive as a container exit rather than the
   explained exit above, and an unpinned `:latest` image's version cannot be
-  checked when its compose file is written.
+  checked when its compose file is written. Custom domains on the sidecar are
+  tracked in LDM-#2543.
 
 ### Asking for the standard gateway
 
@@ -359,7 +360,9 @@ carries it depends on the image tag (LDM-#2536):
 Never both: the client refuses that combination. `:latest` (the default) is
 treated as unknown because the compose file is written before the image is
 pulled, and an older image ignores `LFT_CLIENT_BOOTSTRAP` and would start
-with no gateway at all. For failover today, pin a release tag:
+with no gateway at all. Resolving the release behind `:latest` so the default
+image gets failover too is tracked in LDM-#2542. For failover today, pin a
+release tag:
 
 ```bash
 ldm share start my-project --provider lfr-tunnel-docker \

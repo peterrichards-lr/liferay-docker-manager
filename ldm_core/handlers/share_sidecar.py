@@ -18,7 +18,7 @@ file is written before the image is pulled, and `pull_policy: always` can
 replace a local copy with a newer one -- or a mirror can serve an older one.
 `LFT_CLIENT_SERVER` works on every image; `LFT_CLIENT_BOOTSTRAP` on an older
 one does not start. A pinned tag (`--share-image peterjrichards/lfr-tunnel:v1.52.12`)
-is how to get failover today.
+is how to get failover today; resolving `:latest` is LDM-#2542.
 """
 
 from __future__ import annotations

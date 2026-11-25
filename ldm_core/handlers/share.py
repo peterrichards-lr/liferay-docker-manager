@@ -1629,6 +1629,7 @@ class ShareService:
             # the exit 1 and gateway line LDM reports below, and its client
             # version cannot be known when the compose file is written for an
             # unpinned `:latest`. Refused before anything is written or started.
+            # Supporting it there is LDM-#2543.
             UI.die(
                 f"Custom domain '{custom_domain}' is not supported with the "
                 "lfr-tunnel-docker provider.",
@@ -1660,6 +1661,38 @@ class ShareService:
                     "this share. Stop it first with 'ldm share stop <project>'."
                 )
 
+        # LDM-#2503: the native client is resolved and version-checked BEFORE
+        # anything is written to the project, so a client refused for a
+        # custom domain leaves no share_custom_domain behind to be requested
+        # again on the next run.
+        # LDM-#2008: a dry run must not need what a real run needs. This
+        # short-circuit used to sit BELOW the three calls guarded here, so
+        # `--dry-run` demanded an installed client and a gateway token --
+        # which meant the one path that could have been exercised in CI
+        # was the one path that could not.
+        bin_path = "lfr-tunnel"
+        if provider == "lfr-tunnel" and not dry_run:
+            bin_path = self._ensure_binary()
+            installed_ver = self._get_installed_version(bin_path)
+            self._verify_compatibility([str(bin_path)], installed_ver)
+            # LDM-#2503: an older client serves the domain but writes its
+            # state under an empty name, so the health check below cannot
+            # find a connected tunnel and stops it (v2.26.16-pre.1).
+            if custom_domain and not client_supports_custom_domain(installed_ver):
+                found = f"v{installed_ver}" if installed_ver else "unknown"
+                UI.die(
+                    f"Custom domain '{custom_domain}' needs lfr-tunnel "
+                    f"v{MIN_CUSTOM_DOMAIN_CLIENT_VERSION} or later "
+                    f"(this client: {found}).",
+                    details=(
+                        "Older clients cannot report the status of a tunnel "
+                        "started with -domain, so LDM would stop it as "
+                        "unhealthy."
+                    ),
+                    tip=f"The client upgrades itself. Run:\n    {bin_path} -upgrade",
+                    exit_code=3,
+                )
+
         # LDM-#2008: a dry run may not write the project meta. It did, which
         # made `--dry-run` a way to silently pin a project's share domain --
         # and would make the E2E section that exercises this path mutate the
@@ -1686,34 +1719,6 @@ class ShareService:
             if root and subdomain and not dry_run:
                 project_meta["share_subdomain"] = subdomain
                 self.manager.write_meta(root, project_meta)
-
-            # LDM-#2008: a dry run must not need what a real run needs. This
-            # short-circuit used to sit BELOW the three calls guarded here, so
-            # `--dry-run` demanded an installed client and a gateway token --
-            # which meant the one path that could have been exercised in CI
-            # was the one path that could not.
-            bin_path = "lfr-tunnel"
-            if not dry_run:
-                bin_path = self._ensure_binary()
-                installed_ver = self._get_installed_version(bin_path)
-                self._verify_compatibility([str(bin_path)], installed_ver)
-                # LDM-#2503: an older client serves the domain but writes its
-                # state under an empty name, so the health check below cannot
-                # find a connected tunnel and stops it (v2.26.16-pre.1).
-                if custom_domain and not client_supports_custom_domain(installed_ver):
-                    found = f"v{installed_ver}" if installed_ver else "unknown"
-                    UI.die(
-                        f"Custom domain '{custom_domain}' needs lfr-tunnel "
-                        f"v{MIN_CUSTOM_DOMAIN_CLIENT_VERSION} or later "
-                        f"(this client: {found}).",
-                        details=(
-                            "Older clients cannot report the status of a tunnel "
-                            "started with -domain, so LDM would stop it as "
-                            "unhealthy."
-                        ),
-                        tip=f"The client upgrades itself. Run:\n    {bin_path} -upgrade",
-                        exit_code=3,
-                    )
 
             # LDM-#1569: -ports only when the user (or lcp.json above) named
             # them. Left off, the client auto-discovers -- Docker containers

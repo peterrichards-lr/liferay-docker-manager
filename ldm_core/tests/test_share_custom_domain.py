@@ -220,6 +220,20 @@ class ACustomDomainIsRefusedWhereItCannotWork(_Start):
             ]
         )
 
+    def test_a_refused_older_client_records_nothing_in_the_project(self, mock_run):
+        # Otherwise share_custom_domain would be requested again on every
+        # later run, including `ldm run --share`, until the client is upgraded.
+        self.service._get_installed_version.return_value = "1.52.11"
+        mock_run.return_value = _completed()
+        with (
+            patch("ldm_core.handlers.share.UI") as ui,
+            self.assertRaises(SystemExit),
+        ):
+            ui.die.side_effect = _exit
+            self.service.cmd_start(subdomain="demo", domain=CUSTOM)
+        self.assertNotIn("share_custom_domain", self.written)
+        self.assertNotIn("share_domain", self.written)
+
     def test_an_older_client_is_fine_without_a_custom_domain(self, mock_run):
         self.service._get_installed_version.return_value = "1.52.11"
         self.start(mock_run, subdomain="demo", domain="lfr-demo.se")
