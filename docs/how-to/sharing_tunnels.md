@@ -345,13 +345,29 @@ only when you ask for it:
 A domain merely remembered in a project's `meta` or in `~/.ldmrc` is not a
 request, and LDM warns whenever a run is pinned.
 
-The `lfr-tunnel-docker` sidecar is always given a gateway
-(`LFT_CLIENT_SERVER`): the one you pinned, else the one its share domain
-resolves to. The published image has no gateway built in, so a sidecar with
-none exits at startup. Failover for the sidecar needs the client's bootstrap
-setting, which LDM will use once the image in use supports it. LDM no longer
-writes `LFT_SERVER_URL` to the project's `.env`, and removes a line left by an
-earlier version (LDM-#2505).
+The `lfr-tunnel-docker` sidecar is always given a gateway: the one you
+pinned, else the one its share domain resolves to. The published image has no
+gateway built in, so a sidecar with none exits at startup. Which variable
+carries it depends on the image tag (LDM-#2536):
+
+| Sidecar image | Not pinned | Pinned |
+| :--- | :--- | :--- |
+| tagged `v1.52.12` or later | `LFT_CLIENT_BOOTSTRAP` -- elects a region, fails over | `LFT_CLIENT_SERVER` |
+| tagged earlier | `LFT_CLIENT_SERVER` | `LFT_CLIENT_SERVER` |
+| `:latest`, untagged or a digest | `LFT_CLIENT_SERVER` | `LFT_CLIENT_SERVER` |
+
+Never both: the client refuses that combination. `:latest` (the default) is
+treated as unknown because the compose file is written before the image is
+pulled, and an older image ignores `LFT_CLIENT_BOOTSTRAP` and would start
+with no gateway at all. For failover today, pin a release tag:
+
+```bash
+ldm share start my-project --provider lfr-tunnel-docker \
+  --image peterjrichards/lfr-tunnel:v1.52.12
+```
+
+LDM no longer writes `LFT_SERVER_URL` to the project's `.env`, and removes a
+line left by an earlier version (LDM-#2505).
 
 > [!NOTE]
 > Answering the interactive "Choose sharing domain" prompt stores your answer

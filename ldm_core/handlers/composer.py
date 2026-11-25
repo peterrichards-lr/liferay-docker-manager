@@ -1995,24 +1995,28 @@ class ComposerService:
                 ]
                 lfr_env.append("LFT_INSPECTOR_BIND=${LFT_INSPECTOR_BIND:-0.0.0.0}")
 
-                # The published image has no gateway of its own (its build
-                # sets no DefaultServerURL), so a sidecar with no server
-                # variable exits at startup with "No tunnel server
-                # configured". It therefore always gets one: the gateway the
-                # user pinned, else the one its share domain resolves to.
-                # Region election and failover need `LFT_CLIENT_BOOTSTRAP`,
-                # which only images after lfr-tunnel v1.52.11 understand, so
-                # switching to it must be gated on the image version (#2536).
-                # Never set both: newer clients refuse that combination.
-                gateway_url = pinned_url or share_service.resolve_tunnel_gateway_url(
-                    share_domain
-                )
-                lfr_env.append(f"LFT_CLIENT_SERVER={gateway_url}")
-
                 image = (
                     getattr(self.manager.args, "share_image", None)
                     or meta.get("share_image")
                     or LFR_TUNNEL_IMAGE_LATEST
+                )
+
+                # The published image has no gateway of its own (its build
+                # sets no DefaultServerURL), so a sidecar with no gateway
+                # variable exits at startup with "No tunnel server
+                # configured". It therefore always gets one: the gateway the
+                # user pinned, else the one its share domain resolves to.
+                # LDM-#2536: as LFT_CLIENT_BOOTSTRAP -- region election and
+                # failover -- on an image tagged v1.52.12 or later, unless the
+                # user pinned it; as LFT_CLIENT_SERVER otherwise, `:latest`
+                # included. Exactly one: the client refuses both together.
+                from ldm_core.handlers.share_sidecar import sidecar_gateway_env
+
+                gateway_url = pinned_url or share_service.resolve_tunnel_gateway_url(
+                    share_domain
+                )
+                lfr_env.append(
+                    sidecar_gateway_env(image, gateway_url, pinned=bool(pinned_url))
                 )
 
                 from ldm_core.utils import sanitize_id
