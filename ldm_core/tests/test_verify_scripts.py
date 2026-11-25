@@ -5,6 +5,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -3951,8 +3952,11 @@ class NeitherHalfRefusesARedirectWhenItAsksThePortal(unittest.TestCase):
         # each exists for.
         for marker in (
             "$urlProbe = Get-HttpStatus -Uri $statusUrl",
-            "$roundTripProbe = Get-HttpStatus -Uri "
-            '"http://localhost:$roundTripPort/c/portal/layout"',
+            # LDM-#2541: the round trip now asks through Wait-HttpServing,
+            # which retries Get-HttpStatus -- asserted below, so the shared
+            # helper is still the one doing the asking.
+            "$roundTripProbe = Wait-HttpServing -Uri $roundTripUrl",
+            "$probe = Get-HttpStatus -Uri $Uri",
         ):
             self.assertIn(
                 marker,
@@ -3990,6 +3994,254 @@ class NeitherHalfRefusesARedirectWhenItAsksThePortal(unittest.TestCase):
             text,
             "the access-URL failure no longer reports the reason",
         )
+
+
+class _FlakyPortal:
+    """A local HTTP server that answers 503 a set number of times, then 200.
+
+    Stands in for a portal whose first render is slow: the retry has to ask
+    again to see it serve, so a single-request check fails against it.
+    """
+
+    def __init__(self, failures):
+        import http.server
+        import threading
+
+        state = {"left": failures, "hits": 0}
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                state["hits"] += 1
+                code = 503 if state["left"] > 0 else 200
+                state["left"] -= 1
+                self.send_response(code)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *_args):
+                pass
+
+        self.state = state
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, *_exc):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def _closed_port():
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+class TheRoundTripServeCheckRetriesForABoundedPeriod(unittest.TestCase):
+    """LDM-#2541: one request was the whole round-trip serve check.
+
+    On an OrbStack host it read '000' against a copy Docker reported healthy,
+    in a run that passed unchanged an hour later. The check now retries for a
+    bounded period, still passes only on 200/302, and on failure records the
+    port mapping and a verbose curl so the next occurrence explains itself.
+    """
+
+    def _run_bash(self, url, budget, pause):
+        funcs = "\n".join(
+            _extract_function(
+                BASH_SCRIPT, re.compile(rf"^{name}\(\) \{{.*?^\}}", re.M | re.S)
+            )
+            for name in ("http_status", "http_status_until_serving")
+        )
+        res = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'{funcs}\nhttp_status_until_serving "$1" "$2" "$3"\n',
+                "_",
+                url,
+                str(budget),
+                str(pause),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=120,
+            env={**os.environ, "VENV_PYTHON": sys.executable},
+        )
+        return res.stdout.strip()
+
+    def test_bash_waits_through_a_slow_first_render(self):
+        with _FlakyPortal(failures=2) as portal:
+            status = self._run_bash(f"http://127.0.0.1:{portal.port}/", 30, 1)
+        self.assertEqual(status, "200")
+        self.assertEqual(portal.state["hits"], 3, "it did not retry until served")
+
+    def test_bash_gives_up_after_the_budget_with_the_last_status(self):
+        t0 = time.monotonic()
+        status = self._run_bash(f"http://127.0.0.1:{_closed_port()}/", 2, 1)
+        self.assertEqual(status, "000")
+        self.assertLess(time.monotonic() - t0, 30, "the budget did not bound it")
+
+    @unittest.skipUnless(_pwsh_binary(), "pwsh/powershell not available")
+    def test_powershell_waits_through_a_slow_first_render(self):
+        funcs = "\n".join(
+            _extract_function(
+                PS1_SCRIPT,
+                re.compile(rf"^function {name} \{{.*?^\}}", re.M | re.S),
+            )
+            for name in ("Get-HttpStatus", "Wait-HttpServing")
+        )
+        with _FlakyPortal(failures=2) as portal:
+            res = subprocess.run(
+                [
+                    _pwsh_binary(),
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    f"{funcs}\n(Wait-HttpServing -Uri "
+                    f"'http://127.0.0.1:{portal.port}/' -BudgetSec 30 "
+                    "-PauseSec 1).Status\n",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
+            )
+        self.assertEqual(res.stdout.strip(), "200", res.stderr)
+        self.assertEqual(portal.state["hits"], 3, "it did not retry until served")
+
+    def test_both_halves_use_the_retry_and_stay_strict(self):
+        bash = BASH_SCRIPT.read_text(encoding="utf-8")
+        ps1 = PS1_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            'ROUNDTRIP_STATUS=$(http_status_until_serving "$ROUNDTRIP_URL" '
+            '"$ROUNDTRIP_SERVE_BUDGET" 10)',
+            bash,
+        )
+        self.assertIn("ROUNDTRIP_SERVE_BUDGET=180", bash)
+        self.assertIn("$roundTripServeBudget = 180", ps1)
+        self.assertIn('$roundTripStatus -eq "200" -or $roundTripStatus -eq "302"', ps1)
+        at = bash.index("ROUNDTRIP_STATUS=$(http_status_until_serving")
+        self.assertIn("        200 | 302)\n", bash[at : at + 400])
+
+    def test_both_halves_capture_evidence_on_failure(self):
+        bash = BASH_SCRIPT.read_text(encoding="utf-8")
+        ps1 = PS1_SCRIPT.read_text(encoding="utf-8")
+        for marker in (
+            'docker port "$ROUNDTRIP_PROJECT"',
+            'curl -sv --max-time 10 -o /dev/null "$ROUNDTRIP_URL"',
+        ):
+            self.assertIn(marker, bash)
+        for marker in (
+            "& docker port $ROUNDTRIP_PROJECT 2>&1",
+            "Get-Command -Name curl -CommandType Application",
+            "-sv --max-time 10 -o $rtNullDevice $roundTripUrl",
+        ):
+            self.assertIn(marker, ps1)
+
+
+# A `docker` stub defined as a PowerShell FUNCTION, so the capture code runs for
+# real while nothing is executed. Multi-line on every stream the capture reads.
+_PS_DOCKER_STUB = r"""
+function docker {
+    $verb = $args[0]
+    if ($verb -eq 'ps') { 'demo-roundtrip'; return }
+    if ($verb -eq 'inspect') {
+        if ($args[2] -like '*range .State.Health.Log*') {
+            '   probe exit=1: refused'
+            '   probe exit=0: ok'
+        } else { '   state=running health=healthy' }
+        return
+    }
+    if ($verb -eq 'logs') {
+        if ($args -contains '--tail') { 'tail line 1'; 'tail line 2'; return }
+        'INFO boot started'
+        'ERROR first failure'
+        '    at com.example.Frame(Frame.java:1)'
+        'Caused by: java.lang.NullPointerException'
+        'INFO still booting'
+    }
+}
+"""
+
+
+@unittest.skipUnless(_pwsh_binary(), "pwsh/powershell not available")
+class PowerShellCapturesKeepTheirLineBreaks(unittest.TestCase):
+    """LDM-#2541: ConvertTo-LdmText was called POSITIONALLY on captured arrays.
+
+    Bound that way, the whole array is one object and `[string]` joins its
+    lines with spaces, so every multi-line capture in the failure evidence came
+    out as a single line -- and the first-errors filter, seeing the whole log as
+    one line, let INFO lines and stack frames through. The bash twin keeps each
+    line, so the two halves' reports differed for the same failure.
+    """
+
+    def _run(self, body):
+        funcs = "\n".join(
+            _extract_function(
+                PS1_SCRIPT, re.compile(rf"^function {name} \{{.*?^\}}", re.M | re.S)
+            )
+            for name in ("Write-TrapNote", "Write-Verdict", "Write-RoundTripOutput")
+        )
+        # Write-FailureDebugLogs pulls in ConvertTo-LdmText via _PS_HELPERS.
+        funcs += "\n" + _extract_function(
+            PS1_SCRIPT,
+            re.compile(r"^function Write-FailureDebugLogs \{.*?^\}", re.M | re.S),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp) / "results.txt"
+            results.write_text("", encoding="utf-8")
+            script = (
+                f"{funcs}\n{_PS_DOCKER_STUB}\n"
+                f"$RESULTS_FILE_TMP = '{results}'\n$PROJECT_NAME = 'unused'\n"
+                f"{body} | Out-Null\n"
+            )
+            res = subprocess.run(
+                [_pwsh_binary(), "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
+            )
+            self.assertEqual(res.returncode, 0, res.stderr)
+            return [
+                line.rstrip()
+                for line in results.read_text(encoding="utf-8-sig").splitlines()
+            ]
+
+    def test_failure_capture_keeps_each_line(self):
+        lines = self._run("Write-FailureDebugLogs -Containers @('demo-roundtrip')")
+        for expected in (
+            "   probe exit=1: refused",
+            "   probe exit=0: ok",
+            "     ERROR first failure",
+            "     Caused by: java.lang.NullPointerException",
+            "tail line 1",
+            "tail line 2",
+        ):
+            self.assertIn(expected, lines)
+        first = lines.index("   first errors:")
+        last = lines.index("   last 50 lines:")
+        self.assertEqual(
+            lines[first + 1 : last],
+            [
+                "     ERROR first failure",
+                "     Caused by: java.lang.NullPointerException",
+            ],
+            "the first-errors filter let non-error lines through",
+        )
+
+    def test_round_trip_output_keeps_each_line(self):
+        lines = self._run(
+            "Write-RoundTripOutput -Label 'docker logs' -Raw (docker logs x --tail 2)"
+        )
+        self.assertIn("          tail line 1", lines)
+        self.assertIn("          tail line 2", lines)
 
 
 class BothHalvesReapOnlyWhatTheRunItselfCreated(unittest.TestCase):
