@@ -1022,11 +1022,37 @@ class InfraService:
 
     def _fix_cert_permissions(self, path):
         """Attempts to fix directory permissions using sudo if authorized by the user."""
+        if getattr(self.manager, "non_interactive", False):
+            # LDM-#2517: under -y, UI.confirm answers its "Y" default, and the
+            # plain `sudo chown` below then waited on a password nobody could
+            # type. Try `sudo -n` only; when it cannot elevate, hand over the
+            # command and carry on with the self-signed fallback.
+            import subprocess
+
+            from ldm_core import privileged
+
+            chown = ["chown", "-R", f"{os.getuid()}:{os.getgid()}", str(path)]
+            try:
+                res = subprocess.run(
+                    ["sudo", "-n", *chown],
+                    capture_output=True,
+                    check=False,
+                    timeout=60,
+                )
+                if res.returncode == 0:
+                    return True
+            except (OSError, subprocess.SubprocessError):
+                pass
+            privileged.defer(
+                f"{path} is not writable by you, so certificates cannot be generated",
+                ["sudo", *chown],
+            )
+            return False
+
         if UI.confirm(f"Fix permissions for {path}? (Requires sudo)", "Y"):
             try:
-                # Get current user and group
-                import os
-
+                # Get current user and group (`os` is the module-level import;
+                # a local import here would shadow it for the -y branch above)
                 uid = os.getuid()
                 gid = os.getgid()
                 UI.detail(f"Requesting permission to reclaim ownership of {path}...")

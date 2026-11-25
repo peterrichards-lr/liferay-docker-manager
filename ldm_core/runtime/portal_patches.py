@@ -436,5 +436,15 @@ def recreate_with_patches(
     start_cmd = [*compose_base, "start"]
     if service:
         start_cmd.append(service)
+    else:
+        # LDM-#2526: not the lfr-tunnel-docker sidecar -- `share.cmd_start`
+        # starts it once the default-credentials check has passed.
+        from ldm_core.handlers.share_credentials import (
+            services_holding_back_sidecar,
+        )
+
+        start_cmd.extend(
+            services_holding_back_sidecar(Path(root) / "docker-compose.yml")
+        )
     manager.run_command(start_cmd, capture_output=capture, cwd=str(root))
     return True

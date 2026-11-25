@@ -298,6 +298,7 @@ nav:
     - Networking: reference/networking.md
     - Advanced CLI: reference/advanced_cli.md
     - Exit codes: reference/exit_codes.md
+    - Machine-readable output: reference/json_output.md
     - JVM and database tuning: reference/tuning.md
     - Logging strategy: reference/logging-strategy.md
   - Explanation:

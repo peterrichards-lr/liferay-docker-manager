@@ -800,6 +800,11 @@ def get_parser():  # noqa: PLR0915
         help="Automatically start a secure tunnel (lfr-tunnel) to share the instance",
     )
     run.add_argument(
+        "--allow-default-credentials",
+        action="store_true",
+        help="Share even if the instance still accepts the default admin login (test@liferay.com). Without it, LDM asks, or refuses under -y",
+    )
+    run.add_argument(
         "--share-subdomain",
         help="Custom subdomain to use when sharing the instance",
     )
@@ -889,6 +894,11 @@ def get_parser():  # noqa: PLR0915
         "--share",
         action="store_true",
         help="Automatically start a secure tunnel (lfr-tunnel) to share the instance after import",
+    )
+    imp.add_argument(
+        "--allow-default-credentials",
+        action="store_true",
+        help="Share even if the instance still accepts the default admin login (test@liferay.com). Without it, LDM asks, or refuses under -y",
     )
     imp.add_argument(
         "--share-subdomain",
@@ -1436,6 +1446,11 @@ def get_parser():  # noqa: PLR0915
                 help="Start a secure tunnel (lfr-tunnel) once the containers are up",
             )
             p.add_argument(
+                "--allow-default-credentials",
+                action="store_true",
+                help="Share even if the instance still accepts the default admin login (test@liferay.com). Without it, LDM asks, or refuses under -y",
+            )
+            p.add_argument(
                 "--share-subdomain",
                 help="Custom subdomain to use when sharing the instance",
             )
@@ -1688,6 +1703,11 @@ def get_parser():  # noqa: PLR0915
         action="store_true",
         help="Output only the raw password string for piping into other commands",
     )
+    info.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit a stable, machine-readable JSON object (URLs, status, share) instead of the formatted view",
+    )
     reset = subparsers.add_parser("reset", parents=[base_sub_parent])
     reset.add_argument("project", nargs="?")
     reset.add_argument(
@@ -1922,6 +1942,11 @@ def get_parser():  # noqa: PLR0915
         "--share",
         action="store_true",
         help="Expose the bootstrap stack dynamically using lfr-tunnel",
+    )
+    quickstart_cmd.add_argument(
+        "--allow-default-credentials",
+        action="store_true",
+        help="Share even if the instance still accepts the default admin login (test@liferay.com). Without it, LDM asks, or refuses under -y",
     )
     quickstart_cmd.add_argument(
         "--share-subdomain",
@@ -2171,6 +2196,11 @@ def get_parser():  # noqa: PLR0915
         help="Expose the lfr-tunnel local inspector dashboard on port 4040",
     )
     share_start.add_argument(
+        "--allow-default-credentials",
+        action="store_true",
+        help="Share even if the instance still accepts the default admin login (test@liferay.com). Without it, LDM asks, or refuses under -y",
+    )
+    share_start.add_argument(
         "--domain",
         help=(
             "Tunnel base domain (e.g. lfr-demo.online, lfr-demo.se), or a host "
@@ -2212,6 +2242,11 @@ def get_parser():  # noqa: PLR0915
     )
     share_status.add_argument("project", nargs="?")
     share_status.add_argument("-p", "--project", dest="project_flag")
+    share_status.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit a stable, machine-readable JSON object with the public share URL instead of the formatted view",
+    )
 
     share_stop = share_subparsers.add_parser(
         "stop",
@@ -2953,6 +2988,11 @@ def get_parser():  # noqa: PLR0915
         type=str,
         help="Specific domain to check SSL certificates for (used with --ssl)",
     )
+    doctor.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit a stable, machine-readable JSON object of every check (pass/warn/fail) and its fix hints",
+    )
 
     upgrade = system_subparsers.add_parser(
         "upgrade",
@@ -3408,6 +3448,16 @@ def _share_options_from_args(args):
     }
 
 
+def _share_status(args, manager):
+    """`ldm share status`, or its `--json` object (LDM-#2525)."""
+    project_id = getattr(args, "project", None) or getattr(args, "project_flag", None)
+    if getattr(args, "json", False) is True:
+        from ldm_core.handlers.share_status_json import print_share_status_json
+
+        return print_share_status_json(manager.share, project_id)
+    return manager.share.cmd_status(project_id=project_id)
+
+
 def _exit_code_for_pipeline(result):
     """Turn a pipeline's ``False`` into the exit-code contract (LDM-#2155).
 
@@ -3585,6 +3635,7 @@ def _build_command_map(args, manager):
             credentials_only=getattr(args, "credentials", False),
             credential_type=getattr(args, "credential_type", "admin"),
             password_only=getattr(args, "password_only", False),
+            as_json=getattr(args, "json", False),
         ),
         ("reset", None): lambda: manager.runtime.cmd_reset(
             getattr(args, "project", None), getattr(args, "target", "state")
@@ -3665,10 +3716,7 @@ def _build_command_map(args, manager):
             or getattr(args, "project_flag", None),
             port=getattr(args, "port", 4040),
         ),
-        ("share", "status"): lambda: manager.share.cmd_status(
-            project_id=getattr(args, "project", None)
-            or getattr(args, "project_flag", None),
-        ),
+        ("share", "status"): lambda: _share_status(args, manager),
         ("share", "stop"): lambda: manager.share.cmd_stop(
             project_id=getattr(args, "project", None)
             or getattr(args, "project_flag", None),
@@ -3945,6 +3993,19 @@ def _execute_command(args, current_cmd, cmds):
                 )
 
 
+def _exit_for_deferred_privileged_steps():
+    """Exit with the privileged-step code if a step was deferred (LDM-#2517).
+
+    A deferred step is one that did not stop the command -- cleanup such as
+    removing hosts entries during `ldm rm`. The command finishes its work, and
+    only then reports that a person still has a step to run.
+    """
+    from ldm_core import privileged
+
+    if privileged.has_deferred():
+        sys.exit(privileged.PRIVILEGED_STEP_EXIT_CODE)
+
+
 def _dispatch_command(args, current_cmd, cmds):
     import sys
 
@@ -3975,6 +4036,14 @@ def _dispatch_command(args, current_cmd, cmds):
         if isinstance(result, int) and not isinstance(result, bool) and result != 0:
             sys.exit(result)
 
+        _exit_for_deferred_privileged_steps()
+
+    except SystemExit as e:
+        # LDM-#2517: a handler that ends in `sys.exit(0)` must not swallow a
+        # privileged step it deferred along the way.
+        if e.code in (0, None):
+            _exit_for_deferred_privileged_steps()
+        raise
     except KeyboardInterrupt:
         print(f"\n{UI.WHITE}Aborted.{UI.COLOR_OFF}")
         sys.exit(130)
@@ -4049,6 +4118,12 @@ def main():
 
     _check_root_safety(args)
     _validate_database_flags(args)
+
+    # LDM-#2517: a privileged-step payload is printed as JSON when the command
+    # itself was asked for `--json` (LDM_JSON=1 covers the commands without one).
+    from ldm_core import privileged
+
+    privileged.set_json_mode(getattr(args, "json", False) is True)
 
     if not args.command:
         parser.print_help()
