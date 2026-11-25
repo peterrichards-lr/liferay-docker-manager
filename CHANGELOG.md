@@ -5,6 +5,76 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.26.16] - 2026-11-25
+
+### Added
+
+- **Stateless packages** (LDM-#2493). `ldm package --stateless` builds an `.ldmp` that carries assets only: `deploy/`, configs, OSGi modules and client extensions, scripts, portal patches and the `client-extensions/` source tree. Importing one deploys it onto a new vanilla instance and skips the database, search and volume restores. A package without a `package_kind` is stateful, exactly as before. `ldm init-ci --stateless` generates a pipeline that packages this way.
+
+- **Low-disk warning before a remote run** (LDM-#2145). `ldm run` against a remote target warns when the node's Docker engine has less than 3 GB free, and `ldm target status` shows a DISK FREE column.
+
+- **A package carries the container hostname** (LDM-#2445). `container_hostname` is recorded in the manifest and applied on import.
+
+- **OAuth client check after import** (LDM-#2446). When a sidecar's OAuth client ID has no match in the restored database, the import ends with a warning naming it, instead of the sidecar failing with 401s later.
+
+- **`LDM_SEARCH_READY_TIMEOUT`** (LDM-#2109) sets, in seconds, how long LDM waits for shared search to become ready. The default is still 5 minutes.
+
+### Changed
+
+- **The global infrastructure stack runs as Compose project `ldm-infra`** (LDM-#2244), with LDM ownership labels. A stack running under the old `resources` name is migrated automatically.
+
+- **An existing project is told once when its mode disagrees with an explicit default** (LDM-#2256), instead of silently keeping its own.
+
+- **The samples pack is refreshed and checksummed** (LDM-#2491), and its manifest is read as JSON (LDM-#2492).
+
+### Fixed
+
+- **`ldm share` shows the client's current log** (LDM-#2502). It read the pre-move `~/.lfr-tunnel/client-<sub>.log`, so a failed share printed a stale log or none. LDM now follows the `[Client] Logs:` path the client prints, then `~/.lfr-tunnel/logs/`, then the old path, and names the file and its modification time.
+
+- **A vanity `share_domain` is requested from the tunnel** (LDM-#2503). LDM announced `<sub>.<vanity>` and pinned it as `web.server.host` but never passed `-domain`, so the tunnel served `<sub>.lfr-demo.se`. Native shares now pass `-domain`, and the Docker sidecar gets `LFT_CLIENT_CUSTOM_DOMAIN`.
+
+- **A client below the gateway's `min_version` warns instead of refusing** (LDM-#2504), matching the gateway's 14-day grace period.
+
+- **The Docker share sidecar no longer stores its token in `.env` or pins one gateway** (LDM-#2505). The token is passed from the keyring at start, and an existing `LFT_CLIENT_TOKEN` line is removed with a notice. `LFT_CLIENT_SERVER` is set only when you name a gateway.
+
+- **The share sidecar's version check uses the published image name** (LDM-#2506), `peterjrichards/lfr-tunnel`.
+
+- **Tunnel lifecycle hooks are registered** (LDM-#2507). The first `ldm share start` adds LDM's hooks to `~/.lfr-tunnel/config.yaml`, says so once, and never replaces a hook you set.
+
+- **Stateless packages ship each client extension once** (LDM-#2493). A non-container extension's expanded folder now carries only its descriptors; the zip carries the rest.
+
+- **Site initializers in a stateless package deploy after the portal is ready** (LDM-#2493). They are stored in `.ldm/deferred-client-extensions/`, which every LDM since v2.23.0 deploys once Liferay is healthy. That includes `--samples` on v2.26.x, and site initializers parked before the publisher's portal was ready are no longer left out.
+
+- **The `ldm init-ci` workflow installs LDM** (LDM-#2493). It ran `pip install liferay-docker-manager`, which is not on PyPI. It now downloads the release binary and verifies it against `checksums.txt`.
+
+- **Fragment overrides reach the live page through the Headless API** (LDM-#2427). LDM writes the published spec only and never calls `/publish`. On 2025.Q1 to 2026.Q3 it sets `feature.flag.LPD-35443` and `feature.flag.LPD-74328`. A refused update is now a warning carrying Liferay's reason, not a silent fall-through to SQL.
+
+- **No more 300-second retry on 2026.Q4.0** (LDM-#2497). A refused page-element update is treated as final: LDM warns once, makes one legacy attempt, then uses SQL.
+
+- **`fix-hosts` suggestions run as printed** (LDM-#2496). LDM suggested one command with several hostnames, which the parser rejected. It now suggests `ldm fix-hosts <project>`, or one command per hostname.
+
+- **The `--database-mode` suggestion names the real flag** (LDM-#2488). It said `--db-mode`.
+
+- **`ldm dev-setup --help` prints help** (LDM-#2477) instead of running the bootstrap.
+
+- **Documented commands parse** (LDM-#2149). Every `ldm` command in the docs is now checked against the real parser, and the 11 that failed are corrected.
+
+- **The Docker share sidecar starts again** (LDM-#2505). pre.1 stopped giving the `lfr-tunnel-docker` sidecar a gateway unless you pinned one, but the published image has none built in, so the sidecar exited at startup with "No tunnel server configured". It now always gets one: the gateway you pinned, else the one its share domain resolves to. The token still never goes into `.env`.
+
+- **A stateless package can no longer silently lose `deploy/`** (LDM-#2493). Liferay's auto-deploy consumes `deploy/` at boot, so packaging a linked project after `ldm run` shipped without its fragment collections. `ldm package --stateless` now refuses and names the missing files; package before booting (`ldm link --no-run`, then `ldm package --stateless`).
+
+- **`ldm system init-ci --stateless` never boots Liferay** (LDM-#2493). The generated workflow links with `--no-run --build` and packages straight away, so it needs no licence and no wait. The stateful workflow is unchanged.
+
+- **`ldm link --build` builds before it links.** The workspace was synced before the build, so on a clean checkout nothing built was linked. This was a regression in both kinds of workflow.
+
+- **`ldm link` no longer copies build intermediates and fragments into `client-extensions/`.** A recursive glob picked up every `build/` zip, such as each site initializer's `site-initializer.zip`, which collide on that name, and copied fragment collections where nothing deploys them. Fragments still go to `deploy/`, and extensions to `osgi/client-extensions/`. Projects linked with pre.1 keep the stray zips until they are re-linked.
+
+- **`ldm link --db` is recorded without a run.** A project linked with `--no-run` had no database engine in its metadata, so its package declared `db_type: null`.
+
+- **A workspace's `scripts/` is called out** (LDM-#2533). Liferay's entrypoint executes the project's `scripts/` inside the container. `ldm link` and `ldm import` now warn and name each file copied there, and `ldm package` warns about every script it ships.
+
+- **Sharing with a custom vanity `share_domain` works again** (LDM-#2503). pre.1 began passing the vanity domain to the tunnel with `-domain`. Liferay Tunnel serves a custom domain as the whole hostname, one tunnel at a time, so the tunnel came up on the bare domain while LDM announced `<project>.<domain>`. LDM's health check then could not find the tunnel and stopped it. LDM no longer requests the vanity domain, and the tunnel comes up on `<subdomain>.<default gateway>` as before this release. Per-project custom domains are tracked in LDM-#2503.
+
 ## [v2.26.16-pre.3] - 2026-11-24
 
 ### Fixed
